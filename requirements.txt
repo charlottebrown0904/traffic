@@ -1,0 +1,10 @@
+requests>=2.31
+pandas>=2.1
+numpy>=1.26
+duckdb>=0.10
+pyarrow>=14.0
+python-dotenv>=1.0
+PyYAML>=6.0
+tenacity>=8.2
+statsmodels>=0.14
+tqdm>=4.66

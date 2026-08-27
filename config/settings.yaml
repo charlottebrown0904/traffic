@@ -1,0 +1,28 @@
+# 분석 파라미터 — 여기만 바꾸면 전 파이프라인에 반영됩니다.
+
+period:
+  start_year: 2015
+  end_year: 2025
+
+trade_kinds: [land, factory, house]   # commercial 은 선택
+
+spatial:
+  bands:                  # 거리 밴드 (km). 마지막 밴드는 위약 검정용 대조군.
+    - [0, 3]
+    - [3, 5]
+    - [5, 10]
+    - [10, 20]
+  max_link_km: 20
+
+panel:
+  min_trades_per_cell: 5      # 셀당 최소 거래건수 (미만이면 결측)
+  winsorize_pct: 0.01         # 단가 상하위 1% 윈저화
+  traffic_lag_years: 1        # 교통량 시차
+
+vehicle_groups:
+  passenger: [1, 6]
+  freight: [3, 4, 5]
+  mid: [2]
+
+# 파일럿 지역 (빈 리스트면 전국). 시도 2자리 코드.
+pilot_sido: []
