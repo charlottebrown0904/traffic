@@ -3,6 +3,7 @@
 고속도로 IC/영업소의 **차종별 교통량 변화**와 인근 **토지·공장·단독건물 실거래가 변화**의
 관계를 정량화하고, 지도 기반 투자 스크리닝 도구로 만드는 프로젝트.
 
+- **▶ 단계별 실행 가이드: [docs/START-HERE.md](docs/START-HERE.md)** ← 여기부터
 - 전체 계획: [ROADMAP.md](ROADMAP.md)
 - 분석 설계와 가설: [docs/hypothesis.md](docs/hypothesis.md) ← **먼저 읽어주세요**
 - **API 키 신청**: [docs/api-keys.md](docs/api-keys.md)
