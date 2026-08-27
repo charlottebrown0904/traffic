@@ -5,6 +5,7 @@
 
 - 전체 계획: [ROADMAP.md](ROADMAP.md)
 - 분석 설계와 가설: [docs/hypothesis.md](docs/hypothesis.md) ← **먼저 읽어주세요**
+- **API 키 신청**: [docs/api-keys.md](docs/api-keys.md)
 - 데이터 소스·API: [docs/data-sources.md](docs/data-sources.md)
 - 스키마: [docs/data-model.md](docs/data-model.md)
 - 법적 체크리스트: [docs/legal-notes.md](docs/legal-notes.md)
@@ -40,7 +41,7 @@ make demo
 ## 실제 데이터 파이프라인
 
 ```bash
-cp config/.env.example config/.env   # API 키 3개 입력
+cp config/.env.example config/.env   # API 키 입력 → docs/api-keys.md 참고
 
 python -m redt.cli regions                        # 파일럿 권역 확인
 python -m redt.cli regions --verify                # 시군구 코드 시험 조회 ← 수집 전 필수

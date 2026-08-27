@@ -9,11 +9,18 @@
 
 **포털**: https://data.ex.co.kr (도로공사 자체 오픈 API, 별도 회원가입)
 
+인증키 발급: https://data.ex.co.kr/openapi/apikey/requestKey
+API 목록: https://data.ex.co.kr/openapi/intro/introduce02
+
 | 용도 | 경로 |
 |---|---|
 | 영업소 마스터 + 좌표 | `/openapi/business/curBusinessInfo` |
 | TCS 영업소별 차종 교통량 | `/openapi/trafficapi/trafficIC` |
 | 노선별 교통량 | `/openapi/trafficapi/trafficAmountByRoute` |
+
+**공공데이터포털에도 동일 계열 데이터가 있습니다** (기존 `DATA_GO_KR_KEY` 재사용 가능):
+- [한국도로공사_영업소 위치정보 (15076728)](https://www.data.go.kr/data/15076728/openapi.do) ← **영업소 좌표**
+- [한국도로공사_실시간 영업소별 교통량 (15076872)](https://www.data.go.kr/data/15076872/openapi.do)
 
 공통 파라미터: `key`, `type=json`, `numOfRows`, `pageNo`
 
@@ -41,21 +48,44 @@
 **포털**: https://www.data.go.kr (활용신청 → 일반 인증키 발급, 승인 즉시)
 **Base**: `https://apis.data.go.kr/1613000/`
 
-| 물건 종류 | 서비스 / 오퍼레이션 | 우선순위 |
+신청 절차는 [docs/api-keys.md](api-keys.md) 참고.
+
+| 물건 종류 | 서비스 / 오퍼레이션 | 데이터셋 | 우선순위 |
+|---|---|---|---|
+| **토지** 매매 | `RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade` | 15126466 | ★★★ |
+| **공장·창고 등** 매매 | `RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade` | 15126470 | ★★★ |
+| **단독/다가구** 매매 | `RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade` | 15126465 | ★★ |
+| 상업업무용 매매 | `RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade` | 15126463 | ★ |
+
+### 응답 필드 (영문 camelCase — 한글 태그가 아닙니다)
+
+| 필드 | 의미 | 쓰임 |
 |---|---|---|
-| **토지** 매매 | `RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade` | ★★★ |
-| **공장·창고 등** 매매 | `RTMSDataSvcInduTrade/getRTMSDataSvcInduTrade` | ★★★ |
-| **단독/다가구** 매매 | `RTMSDataSvcSHTrade/getRTMSDataSvcSHTrade` | ★★ |
-| 상업업무용 매매 | `RTMSDataSvcNrgTrade/getRTMSDataSvcNrgTrade` | ★ |
+| `umdNm`, `jibun` | 법정동, 지번 | 지오코딩 입력 |
+| `dealAmount` | 거래금액 (**만원** 단위, 쉼표 포함) | ×10,000 하여 원 단위로 |
+| `dealArea` | 거래면적 (토지) | 단가 분모 |
+| `plottageAr` / `buildingAr` | 대지면적 / 건물면적 (공장·상업) | 분모 / 헤도닉 통제 |
+| `jimok` | 지목 (전·답·대·임야·공장용지) | **헤도닉 핵심 통제변수** |
+| `landUse` | 용도지역 (계획관리·생산녹지·공업) | **헤도닉 핵심 통제변수** |
+| `shareDealingType` | 지분구분 | 지분거래 → ㎡단가 왜곡, 제외 |
+| `cdealType` / `cdealDay` | 해제여부 / 해제일 | **`O` 면 계약 해제 → 반드시 제외** |
+| `dealingGbn` | 중개거래 / 직거래 | 직거래는 특수관계 가능성 |
+| `slerGbn`, `buyerGbn` | 매도·매수자 구분 (개인/법인/공공) | 법인 매집 신호로 활용 여지 |
 
 공통 파라미터: `serviceKey`, `LAWD_CD`(시군구 5자리), `DEAL_YMD`(YYYYMM), `pageNo`, `numOfRows`
 
 **치명적 제약 ⚠️**
-- 조회 단위가 **시군구 × 계약년월**입니다. 전국 250개 시군구 × 12개월 × 10년
-  = **약 30,000 요청 / 물건종류**. 일일 트래픽 한도(기본 10,000)를 고려해 나눠 받아야 합니다.
+- 조회 단위가 **시군구 × 계약년월**입니다. 전국 250개 시군구 × 12개월 × 11년
+  = 약 33,000 요청 / 물건종류. 일일 트래픽(기본 10,000)을 고려해 나눠 받아야 합니다.
+  → `collect_log` 테이블로 중단/재개를 지원합니다.
 - 응답에 **좌표가 없습니다.** `시군구 + 법정동 + 지번`만 옵니다 → 지오코딩 필수 (§3).
-- 토지 거래는 **지분 거래**가 섞입니다 (`거래면적` vs `지분`). 지분 거래는 ㎡당 단가가
-  왜곡되므로 별도 플래그 처리합니다.
+- **토지·일반건축물의 지번은 개인정보 보호를 이유로 일부만 공개됩니다.**
+  → 상당수 거래가 법정동 중심점(오차 ±1~2km)으로만 지오코딩됩니다.
+  → `geocode_level` 로 정밀도를 기록하고, 근거리 밴드는 지번단위 좌표만 사용합니다.
+  자세한 대응은 [api-keys.md](api-keys.md) 마지막 절 참고.
+- **해제된 계약**(`cdealType='O'`)이 섞여 있습니다. 실제 거래가 아니므로 제외합니다.
+- 지분 거래(`shareDealingType`)는 ㎡당 단가를 왜곡하므로 제외합니다.
+- 잘못된 `LAWD_CD` 에 **오류가 아니라 0건**을 반환합니다 → `regions --verify` 로 선검증.
 
 ---
 

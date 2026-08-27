@@ -30,8 +30,9 @@ class GeocodeCache:
     def get(self, addr: str) -> dict | None:
         return self._data.get(addr)
 
-    def put(self, addr: str, lat: float | None, lon: float | None, source: str) -> None:
-        row = {"addr_key": addr, "lat": lat, "lon": lon, "source": source}
+    def put(self, addr: str, lat: float | None, lon: float | None, source: str,
+            level: str | None = None) -> None:
+        row = {"addr_key": addr, "lat": lat, "lon": lon, "source": source, "level": level}
         self._data[addr] = row
         ensure_dirs()
         with open(self.path, "a", encoding="utf-8") as fh:
@@ -46,7 +47,7 @@ def build_address(sido: str, sigungu: str, umd: str, jibun: str) -> str:
     return " ".join(parts)
 
 
-def geocode_one(address: str) -> tuple[float | None, float | None]:
+def geocode_one(address: str, kind: str = "PARCEL") -> tuple[float | None, float | None]:
     """실패해도 예외를 던지지 않는다 — 실패는 캐시에 NULL로 기록해 재시도를 막는다."""
     resp = get(
         VWORLD_URL,
@@ -55,7 +56,7 @@ def geocode_one(address: str) -> tuple[float | None, float | None]:
             "request": "getcoord",
             "version": "2.0",
             "crs": "epsg:4326",
-            "type": "PARCEL",
+            "type": kind,
             "address": address,
             "format": "json",
             "key": keys().require("vworld"),
@@ -71,28 +72,60 @@ def geocode_one(address: str) -> tuple[float | None, float | None]:
         return None, None
 
 
-def geocode_many(addresses: list[str], cache: GeocodeCache | None = None,
-                 limit: int | None = None) -> dict[str, tuple[float | None, float | None]]:
+def geocode_with_fallback(sigungu: str, umd: str, jibun: str
+                          ) -> tuple[float | None, float | None, str | None]:
+    """2단계 지오코딩.
+
+    국토부는 개인정보 보호를 이유로 **토지·일반건축물의 지번을 일부만 공개**한다.
+    따라서 상당수 거래는 지번 단위 좌표를 얻을 수 없다.
+      1) 지번까지 → 'parcel'  (정확, 거리밴드 분석에 사용 가능)
+      2) 법정동까지 → 'umd'   (동 중심점, 오차 ±1~2km)
+    어느 단계로 얻었는지를 반드시 기록해서, 근거리 밴드 분석에서 걸러낼 수 있게 한다.
+    """
+    if jibun and str(jibun).strip():
+        full = build_address(None, sigungu, umd, jibun)
+        lat, lon = geocode_one(full, "PARCEL")
+        if lat is not None:
+            return lat, lon, "parcel"
+
+    coarse = build_address(None, sigungu, umd, None)
+    if not coarse:
+        return None, None, None
+    lat, lon = geocode_one(coarse, "PARCEL")
+    return (lat, lon, "umd") if lat is not None else (None, None, None)
+
+
+def geocode_many(rows: list[tuple[str, str, str]], cache: GeocodeCache | None = None,
+                 limit: int | None = None) -> dict[tuple, tuple]:
+    """rows: (시군구, 법정동, 지번) 튜플 목록 → {튜플: (lat, lon, level)}"""
     cache = cache or GeocodeCache()
-    result: dict[str, tuple[float | None, float | None]] = {}
+    result: dict[tuple, tuple] = {}
     pending = []
 
-    for addr in addresses:
-        hit = cache.get(addr)
+    for row in rows:
+        key = build_address(None, *row)
+        hit = cache.get(key)
         if hit is not None:
-            result[addr] = (hit["lat"], hit["lon"])
+            result[row] = (hit["lat"], hit["lon"], hit.get("level"))
         else:
-            pending.append(addr)
+            pending.append(row)
 
     if limit is not None:
         pending = pending[:limit]
 
     print(f"지오코딩: 캐시 적중 {len(result):,} / 신규 요청 {len(pending):,}")
-    for i, addr in enumerate(pending, 1):
-        lat, lon = geocode_one(addr)
-        cache.put(addr, lat, lon, "vworld")
-        result[addr] = (lat, lon)
+    levels = {"parcel": 0, "umd": 0, "fail": 0}
+    for i, row in enumerate(pending, 1):
+        lat, lon, level = geocode_with_fallback(*row)
+        cache.put(build_address(None, *row), lat, lon, "vworld", level)
+        result[row] = (lat, lon, level)
+        levels[level or "fail"] += 1
         polite_sleep(0.05)
         if i % 500 == 0:
-            print(f"  {i:,}/{len(pending):,}")
+            print(f"  {i:,}/{len(pending):,}  parcel={levels['parcel']:,} "
+                  f"umd={levels['umd']:,} fail={levels['fail']:,}")
+
+    if pending:
+        print(f"  결과: 지번단위 {levels['parcel']:,} / 법정동단위 {levels['umd']:,} "
+              f"/ 실패 {levels['fail']:,}")
     return result

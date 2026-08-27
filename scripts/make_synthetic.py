@@ -114,11 +114,17 @@ def make_trades(tollgates: pd.DataFrame, truth: pd.DataFrame,
                             "area_m2": area,
                             "price_krw": int(pm2 * area),
                             "price_per_m2": pm2,
-                            "land_use": land_use,
+                            "jimok": land_use,
+                            "land_use": ["계획관리", "생산녹지", "공업"][k % 3],
+                            "building_area_m2": None,
+                            "building_use": "",
                             "build_year": None,
                             "is_share_deal": False,
+                            "is_cancelled": bool(k == 0 and year % 4 == 0),
+                            "deal_type": "중개거래" if k % 5 else "직거래",
                             "lat": lat,
                             "lon": lon,
+                            "geocode_level": "parcel" if k % 6 else "umd",
                         })
     return pd.DataFrame(rows)
 

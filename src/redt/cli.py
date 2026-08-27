@@ -126,29 +126,43 @@ def cmd_trades(args):
 def cmd_geocode(args):
     with db.connect() as con:
         todo = con.execute(
-            "SELECT DISTINCT sido, sigungu, umd, jibun FROM trade WHERE lat IS NULL"
+            "SELECT DISTINCT sigungu, umd, jibun FROM trade WHERE lat IS NULL"
         ).fetchdf()
         if todo.empty:
             print("지오코딩할 거래가 없습니다.")
             return
-        todo["address"] = [
-            gc.build_address(r.sido, r.sigungu, r.umd, r.jibun) for r in todo.itertuples()
-        ]
-        coords = gc.geocode_many(todo["address"].tolist(), limit=args.limit)
-        todo["lat"] = todo["address"].map(lambda a: coords.get(a, (None, None))[0])
-        todo["lon"] = todo["address"].map(lambda a: coords.get(a, (None, None))[1])
-        resolved = todo.dropna(subset=["lat", "lon"])
 
-        con.register("_geo", resolved[["sido", "sigungu", "umd", "jibun", "lat", "lon"]])
+        rows = [(r.sigungu, r.umd, r.jibun) for r in todo.itertuples()]
+        coords = gc.geocode_many(rows, limit=args.limit)
+
+        resolved = pd.DataFrame(
+            [{"sigungu": s, "umd": u, "jibun": j,
+              "lat": v[0], "lon": v[1], "geocode_level": v[2]}
+             for (s, u, j), v in coords.items() if v[0] is not None]
+        )
+        if resolved.empty:
+            print("좌표를 얻은 건이 없습니다.")
+            return
+
+        con.register("_geo", resolved)
         con.execute("""
-            UPDATE trade SET lat = g.lat, lon = g.lon
+            UPDATE trade SET lat = g.lat, lon = g.lon, geocode_level = g.geocode_level
             FROM _geo g
             WHERE trade.lat IS NULL
-              AND trade.umd = g.umd AND trade.jibun = g.jibun
+              AND trade.umd IS NOT DISTINCT FROM g.umd
+              AND trade.jibun IS NOT DISTINCT FROM g.jibun
               AND trade.sigungu IS NOT DISTINCT FROM g.sigungu
         """)
         con.unregister("_geo")
-    print(f"좌표 부여 {len(resolved):,} / 시도 {len(todo):,}")
+
+        breakdown = con.execute("""
+            SELECT coalesce(geocode_level, '미해결') AS level, count(*) AS n
+            FROM trade GROUP BY 1 ORDER BY n DESC
+        """).fetchdf()
+    print("\n거래 기준 좌표 정밀도")
+    print(breakdown.to_string(index=False))
+    print("\n※ 지번단위(parcel)가 아닌 건은 법정동 중심점이라 오차 ±1~2km 입니다.")
+    print("   0-3km 밴드 분석에서는 settings.yaml 의 require_parcel_bands 로 걸러집니다.")
 
 
 def cmd_link(args):

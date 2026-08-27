@@ -36,7 +36,14 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
     )
     df["ln_price"] = np.log(df["price_per_m2"])
     df["ln_area"] = np.log(df["area_m2"])
-    df["land_use"] = df["land_use"].fillna("NA").replace("", "NA")
+    for col in ("jimok", "land_use", "building_use"):
+        if col in df:
+            df[col] = df[col].fillna("NA").replace("", "NA")
+    # 건물이 없는 나대지는 0 → log 불가. 건물유무 더미와 log면적을 함께 넣는다.
+    if "building_area_m2" in df:
+        has_bldg = df["building_area_m2"].fillna(0) > 0
+        df["has_building"] = has_bldg.astype(int)
+        df["ln_building_area"] = np.log(df["building_area_m2"].where(has_bldg)).fillna(0)
 
     adjusted = []
     for kind, group in df.groupby("kind"):
@@ -48,17 +55,24 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
             continue
 
         terms = ["ln_area"]
-        if group["land_use"].nunique() > 1:
-            terms.append("C(land_use)")
+        for col in ("jimok", "land_use", "building_use"):
+            if col in group and group[col].nunique() > 1:
+                terms.append(f"C({col})")
+        if "has_building" in group and group["has_building"].nunique() > 1:
+            terms += ["has_building", "ln_building_area"]
         fe = [f"C({c})" for c in ("sigungu_cd", "deal_year")
               if c in group and group[c].nunique() > 1]
         model = smf.ols(f"ln_price ~ {' + '.join(terms + fe)}", data=group).fit()
 
         # 반사실: 모든 물건이 '평균 면적 · 최빈 지목'이었다면?
-        baseline = group.assign(
-            ln_area=group["ln_area"].mean(),
-            land_use=group["land_use"].mode().iat[0],
-        )
+        overrides = {"ln_area": group["ln_area"].mean()}
+        for col in ("jimok", "land_use", "building_use"):
+            if col in group:
+                overrides[col] = group[col].mode().iat[0]
+        for col in ("has_building", "ln_building_area"):
+            if col in group:
+                overrides[col] = group[col].mean()
+        baseline = group.assign(**overrides)
         char_effect = model.predict(group) - model.predict(baseline)
         group["adj_ln_price"] = group["ln_price"] - char_effect
         print(f"  헤도닉[{kind}]: n={len(group):,} R²={model.rsquared:.3f} "
@@ -94,7 +108,15 @@ def build_panel(trades: pd.DataFrame, links: pd.DataFrame,
     if nearest_only:
         links = links[links["is_nearest"]]
 
-    priced = hedonic_adjust(trades[~trades["is_share_deal"].fillna(False)])
+    keep = ~trades["is_share_deal"].fillna(False)
+    if cfg.get("exclude_cancelled", True) and "is_cancelled" in trades:
+        keep &= ~trades["is_cancelled"].fillna(False)
+    if cfg.get("exclude_direct_deals", False) and "deal_type" in trades:
+        keep &= trades["deal_type"].fillna("") != "직거래"
+    dropped = int((~keep).sum())
+    if dropped:
+        print(f"  제외: 지분/해제/직거래 {dropped:,}건")
+    priced = hedonic_adjust(trades[keep])
     if priced.empty:
         return pd.DataFrame()
     priced = priced.rename(columns={"deal_year": "year"})
@@ -102,6 +124,15 @@ def build_panel(trades: pd.DataFrame, links: pd.DataFrame,
     joined = priced.merge(links[["trade_id", "tollgate_id", "band"]], on="trade_id", how="inner")
     if joined.empty:
         return pd.DataFrame()
+
+    # 법정동 중심점 좌표는 근거리 밴드에서 신뢰할 수 없다 (오차 ±1~2km)
+    strict = settings()["spatial"].get("require_parcel_bands") or []
+    if strict and "geocode_level" in joined:
+        bad = joined["band"].isin(strict) & (joined["geocode_level"] != "parcel")
+        if bad.any():
+            print(f"  근거리 밴드에서 법정동단위 좌표 {int(bad.sum()):,}건 제외 "
+                  f"(대상 밴드: {strict})")
+            joined = joined[~bad]
 
     cells = (
         joined.groupby(["tollgate_id", "year", "band", "kind"], as_index=False)

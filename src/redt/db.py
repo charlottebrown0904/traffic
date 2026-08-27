@@ -37,14 +37,20 @@ CREATE TABLE IF NOT EXISTS trade (
     jibun         VARCHAR,
     deal_year     INTEGER,
     deal_month    INTEGER,
-    area_m2       DOUBLE,
+    area_m2       DOUBLE,           -- 단가 분모 (토지=거래면적, 공장/상업=대지면적)
     price_krw     BIGINT,
     price_per_m2  DOUBLE,
-    land_use      VARCHAR,
+    jimok            VARCHAR,       -- 지목 (전/답/대/임야/공장용지...)
+    land_use         VARCHAR,       -- 용도지역 (계획관리/생산녹지/공업...)
+    building_area_m2 DOUBLE,        -- 건물면적 (헤도닉 통제변수)
+    building_use     VARCHAR,
     build_year    INTEGER,
-    is_share_deal BOOLEAN,
+    is_share_deal BOOLEAN,          -- 지분거래 → ㎡단가 왜곡
+    is_cancelled  BOOLEAN,          -- 계약 해제 → 실제 거래 아님, 분석에서 제외
+    deal_type     VARCHAR,          -- 중개거래 / 직거래
     lat           DOUBLE,
-    lon           DOUBLE
+    lon           DOUBLE,
+    geocode_level VARCHAR           -- parcel(지번) / umd(법정동 중심) / NULL
 );
 
 CREATE TABLE IF NOT EXISTS zone_event (
