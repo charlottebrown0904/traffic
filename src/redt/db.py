@@ -86,3 +86,35 @@ def upsert(con: duckdb.DuckDBPyConnection, table: str, df) -> int:
     con.execute(f"INSERT OR REPLACE INTO {table} SELECT {', '.join(cols)} FROM _incoming")
     con.unregister("_incoming")
     return len(df)
+
+
+COLLECT_LOG = """
+CREATE TABLE IF NOT EXISTS collect_log (
+    kind       VARCHAR,
+    sigungu_cd VARCHAR,
+    deal_ymd   VARCHAR,
+    n_rows     INTEGER,
+    status     VARCHAR,          -- ok / empty / error
+    message    VARCHAR,
+    PRIMARY KEY (kind, sigungu_cd, deal_ymd)
+);
+"""
+
+
+def done_cells(con, kind: str) -> set[tuple[str, str]]:
+    """이미 성공적으로 수집한 (시군구, 년월) 집합 — 재개용."""
+    con.execute(COLLECT_LOG)
+    rows = con.execute(
+        "SELECT sigungu_cd, deal_ymd FROM collect_log WHERE kind = ? AND status <> 'error'",
+        [kind],
+    ).fetchall()
+    return {(r[0], r[1]) for r in rows}
+
+
+def log_cell(con, kind: str, sigungu_cd: str, deal_ymd: str,
+             n_rows: int, status: str, message: str = "") -> None:
+    con.execute(COLLECT_LOG)
+    con.execute(
+        "INSERT OR REPLACE INTO collect_log VALUES (?, ?, ?, ?, ?, ?)",
+        [kind, sigungu_cd, deal_ymd, n_rows, status, message[:500]],
+    )

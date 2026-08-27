@@ -20,6 +20,7 @@ from . import db
 from .analyze import correlation
 from .collect import geocode as gc
 from .collect import rtms, tollgate, traffic as tr
+from . import regions as rg
 from .config import PROCESSED, settings
 from .transform import panel as pn
 from .transform import spatial
@@ -48,35 +49,78 @@ def cmd_traffic(args):
           f"({df['tollgate_id'].nunique()}개 영업소 / {df['year'].min()}~{df['year'].max()})")
 
 
+def _target_sigungu(args, con) -> dict[str, str]:
+    """수집 대상 시군구 결정: --sigungu > --region > pilot_regions.yaml 의 active."""
+    if args.sigungu:
+        return {code.strip(): "" for code in args.sigungu.split(",") if code.strip()}
+    if args.region == "all":
+        codes = [r[0] for r in con.execute(
+            "SELECT DISTINCT sigungu_cd FROM tollgate WHERE sigungu_cd IS NOT NULL"
+        ).fetchall()]
+        if not codes:
+            sys.exit("tollgate.sigungu_cd 가 비어 있어 전국 수집 대상을 만들 수 없습니다. "
+                     "--region 또는 --sigungu 를 쓰세요.")
+        return {c: "" for c in codes}
+    names = args.region.split(",") if args.region else None
+    return rg.sigungu_codes(names)
+
+
+def cmd_regions(args):
+    """권역 목록 확인. --verify 는 각 시군구 코드로 1개월 시험 조회를 한다."""
+    for name, meta in rg.all_regions().items():
+        mark = "★" if name in rg.active_regions() else " "
+        print(f"{mark} {name}  —  {meta['name']}  ({len(meta['sigungu'])}개 시군구)")
+        for code, label in meta["sigungu"].items():
+            print(f"     {code}  {label}")
+    print(f"\nactive: {rg.active_regions()}")
+
+    if not args.verify:
+        return
+    print("\n=== 코드 검증 (land, 시험 조회) ===")
+    print("주의: RTMS 는 잘못된 코드에 오류 대신 0건을 반환합니다. "
+          "0건이면 코드나 기간을 의심하세요.")
+    for name, meta in rg.all_regions().items():
+        for code, label in meta["sigungu"].items():
+            try:
+                _, total = rtms.fetch_page("land", code, args.probe_ymd, page=1, rows=1)
+                flag = "OK " if total > 0 else "0건"
+                print(f"  {flag} {code} {label:14s} totalCount={total}")
+            except Exception as exc:
+                print(f"  ERR {code} {label:14s} {exc}")
+            rtms.polite_sleep()
+
+
 def cmd_trades(args):
     with db.connect() as con:
-        if args.sigungu:
-            codes = args.sigungu.split(",")
-        else:
-            codes = [r[0] for r in con.execute(
-                "SELECT DISTINCT sigungu_cd FROM tollgate WHERE sigungu_cd IS NOT NULL"
-            ).fetchall()]
-        if not codes:
-            sys.exit("시군구 코드가 없습니다. --sigungu 로 직접 지정하거나 "
-                     "tollgate.sigungu_cd 를 먼저 채우세요 (docs/data-sources.md §4).")
-
+        targets = _target_sigungu(args, con)
         months = _months(args.start, args.end)
         kinds = args.kind.split(",") if args.kind else settings()["trade_kinds"]
-        total = 0
-        print(f"수집 대상: {len(kinds)}종 × {len(codes)}개 시군구 × {len(months)}개월 "
-              f"= 최대 {len(kinds) * len(codes) * len(months):,} 요청")
 
+        planned = len(kinds) * len(targets) * len(months)
+        print(f"수집 계획: {len(kinds)}종 × {len(targets)}개 시군구 × {len(months)}개월 "
+              f"= {planned:,} 요청")
+
+        total_rows = 0
         for kind in kinds:
-            for code in codes:
-                for ym in months:
-                    try:
-                        df = rtms.fetch_month(kind, code, ym)
-                    except Exception as exc:  # 한 셀 실패로 전체를 멈추지 않는다
-                        print(f"  실패 {kind}/{code}/{ym}: {exc}")
-                        continue
-                    total += db.upsert(con, "trade", df)
-                print(f"  {kind}/{code} 누적 {total:,}건")
-    print(f"실거래 {total:,}건 저장")
+            done = set() if args.refresh else db.done_cells(con, kind)
+            todo = [(c, ym) for c in targets for ym in months if (c, ym) not in done]
+            print(f"\n[{kind}] 남은 셀 {len(todo):,} (이미 완료 {len(done):,})")
+
+            for i, (code, ym) in enumerate(todo, 1):
+                try:
+                    df = rtms.fetch_month(kind, code, ym)
+                except Exception as exc:
+                    db.log_cell(con, kind, code, ym, 0, "error", str(exc))
+                    print(f"  실패 {code}/{ym}: {exc}")
+                    continue
+                n = db.upsert(con, "trade", df)
+                db.log_cell(con, kind, code, ym, n, "ok" if n else "empty")
+                total_rows += n
+                if i % 50 == 0 or i == len(todo):
+                    print(f"  {i:,}/{len(todo):,}  누적 {total_rows:,}건")
+                rtms.polite_sleep()
+
+    print(f"\n실거래 {total_rows:,}건 신규 저장")
 
 
 def cmd_geocode(args):
@@ -167,6 +211,18 @@ def cmd_status(args):
         if geo[1]:
             print(f"{'  └ 좌표 보유':24s} {geo[0]:>12,} ({geo[0] / geo[1]:.1%})")
 
+        con.execute(db.COLLECT_LOG)
+        progress = con.execute("""
+            SELECT kind,
+                   count(*) FILTER (WHERE status = 'ok')    AS ok,
+                   count(*) FILTER (WHERE status = 'empty') AS empty,
+                   count(*) FILTER (WHERE status = 'error') AS err
+            FROM collect_log GROUP BY kind ORDER BY kind
+        """).fetchdf()
+        if not progress.empty:
+            print("\n수집 진행 (셀 = 시군구×년월)")
+            print(progress.to_string(index=False))
+
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="redt", description=__doc__,
@@ -182,12 +238,19 @@ def main(argv=None):
     p.add_argument("--inspect", action="store_true", help="컬럼만 확인하고 종료")
     p.set_defaults(func=cmd_traffic)
 
-    p = sub.add_parser("trades", help="실거래가 수집")
+    p = sub.add_parser("trades", help="실거래가 수집 (중단 시 재개 가능)")
     p.add_argument("--kind", help="land,factory,house,commercial (기본: settings.yaml)")
     p.add_argument("--start", dest="start", default="2015-01")
     p.add_argument("--end", dest="end", default="2025-12")
-    p.add_argument("--sigungu", help="쉼표구분 5자리 코드")
+    p.add_argument("--region", help="pilot_regions.yaml 의 권역명 (쉼표구분) 또는 all")
+    p.add_argument("--sigungu", help="쉼표구분 5자리 코드 (--region 보다 우선)")
+    p.add_argument("--refresh", action="store_true", help="이미 수집한 셀도 다시 조회")
     p.set_defaults(func=cmd_trades)
+
+    p = sub.add_parser("regions", help="파일럿 권역 / 시군구 코드 확인")
+    p.add_argument("--verify", action="store_true", help="각 코드로 시험 조회 (API 키 필요)")
+    p.add_argument("--probe-ymd", default="202401", help="검증에 쓸 계약년월 YYYYMM")
+    p.set_defaults(func=cmd_regions)
 
     p = sub.add_parser("geocode", help="지번 → 좌표")
     p.add_argument("--limit", type=int, help="이번 실행에서 신규 호출 상한")

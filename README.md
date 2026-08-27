@@ -42,10 +42,16 @@ make demo
 ```bash
 cp config/.env.example config/.env   # API 키 3개 입력
 
+python -m redt.cli regions                        # 파일럿 권역 확인
+python -m redt.cli regions --verify                # 시군구 코드 시험 조회 ← 수집 전 필수
+
 python -m redt.cli tollgates                      # 영업소 마스터 + 좌표
 python -m redt.cli traffic --path <내파일> --inspect   # 컬럼 먼저 확인
 python -m redt.cli traffic --path <내파일>              # 정규화 적재
-python -m redt.cli trades --kind land,factory --start 2015-01 --end 2025-12
+
+# 파일럿 권역만 수집 (중단해도 이어서 재개됨)
+python -m redt.cli trades --region gyeonggi_south --kind land,factory \
+                          --start 2015-01 --end 2025-12
 python -m redt.cli geocode --limit 5000           # 지번 → 좌표 (캐시됨)
 python -m redt.cli link                           # 공간 조인
 python -m redt.cli panel                          # 헤도닉 + 패널
@@ -71,6 +77,18 @@ src/redt/
   analyze/
     correlation.py   L1 상관 / L2 탄력성 / L3 위약 검정
 ```
+
+## 파일럿 권역
+
+전국을 한 번에 긁지 않고 **경기 남부 물류·공장 벨트**(평택·화성·안성·이천·오산·용인처인·
+여주·광주) 먼저 검증합니다. 경부/서해안/평택제천/영동이 교차하고 평택항·삼성 평택캠퍼스로
+화물 물동량이 급증한 구간이라 β가 잡히면 가장 잘 잡히는 곳입니다.
+여기서 안 나오면 전국에서도 안 나옵니다.
+
+권역 정의는 `config/pilot_regions.yaml` 에서 수정합니다.
+
+> ⚠️ RTMS API는 **잘못된 시군구 코드에 오류 대신 0건을 반환**합니다.
+> 수집 전 반드시 `regions --verify` 로 코드를 확인하세요.
 
 ## 주의
 
