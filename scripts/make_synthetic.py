@@ -66,6 +66,10 @@ def make_traffic(tollgates: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
                     "vehicle_type": vtype,
                     "direction": "all",
                     "volume": int(total * share),
+                    "avg_daily": total * share / 365,
+                    "source": "tcs",
+                    "unit_type": "tollgate",
+                    "match_km": 0.0,
                 })
     return pd.DataFrame(records), pd.DataFrame(truth)
 

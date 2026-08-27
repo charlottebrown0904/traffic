@@ -24,6 +24,11 @@ panel:
   exclude_direct_deals: false # 직거래 제외 여부 (특수관계 거래 우려 시 true)
   traffic_lag_years: 1        # 교통량 시차
 
+# 교통량 소스 우선순위. 영업소별로 앞선 소스가 있으면 그것만 쓴다.
+#   tcs  : 영업소 진출입 교통량 — 지역 수요를 직접 반영 (선호)
+#   aadt : 본선 지점 연평균일교통량 — 통과 교통 포함, 대신 장기 시계열
+traffic_source_priority: [tcs, aadt]
+
 vehicle_groups:
   passenger: [1, 6]
   freight: [3, 4, 5]

@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 
 import pandas as pd
@@ -19,7 +20,7 @@ import pandas as pd
 from . import db
 from .analyze import correlation
 from .collect import geocode as gc
-from .collect import rtms, tollgate, traffic as tr
+from .collect import ex_api, rtms, tollgate, traffic as tr
 from . import regions as rg
 from .config import PROCESSED, settings
 from .transform import panel as pn
@@ -42,11 +43,67 @@ def cmd_traffic(args):
     if args.inspect:
         tr.inspect(args.path)
         return
-    df = tr.load_and_normalize(args.path)
+    mapping = json.loads(args.mapping) if args.mapping else None
+    df = tr.load_and_normalize(
+        args.path, mapping, args.source, args.unit_type,
+        {"daily": True, "annual": False, "auto": None}[args.value],
+    )
+    if args.unit_type == "point":
+        with db.connect() as con:
+            tgs = con.execute(
+                "SELECT tollgate_id, lat, lon FROM tollgate WHERE lat IS NOT NULL"
+            ).fetchdf()
+        df = tr.map_points_to_tollgates(df, tgs, max_km=args.max_match_km)
+
+    df = df.drop(columns=[c for c in ("lat", "lon") if c in df.columns])
     with db.connect() as con:
         n = db.upsert(con, "traffic", df)
-    print(f"교통량 {n:,}행 저장 "
-          f"({df['tollgate_id'].nunique()}개 영업소 / {df['year'].min()}~{df['year'].max()})")
+    span = f"{df['year'].min()}~{df['year'].max()}" if len(df) else "-"
+    print(f"교통량 {n:,}행 저장  source={df['source'].iat[0] if n else '-'}  "
+          f"영업소 {df['tollgate_id'].nunique()}개  기간 {span}")
+    if n:
+        years = sorted(df["year"].unique())
+        if len(years) < 3:
+            print(f"\n⚠️ 연도가 {len(years)}개뿐입니다 ({years}).")
+            print("   Δ교통량 ↔ Δ가격 분석(H2)에는 최소 3개 연도가 필요합니다.")
+            print("   docs/traffic-history.md 의 과거자료 확보 경로를 확인하세요.")
+
+
+def cmd_probe_ex(args):
+    ex_api.probe()
+
+
+def cmd_coverage(args):
+    """교통량 시계열이 실제로 얼마나 확보됐는지 — 분석 가능 여부를 판정한다."""
+    with db.connect() as con:
+        by_source = con.execute("""
+            SELECT source, unit_type,
+                   count(DISTINCT tollgate_id) AS 영업소,
+                   min(year) AS 시작, max(year) AS 종료,
+                   count(DISTINCT year) AS 연수,
+                   count(DISTINCT vehicle_type) AS 차종수
+            FROM traffic GROUP BY source, unit_type ORDER BY 연수 DESC
+        """).fetchdf()
+        usable = con.execute("""
+            SELECT count(*) FROM (
+                SELECT tollgate_id FROM traffic
+                GROUP BY tollgate_id HAVING count(DISTINCT year) >= 3
+            )
+        """).fetchone()[0]
+
+    if by_source.empty:
+        print("적재된 교통량이 없습니다.")
+        return
+    print(by_source.to_string(index=False))
+    print(f"\n3개 연도 이상 확보된 영업소: {usable}개")
+    if usable == 0:
+        print("\n❌ H2(Δ교통량 ↔ Δ가격) 분석 불가 — 연도가 부족합니다.")
+        print("   과거자료 확보 경로: docs/traffic-history.md")
+        print("   대안: H5(지구지정 이벤트 스터디)는 교통량 시계열 없이도 가능합니다.")
+    elif usable < 20:
+        print(f"\n⚠️ 표본이 {usable}개 영업소뿐이라 밴드별 추정이 불안정할 수 있습니다.")
+    else:
+        print("\n✅ H2 분석 가능")
 
 
 def _target_sigungu(args, con) -> dict[str, str]:
@@ -247,10 +304,22 @@ def main(argv=None):
     p.add_argument("--path", help="API 대신 사용할 CSV 경로")
     p.set_defaults(func=cmd_tollgates)
 
-    p = sub.add_parser("traffic", help="확보한 교통량 파일 정규화·적재")
+    p = sub.add_parser("traffic", help="교통량 파일 정규화·적재")
     p.add_argument("--path", required=True)
     p.add_argument("--inspect", action="store_true", help="컬럼만 확인하고 종료")
+    p.add_argument("--source", help="소스 이름 (tcs / aadt / 자유문자열). 기본: 파일명")
+    p.add_argument("--unit-type", default="tollgate", choices=["tollgate", "point"],
+                   help="point 면 좌표로 최근접 영업소에 매핑")
+    p.add_argument("--value", default="auto", choices=["auto", "daily", "annual"],
+                   help="값이 일평균인지 연간누적인지")
+    p.add_argument("--max-match-km", type=float, default=5.0,
+                   help="point→영업소 매핑 최대 거리")
+    p.add_argument("--mapping", help='컬럼 직접 지정 JSON 예: \'{"volume":"교통량"}\'')
     p.set_defaults(func=cmd_traffic)
+
+    sub.add_parser("probe-ex", help="도로공사 API 엔드포인트 탐침").set_defaults(func=cmd_probe_ex)
+    sub.add_parser("coverage", help="교통량 시계열 확보 현황·분석가능 판정").set_defaults(
+        func=cmd_coverage)
 
     p = sub.add_parser("trades", help="실거래가 수집 (중단 시 재개 가능)")
     p.add_argument("--kind", help="land,factory,house,commercial (기본: settings.yaml)")

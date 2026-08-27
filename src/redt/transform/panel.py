@@ -82,21 +82,53 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(adjusted, ignore_index=True)
 
 
+def pick_traffic_source(traffic: pd.DataFrame) -> pd.DataFrame:
+    """영업소마다 우선순위가 가장 높은 소스 하나만 남긴다.
+
+    TCS(영업소 진출입)와 AADT(본선 지점)는 성격이 다르므로 섞으면 안 된다.
+    영업소별로 커버 연수가 긴 쪽을 쓰고 싶다면 settings 의 우선순위를 조정한다.
+    """
+    if "source" not in traffic.columns:
+        return traffic
+    priority = settings().get("traffic_source_priority") or ["tcs", "aadt"]
+    rank = {name: i for i, name in enumerate(priority)}
+    df = traffic.copy()
+    df["_rank"] = df["source"].map(lambda s: rank.get(s, len(priority)))
+
+    best = (df.groupby("tollgate_id")["_rank"].min().rename("_best").reset_index())
+    df = df.merge(best, on="tollgate_id")
+    kept = df[df["_rank"] == df["_best"]].drop(columns=["_rank", "_best"])
+
+    chosen = kept.groupby("source")["tollgate_id"].nunique().to_dict()
+    print(f"  교통량 소스 선택: {chosen}")
+    return kept
+
+
 def traffic_by_group(traffic: pd.DataFrame) -> pd.DataFrame:
-    """차종을 승용/화물/중형 그룹으로 접어 영업소×연도 단위로 만든다."""
+    """차종을 승용/화물/중형 그룹으로 접어 영업소×연도 단위로 만든다.
+
+    값은 **일평균(avg_daily)** 을 쓴다. 연 합계는 관측일수가 해마다 다르면
+    실제 교통량 변화가 아닌 집계 커버리지 변화를 β 로 잡아낸다.
+    """
     groups = settings()["vehicle_groups"]
+    traffic = pick_traffic_source(traffic)
+
+    value = "avg_daily" if "avg_daily" in traffic.columns else "volume"
     # 방향(입/출)은 합산 — 개방식 요금소는 방향 구분이 없는 경우가 많다
-    base = traffic.groupby(["tollgate_id", "year", "vehicle_type"], as_index=False)["volume"].sum()
+    base = traffic.groupby(["tollgate_id", "year", "vehicle_type"],
+                           as_index=False)[value].sum()
 
-    def total_for(types: list[int]) -> pd.DataFrame:
-        subset = base[base["vehicle_type"].isin(types)]
-        return subset.groupby(["tollgate_id", "year"], as_index=False)["volume"].sum()
+    out = (base.groupby(["tollgate_id", "year"], as_index=False)[value].sum()
+           .rename(columns={value: "volume_total"}))
 
-    out = base.groupby(["tollgate_id", "year"], as_index=False)["volume"].sum().rename(
-        columns={"volume": "volume_total"}
-    )
+    has_vtype = base["vehicle_type"].nunique() > 1
+    if not has_vtype:
+        print("  ⚠️ 차종 구분이 없는 자료입니다 — 화물/승용 분해(H4) 불가")
+
     for name, types in groups.items():
-        part = total_for(types).rename(columns={"volume": f"volume_{name}"})
+        subset = base[base["vehicle_type"].isin(types)]
+        part = (subset.groupby(["tollgate_id", "year"], as_index=False)[value].sum()
+                .rename(columns={value: f"volume_{name}"}))
         out = out.merge(part, on=["tollgate_id", "year"], how="left")
     return out.fillna({f"volume_{n}": 0 for n in groups})
 

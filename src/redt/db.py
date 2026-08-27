@@ -18,13 +18,20 @@ CREATE TABLE IF NOT EXISTS tollgate (
     is_open_type BOOLEAN
 );
 
+-- 교통량은 출처가 여러 개이고 성격이 다르다. source 를 키에 포함해 섞이지 않게 한다.
+--   tcs  : 영업소 진출입 교통량 (그 IC 로 실제 나가고 들어온 통행) ← 지역 수요 지표
+--   aadt : 본선 지점 연평균일교통량 (통과 교통 포함)              ← 장기 시계열 확보용
 CREATE TABLE IF NOT EXISTS traffic (
     tollgate_id  VARCHAR,
     year         INTEGER,
-    vehicle_type INTEGER,
-    direction    VARCHAR,
-    volume       BIGINT,
-    PRIMARY KEY (tollgate_id, year, vehicle_type, direction)
+    vehicle_type INTEGER,          -- 0 = 차종 미구분 합계
+    direction    VARCHAR,          -- in / out / all
+    volume       BIGINT,           -- 연간 누적 (일평균 자료는 ×365 아님, avg_daily 참조)
+    avg_daily    DOUBLE,           -- 일평균 (AADT 계열은 이쪽이 원값)
+    source       VARCHAR,          -- tcs / aadt / <파일명>
+    unit_type    VARCHAR,          -- tollgate / point(본선지점 → 최근접 영업소로 매핑)
+    match_km     DOUBLE,           -- point 를 영업소에 매핑한 거리 (tollgate 면 0)
+    PRIMARY KEY (tollgate_id, year, vehicle_type, direction, source)
 );
 
 CREATE TABLE IF NOT EXISTS trade (

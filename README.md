@@ -6,6 +6,7 @@
 - 전체 계획: [ROADMAP.md](ROADMAP.md)
 - 분석 설계와 가설: [docs/hypothesis.md](docs/hypothesis.md) ← **먼저 읽어주세요**
 - **API 키 신청**: [docs/api-keys.md](docs/api-keys.md)
+- **교통량 과거 시계열 확보**: [docs/traffic-history.md](docs/traffic-history.md) ← 현재 병목
 - 데이터 소스·API: [docs/data-sources.md](docs/data-sources.md)
 - 스키마: [docs/data-model.md](docs/data-model.md)
 - 법적 체크리스트: [docs/legal-notes.md](docs/legal-notes.md)
@@ -47,8 +48,10 @@ python -m redt.cli regions                        # 파일럿 권역 확인
 python -m redt.cli regions --verify                # 시군구 코드 시험 조회 ← 수집 전 필수
 
 python -m redt.cli tollgates                      # 영업소 마스터 + 좌표
+python -m redt.cli probe-ex                            # 도로공사 API 과거조회 가능여부 탐침
 python -m redt.cli traffic --path <내파일> --inspect   # 컬럼 먼저 확인
-python -m redt.cli traffic --path <내파일>              # 정규화 적재
+python -m redt.cli traffic --path <내파일> --source tcs # 정규화 적재
+python -m redt.cli coverage                            # 시계열 확보 현황 판정
 
 # 파일럿 권역만 수집 (중단해도 이어서 재개됨)
 python -m redt.cli trades --region gyeonggi_south --kind land,factory \
