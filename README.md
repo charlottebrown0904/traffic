@@ -23,7 +23,8 @@
 
 ```bash
 make install
-make demo
+make demo   # 합성 데이터로 β 회수 검증
+make test   # 백필 파서·롤업 로직 검증
 ```
 
 기대 출력 — 심어둔 값 `{0-3km: 0.50, 3-5km: 0.30, 5-10km: 0.10, 10-20km: 0.00}`
@@ -48,7 +49,10 @@ python -m redt.cli regions                        # 파일럿 권역 확인
 python -m redt.cli regions --verify                # 시군구 코드 시험 조회 ← 수집 전 필수
 
 python -m redt.cli tollgates                      # 영업소 마스터 + 좌표
-python -m redt.cli probe-ex                            # 도로공사 API 과거조회 가능여부 탐침
+python -m redt.cli probe-history                       # 과거 날짜 조회 가능 범위 판정
+python -m redt.cli backfill --endpoint <경로> --date-param <파라미터> \
+       --start 2015-01-01 --end 2025-12-31             # 일별 백필 (중단 시 재개)
+python -m redt.cli rollup                              # 일별 → 연 집계
 python -m redt.cli traffic --path <내파일> --inspect   # 컬럼 먼저 확인
 python -m redt.cli traffic --path <내파일> --source tcs # 정규화 적재
 python -m redt.cli coverage                            # 시계열 확보 현황 판정

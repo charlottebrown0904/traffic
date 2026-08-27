@@ -34,6 +34,25 @@ CREATE TABLE IF NOT EXISTS traffic (
     PRIMARY KEY (tollgate_id, year, vehicle_type, direction, source)
 );
 
+-- 일별 원시 교통량. 연 집계를 나중에 다시 할 수 있도록 원본 해상도를 보존한다.
+-- 결측일을 세야 '교통량 감소'와 '수집 누락'을 구분할 수 있다.
+CREATE TABLE IF NOT EXISTS traffic_daily (
+    tollgate_id  VARCHAR,
+    sum_date     DATE,
+    vehicle_type INTEGER,
+    direction    VARCHAR,          -- in / out / all
+    hipass       VARCHAR,          -- tcs(현금) / hipass / all
+    volume       BIGINT,
+    PRIMARY KEY (tollgate_id, sum_date, vehicle_type, direction, hipass)
+);
+
+CREATE TABLE IF NOT EXISTS traffic_fetch_log (
+    sum_date  DATE PRIMARY KEY,
+    n_rows    INTEGER,
+    status    VARCHAR,             -- ok / empty / error
+    message   VARCHAR
+);
+
 CREATE TABLE IF NOT EXISTS trade (
     trade_id      VARCHAR PRIMARY KEY,
     kind          VARCHAR,

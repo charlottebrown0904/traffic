@@ -20,7 +20,7 @@ import pandas as pd
 from . import db
 from .analyze import correlation
 from .collect import geocode as gc
-from .collect import ex_api, rtms, tollgate, traffic as tr
+from .collect import backfill, ex_api, rtms, tollgate, traffic as tr
 from . import regions as rg
 from .config import PROCESSED, settings
 from .transform import panel as pn
@@ -71,6 +71,33 @@ def cmd_traffic(args):
 
 def cmd_probe_ex(args):
     ex_api.probe()
+
+
+def cmd_probe_history(args):
+    ex_api.probe_history(args.endpoint, args.date_param)
+
+
+def cmd_backfill(args):
+    from datetime import date
+
+    start = date.fromisoformat(args.start)
+    end = date.fromisoformat(args.end)
+    if not (args.endpoint and args.date_param):
+        sys.exit("--endpoint 와 --date-param 이 필요합니다. "
+                 "`probe-history` 로 먼저 확인하세요.")
+    n = backfill.run(args.endpoint, args.date_param, start, end, args.refresh)
+    print(f"\n일별 교통량 {n:,}행 저장. 이어서 `rollup` 을 실행하세요.")
+
+
+def cmd_rollup(args):
+    with db.connect() as con:
+        annual = backfill.rollup(con)
+        if annual.empty:
+            sys.exit("traffic_daily 가 비어 있습니다. 먼저 `backfill` 을 실행하세요.")
+        n = db.upsert(con, "traffic", annual)
+    print(f"\n연 집계 {n:,}행 → traffic (source=tcs)")
+    print(f"기간 {annual['year'].min()}~{annual['year'].max()} / "
+          f"영업소 {annual['tollgate_id'].nunique()}개")
 
 
 def cmd_coverage(args):
@@ -318,6 +345,22 @@ def main(argv=None):
     p.set_defaults(func=cmd_traffic)
 
     sub.add_parser("probe-ex", help="도로공사 API 엔드포인트 탐침").set_defaults(func=cmd_probe_ex)
+
+    p = sub.add_parser("probe-history",
+                       help="과거 날짜 조회 가능 범위 판정 (일별 백필 가능 여부)")
+    p.add_argument("--endpoint", help="probe-ex 에서 확인한 경로")
+    p.add_argument("--date-param", help="날짜 파라미터명 (예: stdDt)")
+    p.set_defaults(func=cmd_probe_history)
+
+    p = sub.add_parser("backfill", help="일별 교통량 백필 (중단 시 재개)")
+    p.add_argument("--endpoint", required=True)
+    p.add_argument("--date-param", required=True)
+    p.add_argument("--start", required=True, help="YYYY-MM-DD")
+    p.add_argument("--end", required=True, help="YYYY-MM-DD")
+    p.add_argument("--refresh", action="store_true")
+    p.set_defaults(func=cmd_backfill)
+
+    sub.add_parser("rollup", help="traffic_daily → 연 집계").set_defaults(func=cmd_rollup)
     sub.add_parser("coverage", help="교통량 시계열 확보 현황·분석가능 판정").set_defaults(
         func=cmd_coverage)
 
