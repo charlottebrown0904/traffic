@@ -5,6 +5,7 @@
 
 - **▶ 단계별 실행 가이드: [docs/START-HERE.md](docs/START-HERE.md)** ← 여기부터
 - 제품 화면 형식: [docs/product-format.md](docs/product-format.md)
+- 매물 API: [docs/listings-api.md](docs/listings-api.md)
 - 전체 계획: [ROADMAP.md](ROADMAP.md)
 - 분석 설계와 가설: [docs/hypothesis.md](docs/hypothesis.md) ← **먼저 읽어주세요**
 - **API 키 신청**: [docs/api-keys.md](docs/api-keys.md)
@@ -24,7 +25,8 @@
 합성 데이터로 끝까지 돌아갑니다. 실데이터가 들어오면 같은 명령이 그대로 실행됩니다.
 
 ```bash
-make web    # 스코어 계산 + JSON 생성 + 로컬 서버 (http://localhost:8000)
+make web    # 스코어 계산 + JSON 생성 + 서버 (http://127.0.0.1:8000)
+make serve  # 화면 + 매물 API 만 (JSON 이 이미 있을 때)
 ```
 
 ## 빠른 확인 (API 키 불필요)
@@ -97,7 +99,13 @@ src/redt/
     scoring.py       영업소별 2×2 분면 스코어
   webexport.py       DuckDB → web/data/*.json
 
-web/                 화면 (DB 에 직접 붙지 않고 JSON 만 읽음)
+  server/            매물 API (FastAPI + SQLite)
+    app.py           라우트 · 인증 · 소유권 검사
+    store.py         스키마 (중개사 / 세션 / 매물)
+    security.py      scrypt 해싱 · 토큰
+    models.py        요청·응답 스키마
+
+web/                 화면 (분석은 JSON, 매물은 API)
   index.html         탐색 / 스코어보드 / 매물 3개 탭
   app.js  style.css
 ```

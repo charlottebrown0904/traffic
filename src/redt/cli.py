@@ -329,6 +329,12 @@ def cmd_export_web(args):
         print("\n⚠️ 합성 데이터입니다 — 화면 상단에 데모 배너가 표시됩니다.")
 
 
+def cmd_serve_api(args):
+    import uvicorn
+    print(f"http://{args.host}:{args.port} — 화면과 매물 API 가 같은 포트에서 뜹니다")
+    uvicorn.run("redt.server.app:app", host=args.host, port=args.port, reload=args.reload)
+
+
 def cmd_status(args):
     with db.connect(read_only=False) as con:
         for table in ("tollgate", "traffic", "trade", "trade_tollgate_link", "zone_event"):
@@ -431,6 +437,12 @@ def main(argv=None):
     p.add_argument("--volume", default="freight",
                    choices=["total", "freight", "passenger", "mid"])
     p.set_defaults(func=cmd_export_web)
+
+    p = sub.add_parser("serve-api", help="매물 API + 화면 서버")
+    p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--port", type=int, default=8000)
+    p.add_argument("--reload", action="store_true")
+    p.set_defaults(func=cmd_serve_api)
 
     sub.add_parser("status", help="적재 현황").set_defaults(func=cmd_status)
 

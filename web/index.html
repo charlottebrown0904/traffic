@@ -102,56 +102,122 @@
 <!-- ══ 매물 ══ -->
 <main class="view" id="view-listings">
   <div class="listings">
-    <section class="panel">
-      <h2>매물 등록</h2>
-      <div class="notice">
-        <strong>개업공인중개사만 등록할 수 있습니다.</strong>
-        공인중개사법 제18조의2에 따라 중개대상물 광고는 개업공인중개사만 가능하며,
-        등록번호·사무소 정보를 함께 표시해야 합니다.
-        <em>현재는 형식 확인용 화면으로, 등록 정보는 브라우저에만 저장됩니다.</em>
+
+    <section class="panel" id="broker-panel">
+      <!-- 비로그인 -->
+      <div id="auth-box">
+        <h2>중개사 로그인</h2>
+        <div class="notice">
+          <strong>개업공인중개사만 등록할 수 있습니다.</strong>
+          공인중개사법 제18조의2에 따라 중개대상물 광고는 개업공인중개사만 가능하며,
+          사무소 명칭·소재지·연락처·등록번호·대표 성명을 함께 표시해야 합니다.
+        </div>
+        <div class="seg">
+          <button type="button" class="seg-btn is-on" data-auth="login">로그인</button>
+          <button type="button" class="seg-btn" data-auth="signup">가입</button>
+        </div>
+
+        <form id="login-form" class="form">
+          <label class="field"><span>이메일</span>
+            <input name="email" type="email" required autocomplete="username"></label>
+          <label class="field"><span>비밀번호</span>
+            <input name="password" type="password" required autocomplete="current-password"></label>
+          <button type="submit" class="btn">로그인</button>
+        </form>
+
+        <form id="signup-form" class="form" hidden>
+          <div class="grid-2">
+            <label class="field"><span>이메일 *</span>
+              <input name="email" type="email" required autocomplete="username"></label>
+            <label class="field"><span>비밀번호 * <em>10자 이상</em></span>
+              <input name="password" type="password" required minlength="10"
+                     autocomplete="new-password"></label>
+          </div>
+          <div class="grid-2">
+            <label class="field"><span>중개사무소 명칭 *</span>
+              <input name="office_name" required placeholder="○○공인중개사사무소"></label>
+            <label class="field"><span>등록번호 *</span>
+              <input name="license_no" required placeholder="41590-2024-00001"></label>
+          </div>
+          <label class="field"><span>사무소 소재지 *</span>
+            <input name="office_address" required placeholder="경기도 화성시 향남읍 ○○로 12"></label>
+          <div class="grid-2">
+            <label class="field"><span>대표 공인중개사 성명 *</span>
+              <input name="agent_name" required></label>
+            <label class="field"><span>사무소 연락처 *</span>
+              <input name="phone" required placeholder="031-000-0000"></label>
+          </div>
+          <button type="submit" class="btn">가입하고 시작</button>
+        </form>
+        <p class="form-error" id="auth-error" hidden></p>
       </div>
-      <form id="listing-form" class="form">
-        <div class="grid-2">
-          <label class="field"><span>중개사무소 명칭 *</span>
-            <input name="office" required placeholder="○○공인중개사사무소"></label>
-          <label class="field"><span>등록번호 *</span>
-            <input name="license" required placeholder="41590-2024-00001"
-                   pattern="\d{5}-\d{4}-\d{5}" title="예: 41590-2024-00001"></label>
+
+      <!-- 로그인 상태 -->
+      <div id="broker-box" hidden>
+        <div class="who-bar">
+          <div>
+            <strong id="broker-office"></strong>
+            <div class="who" id="broker-detail"></div>
+          </div>
+          <button type="button" class="btn ghost" id="logout-btn">로그아웃</button>
         </div>
-        <div class="grid-2">
-          <label class="field"><span>물건 종류 *</span>
-            <select name="kind" required>
-              <option value="land">토지</option>
-              <option value="factory">공장·창고</option>
-              <option value="house">단독·다가구</option>
-              <option value="commercial">상업업무용</option>
-            </select></label>
+
+        <h2>매물 등록</h2>
+        <form id="listing-form" class="form">
+          <div class="grid-2">
+            <label class="field"><span>물건 종류 *</span>
+              <select name="kind" required>
+                <option value="land">토지</option>
+                <option value="factory">공장·창고</option>
+                <option value="house">단독·다가구</option>
+                <option value="commercial">상업업무용</option>
+              </select></label>
+            <label class="field"><span>거래 형태 *</span>
+              <select name="deal_type" required>
+                <option value="sale">매매</option>
+                <option value="lease">임대</option>
+              </select></label>
+          </div>
           <label class="field"><span>소재지 *</span>
-            <input name="address" required placeholder="경기도 화성시 ○○면 ○○리"></label>
-        </div>
-        <div class="grid-3">
-          <label class="field"><span>면적 (㎡) *</span>
-            <input name="area" type="number" min="1" step="0.01" required></label>
-          <label class="field"><span>희망가 (만원) *</span>
-            <input name="price" type="number" min="1" required></label>
-          <label class="field"><span>연락처 *</span>
-            <input name="phone" required placeholder="031-000-0000"></label>
-        </div>
-        <label class="field"><span>설명</span>
-          <textarea name="memo" rows="3" placeholder="도로 접함, 인근 IC 3km 등"></textarea></label>
-        <div class="form-foot">
-          <p class="fee">등록 수수료 <strong>30,000원</strong> / 90일 <span class="hint">— 결제 연동 예정</span></p>
-          <button type="submit" class="btn">등록</button>
-        </div>
-      </form>
+            <input name="address" required placeholder="경기도 화성시 양감면 정문리 1-2"></label>
+          <div class="grid-3">
+            <label class="field"><span>면적 (㎡) *</span>
+              <input name="area_m2" type="number" min="1" step="0.01" required></label>
+            <label class="field"><span>희망가 (만원) *</span>
+              <input name="price_manwon" type="number" min="1" required></label>
+            <label class="field"><span>연락처 *</span>
+              <input name="contact_phone" required placeholder="031-000-0000"></label>
+          </div>
+          <div class="coord-row">
+            <label class="field"><span>위도</span>
+              <input name="lat" type="number" step="0.000001" placeholder="37.05"></label>
+            <label class="field"><span>경도</span>
+              <input name="lon" type="number" step="0.000001" placeholder="126.95"></label>
+            <button type="button" class="btn ghost" id="pick-btn">지도에서 선택</button>
+          </div>
+          <p class="hint">좌표를 넣으면 <strong>가장 가까운 IC 와 거리 밴드</strong>가 자동 계산됩니다.</p>
+          <label class="field"><span>설명</span>
+            <textarea name="memo" rows="2" placeholder="도로 접함, 계획관리지역 등"></textarea></label>
+          <div class="form-foot">
+            <p class="fee" id="fee-note"></p>
+            <button type="submit" class="btn">등록</button>
+          </div>
+          <p class="form-error" id="listing-error" hidden></p>
+        </form>
+      </div>
     </section>
+
     <section class="panel">
       <div class="panel-head">
-        <h2>등록된 매물 <span class="count" id="listing-count">0</span></h2>
-        <button type="button" class="btn ghost" id="listing-clear">전체 삭제</button>
+        <h2 id="listing-title">공개 매물 <span class="count" id="listing-count">0</span></h2>
+        <div class="seg" id="listing-scope">
+          <button type="button" class="seg-btn is-on" data-scope="public">공개</button>
+          <button type="button" class="seg-btn" data-scope="mine">내 매물</button>
+        </div>
       </div>
       <div id="listing-list" class="listing-list"></div>
     </section>
+
   </div>
 </main>
 

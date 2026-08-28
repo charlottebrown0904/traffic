@@ -9,3 +9,6 @@ data/processed/*
 .venv/
 .ipynb_checkpoints/
 web/data/*.json
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
