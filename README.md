@@ -3,16 +3,46 @@
 고속도로 IC/영업소의 **차종별 교통량 변화**와 인근 **토지·공장·단독건물 실거래가 변화**의
 관계를 정량화하고, 지도 기반 투자 스크리닝 도구로 만드는 프로젝트.
 
-- **▶ 단계별 실행 가이드: [docs/START-HERE.md](docs/START-HERE.md)** ← 여기부터
-- 제품 화면 형식: [docs/product-format.md](docs/product-format.md)
-- 매물 API: [docs/listings-api.md](docs/listings-api.md)
-- 전체 계획: [ROADMAP.md](ROADMAP.md)
-- 분석 설계와 가설: [docs/hypothesis.md](docs/hypothesis.md) ← **먼저 읽어주세요**
-- **API 키 신청**: [docs/api-keys.md](docs/api-keys.md)
-- **교통량 과거 시계열 확보**: [docs/traffic-history.md](docs/traffic-history.md) ← 현재 병목
-- 데이터 소스·API: [docs/data-sources.md](docs/data-sources.md)
-- 스키마: [docs/data-model.md](docs/data-model.md)
-- 법적 체크리스트: [docs/legal-notes.md](docs/legal-notes.md)
+> **▶ [역할 분담 — 내가 할 일 / Claude 가 할 일](docs/who-does-what.md)** ← 지금 볼 것
+> **▶ [단계별 실행 가이드](docs/START-HERE.md)** ← 파이프라인 실행 순서
+
+| 문서 | 내용 |
+|---|---|
+| [who-does-what.md](docs/who-does-what.md) | **역할 분담** — Supabase · Actions · giscus · 결제까지 전 트랙 |
+| [START-HERE.md](docs/START-HERE.md) | 단계별 실행 순서와 통과 기준 |
+| [hypothesis.md](docs/hypothesis.md) | **분석 설계와 가설** — 먼저 읽어주세요 |
+| [api-keys.md](docs/api-keys.md) | API 키 신청 (어느 데이터셋을 신청하나) |
+| [traffic-history.md](docs/traffic-history.md) | 교통량 과거 시계열 확보 ← **현재 병목** |
+| [product-format.md](docs/product-format.md) | 제품 화면 형식 |
+| [listings-api.md](docs/listings-api.md) | 매물 API (인증·권한·결제 자리) |
+| [data-sources.md](docs/data-sources.md) | 데이터 소스와 응답 필드 |
+| [data-model.md](docs/data-model.md) | 스키마 |
+| [legal-notes.md](docs/legal-notes.md) | 법적 체크리스트 |
+| [ROADMAP.md](ROADMAP.md) | 전체 계획 |
+
+## 누가 무엇을 하나
+
+**사용자만 할 수 있는 일**은 신원·자격이 필요하거나(계정 가입, 사업자등록, PG 계약),
+돈이 걸렸거나(결제 수단, 도메인), 법적 책임이 따르거나(약관 확정, 변호사 검토),
+사업 판단(가격 정책, 대상 지역)인 것들입니다.
+나머지 — 코드·스키마·테스트·문서·마이그레이션·정책 초안 — 는 제가 합니다.
+
+| 트랙 | 🧑 사용자 | 🤖 Claude |
+|---|---|---|
+| **A. 데이터** | API 키 신청, `probe-history` 실행 | 수집기·지오코딩·분석 |
+| **B. Supabase** | 프로젝트 생성, PostGIS 켜기, 키 등록 | 마이그레이션·RLS 정책·프런트 전환 |
+| **C. Actions** | Secrets 등록 | CI·일별 수집·월별 갱신·배포 워크플로 |
+| **D. 배포** | 도메인, 호스팅 계정, DNS | 빌드 설정, 환경변수 연결 |
+| **E. 결제** | 사업자등록, 통신판매업 신고, PG 계약 | 위젯 연동, 웹훅 검증, 만료 배치 |
+| **F. 자격검증** | 확인 방식 결정 | 등록증 업로드·승인 화면 |
+| **G. 콘텐츠** | Discussions 켜기, giscus 설치 | 리포트 템플릿·자동 생성 |
+| **H. 법무** | **변호사 검토**, 약관 게시 | 초안 작성 |
+
+전 항목과 순서·의존관계는 **[who-does-what.md](docs/who-does-what.md)** 에 있습니다.
+
+> 🔑 `anon key` 처럼 공개용 값은 알려주셔도 됩니다.
+> `service_role key`·PG 시크릿·DB 비밀번호는 **채팅에 붙여넣지 마세요.**
+> 저는 참조하는 코드만 쓰고, 값은 사용자가 GitHub Secrets 에 직접 넣습니다.
 
 ## 현재 단계
 
@@ -121,6 +151,13 @@ web/                 화면 (분석은 JSON, 매물은 API)
 
 > ⚠️ RTMS API는 **잘못된 시군구 코드에 오류 대신 0건을 반환**합니다.
 > 수집 전 반드시 `regions --verify` 로 코드를 확인하세요.
+
+## 이번 주에 하실 것
+
+1. **공공데이터포털·브이월드 키 신청** — 승인 대기가 있으니 가장 먼저
+2. **Supabase 프로젝트 생성 + PostGIS 활성화** — 10분
+3. **`python -m redt.cli probe-history`** — 한 줄. 결과가 방향을 가름
+4. **사업자등록 알아보기** — 결제까지 가려면 제일 오래 걸림
 
 ## 주의
 
