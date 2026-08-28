@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+config/.env
+data/raw/*
+data/interim/*
+data/processed/*
+!data/*/.gitkeep
+.venv/
+.ipynb_checkpoints/
+web/data/*.json

@@ -1,0 +1,456 @@
+/* IC 스크리닝 — 화면 로직.
+   DB 에 직접 붙지 않고 web/data/*.json 만 읽는다.
+   합성 데이터든 실데이터든 이 파일은 그대로다. */
+'use strict';
+
+const QUADRANTS = {
+  undervalued: { label: '저평가 후보', color: 'var(--q-under)' },
+  rising:      { label: '동반 상승',   color: 'var(--q-rising)' },
+  overheated:  { label: '과열 주의',   color: 'var(--q-over)' },
+  quiet:       { label: '관망',        color: 'var(--q-quiet)' },
+};
+const KIND_LABEL = { land: '토지', factory: '공장·창고', house: '단독·다가구', commercial: '상업업무용' };
+const LISTING_KEY = 'redt.listings.v1';
+
+const state = {
+  meta: null, tollgates: [], trades: [], series: {},
+  activeQuadrants: new Set(Object.keys(QUADRANTS)),
+  activeKinds: new Set(),
+  minYear: 0, parcelOnly: false, selected: null,
+};
+
+let map, tollgateLayer, tradeLayer, bandLayer;
+const markers = new Map();
+
+/* ─────────── 유틸 ─────────── */
+const $ = (sel) => document.querySelector(sel);
+const el = (tag, cls, text) => {
+  const node = document.createElement(tag);
+  if (cls) node.className = cls;
+  if (text != null) node.textContent = text;
+  return node;
+};
+const pct = (v) => (v == null ? '—' : (v * 100).toFixed(1) + '%');
+const num = (v) => (v == null ? '—' : Math.round(v).toLocaleString('ko-KR'));
+const quad = (key) => QUADRANTS[key] || { label: '미산출', color: 'var(--q-quiet)' };
+
+/* ─────────── 부팅 ─────────── */
+async function boot() {
+  try {
+    const [meta, tollgates, trades, series] = await Promise.all(
+      ['meta', 'tollgates', 'trades', 'series'].map((n) =>
+        fetch(`data/${n}.json`).then((r) => {
+          if (!r.ok) throw new Error(`data/${n}.json 을 읽지 못했습니다 (${r.status})`);
+          return r.json();
+        }))
+    );
+    Object.assign(state, { meta, tollgates, trades, series });
+  } catch (err) {
+    showFatal(err.message);
+    return;
+  }
+
+  state.activeKinds = new Set(state.meta.kinds);
+  state.minYear = state.meta.year_min;
+
+  if (state.meta.is_synthetic) $('#demo-banner').hidden = false;
+  $('#meta-stamp').innerHTML =
+    `${state.meta.year_min}–${state.meta.year_max} · 영업소 ${state.meta.counts.tollgates}` +
+    `<br>거래 ${state.meta.counts.trades_total.toLocaleString('ko-KR')}건`;
+  $('#disclaimer').textContent = state.meta.disclaimer;
+
+  buildFilters();
+  buildMap();
+  buildLegend();
+  buildMatrix();
+  buildBoardTable();
+  initListings();
+  wireTabs();
+}
+
+function showFatal(message) {
+  document.body.innerHTML =
+    `<div style="padding:3rem 1.5rem;max-width:34rem;margin:0 auto">
+       <h1 style="font-size:1.1rem;margin-bottom:.5rem">데이터를 불러오지 못했습니다</h1>
+       <p style="color:#5B6875">${message}</p>
+       <p style="color:#5B6875">먼저 <code>make web</code> 를 실행해 <code>web/data/</code> 를 생성하세요.
+       파일을 직접 열면(<code>file://</code>) 브라우저가 차단하므로 로컬 서버로 열어야 합니다.</p>
+     </div>`;
+}
+
+function wireTabs() {
+  document.querySelectorAll('.tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach((t) => {
+        const on = t === tab;
+        t.classList.toggle('is-active', on);
+        t.setAttribute('aria-selected', String(on));
+      });
+      document.querySelectorAll('.view').forEach((v) => v.classList.remove('is-active'));
+      $(`#view-${tab.dataset.view}`).classList.add('is-active');
+      if (tab.dataset.view === 'explore' && map) map.invalidateSize();
+    });
+  });
+}
+
+/* ─────────── 필터 ─────────── */
+function buildFilters() {
+  const counts = {};
+  state.tollgates.forEach((t) => {
+    const key = t.quadrant_key || 'none';
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  const box = $('#quad-filters');
+  Object.entries(QUADRANTS).forEach(([key, info]) => {
+    const btn = el('button', 'quad-btn');
+    btn.type = 'button';
+    btn.style.setProperty('--c', info.color);
+    btn.setAttribute('aria-pressed', 'true');
+    btn.append(el('span', 'dot'), el('span', null, info.label),
+               el('span', 'n', String(counts[key] || 0)));
+    btn.addEventListener('click', () => {
+      const on = btn.getAttribute('aria-pressed') === 'true';
+      btn.setAttribute('aria-pressed', String(!on));
+      on ? state.activeQuadrants.delete(key) : state.activeQuadrants.add(key);
+      refreshMap();
+    });
+    box.append(btn);
+  });
+
+  const kinds = $('#kind-filters');
+  state.meta.kinds.forEach((kind) => {
+    const label = el('label', 'check');
+    const input = el('input');
+    input.type = 'checkbox';
+    input.checked = true;
+    input.addEventListener('change', () => {
+      input.checked ? state.activeKinds.add(kind) : state.activeKinds.delete(kind);
+      refreshMap();
+    });
+    label.append(input, el('span', null, KIND_LABEL[kind] || kind));
+    kinds.append(label);
+  });
+
+  const range = $('#year-range');
+  range.min = state.meta.year_min;
+  range.max = state.meta.year_max;
+  range.value = state.meta.year_min;
+  $('#year-out').textContent = state.meta.year_min;
+  range.addEventListener('input', () => {
+    state.minYear = Number(range.value);
+    $('#year-out').textContent = range.value;
+    refreshMap();
+  });
+
+  $('#parcel-only').addEventListener('change', (e) => {
+    state.parcelOnly = e.target.checked;
+    refreshMap();
+  });
+}
+
+function buildLegend() {
+  const bands = state.meta.bands_km || [];
+  $('#band-legend').innerHTML = bands
+    .map(([lo, hi]) => `<div class="row"><span class="ring"></span>${lo}–${hi} km</div>`)
+    .join('');
+  $('#map-legend').innerHTML = Object.values(QUADRANTS)
+    .map((q) => `<div class="row"><span class="sw" style="background:${q.color}"></span>${q.label}</div>`)
+    .join('') + '<div class="row"><span class="sw" style="background:var(--faint);opacity:.5"></span>실거래</div>';
+}
+
+/* ─────────── 지도 ─────────── */
+function buildMap() {
+  // CDN 이 막히거나 오프라인이면 Leaflet 이 없다. 지도만 포기하고 나머지는 살린다.
+  if (typeof L === 'undefined') {
+    $('#map').innerHTML =
+      '<div class="map-fallback">' +
+      '<p><strong>지도를 불러오지 못했습니다.</strong></p>' +
+      '<p>Leaflet CDN 에 연결할 수 없습니다. 네트워크를 확인하세요.</p>' +
+      '<p class="hint">스코어보드와 매물 탭은 정상 동작합니다.</p></div>';
+    return;
+  }
+  const withCoords = state.tollgates.filter((t) => t.lat && t.lon);
+  map = L.map('map', { zoomControl: true, preferCanvas: true })
+    .setView([36.5, 127.8], 7);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18, attribution: '© OpenStreetMap',
+  }).addTo(map);
+
+  bandLayer = L.layerGroup().addTo(map);
+  tradeLayer = L.layerGroup().addTo(map);
+  tollgateLayer = L.layerGroup().addTo(map);
+
+  withCoords.forEach((t) => {
+    const info = quad(t.quadrant_key);
+    const marker = L.circleMarker([t.lat, t.lon], {
+      radius: 7, weight: 2, color: '#fff', fillColor: info.color, fillOpacity: .95,
+    });
+    marker.bindTooltip(`${t.name || t.tollgate_id} · ${info.label}`, { direction: 'top' });
+    marker.on('click', () => selectTollgate(t.tollgate_id));
+    markers.set(t.tollgate_id, marker);
+  });
+
+  if (withCoords.length) {
+    map.fitBounds(L.latLngBounds(withCoords.map((t) => [t.lat, t.lon])).pad(0.15));
+  }
+  refreshMap();
+}
+
+function visibleTrades() {
+  return state.trades.filter((t) =>
+    state.activeKinds.has(t.kind) &&
+    t.deal_year >= state.minYear &&
+    (!state.parcelOnly || t.geocode_level === 'parcel'));
+}
+
+function refreshMap() {
+  if (!map) return;
+  tollgateLayer.clearLayers();
+  state.tollgates.forEach((t) => {
+    const marker = markers.get(t.tollgate_id);
+    if (!marker) return;
+    const key = t.quadrant_key;
+    // 스코어가 없는 영업소는 필터와 무관하게 항상 보여준다 (데이터 부족 표시)
+    if (!key || state.activeQuadrants.has(key)) tollgateLayer.addLayer(marker);
+  });
+
+  tradeLayer.clearLayers();
+  visibleTrades().forEach((t) => {
+    tradeLayer.addLayer(L.circleMarker([t.lat, t.lon], {
+      radius: 2.5, stroke: false, fillColor: '#8A96A3',
+      fillOpacity: t.geocode_level === 'parcel' ? .55 : .28,
+    }));
+  });
+}
+
+function selectTollgate(id) {
+  const t = state.tollgates.find((x) => x.tollgate_id === id);
+  if (!t) return;
+  state.selected = id;
+  renderDetail(t);
+  if (!map) return;
+
+  markers.forEach((m, key) => m.setStyle({ weight: key === id ? 4 : 2 }));
+  bandLayer.clearLayers();
+  (state.meta.bands_km || []).forEach(([, hi]) => {
+    bandLayer.addLayer(L.circle([t.lat, t.lon], {
+      radius: hi * 1000, fill: false, weight: 1, opacity: .5,
+      color: getComputedStyle(document.body).getPropertyValue('--accent').trim(),
+      dashArray: '4 4',
+    }));
+  });
+  map.panTo([t.lat, t.lon]);
+}
+
+/* ─────────── 상세 패널 ─────────── */
+function renderDetail(t) {
+  const info = quad(t.quadrant_key);
+  const rows = (state.series[t.tollgate_id] || [])
+    .filter((r) => r.band === state.meta.band);
+  const byYear = new Map();
+  rows.forEach((r) => {
+    const cur = byYear.get(r.year) || { year: r.year, price: [], volume: r[state.meta.volume_col], n: 0 };
+    if (r.price_per_m2 != null) cur.price.push(r.price_per_m2);
+    cur.n += r.n_trades || 0;
+    cur.volume = r[state.meta.volume_col] ?? cur.volume;
+    byYear.set(r.year, cur);
+  });
+  const seq = [...byYear.values()].sort((a, b) => a.year - b.year).map((d) => ({
+    year: d.year, n: d.n, volume: d.volume,
+    price: d.price.length ? d.price.reduce((a, b) => a + b, 0) / d.price.length : null,
+  }));
+
+  const box = $('#detail');
+  box.innerHTML = '';
+  box.append(el('h2', null, t.name || t.tollgate_id));
+  box.append(el('div', 'sub',
+    [t.sido, t.sigungu, t.route_no ? `노선 ${t.route_no}` : null].filter(Boolean).join(' · ')));
+
+  const badge = el('span', 'badge', info.label);
+  badge.style.setProperty('--c', info.color);
+  box.append(badge);
+  if (t.quadrant_note) box.append(el('p', 'hint', t.quadrant_note));
+
+  const stats = el('div', 'stats');
+  stats.append(
+    statCard('교통량 증가율', pct(t.traffic_cagr), t.traffic_cagr),
+    statCard('가격 증가율', pct(t.price_cagr), t.price_cagr),
+    statCard('반경 내 거래', num(t.n_trades)),
+    statCard('신뢰도', t.confidence || '—'));
+  box.append(stats);
+
+  box.append(sparkline('가격 추이 (㎡당 원)', seq.map((d) => [d.year, d.price])));
+  box.append(sparkline('교통량 추이 (일평균)', seq.map((d) => [d.year, d.volume])));
+
+  if (seq.length) {
+    const table = el('table');
+    table.innerHTML =
+      '<thead><tr><th>연도</th><th class="num">㎡당</th><th class="num">교통량</th><th class="num">거래</th></tr></thead>' +
+      '<tbody>' + seq.map((d) =>
+        `<tr><td>${d.year}</td><td class="num">${num(d.price)}</td>` +
+        `<td class="num">${num(d.volume)}</td><td class="num">${d.n || 0}</td></tr>`).join('') +
+      '</tbody>';
+    box.append(table);
+  }
+}
+
+function statCard(key, value, signed) {
+  const card = el('div', 'stat');
+  card.append(el('div', 'k', key));
+  const v = el('div', 'v', value);
+  if (typeof signed === 'number') v.classList.add(signed >= 0 ? 'up' : 'down');
+  card.append(v);
+  return card;
+}
+
+/* 인라인 SVG 스파크라인. 값이 하나뿐이면 선이 안 그려지므로 점으로 표시한다. */
+function sparkline(title, pairs) {
+  const wrap = el('div', 'chart');
+  wrap.append(el('h3', null, title));
+  const data = pairs.filter(([, v]) => v != null && isFinite(v));
+  if (data.length === 0) {
+    wrap.append(el('p', 'hint', '표시할 값이 없습니다'));
+    return wrap;
+  }
+  const W = 300, H = 70, PAD = 4;
+  const xs = data.map(([x]) => x), ys = data.map(([, y]) => y);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs);
+  const y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const sx = (x) => (x1 === x0 ? W / 2 : PAD + ((x - x0) / (x1 - x0)) * (W - PAD * 2));
+  const sy = (y) => (y1 === y0 ? H / 2 : H - PAD - ((y - y0) / (y1 - y0)) * (H - PAD * 2));
+
+  const path = data.map(([x, y], i) => `${i ? 'L' : 'M'}${sx(x).toFixed(1)},${sy(y).toFixed(1)}`).join('');
+  const last = data[data.length - 1];
+  const svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${title}">
+    <path d="${path}" fill="none" stroke="var(--accent)" stroke-width="2"
+          stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${sx(last[0]).toFixed(1)}" cy="${sy(last[1]).toFixed(1)}" r="3" fill="var(--accent)"/>
+    <text class="axis" x="0" y="${H + 10}">${x0}</text>
+    <text class="axis" x="${W}" y="${H + 10}" text-anchor="end">${x1}</text>
+  </svg>`;
+  wrap.insertAdjacentHTML('beforeend', svg);
+  return wrap;
+}
+
+/* ─────────── 2×2 매트릭스 ─────────── */
+function buildMatrix() {
+  const pts = state.tollgates.filter((t) => t.traffic_score != null && t.price_score != null);
+  const W = 420, H = 420, PAD = 34;
+  const sx = (v) => PAD + (v / 100) * (W - PAD * 2);
+  const sy = (v) => H - PAD - (v / 100) * (H - PAD * 2);
+
+  const dots = pts.map((t) =>
+    `<circle cx="${sx(t.traffic_score).toFixed(1)}" cy="${sy(t.price_score).toFixed(1)}" r="4"
+       fill="${quad(t.quadrant_key).color}" fill-opacity=".8"
+       data-id="${t.tollgate_id}"><title>${t.name || t.tollgate_id} · ${quad(t.quadrant_key).label}</title></circle>`).join('');
+
+  $('#matrix').innerHTML = `<svg viewBox="0 0 ${W} ${H + 14}" role="img"
+      aria-label="교통량 모멘텀과 가격 모멘텀 산점도">
+    <rect x="${PAD}" y="${PAD}" width="${W - PAD * 2}" height="${H - PAD * 2}"
+          fill="none" stroke="var(--border)"/>
+    <line x1="${sx(50)}" y1="${PAD}" x2="${sx(50)}" y2="${H - PAD}" stroke="var(--border-strong)" stroke-dasharray="3 3"/>
+    <line x1="${PAD}" y1="${sy(50)}" x2="${W - PAD}" y2="${sy(50)}" stroke="var(--border-strong)" stroke-dasharray="3 3"/>
+    <text x="${sx(75)}" y="${sy(96)}" text-anchor="middle" font-size="11" fill="var(--q-rising)">동반 상승</text>
+    <text x="${sx(25)}" y="${sy(96)}" text-anchor="middle" font-size="11" fill="var(--q-over)">과열 주의</text>
+    <text x="${sx(75)}" y="${sy(2)}" text-anchor="middle" font-size="11" fill="var(--q-under)" font-weight="600">저평가 후보</text>
+    <text x="${sx(25)}" y="${sy(2)}" text-anchor="middle" font-size="11" fill="var(--q-quiet)">관망</text>
+    ${dots}
+    <text x="${W / 2}" y="${H + 8}" text-anchor="middle" font-size="11" fill="var(--faint)">교통량 모멘텀 →</text>
+    <text x="10" y="${H / 2}" font-size="11" fill="var(--faint)"
+          transform="rotate(-90 10 ${H / 2})" text-anchor="middle">가격 모멘텀 →</text>
+  </svg>`;
+
+  $('#matrix').addEventListener('click', (e) => {
+    const id = e.target.dataset && e.target.dataset.id;
+    if (id) focusOnMap(id);
+  });
+}
+
+/* ─────────── 순위 표 ─────────── */
+function buildBoardTable() {
+  const body = $('#board-table tbody');
+  const render = (query = '') => {
+    const rows = state.tollgates
+      .filter((t) => t.traffic_score != null)
+      .filter((t) => !query || (t.name || t.tollgate_id).includes(query))
+      .sort((a, b) => b.traffic_score - a.traffic_score);
+    body.innerHTML = rows.map((t) => {
+      const info = quad(t.quadrant_key);
+      return `<tr data-id="${t.tollgate_id}">
+        <td>${t.name || t.tollgate_id}</td>
+        <td><span class="q-tag" style="--c:${info.color}">${info.label}</span></td>
+        <td class="num">${pct(t.traffic_cagr)}</td>
+        <td class="num">${pct(t.price_cagr)}</td>
+        <td class="num">${num(t.n_trades)}</td>
+        <td>${t.confidence || '—'}</td></tr>`;
+    }).join('') || '<tr><td colspan="6" class="empty">해당 영업소가 없습니다</td></tr>';
+  };
+  render();
+  $('#board-search').addEventListener('input', (e) => render(e.target.value.trim()));
+  body.addEventListener('click', (e) => {
+    const row = e.target.closest('tr[data-id]');
+    if (row) focusOnMap(row.dataset.id);
+  });
+}
+
+function focusOnMap(id) {
+  document.querySelector('.tab[data-view="explore"]').click();
+  selectTollgate(id);
+  const marker = map && markers.get(id);
+  if (marker) map.setView(marker.getLatLng(), 11);
+}
+
+/* ─────────── 매물 (형식 확인용, 브라우저 저장) ─────────── */
+function loadListings() {
+  try { return JSON.parse(localStorage.getItem(LISTING_KEY)) || []; }
+  catch { return []; }
+}
+function saveListings(items) {
+  try { localStorage.setItem(LISTING_KEY, JSON.stringify(items)); }
+  catch { /* 저장이 막힌 환경(시크릿 창 등)에서도 화면은 동작해야 한다 */ }
+}
+
+function initListings() {
+  renderListings();
+  $('#listing-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target).entries());
+    data.id = Date.now();
+    data.created = new Date().toISOString().slice(0, 10);
+    const items = loadListings();
+    items.unshift(data);
+    saveListings(items);
+    e.target.reset();
+    renderListings();
+  });
+  $('#listing-clear').addEventListener('click', () => {
+    if (loadListings().length && confirm('등록된 매물을 모두 삭제할까요?')) {
+      saveListings([]);
+      renderListings();
+    }
+  });
+}
+
+function renderListings() {
+  const items = loadListings();
+  $('#listing-count').textContent = items.length;
+  const list = $('#listing-list');
+  if (!items.length) {
+    list.innerHTML = '<p class="empty">등록된 매물이 없습니다.</p>';
+    return;
+  }
+  list.innerHTML = items.map((it) => `
+    <article class="listing">
+      <div class="top">
+        <strong>${KIND_LABEL[it.kind] || it.kind}</strong>
+        <span>${it.address}</span>
+        <span class="price">${Number(it.price).toLocaleString('ko-KR')}만원</span>
+      </div>
+      <div class="who">${it.office} · 등록번호 ${it.license} · ${it.phone} · ${it.created}</div>
+      <div class="who">${Number(it.area).toLocaleString('ko-KR')}㎡</div>
+      ${it.memo ? `<div class="memo">${it.memo}</div>` : ''}
+    </article>`).join('');
+}
+
+boot();
