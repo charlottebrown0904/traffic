@@ -17,8 +17,8 @@ import sys
 
 import pandas as pd
 
-from . import db
-from .analyze import correlation
+from . import db, webexport
+from .analyze import correlation, scoring
 from .collect import geocode as gc
 from .collect import backfill, ex_api, rtms, tollgate, traffic as tr
 from . import regions as rg
@@ -298,6 +298,37 @@ def cmd_analyze(args):
     print(correlation.interpret(elast))
 
 
+def cmd_score(args):
+    path = PROCESSED / "panel.parquet"
+    if not path.exists():
+        sys.exit("panel.parquet 이 없습니다. 먼저 `panel` 을 실행하세요.")
+    scores = scoring.build_scores(pd.read_parquet(path), band=args.band,
+                                  volume_col=f"volume_{args.volume}")
+    if scores.empty:
+        sys.exit("스코어를 계산할 표본이 없습니다.")
+    out = PROCESSED / "scores.csv"
+    scores.to_csv(out, index=False)
+
+    print(scores.groupby("quadrant").size().rename("영업소 수").to_string())
+    print(f"\n=== 저평가 후보 상위 10 ===")
+    top = scores[scores["quadrant_key"] == "undervalued"].head(10)
+    cols = ["tollgate_id", "traffic_cagr", "price_cagr",
+            "traffic_score", "price_score", "n_trades", "confidence"]
+    print(top[cols].to_string(index=False) if len(top) else "  해당 없음")
+    print(f"\n→ {out}")
+
+
+def cmd_export_web(args):
+    meta = webexport.export(band=args.band, volume_col=f"volume_{args.volume}")
+    print(f"web/data/ 에 4개 파일 생성")
+    print(f"  영업소 {meta['counts']['tollgates']} (스코어 {meta['counts']['scored']})")
+    print(f"  거래 {meta['counts']['trades_total']:,} 중 지도 표시 "
+          f"{meta['counts']['trades_plotted']:,}")
+    print(f"  기간 {meta['year_min']}~{meta['year_max']}")
+    if meta["is_synthetic"]:
+        print("\n⚠️ 합성 데이터입니다 — 화면 상단에 데모 배너가 표시됩니다.")
+
+
 def cmd_status(args):
     with db.connect(read_only=False) as con:
         for table in ("tollgate", "traffic", "trade", "trade_tollgate_link", "zone_event"):
@@ -388,6 +419,18 @@ def main(argv=None):
     p = sub.add_parser("analyze", help="상관·탄력성 분석")
     p.add_argument("--volume", default="total", choices=["total", "freight", "passenger", "mid"])
     p.set_defaults(func=cmd_analyze)
+
+    p = sub.add_parser("score", help="영업소별 투자 스크리닝 스코어")
+    p.add_argument("--band", default="0-3")
+    p.add_argument("--volume", default="freight",
+                   choices=["total", "freight", "passenger", "mid"])
+    p.set_defaults(func=cmd_score)
+
+    p = sub.add_parser("export-web", help="웹 화면용 JSON 생성")
+    p.add_argument("--band", default="0-3")
+    p.add_argument("--volume", default="freight",
+                   choices=["total", "freight", "passenger", "mid"])
+    p.set_defaults(func=cmd_export_web)
 
     sub.add_parser("status", help="적재 현황").set_defaults(func=cmd_status)
 

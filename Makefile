@@ -1,6 +1,6 @@
 PY := PYTHONPATH=src python3
 
-.PHONY: install synthetic demo test status clean
+.PHONY: install synthetic demo test web serve status clean
 
 install:
 	pip install -r requirements.txt
@@ -18,8 +18,20 @@ demo: synthetic
 	$(PY) -m redt.cli panel
 	$(PY) -m redt.cli analyze --volume total
 
+## 웹 화면용 JSON 생성 후 로컬 서버 실행 (http://localhost:8000)
+web:
+	$(PY) -m redt.cli score
+	$(PY) -m redt.cli export-web
+	@echo ""
+	@echo "  http://localhost:8000 에서 확인하세요 (Ctrl+C 로 종료)"
+	@cd web && python3 -m http.server 8000
+
+serve:
+	@cd web && python3 -m http.server 8000
+
 status:
 	$(PY) -m redt.cli status
 
 clean:
 	rm -f data/processed/redt.duckdb data/processed/*.parquet data/processed/*.csv
+	rm -f data/processed/.synthetic web/data/*.json

@@ -4,6 +4,7 @@
 관계를 정량화하고, 지도 기반 투자 스크리닝 도구로 만드는 프로젝트.
 
 - **▶ 단계별 실행 가이드: [docs/START-HERE.md](docs/START-HERE.md)** ← 여기부터
+- 제품 화면 형식: [docs/product-format.md](docs/product-format.md)
 - 전체 계획: [ROADMAP.md](ROADMAP.md)
 - 분석 설계와 가설: [docs/hypothesis.md](docs/hypothesis.md) ← **먼저 읽어주세요**
 - **API 키 신청**: [docs/api-keys.md](docs/api-keys.md)
@@ -12,10 +13,18 @@
 - 스키마: [docs/data-model.md](docs/data-model.md)
 - 법적 체크리스트: [docs/legal-notes.md](docs/legal-notes.md)
 
-## 현재 단계: Step 1 — 데이터 레이어
+## 현재 단계
 
 ```
-수집 → 정규화 → 지오코딩 → 공간조인 → 패널 → 분석
+수집 → 정규화 → 지오코딩 → 공간조인 → 패널 → 분석 → 스코어 → 화면
+└────────── 실데이터 대기 ──────────┘   └── 형식 완성 ──┘
+```
+
+데이터 수집은 API 키를 기다리는 중이고, **그 뒤 파이프라인과 화면 형식은 완성**되어
+합성 데이터로 끝까지 돌아갑니다. 실데이터가 들어오면 같은 명령이 그대로 실행됩니다.
+
+```bash
+make web    # 스코어 계산 + JSON 생성 + 로컬 서버 (http://localhost:8000)
 ```
 
 ## 빠른 확인 (API 키 불필요)
@@ -85,6 +94,12 @@ src/redt/
     panel.py         헤도닉 보정 + 패널 구축
   analyze/
     correlation.py   L1 상관 / L2 탄력성 / L3 위약 검정
+    scoring.py       영업소별 2×2 분면 스코어
+  webexport.py       DuckDB → web/data/*.json
+
+web/                 화면 (DB 에 직접 붙지 않고 JSON 만 읽음)
+  index.html         탐색 / 스코어보드 / 매물 3개 탭
+  app.js  style.css
 ```
 
 ## 파일럿 권역

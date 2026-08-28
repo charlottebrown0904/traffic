@@ -149,6 +149,7 @@ def main():
         db.upsert(con, "tollgate", tollgates)
         db.upsert(con, "traffic", traffic)
         db.upsert(con, "trade", trades)
+    (PROCESSED / ".synthetic").write_text("이 DB 는 합성 데이터입니다.\n", encoding="utf-8")
     print(f"  → {target}")
     print("\n심어놓은 진짜 β:", TRUE_BETA)
 
