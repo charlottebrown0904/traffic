@@ -57,6 +57,37 @@ var KAKAO_LINK = "https://open.kakao.com/o/...";   // ← 여기
 
 ---
 
+## Vercel 화면에서 길찾기
+
+Vercel 대시보드가 **좌측 사이드바 방식**으로 바뀌었습니다.
+메뉴 이름은 또 바뀔 수 있으니 **주소로 직접 이동**하는 편이 확실합니다.
+
+프로젝트 주소가 `vercel.com/<팀>/sado-toji` 라면 뒤에 붙이면 됩니다.
+
+| 목적 | 주소 |
+|---|---|
+| 배포 목록 · Redeploy | `/deployments` |
+| Git 저장소 연결 · Production Branch | `/settings/git` |
+| 빌드 설정 (Framework · Output Directory) | `/settings/build-and-deployment` |
+| 도메인 | `/settings/domains` |
+
+사이드바에서 찾을 때:
+
+- **Deployments** — 위에서 두 번째
+- **Git 설정** — 맨 아래 `Settings` 의 `>` 를 펼치면 하위에 `Git`
+- ⚠️ 사이드바의 **`Connect`** 는 Git 연결이 아닙니다 (네트워크 기능). 헷갈리기 쉽습니다
+
+### Redeploy 를 못 찾겠다면
+
+**커밋을 푸시하는 편이 더 쉽습니다.** Vercel 은 연결된 저장소에 푸시가 들어오면
+자동으로 배포합니다. `main` 에 푸시하면 프로덕션, 다른 브랜치에 푸시하면
+**Preview 배포**가 생기므로, 프로덕션을 건드리지 않고 연결 상태를 확인할 수 있습니다.
+
+Redeploy 버튼은 "이미 있는 배포를 다시" 돌릴 때 쓰는 것이라,
+**배포가 하나도 없으면 누를 대상 자체가 없습니다.**
+
+---
+
 ## 🧑 사용자가 할 일
 
 ### 1. Production Branch 확인 ← 놓치기 쉬움
