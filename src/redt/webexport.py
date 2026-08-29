@@ -20,6 +20,7 @@ WEB_DATA = ROOT / "web" / "app" / "data"
 SYNTHETIC_MARK = PROCESSED / ".synthetic"
 # 배포 저장소에 커밋되는 파일이라 지도 표시용 표본은 작게 유지한다
 MAX_TRADE_POINTS = 2500
+SAMPLE_SEED = 42          # 표본을 고정해 실행마다 diff 가 생기지 않게 한다
 
 DISCLAIMER = (
     "과거 실거래 신고 자료와 교통량 통계를 요약한 스크리닝 지표입니다. "
@@ -61,17 +62,24 @@ def export(band: str = "0-3", volume_col: str = "volume_freight") -> dict:
     panel = pd.read_parquet(panel_path)
 
     with db.connect(read_only=True) as con:
+        # ORDER BY 가 없으면 DuckDB 가 매번 다른 순서로 돌려주어, 내용이 같아도
+        # 커밋 diff 가 생긴다. 이 파일들은 배포에 함께 커밋되므로 순서를 고정한다.
         tollgates = con.execute(
             "SELECT tollgate_id, name, route_no, lat, lon, sido, sigungu "
-            "FROM tollgate WHERE lat IS NOT NULL").fetchdf()
+            "FROM tollgate WHERE lat IS NOT NULL ORDER BY tollgate_id").fetchdf()
         trade_total = con.execute("SELECT count(*) FROM trade").fetchone()[0]
+        # REPEATABLE 로 표본을 고정한다. 없으면 실행할 때마다 다른 거래가 뽑혀
+        # 500KB 파일 전체가 바뀐 것처럼 보인다.
         trades = con.execute(f"""
-            SELECT trade_id, kind, lat, lon, deal_year, price_per_m2, area_m2,
-                   coalesce(jimok, '') AS jimok, coalesce(geocode_level, '') AS geocode_level
-            FROM trade
-            WHERE lat IS NOT NULL AND price_per_m2 IS NOT NULL
-              AND NOT coalesce(is_cancelled, FALSE)
-            USING SAMPLE {MAX_TRADE_POINTS} ROWS
+            SELECT * FROM (
+                SELECT trade_id, kind, lat, lon, deal_year, price_per_m2, area_m2,
+                       coalesce(jimok, '') AS jimok,
+                       coalesce(geocode_level, '') AS geocode_level
+                FROM trade
+                WHERE lat IS NOT NULL AND price_per_m2 IS NOT NULL
+                  AND NOT coalesce(is_cancelled, FALSE)
+                USING SAMPLE reservoir({MAX_TRADE_POINTS} ROWS) REPEATABLE ({SAMPLE_SEED})
+            ) ORDER BY trade_id
         """).fetchdf()
 
     try:
