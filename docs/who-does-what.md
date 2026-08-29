@@ -206,6 +206,7 @@ SEO 유입을 만들려면 콘텐츠가 필요합니다.
 | # | 할 일 | 담당 |
 |---|---|---|
 | G1 | repo 를 public 으로 전환할지 결정 | 🧑 사용자 판단 |
+| | ⚠️ **private 으로 가면 giscus 사용 불가** — 블로그용 저장소를 따로 public 으로 두는 방법 ([github-private.md](github-private.md)) | |
 | G2 | Settings → Features → **Discussions 활성화** | 🧑 사용자 |
 | G3 | [giscus.app](https://giscus.app) 에서 giscus 앱 설치, 카테고리 지정 | 🧑 사용자 |
 | G4 | giscus 설정값(repo id, category id) 전달 | 🧑 사용자 |

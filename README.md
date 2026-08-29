@@ -16,6 +16,7 @@
 | [product-format.md](docs/product-format.md) | 제품 화면 형식 |
 | [listings-api.md](docs/listings-api.md) | 매물 API (인증·권한·결제 자리) |
 | [deploy-vercel.md](docs/deploy-vercel.md) | **Vercel 배포** 구조와 절차 |
+| [github-private.md](docs/github-private.md) | 저장소 Private 전환 절차와 영향 |
 | [data-sources.md](docs/data-sources.md) | 데이터 소스와 응답 필드 |
 | [data-model.md](docs/data-model.md) | 스키마 |
 | [legal-notes.md](docs/legal-notes.md) | 법적 체크리스트 |
