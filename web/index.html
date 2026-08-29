@@ -128,6 +128,24 @@ ul.checks li span{display:block;font-weight:500;font-size:14px;color:var(--ink-s
   margin-top:8px;font-weight:600;line-height:1.5
 }
 .cta-inline{padding:34px 0 40px;border-bottom:0}
+.inline-link{color:var(--brand);font-weight:700;text-decoration:underline;text-underline-offset:2px}
+
+/* 히어로의 '본 페이지 보기' 버튼.
+   신청 전에 실물을 봐야 설득된다는 판단에 따라 첫 화면에 둔다.
+   신청 CTA(꽉 찬 초록)와 위계가 겹치지 않도록 아웃라인으로 처리. */
+.hero-link{
+  display:inline-flex;align-items:center;gap:7px;
+  margin-top:24px;padding:13px 24px;border-radius:11px;
+  border:1.5px solid rgba(255,255,255,.5);
+  color:#fff;text-decoration:none;
+  font-size:15.5px;font-weight:700;letter-spacing:-.01em
+}
+.hero-link:hover{background:rgba(255,255,255,.13);border-color:#fff}
+.hero-link:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.hero-link .arrow{font-weight:900}
+.hero-hint{
+  margin:10px 0 0;font-size:13px;color:#bcd2c8;font-weight:600
+}
 
 /* 진단 도구(/app)로 가는 보조 링크 — 카톡 신청 CTA 를 가리지 않도록 조용하게 */
 .tool-link{
@@ -166,6 +184,12 @@ footer a{color:#93a2b1}
     <span class="eyebrow">토지 미래가치 진단 · 추첨 20명</span>
     <h1>사도 될까</h1>
     <p class="sub">토지 미래가치, 무료로 봐드립니다</p>
+
+    <a class="hero-link" href="/app">
+      어떤 도구인지 먼저 보기 <span class="arrow">→</span>
+    </a>
+    <p class="hero-hint">지도에서 교통량과 실거래가를 직접 확인하실 수 있습니다</p>
+
     <p class="meta">9월 7일 신청 마감 · 9월 8일 추첨 · 무료 · 앱 출시 기념</p>
   </div>
 </header>
@@ -268,7 +292,8 @@ footer a{color:#93a2b1}
 <div class="cta-fixed">
   <div class="inner">
     <button class="btn" data-join>무료 진단 신청하기</button>
-    <p class="btn-note">추첨 20명 · 9월 7일 신청 마감</p>
+    <p class="btn-note">추첨 20명 · 9월 7일 신청 마감 ·
+      <a href="/app" class="inline-link">도구 보기</a></p>
   </div>
 </div>
 
