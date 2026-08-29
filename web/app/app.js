@@ -11,7 +11,8 @@ const QUADRANTS = {
 };
 const KIND_LABEL = { land: '토지', factory: '공장·창고', house: '단독·다가구', commercial: '상업업무용' };
 const TOKEN_KEY = 'redt.token.v1';
-const API = '/api';
+const CONFIG = window.REDT_CONFIG || {};
+const API = CONFIG.apiBase || '';
 
 const state = {
   meta: null, tollgates: [], trades: [], series: {},
@@ -19,6 +20,7 @@ const state = {
   activeKinds: new Set(),
   minYear: 0, parcelOnly: false, selected: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
+  apiAvailable: false,
 };
 
 let map, tollgateLayer, tradeLayer, bandLayer, listingLayer;
@@ -60,6 +62,12 @@ async function boot() {
     `${state.meta.year_min}–${state.meta.year_max} · 영업소 ${state.meta.counts.tollgates}` +
     `<br>거래 ${state.meta.counts.trades_total.toLocaleString('ko-KR')}건`;
   $('#disclaimer').textContent = state.meta.disclaimer;
+
+  if (CONFIG.homeUrl) {
+    const home = $('#home-link');
+    home.href = CONFIG.homeUrl;
+    home.hidden = false;
+  }
 
   buildFilters();
   buildMap();
@@ -463,20 +471,29 @@ function showError(sel, message) {
 }
 
 async function initListings() {
+  // 정적 배포에는 매물 API 가 없다. 있는지부터 확인하고, 없으면 안내로 대체한다.
+  if (API) {
+    try {
+      const fee = await api('/fees');
+      state.apiAvailable = true;
+      $('#fee-note').innerHTML =
+        `등록 수수료 <strong>${fee.listing_fee_krw.toLocaleString('ko-KR')}원</strong>` +
+        ` / ${fee.listing_days}일` +
+        (fee.payment_connected ? '' : ` <span class="hint">— ${fee.notice}</span>`);
+    } catch { state.apiAvailable = false; }
+  }
+  if (!state.apiAvailable) {
+    $('#listings-offline').hidden = false;
+    $('#listings-grid').hidden = true;
+    return;
+  }
+
   try { state.token = localStorage.getItem(TOKEN_KEY); } catch { state.token = null; }
   if (state.token) {
     try { state.broker = await api('/me', { auth: true }); }
     catch { setSession(null, null); }
   }
   renderAuth();
-
-  try {
-    const fee = await api('/fees');
-    $('#fee-note').innerHTML =
-      `등록 수수료 <strong>${fee.listing_fee_krw.toLocaleString('ko-KR')}원</strong>` +
-      ` / ${fee.listing_days}일` +
-      (fee.payment_connected ? '' : ` <span class="hint">— ${fee.notice}</span>`);
-  } catch { $('#fee-note').textContent = ''; }
 
   document.querySelectorAll('[data-auth]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -489,10 +506,8 @@ async function initListings() {
     });
   });
 
-  $('#login-form').addEventListener('submit', (e) =>
-    submitAuth(e, '/auth/login'));
-  $('#signup-form').addEventListener('submit', (e) =>
-    submitAuth(e, '/brokers'));
+  $('#login-form').addEventListener('submit', (e) => submitAuth(e, '/auth/login'));
+  $('#signup-form').addEventListener('submit', (e) => submitAuth(e, '/brokers'));
 
   $('#logout-btn').addEventListener('click', async () => {
     try { await api('/auth/logout', { method: 'POST', auth: true }); } catch { /* 이미 만료 */ }
@@ -556,6 +571,7 @@ function setScope(scope) {
 }
 
 async function loadListings() {
+  if (!state.apiAvailable) return;
   const mine = state.scope === 'mine' && state.broker;
   try {
     state.listings = await api(`/listings${mine ? '?mine=true' : ''}`,

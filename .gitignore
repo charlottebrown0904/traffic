@@ -8,7 +8,6 @@ data/processed/*
 !data/*/.gitkeep
 .venv/
 .ipynb_checkpoints/
-web/data/*.json
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm

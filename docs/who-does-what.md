@@ -129,17 +129,22 @@ SQLite                            GitHub Actions (수집·분석 배치)
 
 ---
 
-## 트랙 D — 배포
+## 트랙 D — 배포 (Vercel)
 
-| # | 할 일 | 담당 |
-|---|---|---|
-| D1 | 도메인 구매 | 🧑 사용자 |
-| D2 | Vercel / Netlify / Cloudflare Pages 계정 생성, repo 연결 | 🧑 사용자 |
-| D3 | 배포 환경변수에 `SUPABASE_URL`, `anon key` 입력 | 🧑 사용자 |
-| D4 | DNS 연결, HTTPS 확인 | 🧑 사용자 |
-| D5 | 빌드 설정·환경변수 참조 코드 | 🤖 Claude |
-| D6 | 지도 타일 제공자 결정 (OSM 공개 타일 → 상용은 계약 필요) | 🧑 사용자 판단 |
-| D7 | 선택한 타일 제공자로 교체 | 🤖 Claude |
+상세 절차: **[deploy-vercel.md](deploy-vercel.md)**
+
+| # | 할 일 | 담당 | 상태 |
+|---|---|---|---|
+| D1 | `web/` 구조, `vercel.json`, 환경별 설정 | 🤖 Claude | ✅ 완료 |
+| D2 | **기존 프로모션 페이지를 `web/index.html` 로 이관** | 🧑 사용자 | ⚠️ 연결 전 필수 |
+| D3 | 작업 브랜치를 `main` 에 머지 (또는 Production Branch 변경) | 🧑 사용자 | |
+| D4 | Vercel 프로젝트를 이 저장소에 연결, Output Directory `web` | 🧑 사용자 | |
+| D5 | 커스텀 도메인·DNS (선택) | 🧑 사용자 | |
+| D6 | 지도 타일 제공자 결정 (OSM 공개 타일 → 상용은 계약 필요) | 🧑 사용자 판단 | |
+| D7 | 선택한 타일 제공자로 교체 | 🤖 Claude | |
+
+> Vercel 은 서버리스라 **SQLite 기반 매물 API 가 동작하지 않습니다.**
+> 앱이 이를 감지해 매물 탭을 "준비 중" 으로 대체하며, 트랙 B(Supabase) 후 살아납니다.
 
 ---
 

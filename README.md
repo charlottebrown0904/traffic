@@ -15,6 +15,7 @@
 | [traffic-history.md](docs/traffic-history.md) | 교통량 과거 시계열 확보 ← **현재 병목** |
 | [product-format.md](docs/product-format.md) | 제품 화면 형식 |
 | [listings-api.md](docs/listings-api.md) | 매물 API (인증·권한·결제 자리) |
+| [deploy-vercel.md](docs/deploy-vercel.md) | **Vercel 배포** 구조와 절차 |
 | [data-sources.md](docs/data-sources.md) | 데이터 소스와 응답 필드 |
 | [data-model.md](docs/data-model.md) | 스키마 |
 | [legal-notes.md](docs/legal-notes.md) | 법적 체크리스트 |
@@ -32,7 +33,7 @@
 | **A. 데이터** | API 키 신청, `probe-history` 실행 | 수집기·지오코딩·분석 |
 | **B. Supabase** | 프로젝트 생성, PostGIS 켜기, 키 등록 | 마이그레이션·RLS 정책·프런트 전환 |
 | **C. Actions** | Secrets 등록 | CI·일별 수집·월별 갱신·배포 워크플로 |
-| **D. 배포** | 도메인, 호스팅 계정, DNS | 빌드 설정, 환경변수 연결 |
+| **D. 배포** | Vercel 프로젝트 연결, 프로모션 페이지 이관 | 구조·라우팅·설정 ✅ 완료 |
 | **E. 결제** | 사업자등록, 통신판매업 신고, PG 계약 | 위젯 연동, 웹훅 검증, 만료 배치 |
 | **F. 자격검증** | 확인 방식 결정 | 등록증 업로드·승인 화면 |
 | **G. 콘텐츠** | Discussions 켜기, giscus 설치 | 리포트 템플릿·자동 생성 |
@@ -135,9 +136,14 @@ src/redt/
     security.py      scrypt 해싱 · 토큰
     models.py        요청·응답 스키마
 
-web/                 화면 (분석은 JSON, 매물은 API)
-  index.html         탐색 / 스코어보드 / 매물 3개 탭
-  app.js  style.css
+web/                 배포 대상 (Vercel Output Directory)
+  index.html         /      프로모션 (임시)
+  app/               /app   스크리닝 앱
+    index.html       탐색 / 스코어보드 / 매물 3개 탭
+    config.js        배포 환경별 설정 (API 주소, 홈 링크)
+    app.js  style.css
+    data/*.json      분석 결과 (커밋됨)
+vercel.json          라우팅 · 캐시 · 보안 헤더
 ```
 
 ## 파일럿 권역

@@ -16,9 +16,10 @@ from . import db
 from .analyze import scoring
 from .config import PROCESSED, ROOT, settings
 
-WEB_DATA = ROOT / "web" / "data"
+WEB_DATA = ROOT / "web" / "app" / "data"
 SYNTHETIC_MARK = PROCESSED / ".synthetic"
-MAX_TRADE_POINTS = 8000
+# 배포 저장소에 커밋되는 파일이라 지도 표시용 표본은 작게 유지한다
+MAX_TRADE_POINTS = 2500
 
 DISCLAIMER = (
     "과거 실거래 신고 자료와 교통량 통계를 요약한 스크리닝 지표입니다. "
