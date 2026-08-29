@@ -10,16 +10,20 @@ const QUADRANTS = {
   quiet:       { label: '관망',        color: 'var(--q-quiet)' },
 };
 const KIND_LABEL = { land: '토지', factory: '공장·창고', house: '단독·다가구', commercial: '상업업무용' };
-const LISTING_KEY = 'redt.listings.v1';
+const TOKEN_KEY = 'redt.token.v1';
+const CONFIG = window.REDT_CONFIG || {};
+const API = CONFIG.apiBase || '';
 
 const state = {
   meta: null, tollgates: [], trades: [], series: {},
   activeQuadrants: new Set(Object.keys(QUADRANTS)),
   activeKinds: new Set(),
   minYear: 0, parcelOnly: false, selected: null,
+  token: null, broker: null, listings: [], scope: 'public', pickMode: false,
+  apiAvailable: false,
 };
 
-let map, tollgateLayer, tradeLayer, bandLayer;
+let map, tollgateLayer, tradeLayer, bandLayer, listingLayer;
 const markers = new Map();
 
 /* ─────────── 유틸 ─────────── */
@@ -59,13 +63,19 @@ async function boot() {
     `<br>거래 ${state.meta.counts.trades_total.toLocaleString('ko-KR')}건`;
   $('#disclaimer').textContent = state.meta.disclaimer;
 
+  if (CONFIG.homeUrl) {
+    const home = $('#home-link');
+    home.href = CONFIG.homeUrl;
+    home.hidden = false;
+  }
+
   buildFilters();
   buildMap();
   buildLegend();
   buildMatrix();
   buildBoardTable();
-  initListings();
   wireTabs();
+  initListings();
 }
 
 function showFatal(message) {
@@ -190,6 +200,8 @@ function buildMap() {
     marker.on('click', () => selectTollgate(t.tollgate_id));
     markers.set(t.tollgate_id, marker);
   });
+
+  map.on('click', (e) => { if (state.pickMode) endPick(e.latlng); });
 
   if (withCoords.length) {
     map.fitBounds(L.latLngBounds(withCoords.map((t) => [t.lat, t.lon])).pad(0.15));
@@ -401,56 +413,291 @@ function focusOnMap(id) {
   if (marker) map.setView(marker.getLatLng(), 11);
 }
 
-/* ─────────── 매물 (형식 확인용, 브라우저 저장) ─────────── */
-function loadListings() {
-  try { return JSON.parse(localStorage.getItem(LISTING_KEY)) || []; }
-  catch { return []; }
-}
-function saveListings(items) {
-  try { localStorage.setItem(LISTING_KEY, JSON.stringify(items)); }
-  catch { /* 저장이 막힌 환경(시크릿 창 등)에서도 화면은 동작해야 한다 */ }
+/* ─────────── 매물 (서버 연동) ─────────── */
+async function api(path, { method = 'GET', body, auth = false } = {}) {
+  const headers = {};
+  if (body) headers['Content-Type'] = 'application/json';
+  if (auth && state.token) headers.Authorization = `Bearer ${state.token}`;
+  const res = await fetch(API + path, {
+    method, headers, body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401 && auth) { setSession(null, null); }
+  if (!res.ok) {
+    let detail = `요청 실패 (${res.status})`;
+    try {
+      const payload = await res.json();
+      if (typeof payload.detail === 'string') detail = payload.detail;
+      // pydantic 검증 오류는 배열로 온다 — 첫 항목의 사람이 읽을 메시지를 쓴다
+      else if (Array.isArray(payload.detail) && payload.detail.length) {
+        const first = payload.detail[0];
+        detail = `${(first.loc || []).slice(-1)[0] || ''} ${first.msg || ''}`.trim();
+      }
+    } catch { /* 본문이 JSON 이 아니면 기본 메시지 */ }
+    throw new Error(detail);
+  }
+  return res.status === 204 ? null : res.json();
 }
 
-function initListings() {
-  renderListings();
-  $('#listing-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target).entries());
-    data.id = Date.now();
-    data.created = new Date().toISOString().slice(0, 10);
-    const items = loadListings();
-    items.unshift(data);
-    saveListings(items);
-    e.target.reset();
-    renderListings();
-  });
-  $('#listing-clear').addEventListener('click', () => {
-    if (loadListings().length && confirm('등록된 매물을 모두 삭제할까요?')) {
-      saveListings([]);
-      renderListings();
-    }
-  });
+function setSession(token, broker) {
+  state.token = token;
+  state.broker = broker;
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+  } catch { /* 저장이 막힌 환경에서도 세션은 메모리에서 동작 */ }
+  renderAuth();
 }
+
+function renderAuth() {
+  const authed = Boolean(state.broker);
+  $('#auth-box').hidden = authed;
+  $('#broker-box').hidden = !authed;
+  if (authed) {
+    const b = state.broker;
+    $('#broker-office').textContent = b.office_name;
+    $('#broker-detail').textContent =
+      `${b.agent_name} · 등록번호 ${b.license_no} · ${b.phone} · ${b.office_address}`;
+  }
+  document.querySelectorAll('#listing-scope .seg-btn').forEach((btn) => {
+    btn.hidden = btn.dataset.scope === 'mine' && !authed;
+  });
+  if (!authed && state.scope === 'mine') setScope('public');
+}
+
+function showError(sel, message) {
+  const node = $(sel);
+  node.textContent = message || '';
+  node.hidden = !message;
+}
+
+async function initListings() {
+  // 정적 배포에는 매물 API 가 없다. 있는지부터 확인하고, 없으면 안내로 대체한다.
+  if (API) {
+    try {
+      const fee = await api('/fees');
+      state.apiAvailable = true;
+      $('#fee-note').innerHTML =
+        `등록 수수료 <strong>${fee.listing_fee_krw.toLocaleString('ko-KR')}원</strong>` +
+        ` / ${fee.listing_days}일` +
+        (fee.payment_connected ? '' : ` <span class="hint">— ${fee.notice}</span>`);
+    } catch { state.apiAvailable = false; }
+  }
+  if (!state.apiAvailable) {
+    $('#listings-offline').hidden = false;
+    $('#listings-grid').hidden = true;
+    return;
+  }
+
+  try { state.token = localStorage.getItem(TOKEN_KEY); } catch { state.token = null; }
+  if (state.token) {
+    try { state.broker = await api('/me', { auth: true }); }
+    catch { setSession(null, null); }
+  }
+  renderAuth();
+
+  document.querySelectorAll('[data-auth]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.auth;
+      document.querySelectorAll('[data-auth]').forEach((b) =>
+        b.classList.toggle('is-on', b === btn));
+      $('#login-form').hidden = mode !== 'login';
+      $('#signup-form').hidden = mode !== 'signup';
+      showError('#auth-error', '');
+    });
+  });
+
+  $('#login-form').addEventListener('submit', (e) => submitAuth(e, '/auth/login'));
+  $('#signup-form').addEventListener('submit', (e) => submitAuth(e, '/brokers'));
+
+  $('#logout-btn').addEventListener('click', async () => {
+    try { await api('/auth/logout', { method: 'POST', auth: true }); } catch { /* 이미 만료 */ }
+    setSession(null, null);
+    loadListings();
+  });
+
+  $('#listing-form').addEventListener('submit', submitListing);
+  $('#pick-btn').addEventListener('click', startPick);
+
+  document.querySelectorAll('#listing-scope .seg-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setScope(btn.dataset.scope));
+  });
+
+  $('#listing-list').addEventListener('click', onListingAction);
+  loadListings();
+}
+
+async function submitAuth(event, path) {
+  event.preventDefault();
+  showError('#auth-error', '');
+  const body = Object.fromEntries(new FormData(event.target).entries());
+  try {
+    const res = await api(path, { method: 'POST', body });
+    setSession(res.token, res.broker);
+    event.target.reset();
+    loadListings();
+  } catch (err) {
+    showError('#auth-error', err.message);
+  }
+}
+
+async function submitListing(event) {
+  event.preventDefault();
+  showError('#listing-error', '');
+  const raw = Object.fromEntries(new FormData(event.target).entries());
+  const body = {
+    kind: raw.kind, deal_type: raw.deal_type, address: raw.address.trim(),
+    area_m2: Number(raw.area_m2), price_manwon: Number(raw.price_manwon),
+    contact_phone: raw.contact_phone.trim(),
+    memo: raw.memo ? raw.memo.trim() : null,
+    lat: raw.lat ? Number(raw.lat) : null,
+    lon: raw.lon ? Number(raw.lon) : null,
+  };
+  try {
+    await api('/listings', { method: 'POST', body, auth: true });
+    event.target.reset();
+    setScope('mine');
+  } catch (err) {
+    showError('#listing-error', err.message);
+  }
+}
+
+function setScope(scope) {
+  state.scope = scope;
+  document.querySelectorAll('#listing-scope .seg-btn').forEach((b) =>
+    b.classList.toggle('is-on', b.dataset.scope === scope));
+  $('#listing-title').childNodes[0].nodeValue =
+    scope === 'mine' ? '내 매물 ' : '공개 매물 ';
+  loadListings();
+}
+
+async function loadListings() {
+  if (!state.apiAvailable) return;
+  const mine = state.scope === 'mine' && state.broker;
+  try {
+    state.listings = await api(`/listings${mine ? '?mine=true' : ''}`,
+                               { auth: Boolean(state.broker) });
+  } catch (err) {
+    $('#listing-list').innerHTML = `<p class="empty">${err.message}</p>`;
+    state.listings = [];
+    return;
+  }
+  renderListings();
+  renderListingMarkers();
+}
+
+async function onListingAction(event) {
+  const btn = event.target.closest('button[data-act]');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  try {
+    if (btn.dataset.act === 'publish') {
+      await api(`/listings/${id}/publish`, { method: 'POST', auth: true });
+    } else if (btn.dataset.act === 'delete') {
+      if (!confirm('이 매물을 내리시겠습니까?')) return;
+      await api(`/listings/${id}`, { method: 'DELETE', auth: true });
+    } else if (btn.dataset.act === 'locate') {
+      const item = state.listings.find((l) => String(l.id) === id);
+      if (item && item.nearest_tollgate_id) focusOnMap(item.nearest_tollgate_id);
+      return;
+    }
+    loadListings();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
+const STATUS_LABEL = {
+  pending_payment: { text: '결제 대기', cls: 'pending' },
+  active: { text: '게시중', cls: 'active' },
+  expired: { text: '만료', cls: 'expired' },
+};
 
 function renderListings() {
-  const items = loadListings();
+  const items = state.listings;
   $('#listing-count').textContent = items.length;
   const list = $('#listing-list');
   if (!items.length) {
-    list.innerHTML = '<p class="empty">등록된 매물이 없습니다.</p>';
+    list.innerHTML = `<p class="empty">${
+      state.scope === 'mine' ? '등록한 매물이 없습니다.' : '공개된 매물이 없습니다.'}</p>`;
     return;
   }
-  list.innerHTML = items.map((it) => `
-    <article class="listing">
+  const mine = state.scope === 'mine';
+  list.innerHTML = items.map((it) => {
+    const st = STATUS_LABEL[it.status] || { text: it.status, cls: 'pending' };
+    const near = it.nearest_name
+      ? `<button type="button" class="link" data-act="locate" data-id="${it.id}">
+           ${it.nearest_name} ${it.nearest_km.toFixed(1)}km · ${it.band}</button>`
+      : '<span class="hint">좌표 없음 — IC 거리 미계산</span>';
+    return `<article class="listing">
       <div class="top">
         <strong>${KIND_LABEL[it.kind] || it.kind}</strong>
-        <span>${it.address}</span>
-        <span class="price">${Number(it.price).toLocaleString('ko-KR')}만원</span>
+        <span class="tag ${st.cls}">${st.text}</span>
+        <span>${it.deal_type === 'lease' ? '임대' : '매매'}</span>
+        <span class="price">${it.price_manwon.toLocaleString('ko-KR')}만원</span>
       </div>
-      <div class="who">${it.office} · 등록번호 ${it.license} · ${it.phone} · ${it.created}</div>
-      <div class="who">${Number(it.area).toLocaleString('ko-KR')}㎡</div>
-      ${it.memo ? `<div class="memo">${it.memo}</div>` : ''}
-    </article>`).join('');
+      <div>${it.address}</div>
+      <div class="who">${Number(it.area_m2).toLocaleString('ko-KR')}㎡
+        · ㎡당 ${num(it.price_per_m2)}원</div>
+      <div class="who">${near}</div>
+      ${it.memo ? `<div class="memo">${escapeHtml(it.memo)}</div>` : ''}
+      <div class="who">${it.office_name} · ${it.agent_name}
+        · 등록번호 ${it.license_no} · ${it.contact_phone}</div>
+      ${mine ? `<div class="actions">
+        ${it.status === 'pending_payment'
+          ? `<button type="button" class="btn small" data-act="publish" data-id="${it.id}">결제하고 게시</button>`
+          : ''}
+        <button type="button" class="btn ghost small" data-act="delete" data-id="${it.id}">내리기</button>
+      </div>` : ''}
+    </article>`;
+  }).join('');
 }
+
+/* 중개사가 입력한 텍스트는 그대로 innerHTML 에 넣지 않는다 */
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+/* ─────────── 매물을 지도에 ─────────── */
+function renderListingMarkers() {
+  if (!map) return;
+  if (!listingLayer) listingLayer = L.layerGroup().addTo(map);
+  listingLayer.clearLayers();
+  state.listings.filter((l) => l.lat && l.lon).forEach((l) => {
+    const marker = L.marker([l.lat, l.lon], {
+      icon: L.divIcon({ className: 'listing-pin', iconSize: [14, 14] }),
+    });
+    marker.bindTooltip(
+      `${KIND_LABEL[l.kind] || l.kind} · ${l.price_manwon.toLocaleString('ko-KR')}만원`,
+      { direction: 'top' });
+    listingLayer.addLayer(marker);
+  });
+}
+
+function startPick() {
+  if (!map) { alert('지도를 사용할 수 없어 좌표를 직접 입력해야 합니다.'); return; }
+  state.pickMode = true;
+  document.querySelector('.tab[data-view="explore"]').click();
+  document.body.classList.add('picking');
+  $('#map').insertAdjacentHTML('beforeend',
+    '<div class="pick-hint" id="pick-hint">매물 위치를 지도에서 클릭하세요 · Esc 취소</div>');
+}
+
+function endPick(latlng) {
+  state.pickMode = false;
+  document.body.classList.remove('picking');
+  const hint = $('#pick-hint');
+  if (hint) hint.remove();
+  if (latlng) {
+    document.querySelector('#listing-form [name=lat]').value = latlng.lat.toFixed(6);
+    document.querySelector('#listing-form [name=lon]').value = latlng.lng.toFixed(6);
+  }
+  document.querySelector('.tab[data-view="listings"]').click();
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && state.pickMode) endPick(null);
+});
 
 boot();

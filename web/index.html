@@ -2,162 +2,327 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>IC 교통량 × 토지·공장 실거래 스크리닝</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>사도 될까 — 토지 미래가치 무료 진단</title>
+<meta name="description" content="지금 보고 있는 토지, 살지 말지 못 정하셨나요. 시세·개발 호재·유동량으로 미래가치를 봐드립니다. 추첨 20명 무료.">
+<meta property="og:title" content="사도 될까 — 토지 미래가치 무료 진단">
+<meta property="og:description" content="직접 하면 하루. 방법을 알아도 2시간. 8건 중 8건 적중한 방식으로 봐드립니다. 추첨 20명 — 마지막 날에 신청해도 확률은 같습니다.">
+<meta property="og:type" content="website">
+<style>
+:root{
+  --ink:#14202e;
+  --ink-soft:#5b6b7c;
+  --line:#e3e8ee;
+  --bg:#ffffff;
+  --bg-soft:#f6f8fa;
+  --brand:#1b4d3e;
+  --brand-soft:#eaf2ee;
+  --accent:#b8862b;
+  --radius:14px;
+  --max:560px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,-apple-system,sans-serif;
+  color:var(--ink); background:var(--bg);
+  line-height:1.65; word-break:keep-all;
+  padding-bottom:96px;
+}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
+section{padding:38px 0;border-bottom:1px solid var(--line)}
+section:last-of-type{border-bottom:0}
+.label{
+  font-size:12px;font-weight:800;letter-spacing:.12em;
+  color:var(--brand);margin-bottom:14px
+}
+h2{font-size:20px;font-weight:800;line-height:1.4;margin-bottom:14px;letter-spacing:-.02em}
+p{font-size:16px;color:var(--ink);margin-bottom:12px}
+p.soft{color:var(--ink-soft);font-size:15px}
+strong{font-weight:800}
+
+.hero{
+  background:var(--brand);color:#fff;
+  padding:56px 0 44px;text-align:center;border-bottom:0
+}
+.eyebrow{
+  display:inline-block;font-size:13px;font-weight:700;
+  color:#cfe0d8;border:1px solid rgba(255,255,255,.32);
+  padding:6px 14px;border-radius:999px;margin-bottom:22px
+}
+h1{
+  font-size:clamp(44px,15vw,64px);font-weight:900;
+  letter-spacing:-.045em;line-height:1.08;margin-bottom:16px
+}
+.sub{font-size:17px;color:#d7e6df;font-weight:600}
+.hero .meta{
+  margin-top:26px;padding-top:22px;border-top:1px solid rgba(255,255,255,.18);
+  font-size:14px;color:#bcd2c8;font-weight:600
+}
+
+.reason{background:var(--bg-soft)}
+.reason blockquote{
+  font-size:17px;font-weight:600;line-height:1.7;
+  border-left:3px solid var(--brand);padding-left:16px;color:var(--ink)
+}
+.reason .sign{margin-top:14px;font-size:14px;color:var(--ink-soft)}
+
+.compare{display:grid;gap:10px;margin:18px 0 6px}
+.row{
+  display:flex;align-items:center;justify-content:space-between;
+  gap:14px;padding:16px 18px;border:1px solid var(--line);border-radius:var(--radius)
+}
+.row .who{font-size:15px;font-weight:700}
+.row .time{font-size:19px;font-weight:900;letter-spacing:-.02em;white-space:nowrap}
+.row.dim{color:var(--ink-soft)}
+.row.dim .time{color:var(--ink-soft)}
+.row.win{background:var(--brand-soft);border-color:#c9ddd3}
+.row.win .time{color:var(--brand)}
+
+.record{
+  display:flex;align-items:baseline;gap:12px;
+  padding:22px;background:var(--bg-soft);border-radius:var(--radius);margin-bottom:14px
+}
+.record .num{font-size:40px;font-weight:900;color:var(--brand);letter-spacing:-.04em;line-height:1}
+.record .txt{font-size:15px;font-weight:700}
+.record .txt span{display:block;font-weight:500;color:var(--ink-soft);font-size:14px;margin-top:3px}
+
+ul.checks{list-style:none;display:grid;gap:11px;margin-top:6px}
+ul.checks li{position:relative;padding-left:28px;font-size:16px;font-weight:600}
+ul.checks li::before{
+  content:"";position:absolute;left:6px;top:9px;
+  width:7px;height:7px;border-radius:50%;background:var(--accent)
+}
+ul.checks li span{display:block;font-weight:500;font-size:14px;color:var(--ink-soft);margin-top:2px}
+
+.cond{background:var(--bg-soft);border-radius:var(--radius);padding:6px 20px;margin-top:4px}
+.cond dl{display:grid;grid-template-columns:78px 1fr;gap:0}
+.cond dt{
+  padding:14px 0;font-size:14px;font-weight:800;color:var(--brand);
+  border-bottom:1px solid var(--line)
+}
+.cond dd{padding:14px 0;font-size:15px;font-weight:600;border-bottom:1px solid var(--line)}
+.cond dl>*:nth-last-child(-n+2){border-bottom:0}
+.note{
+  margin-top:16px;padding:14px 16px;border:1px dashed #cfd8e0;border-radius:12px;
+  font-size:14.5px;color:var(--ink-soft);font-weight:600
+}
+
+.cta-fixed{
+  position:fixed;left:0;right:0;bottom:0;z-index:50;
+  background:rgba(255,255,255,.94);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  border-top:1px solid var(--line);
+  padding:12px 22px calc(12px + env(safe-area-inset-bottom))
+}
+.cta-fixed .inner{max-width:var(--max);margin:0 auto}
+.btn{
+  display:block;width:100%;text-align:center;text-decoration:none;
+  background:var(--brand);color:#fff;font-size:17px;font-weight:800;
+  padding:17px 20px;border:0;border-radius:12px;cursor:pointer;
+  font-family:inherit;letter-spacing:-.01em
+}
+.btn:active{transform:translateY(1px)}
+.btn-note{
+  text-align:center;font-size:12.5px;color:var(--ink-soft);
+  margin-top:8px;font-weight:600;line-height:1.5
+}
+.cta-inline{padding:34px 0 40px;border-bottom:0}
+
+/* 진단 도구(/app)로 가는 보조 링크 — 카톡 신청 CTA 를 가리지 않도록 조용하게 */
+.tool-link{
+  display:flex;align-items:center;justify-content:center;gap:6px;
+  margin-top:20px;padding:14px 18px;
+  border:1px solid var(--line);border-radius:12px;
+  color:var(--brand);text-decoration:none;
+  font-size:15px;font-weight:700;letter-spacing:-.01em
+}
+.tool-link:hover{background:var(--bg-soft)}
+.tool-link:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.tool-link .arrow{font-weight:900}
+.tool-note{
+  text-align:center;font-size:12.5px;color:var(--ink-soft);
+  margin-top:8px;font-weight:600
+}
+
+.closed{display:none;text-align:center;padding:80px 0}
+.closed h2{font-size:26px;margin-bottom:16px}
+.closed p{color:var(--ink-soft)}
+.closed .tool-link{max-width:340px;margin-left:auto;margin-right:auto;margin-top:28px}
+body.is-closed .live{display:none}
+body.is-closed .closed{display:block}
+body.is-closed{padding-bottom:0}
+
+footer{padding:26px 0 34px;text-align:center;font-size:12.5px;color:#93a2b1}
+footer a{color:#93a2b1}
+</style>
 </head>
 <body>
 
-<div id="demo-banner" class="banner" hidden>
-  <strong>데모 데이터</strong>
-  <span>합성 데이터로 화면 형식만 확인하는 중입니다. 실제 부동산·교통량 값이 아닙니다.</span>
-</div>
+<div class="live">
 
-<header class="topbar">
-  <div class="brand">
-    <span class="mark" aria-hidden="true"></span>
-    <div>
-      <div class="brand-name">IC 스크리닝</div>
-      <div class="brand-sub">고속도로 교통량 × 토지·공장 실거래</div>
-    </div>
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow">토지 미래가치 진단 · 추첨 20명</span>
+    <h1>사도 될까</h1>
+    <p class="sub">토지 미래가치, 무료로 봐드립니다</p>
+    <p class="meta">9월 7일 신청 마감 · 9월 8일 추첨 · 무료 · 앱 출시 기념</p>
   </div>
-  <nav class="tabs" role="tablist">
-    <button class="tab is-active" role="tab" data-view="explore" aria-selected="true">탐색</button>
-    <button class="tab" role="tab" data-view="board" aria-selected="false">스코어보드</button>
-    <button class="tab" role="tab" data-view="listings" aria-selected="false">매물</button>
-  </nav>
-  <div class="meta-stamp" id="meta-stamp"></div>
 </header>
 
-<!-- ══ 탐색 ══ -->
-<main class="view is-active" id="view-explore">
-  <aside class="rail">
-    <section class="rail-block">
-      <h2>분면 필터</h2>
-      <div class="quad-filters" id="quad-filters"></div>
-    </section>
-    <section class="rail-block">
-      <h2>실거래 표시</h2>
-      <div class="checks" id="kind-filters"></div>
-      <label class="field">
-        <span>연도 <output id="year-out"></output> 이후</span>
-        <input type="range" id="year-range">
-      </label>
-      <label class="check">
-        <input type="checkbox" id="parcel-only">
-        <span>지번단위 좌표만 <em>정밀도 높은 거래</em></span>
-      </label>
-    </section>
-    <section class="rail-block">
-      <h2>거리 밴드</h2>
-      <p class="hint">영업소를 선택하면 반경이 표시됩니다.</p>
-      <div class="legend" id="band-legend"></div>
-    </section>
-  </aside>
-
-  <div class="map-wrap">
-    <div id="map"></div>
-    <div class="map-legend" id="map-legend"></div>
+<section class="reason">
+  <div class="wrap">
+    <div class="label">왜 무료인가</div>
+    <blockquote>
+      혼자 8건을 봐왔습니다.<br>
+      이제 앱으로 만들고 있고, <strong>출시 기념으로 20분께 무료 진단</strong>을 드립니다.
+    </blockquote>
+    <p class="sign">— 토지 미래가치 진단 앱을 만들고 있는 사람</p>
   </div>
+</section>
 
-  <aside class="detail" id="detail">
-    <div class="detail-empty">
-      <p>지도에서 <strong>영업소</strong>를 선택하세요.</p>
-      <p class="hint">반경별 실거래와 연도별 추이가 여기 표시됩니다.</p>
+<section>
+  <div class="wrap">
+    <div class="label">얼마나 걸리는 일인가</div>
+    <h2>토지 하나 제대로 보려면,<br>하루가 걸립니다</h2>
+    <div class="compare">
+      <div class="row dim">
+        <span class="who">방법을 모르는 사람이 직접</span>
+        <span class="time">하루</span>
+      </div>
+      <div class="row dim">
+        <span class="who">방법을 아는 사람이 직접</span>
+        <span class="time">2시간</span>
+      </div>
+      <div class="row win">
+        <span class="who">신청하시면</span>
+        <span class="time">기다리기만</span>
+      </div>
     </div>
-  </aside>
-</main>
-
-<!-- ══ 스코어보드 ══ -->
-<main class="view" id="view-board">
-  <div class="board">
-    <section class="panel">
-      <h2>교통량 모멘텀 × 가격 모멘텀</h2>
-      <p class="hint">최근 3년 연평균 증가율의 백분위. 각 점은 영업소 하나입니다.</p>
-      <div id="matrix"></div>
-    </section>
-    <section class="panel">
-      <div class="panel-head">
-        <h2>영업소 순위</h2>
-        <input type="search" id="board-search" placeholder="영업소 검색" aria-label="영업소 검색">
-      </div>
-      <div class="scroller">
-        <table id="board-table">
-          <thead><tr>
-            <th>영업소</th><th>분면</th>
-            <th class="num">교통량</th><th class="num">가격</th>
-            <th class="num">거래</th><th>신뢰도</th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+    <p class="soft">현재 가격만 보고 "비싸다 / 싸다"로 끝나는 이유는, 나머지를 볼 시간이 없어서입니다.</p>
   </div>
-</main>
+</section>
 
-<!-- ══ 매물 ══ -->
-<main class="view" id="view-listings">
-  <div class="listings">
-    <section class="panel">
-      <h2>매물 등록</h2>
-      <div class="notice">
-        <strong>개업공인중개사만 등록할 수 있습니다.</strong>
-        공인중개사법 제18조의2에 따라 중개대상물 광고는 개업공인중개사만 가능하며,
-        등록번호·사무소 정보를 함께 표시해야 합니다.
-        <em>현재는 형식 확인용 화면으로, 등록 정보는 브라우저에만 저장됩니다.</em>
-      </div>
-      <form id="listing-form" class="form">
-        <div class="grid-2">
-          <label class="field"><span>중개사무소 명칭 *</span>
-            <input name="office" required placeholder="○○공인중개사사무소"></label>
-          <label class="field"><span>등록번호 *</span>
-            <input name="license" required placeholder="41590-2024-00001"
-                   pattern="\d{5}-\d{4}-\d{5}" title="예: 41590-2024-00001"></label>
-        </div>
-        <div class="grid-2">
-          <label class="field"><span>물건 종류 *</span>
-            <select name="kind" required>
-              <option value="land">토지</option>
-              <option value="factory">공장·창고</option>
-              <option value="house">단독·다가구</option>
-              <option value="commercial">상업업무용</option>
-            </select></label>
-          <label class="field"><span>소재지 *</span>
-            <input name="address" required placeholder="경기도 화성시 ○○면 ○○리"></label>
-        </div>
-        <div class="grid-3">
-          <label class="field"><span>면적 (㎡) *</span>
-            <input name="area" type="number" min="1" step="0.01" required></label>
-          <label class="field"><span>희망가 (만원) *</span>
-            <input name="price" type="number" min="1" required></label>
-          <label class="field"><span>연락처 *</span>
-            <input name="phone" required placeholder="031-000-0000"></label>
-        </div>
-        <label class="field"><span>설명</span>
-          <textarea name="memo" rows="3" placeholder="도로 접함, 인근 IC 3km 등"></textarea></label>
-        <div class="form-foot">
-          <p class="fee">등록 수수료 <strong>30,000원</strong> / 90일 <span class="hint">— 결제 연동 예정</span></p>
-          <button type="submit" class="btn">등록</button>
-        </div>
-      </form>
-    </section>
-    <section class="panel">
-      <div class="panel-head">
-        <h2>등록된 매물 <span class="count" id="listing-count">0</span></h2>
-        <button type="button" class="btn ghost" id="listing-clear">전체 삭제</button>
-      </div>
-      <div id="listing-list" class="listing-list"></div>
-    </section>
+<section>
+  <div class="wrap">
+    <div class="label">근거</div>
+    <div class="record">
+      <span class="num">8/8</span>
+      <span class="txt">8건 중 8건 적중
+        <span>봐드린 뒤 결과가 어떻게 됐는지 피드백까지 받아왔습니다</span>
+      </span>
+    </div>
+    <p class="soft">돈을 받고 한 적은 없습니다. 주변에서 물어보면 그냥 봐드렸고, 그게 8건입니다.</p>
   </div>
-</main>
+</section>
 
-<footer class="disclaimer" id="disclaimer"></footer>
+<section>
+  <div class="wrap">
+    <div class="label">무엇을 보나</div>
+    <h2>네 가지를 함께 놓고 봅니다</h2>
+    <ul class="checks">
+      <li>현재 가격 <span>지금 얼마에 나와 있는가</span></li>
+      <li>주변 시세 <span>옆 물건들은 어떻게 움직였는가</span></li>
+      <li>개발 호재 <span>앞으로 무엇이 들어오는가</span></li>
+      <li>차량 · 사람 유동량 <span>실제로 사람이 다니는 자리인가</span></li>
+    </ul>
+    <p class="soft" style="margin-top:18px">이 넷을 같이 봐야 "미래에 이 땅이 어떻게 될지"가 나옵니다. 하나만 보면 숫자에 갇힙니다.</p>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="app.js"></script>
+    <a class="tool-link" href="/app">
+      만들고 있는 도구 미리 보기 <span class="arrow">→</span>
+    </a>
+    <p class="tool-note">고속도로 IC 교통량과 인근 토지 실거래가를 지도에서 함께 봅니다</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="label">조건</div>
+    <h2>아무나 드리지는 않습니다</h2>
+    <div class="cond">
+      <dl>
+        <dt>인원</dt><dd>추첨 <strong>20명</strong></dd>
+        <dt>기간</dt><dd><strong>9월 7일</strong>까지 신청 · <strong>9월 8일</strong> 추첨</dd>
+        <dt>대상</dt><dd><strong>토지</strong> · 지금 보고 있는 물건이 있는 분</dd>
+      </dl>
+    </div>
+    <div class="note">
+      <strong>먼저 신청한 순서는 상관없습니다.</strong> 9월 7일까지 신청한 분들을 모두 놓고 추첨합니다 —
+      <strong>마지막 날에 오셔도 확률은 똑같습니다.</strong><br><br>
+      아직 안 사셨어도 괜찮습니다. <strong>관심 있는 토지 하나만</strong> 있으면 됩니다.
+      부동산 투자를 넓혀보고 싶은 분도 환영합니다.
+    </div>
+  </div>
+</section>
+
+<section class="cta-inline">
+  <div class="wrap">
+    <button class="btn" data-join>무료 진단 신청하기</button>
+    <p class="btn-note">
+      누르면 카카오톡 오픈채팅방으로 들어갑니다.<br>
+      방에서 <strong>물건 정보</strong>를 남겨주시면 진단해 드립니다.
+    </p>
+  </div>
+</section>
+
+<div class="cta-fixed">
+  <div class="inner">
+    <button class="btn" data-join>무료 진단 신청하기</button>
+    <p class="btn-note">추첨 20명 · 9월 7일 신청 마감</p>
+  </div>
+</div>
+
+</div>
+
+<div class="closed">
+  <div class="wrap">
+    <h2>신청이 마감되었습니다</h2>
+    <p>신청해 주신 모든 분을 놓고 <strong>9월 8일에 추첨</strong>합니다.<br>
+       결과는 오픈채팅방에서 알려드립니다.</p>
+    <p style="margin-top:20px">이번에 안 되셔도 앱이 나오면 알려드릴게요.</p>
+
+    <a class="tool-link" href="/app">
+      만들고 있는 도구 미리 보기 <span class="arrow">→</span>
+    </a>
+  </div>
+</div>
+
+<footer>토지 미래가치 진단 · 무료 · 추첨 20명 · <a href="/app">도구 미리 보기</a></footer>
+
+<script>
+/* ===================================================
+   여기 두 줄만 고치면 됩니다
+   =================================================== */
+
+/* 1. 카카오톡 오픈채팅방 초대 링크를 따옴표 안에 넣으세요 */
+var KAKAO_LINK = "";
+
+/* 2. 신청을 일찍 닫으려면 true 로 바꾸세요
+      (추첨이므로 20명이 차도 마감하지 않습니다 — 끝까지 받습니다) */
+var CLOSED = false;
+
+/* 9월 7일 23:59가 지나면 자동으로 신청 마감 화면 (추첨은 9월 8일) */
+var DEADLINE = new Date("2026-09-07T23:59:59+09:00");
+
+/* =================================================== */
+
+(function () {
+  if (CLOSED || new Date() > DEADLINE) {
+    document.body.className = "is-closed";
+    return;
+  }
+  var buttons = document.querySelectorAll("[data-join]");
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener("click", function () {
+      if (!KAKAO_LINK) {
+        alert("오픈채팅방 링크가 아직 연결되지 않았습니다.\n\nindex.html 의 KAKAO_LINK 에 링크를 넣어주세요.");
+        return;
+      }
+      window.open(KAKAO_LINK, "_blank", "noopener");
+    });
+  }
+})();
+</script>
+
 </body>
 </html>

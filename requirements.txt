@@ -8,3 +8,5 @@ PyYAML>=6.0
 tenacity>=8.2
 statsmodels>=0.14
 tqdm>=4.66
+fastapi>=0.110
+uvicorn[standard]>=0.27
