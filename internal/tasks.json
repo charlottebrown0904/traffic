@@ -536,7 +536,7 @@
           "name": "국토교통부_토지 매매 실거래가",
           "use": "토지 가격 — 분석의 종속변수",
           "prio": "필수",
-          "status": "todo",
+          "status": "done",
           "url": "https://www.data.go.kr/data/15126466/openapi.do"
         },
         {
@@ -544,7 +544,7 @@
           "name": "국토교통부_공장 및 창고 등 부동산 매매 실거래가",
           "use": "공장 가격 — 분석의 종속변수",
           "prio": "필수",
-          "status": "todo",
+          "status": "done",
           "url": "https://www.data.go.kr/data/15126470/openapi.do"
         },
         {
