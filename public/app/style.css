@@ -316,3 +316,56 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 .offline-notice h2{font-size:1.1rem; color:var(--ink); margin-bottom:.6rem}
 .offline-notice p{margin:.4rem 0}
+
+/* ══════════════════════════════════════════════════════════════
+   모바일 — 좁은 화면에서는 세로로 쌓는다.
+   기본 레이아웃은 레일(16rem)+지도+상세(23rem)를 가로로 놓아
+   최소 폭이 39rem(≈624px)이다. 390px 폰에서는 화면이 옆으로 밀린다.
+   이벤트 페이지가 카톡으로 유통되므로 유입 대부분이 모바일이다.
+   ══════════════════════════════════════════════════════════════ */
+@media (max-width:56rem){
+  :root{--top-h:auto}
+
+  .topbar{
+    height:auto; flex-wrap:wrap; gap:.5rem .75rem; padding:.55rem .8rem;
+  }
+  .brand-sub{display:none}
+  .meta-stamp{display:none}
+  .guide-link{margin-left:auto; font-size:.76rem; padding:.28rem .55rem}
+  .tabs{order:3; width:100%; gap:.3rem}
+  .tab{flex:1; text-align:center; padding:.4rem .5rem; font-size:.82rem}
+
+  /* 탐색 뷰: 레일 → 지도 → 상세 순으로 세로 배치 */
+  #view-explore.is-active{flex-direction:column; overflow:auto}
+
+  .rail{
+    flex:0 0 auto; width:100%; max-height:none;
+    border-right:none; border-bottom:1px solid var(--border);
+    padding:.8rem .9rem;
+  }
+  /* 필터는 가로로 늘어놓아 세로 공간을 아낀다 */
+  .rail-block{padding-bottom:.8rem; margin-bottom:.8rem}
+  .quad-filters{grid-template-columns:1fr 1fr; gap:.35rem}
+  .quad-btn{font-size:.78rem; padding:.35rem .45rem}
+  .checks{grid-auto-flow:column; grid-auto-columns:max-content; gap:.9rem; overflow-x:auto}
+  .legend{grid-template-columns:1fr 1fr}
+
+  .map-wrap{flex:0 0 auto; height:58vh; min-height:20rem}
+
+  .detail{
+    flex:1 1 auto; width:100%; overflow:visible;
+    border-left:none; border-top:1px solid var(--border);
+  }
+  .detail-empty{padding-top:.5rem; text-align:center}
+
+  /* 스코어보드·매물은 이미 grid 1열로 떨어지지만 여백만 줄인다 */
+  .board,.listings{padding:1rem .9rem 2.5rem}
+  .panel{padding:.9rem 1rem}
+  #matrix svg{max-width:22rem; margin:0 auto}
+}
+
+/* 아주 좁은 화면 */
+@media (max-width:24rem){
+  .quad-filters{grid-template-columns:1fr}
+  .tab{font-size:.76rem}
+}
