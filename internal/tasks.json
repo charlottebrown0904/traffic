@@ -72,8 +72,8 @@
           "id": "P0-8",
           "title": "Vercel 배포 정상화",
           "owner": "both",
-          "status": "blocked",
-          "note": "Production Branch=main·도메인 연결 확인 완료(제외). vercel.json에 framework/build/install=null 고정 푸시함. 남은 후보: Root Directory 설정, Deployments 상태"
+          "status": "done",
+          "note": "해결. 원인은 옛 설정으로 빌드된 배포가 도메인에 붙어 있던 것. vercel.json에 framework/build/install=null 고정 후 재배포로 정상화. /version.txt 로 배포 커밋 확인 가능"
         },
         {
           "id": "P0-9",
