@@ -43,7 +43,7 @@ async function boot() {
   try {
     const [meta, tollgates, trades, series] = await Promise.all(
       ['meta', 'tollgates', 'trades', 'series'].map((n) =>
-        fetch(`data/${n}.json`).then((r) => {
+        fetch(`/app/data/${n}.json`).then((r) => {
           if (!r.ok) throw new Error(`data/${n}.json 을 읽지 못했습니다 (${r.status})`);
           return r.json();
         }))
