@@ -1,0 +1,9 @@
+# Vercel 은 public/ 만 배포하지만, 설정이 어긋나도 아래는 절대 올라가지 않도록 못박는다.
+internal/
+src/
+scripts/
+docs/
+config/
+data/
+Makefile
+requirements.txt

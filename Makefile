@@ -1,6 +1,6 @@
 PY := PYTHONPATH=src python3
 
-.PHONY: install synthetic demo test test-server web serve serve-static status clean
+.PHONY: install synthetic demo test test-server web serve serve-static plan status clean
 
 install:
 	pip install -r requirements.txt
@@ -33,6 +33,13 @@ web:
 ## 매물 API + 화면 (같은 포트). JSON 이 이미 있을 때
 serve:
 	$(PY) -m redt.cli serve-api
+
+## 마스터 플랜 진행률 보드 (비공개 · 로컬 전용)
+plan:
+	@echo ""
+	@echo "  http://127.0.0.1:8900/plan.html  — 진행률 보드 (Ctrl+C 로 종료)"
+	@echo ""
+	@cd internal && python3 -m http.server 8900
 
 ## 정적 화면만 (API 없이)
 serve-static:

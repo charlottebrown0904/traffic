@@ -1,0 +1,515 @@
+{
+  "updated": "2026-08-30",
+  "legend": {
+    "owner": {
+      "user": "사용자",
+      "claude": "Claude",
+      "both": "함께"
+    },
+    "status": {
+      "done": "완료",
+      "doing": "진행중",
+      "todo": "대기",
+      "blocked": "막힘"
+    }
+  },
+  "phases": [
+    {
+      "id": "P0",
+      "name": "지금 있는 것 정리",
+      "goal": "배포가 정상 동작하고 이벤트가 돌아간다",
+      "tasks": [
+        {
+          "id": "P0-1",
+          "title": "분석 파이프라인 (수집→헤도닉→패널→상관)",
+          "owner": "claude",
+          "status": "done",
+          "note": "합성 데이터로 β 회수 검증 완료"
+        },
+        {
+          "id": "P0-2",
+          "title": "스코어링 엔진 (2×2 분면)",
+          "owner": "claude",
+          "status": "done",
+          "note": ""
+        },
+        {
+          "id": "P0-3",
+          "title": "화면 3탭 (탐색·스코어보드·매물)",
+          "owner": "claude",
+          "status": "done",
+          "note": ""
+        },
+        {
+          "id": "P0-4",
+          "title": "매물 API (인증·소유권) + 13개 보안 테스트",
+          "owner": "claude",
+          "status": "done",
+          "note": ""
+        },
+        {
+          "id": "P0-5",
+          "title": "토지·건축 가이드 4개 페이지",
+          "owner": "claude",
+          "status": "done",
+          "note": ""
+        },
+        {
+          "id": "P0-6",
+          "title": "이벤트 랜딩 + /app 링크",
+          "owner": "claude",
+          "status": "done",
+          "note": ""
+        },
+        {
+          "id": "P0-7",
+          "title": "모바일 레이아웃",
+          "owner": "claude",
+          "status": "done",
+          "note": "390·360·1280px 확인"
+        },
+        {
+          "id": "P0-8",
+          "title": "Vercel 배포 정상화",
+          "owner": "both",
+          "status": "blocked",
+          "note": "404 원인 확인 필요 — Production Branch 값"
+        },
+        {
+          "id": "P0-9",
+          "title": "KAKAO_LINK 채우기",
+          "owner": "user",
+          "status": "todo",
+          "note": "비어 있으면 신청 버튼이 동작 안 함"
+        },
+        {
+          "id": "P0-10",
+          "title": "저장소 private 전환",
+          "owner": "user",
+          "status": "todo",
+          "note": "실데이터 커밋 전에"
+        }
+      ]
+    },
+    {
+      "id": "P1",
+      "name": "첫 사용자 20명",
+      "goal": "수기 진단으로 '내가 실제로 무엇을 보는지'를 알아낸다",
+      "tasks": [
+        {
+          "id": "P1-1",
+          "title": "이벤트 신청 접수 (9/7 마감)",
+          "owner": "user",
+          "status": "doing",
+          "note": ""
+        },
+        {
+          "id": "P1-2",
+          "title": "9/8 추첨 20명 선정",
+          "owner": "user",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P1-3",
+          "title": "수기 진단 20건 수행",
+          "owner": "user",
+          "status": "todo",
+          "note": "여기가 제품의 원재료"
+        },
+        {
+          "id": "P1-4",
+          "title": "진단 기준 기록 — 무엇을 몇 번 봤나",
+          "owner": "both",
+          "status": "todo",
+          "note": "레이더 축의 실제 정의가 여기서 나온다"
+        },
+        {
+          "id": "P1-5",
+          "title": "진단 결과 피드백 수집",
+          "owner": "user",
+          "status": "todo",
+          "note": "어느 정보가 결정에 영향을 줬는가"
+        },
+        {
+          "id": "P1-6",
+          "title": "축 후보 확정 (6개 → 실제 쓴 3개)",
+          "owner": "both",
+          "status": "todo",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "P2",
+      "name": "데이터 기반",
+      "goal": "파일럿 권역 실데이터로 가설이 성립하는지 확인",
+      "tasks": [
+        {
+          "id": "P2-1",
+          "title": "공공데이터포털 키 발급 (5개 데이터셋)",
+          "owner": "user",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P2-2",
+          "title": "VWorld 지오코더 키",
+          "owner": "user",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P2-3",
+          "title": "probe-history — 교통량 과거 조회 가능 범위 판정",
+          "owner": "user",
+          "status": "todo",
+          "note": "프로젝트 방향을 가르는 한 줄"
+        },
+        {
+          "id": "P2-4",
+          "title": "교통량 시계열 확보 (백필 또는 파일)",
+          "owner": "both",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P2-5",
+          "title": "실거래가 수집 (경기 남부 8개 시군구)",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P2-6",
+          "title": "지오코딩 + 공간 조인",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P2-7",
+          "title": "β 추정 및 위약 밴드 검정",
+          "owner": "claude",
+          "status": "todo",
+          "note": "여기서 안 나오면 방향 전환"
+        },
+        {
+          "id": "P2-8",
+          "title": "개별공시지가 시계열 수집",
+          "owner": "claude",
+          "status": "todo",
+          "note": "전 필지 baseline — 최대 누락 항목"
+        },
+        {
+          "id": "P2-9",
+          "title": "지가변동률 (시군구 분기)",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "P3",
+      "name": "레이더 v1",
+      "goal": "상관 제거된 3축으로 매물별 차트를 그린다",
+      "tasks": [
+        {
+          "id": "P3-1",
+          "title": "축 정의를 '수준'에서 '변화량·잔차'로 재설계",
+          "owner": "claude",
+          "status": "todo",
+          "note": "정육각형 문제 해결"
+        },
+        {
+          "id": "P3-2",
+          "title": "축 간 상관 측정 — 실제로 갈리는지 확인",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P3-3",
+          "title": "축1 IC 교통량 모멘텀",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P3-4",
+          "title": "축2 개발계획 (신규 고시 건수)",
+          "owner": "claude",
+          "status": "todo",
+          "note": "산업단지·택지 고시일 수집 선행"
+        },
+        {
+          "id": "P3-5",
+          "title": "축3 인구·사업체 증감",
+          "owner": "claude",
+          "status": "todo",
+          "note": "KOSIS"
+        },
+        {
+          "id": "P3-6",
+          "title": "레이더 차트 컴포넌트",
+          "owner": "claude",
+          "status": "todo",
+          "note": "종합점수는 만들지 않음"
+        },
+        {
+          "id": "P3-7",
+          "title": "20명에게 보여주고 반응 확인",
+          "owner": "user",
+          "status": "todo",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "id": "P4",
+      "name": "회원·매물",
+      "goal": "중개사가 무료로 매물을 올리고 사용자가 저장한다",
+      "tasks": [
+        {
+          "id": "P4-1",
+          "title": "Supabase 프로젝트 + PostGIS 활성화",
+          "owner": "user",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P4-2",
+          "title": "스키마 마이그레이션 (broker/listing/inquiry/favorite)",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P4-3",
+          "title": "RLS 정책 — 기존 13개 보안 테스트를 정책 명세로",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P4-4",
+          "title": "프런트엔드를 supabase-js 로 전환",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P4-5",
+          "title": "카카오 로그인",
+          "owner": "claude",
+          "status": "todo",
+          "note": "한국 서비스 사실상 필수"
+        },
+        {
+          "id": "P4-6",
+          "title": "사용자 회원 — 관심 매물 저장",
+          "owner": "claude",
+          "status": "todo",
+          "note": "가입할 이유"
+        },
+        {
+          "id": "P4-7",
+          "title": "중개사 회원 — 등록증 업로드 + 관리자 승인",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P4-8",
+          "title": "관리자 화면 (승인·검수·신고)",
+          "owner": "claude",
+          "status": "todo",
+          "note": "빠져 있던 세 번째 역할"
+        },
+        {
+          "id": "P4-9",
+          "title": "매물 검색·필터",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P4-10",
+          "title": "허위매물 신고",
+          "owner": "claude",
+          "status": "todo",
+          "note": "공인중개사법상 모니터링"
+        },
+        {
+          "id": "P4-11",
+          "title": "이용약관·개인정보처리방침 초안",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P4-12",
+          "title": "약관 검토 및 게시",
+          "owner": "user",
+          "status": "todo",
+          "note": "변호사 검토 권장"
+        },
+        {
+          "id": "P4-13",
+          "title": "탈퇴·개인정보 삭제",
+          "owner": "claude",
+          "status": "todo",
+          "note": "법정 의무"
+        }
+      ]
+    },
+    {
+      "id": "P5",
+      "name": "확장",
+      "goal": "전국 데이터와 6축, 재방문 장치",
+      "tasks": [
+        {
+          "id": "P5-1",
+          "title": "전국 실거래 수집",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P5-2",
+          "title": "팩토리온 공장등록 — 기업 분포 축",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P5-3",
+          "title": "표준노드링크 — 도로 축",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P5-4",
+          "title": "용도지역 자동 판정 (토지이음/LURIS)",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P5-5",
+          "title": "건축물대장 연동",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P5-6",
+          "title": "DEM 경사도 자동 판정",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P5-7",
+          "title": "신규 매물·신규 고시 알림",
+          "owner": "claude",
+          "status": "todo",
+          "note": "재방문을 만드는 유일한 장치"
+        },
+        {
+          "id": "P5-8",
+          "title": "GitHub Actions — 일별 교통량 수집",
+          "owner": "claude",
+          "status": "todo",
+          "note": "오늘 시작 안 하면 오늘치가 사라짐"
+        },
+        {
+          "id": "P5-9",
+          "title": "GitHub Actions — 월별 실거래 갱신",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P5-10",
+          "title": "조회 로그 수집",
+          "owner": "claude",
+          "status": "todo",
+          "note": "중개사에게 파는 정보가 됨"
+        }
+      ]
+    },
+    {
+      "id": "P6",
+      "name": "수익화",
+      "goal": "무료로 채운 뒤 과금한다",
+      "tasks": [
+        {
+          "id": "P6-1",
+          "title": "사업자등록",
+          "owner": "user",
+          "status": "todo",
+          "note": "가장 오래 걸림 — 일찍 시작"
+        },
+        {
+          "id": "P6-2",
+          "title": "통신판매업 신고",
+          "owner": "user",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P6-3",
+          "title": "PG 계약",
+          "owner": "user",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P6-4",
+          "title": "조회수 리포트 (중개사 대상)",
+          "owner": "claude",
+          "status": "todo",
+          "note": "과금 전 가치 증명"
+        },
+        {
+          "id": "P6-5",
+          "title": "상단 노출 유료화",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P6-6",
+          "title": "문의 리드 과금",
+          "owner": "claude",
+          "status": "todo",
+          "note": "등록 수수료보다 클 수 있음"
+        },
+        {
+          "id": "P6-7",
+          "title": "결제 위젯 + 웹훅 서명 검증",
+          "owner": "claude",
+          "status": "todo",
+          "note": "publish 는 결제 검증 후에만"
+        },
+        {
+          "id": "P6-8",
+          "title": "매물 만료 배치",
+          "owner": "claude",
+          "status": "todo",
+          "note": ""
+        },
+        {
+          "id": "P6-9",
+          "title": "등록 수수료 도입",
+          "owner": "both",
+          "status": "todo",
+          "note": "맨 마지막"
+        }
+      ]
+    }
+  ]
+}
