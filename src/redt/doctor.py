@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import datetime as dt
 import importlib
-import re
 import sys
 
 from .config import DB_PATH, PROCESSED, ROOT, keys
+from .scrub import scrub as _scrub
 
 PACKAGES = [
     ("requests", "API 호출"),
@@ -24,15 +24,6 @@ PACKAGES = [
 
 _fail: list[str] = []
 _warn: list[str] = []
-
-# 오류 메시지에는 호출 URL 이 통째로 들어온다. 키가 그대로 찍히면
-# 이 출력을 붙여넣는 순간 새어나가므로 반드시 가린다.
-_SECRET = re.compile(r"(?i)\b(serviceKey|apiKey|authKey|key|accessKey)=[^&\s'\"]+")
-
-
-def _scrub(text: str) -> str:
-    return _SECRET.sub(r"\1=***", text)
-
 
 def _say(ok: bool | None, label: str, hint: str = "") -> None:
     mark = "  ok   " if ok else ("  --   " if ok is None else "  FAIL ")

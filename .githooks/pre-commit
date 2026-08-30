@@ -1,0 +1,42 @@
+#!/bin/sh
+# 키가 커밋에 섞여 들어가는 것을 막는다.
+# .gitignore 가 이미 config/.env 를 막지만, 파일 이름을 바꾸거나 다른 파일에
+# 값을 붙여넣는 실수까지는 막지 못한다. 그 마지막 한 겹.
+#
+# 설치: make hooks   (git config core.hooksPath .githooks)
+
+fail=0
+say() { printf '\n  \033[31m커밋 차단\033[0m  %s\n' "$1"; fail=1; }
+
+# 1) .env 파일 자체
+names=$(git diff --cached --name-only --diff-filter=ACM |
+        grep -E '(^|/)\.env($|\.)' | grep -v '\.env\.example$')
+if [ -n "$names" ]; then
+  say "환경변수 파일이 스테이지에 있습니다:"
+  printf '%s\n' "$names" | sed 's/^/       /'
+  printf '       → git rm --cached <파일>  로 빼세요\n'
+fi
+
+# 2) 추가된 줄에 실제 키 값이 있는가 (빈 값·자리표시자는 통과)
+added=$(git diff --cached --diff-filter=ACM -U0 | grep '^+' | grep -v '^+++')
+
+hits=$(printf '%s' "$added" |
+  grep -nE '(DATA_GO_KR_KEY|VWORLD_KEY|EX_API_KEY|SERVICE_ROLE|SUPABASE_[A-Z_]*KEY)=[^[:space:]]+' |
+  grep -vEi '=(\s*$|여기에|your|xxx|<|\$\{|\(|dummy|test|example)')
+if [ -n "$hits" ]; then
+  say "키 값으로 보이는 문자열이 있습니다:"
+  printf '%s\n' "$hits" | cut -c1-90 | sed 's/^/       /'
+fi
+
+# 3) URL 안에 박힌 키
+url=$(printf '%s' "$added" | grep -nE '(serviceKey|apiKey|authKey)=[A-Za-z0-9%+/=_-]{20,}')
+if [ -n "$url" ]; then
+  say "URL 에 키가 박혀 있습니다:"
+  printf '%s\n' "$url" | cut -c1-90 | sed 's/^/       /'
+fi
+
+if [ "$fail" -eq 1 ]; then
+  printf '\n  의도한 것이라면  git commit --no-verify  로 우회할 수 있습니다.\n\n'
+  exit 1
+fi
+exit 0

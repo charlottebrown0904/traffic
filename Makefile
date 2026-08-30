@@ -5,10 +5,15 @@ START ?= 2016-01
 END   ?= 2025-12
 KIND  ?= land,factory
 
-.PHONY: install doctor collect synthetic demo test test-server web serve serve-static plan progress status clean
+.PHONY: install hooks doctor collect synthetic demo test test-server web serve serve-static plan progress status clean
 
 install:
 	pip install -r requirements.txt
+
+## 키가 커밋에 섞이지 않도록 git 훅 설치 (한 번만)
+hooks:
+	git config core.hooksPath .githooks
+	@echo "  설치됨 — 이제 키가 포함된 커밋은 차단됩니다"
 
 ## 수집 전 점검 — 키·네트워크·저장경로가 다 준비됐는지
 doctor:

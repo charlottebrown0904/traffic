@@ -7,6 +7,8 @@ import xml.etree.ElementTree as ET
 import requests
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from ..scrub import scrub
+
 _session = requests.Session()
 _session.headers.update({"User-Agent": "redt-research/0.1"})
 
@@ -25,7 +27,11 @@ def get(url: str, params: dict, timeout: int = 30) -> requests.Response:
     resp = _session.get(url, params=params, timeout=timeout)
     if resp.status_code >= 500:
         raise ApiError(f"{resp.status_code} from {url}")
-    resp.raise_for_status()
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as exc:
+        # requests 의 메시지에는 쿼리스트링이 통째로 들어간다 (serviceKey 포함).
+        raise requests.HTTPError(scrub(str(exc)), response=resp) from None
     return resp
 
 
