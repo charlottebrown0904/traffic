@@ -1,0 +1,183 @@
+/* 토지·건축 가이드 — 앱(/app)과 같은 토큰 체계를 쓴다. 참조 문서형 편집. */
+:root{
+  --ground:#FBFCFD; --surface:#FFFFFF; --surface-2:#F2F5F8;
+  --ink:#0F1720; --muted:#5B6875; --faint:#8A96A3;
+  --border:#DEE5EC; --border-strong:#C4D0DB;
+  --accent:#0F5AA8; --accent-soft:#E7F0FA; --on-accent:#FFFFFF;
+  --warn:#9A6206; --warn-soft:#FBF0DC;
+  --block:#A32820; --block-soft:#FBEAE8;
+  --ok:#14713F; --ok-soft:#E4F3EA;
+  --shadow:0 1px 2px rgba(15,23,32,.05), 0 8px 24px -18px rgba(15,23,32,.3);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0C1116; --surface:#141C25; --surface-2:#1B242E;
+    --ink:#E7EEF4; --muted:#8C9AA8; --faint:#6D7B89;
+    --border:#232E3A; --border-strong:#33414F;
+    --accent:#56A0E8; --accent-soft:#132538; --on-accent:#08111A;
+    --warn:#DDA23C; --warn-soft:#2A2011;
+    --block:#E8796C; --block-soft:#2B1614;
+    --ok:#4FC084; --ok-soft:#11251B;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0C1116; --surface:#141C25; --surface-2:#1B242E;
+  --ink:#E7EEF4; --muted:#8C9AA8; --faint:#6D7B89;
+  --border:#232E3A; --border-strong:#33414F;
+  --accent:#56A0E8; --accent-soft:#132538; --on-accent:#08111A;
+  --warn:#DDA23C; --warn-soft:#2A2011;
+  --block:#E8796C; --block-soft:#2B1614;
+  --ok:#4FC084; --ok-soft:#11251B;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  font-size:16px; line-height:1.75; word-break:keep-all;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:52rem; margin:0 auto; padding:0 1.25rem 5rem}
+
+/* ── 상단 ── */
+.topbar{
+  position:sticky; top:0; z-index:20;
+  background:color-mix(in srgb, var(--surface) 92%, transparent);
+  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border);
+}
+.topbar .inner{
+  max-width:52rem; margin:0 auto; padding:.6rem 1.25rem;
+  display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;
+}
+.back{
+  font-size:.82rem; font-weight:600; color:var(--muted); text-decoration:none;
+  padding:.3rem .65rem; border-radius:.35rem; border:1px solid var(--border-strong);
+  white-space:nowrap;
+}
+.back:hover{background:var(--surface-2); color:var(--ink)}
+.back:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.crumb{font-size:.82rem; color:var(--faint)}
+.crumb a{color:var(--muted); text-decoration:none}
+.crumb a:hover{color:var(--accent)}
+
+/* ── 제목 ── */
+header.page{padding:2.75rem 0 1.75rem; border-bottom:2px solid var(--border-strong); margin-bottom:2rem}
+.eyebrow{
+  font-size:.7rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--accent); margin-bottom:.6rem;
+}
+h1{margin:0 0 .7rem; font-size:clamp(1.7rem,5vw,2.35rem); line-height:1.2; letter-spacing:-.02em; text-wrap:balance}
+.lede{margin:0; color:var(--muted); font-size:1.02rem; max-width:40rem}
+.lede strong{color:var(--ink); font-weight:600}
+
+h2{
+  margin:2.75rem 0 .85rem; font-size:1.3rem; font-weight:700;
+  letter-spacing:-.015em; line-height:1.35; text-wrap:balance;
+  padding-top:.5rem; border-top:1px solid var(--border);
+}
+h2:first-of-type{border-top:none; padding-top:0}
+h3{margin:1.75rem 0 .5rem; font-size:1.02rem; font-weight:700; letter-spacing:-.01em}
+p{margin:.75rem 0; max-width:40rem}
+ul,ol{margin:.75rem 0; padding-left:1.25rem; max-width:40rem}
+li{margin:.35rem 0}
+li::marker{color:var(--faint)}
+strong{font-weight:700}
+.muted{color:var(--muted)}
+.hint{font-size:.85rem; color:var(--faint); margin:.35rem 0}
+
+a{color:var(--accent); text-decoration:none; border-bottom:1px solid color-mix(in srgb,var(--accent) 35%,transparent)}
+a:hover{border-bottom-color:var(--accent)}
+a:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:2px}
+
+code{
+  font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.87em;
+  background:var(--surface-2); padding:.1em .35em; border-radius:.25rem;
+}
+
+/* ── 표 ── */
+.scroller{overflow-x:auto; -webkit-overflow-scrolling:touch; margin:1rem 0}
+table{border-collapse:collapse; width:100%; min-width:30rem; font-size:.88rem}
+caption{
+  text-align:left; font-size:.72rem; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--faint); padding-bottom:.5rem;
+}
+th,td{padding:.55rem .7rem; text-align:left; border-bottom:1px solid var(--border); vertical-align:top}
+thead th{
+  font-size:.72rem; font-weight:700; letter-spacing:.05em; color:var(--faint);
+  border-bottom:1px solid var(--border-strong); white-space:nowrap;
+}
+tbody th{font-weight:600; white-space:nowrap}
+td.num,th.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+tbody tr:hover{background:var(--surface-2)}
+.grp{background:var(--surface-2); font-weight:700; font-size:.8rem; color:var(--muted)}
+.yes{color:var(--ok); font-weight:700}
+.no{color:var(--block); font-weight:700}
+
+/* ── 강조 박스 ── */
+.box{
+  margin:1.25rem 0; padding:.9rem 1.1rem; border-radius:.5rem;
+  border:1px solid var(--border); border-left:4px solid var(--accent);
+  background:var(--surface); box-shadow:var(--shadow); font-size:.94rem;
+}
+.box > :first-child{margin-top:0}
+.box > :last-child{margin-bottom:0}
+.box .label{
+  display:block; font-size:.68rem; font-weight:700; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--accent); margin-bottom:.35rem;
+}
+.box.warn{border-left-color:var(--warn); background:var(--warn-soft)}
+.box.warn .label{color:var(--warn)}
+.box.danger{border-left-color:var(--block); background:var(--block-soft)}
+.box.danger .label{color:var(--block)}
+
+/* ── 목차 카드 ── */
+.cards{display:grid; gap:.85rem; grid-template-columns:repeat(auto-fit,minmax(15rem,1fr)); margin:1.5rem 0}
+.card{
+  display:block; padding:1.15rem 1.25rem; border-radius:.6rem;
+  border:1px solid var(--border); background:var(--surface);
+  box-shadow:var(--shadow); text-decoration:none; color:inherit;
+}
+.card:hover{border-color:var(--accent)}
+.card:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.card .n{
+  font-family:"IBM Plex Mono",monospace; font-size:.72rem; font-weight:600;
+  color:var(--accent); letter-spacing:.1em;
+}
+.card h3{margin:.3rem 0 .35rem; font-size:1.05rem}
+.card p{margin:0; font-size:.87rem; color:var(--muted); max-width:none}
+
+/* ── 단계 ── */
+.steps{counter-reset:s; display:grid; gap:.6rem; margin:1.25rem 0; padding:0; list-style:none; max-width:40rem}
+.steps li{
+  counter-increment:s; position:relative; padding:.75rem .95rem .75rem 2.9rem;
+  border:1px solid var(--border); border-radius:.5rem; background:var(--surface); margin:0;
+}
+.steps li::before{
+  content:counter(s); position:absolute; left:.85rem; top:.8rem;
+  width:1.5rem; height:1.5rem; border-radius:.3rem;
+  background:var(--accent); color:var(--on-accent);
+  font-size:.8rem; font-weight:700; display:grid; place-items:center;
+}
+.steps b{display:block; margin-bottom:.1rem}
+.steps span{font-size:.88rem; color:var(--muted)}
+
+/* ── 체크리스트 ── */
+.check{list-style:none; padding:0; display:grid; gap:.4rem; max-width:40rem}
+.check li{
+  position:relative; padding:.5rem .8rem .5rem 2.1rem; margin:0; font-size:.92rem;
+  border:1px solid var(--border); border-radius:.4rem; background:var(--surface);
+}
+.check li::before{
+  content:"□"; position:absolute; left:.8rem; top:.5rem;
+  color:var(--accent); font-weight:700;
+}
+
+footer.page{
+  margin-top:3.5rem; padding-top:1.5rem; border-top:1px solid var(--border);
+  font-size:.82rem; color:var(--faint);
+}
+footer.page p{max-width:none}
+@media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
