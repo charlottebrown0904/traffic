@@ -12,6 +12,7 @@ synthetic:
 ## 로직 검증 (API 키 불필요)
 test: test-server
 	$(PY) scripts/test_backfill.py
+	$(PY) scripts/test_web.py
 
 ## 매물 API 인증·권한 검증
 test-server:

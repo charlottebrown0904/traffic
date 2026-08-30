@@ -1,5 +1,5 @@
 /* IC 스크리닝 — 화면 로직.
-   DB 에 직접 붙지 않고 web/data/*.json 만 읽는다.
+   DB 에 직접 붙지 않고 public/app/data/*.json 만 읽는다.
    합성 데이터든 실데이터든 이 파일은 그대로다. */
 'use strict';
 
@@ -83,7 +83,7 @@ function showFatal(message) {
     `<div style="padding:3rem 1.5rem;max-width:34rem;margin:0 auto">
        <h1 style="font-size:1.1rem;margin-bottom:.5rem">데이터를 불러오지 못했습니다</h1>
        <p style="color:#5B6875">${message}</p>
-       <p style="color:#5B6875">먼저 <code>make web</code> 를 실행해 <code>web/data/</code> 를 생성하세요.
+       <p style="color:#5B6875">먼저 <code>make web</code> 를 실행해 <code>public/app/data/</code> 를 생성하세요.
        파일을 직접 열면(<code>file://</code>) 브라우저가 차단하므로 로컬 서버로 열어야 합니다.</p>
      </div>`;
 }

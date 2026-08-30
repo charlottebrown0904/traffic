@@ -1,9 +1,11 @@
 # Vercel 은 public/ 만 배포하지만, 설정이 어긋나도 아래는 절대 올라가지 않도록 못박는다.
-internal/
-src/
-scripts/
-docs/
-config/
-data/
-Makefile
-requirements.txt
+# 앞의 / 는 "최상위에서만" 을 뜻한다. 없으면 public/app/data/ 처럼 하위의 같은 이름
+# 폴더까지 함께 제외돼서 앱 데이터가 통째로 빠진다.
+/internal/
+/src/
+/scripts/
+/docs/
+/config/
+/data/
+/Makefile
+/requirements.txt
