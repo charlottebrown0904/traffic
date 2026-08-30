@@ -1,6 +1,6 @@
 PY := PYTHONPATH=src python3
 
-.PHONY: install synthetic demo test test-server web serve serve-static plan status clean
+.PHONY: install synthetic demo test test-server web serve serve-static plan progress status clean
 
 install:
 	pip install -r requirements.txt
@@ -36,6 +36,10 @@ serve:
 	$(PY) -m redt.cli serve-api
 
 ## 마스터 플랜 진행률 보드 (비공개 · 로컬 전용)
+## 진행률 문서 재생성 (internal/tasks.json → internal/PROGRESS.md)
+progress:
+	$(PY) scripts/render_progress.py
+
 plan:
 	@echo ""
 	@echo "  http://127.0.0.1:8900/plan.html  — 진행률 보드 (Ctrl+C 로 종료)"
