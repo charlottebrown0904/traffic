@@ -1,0 +1,3 @@
+sado-toji / traffic
+deploy-marker: 2026-08-30-a
+paths: / , /app/ , /guide/
