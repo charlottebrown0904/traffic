@@ -13,7 +13,7 @@ OUT = ROOT / "internal" / "PROGRESS.md"
 
 MARK = {"done": "x", "doing": " ", "todo": " ", "blocked": " "}
 BADGE = {"done": "완료", "doing": "**진행중**", "todo": "대기", "blocked": "**막힘**"}
-OWNER = {"user": "사장님", "claude": "Claude", "both": "함께"}
+OWNER = {"user": "대표님", "claude": "Claude", "both": "함께"}
 KST = timezone(timedelta(hours=9))
 
 
@@ -22,6 +22,62 @@ def bar(done: int, total: int, width: int = 20) -> str:
         return "―"
     filled = round(width * done / total)
     return "█" * filled + "░" * (width - filled)
+
+
+
+def _keys_section(data: dict) -> list[str]:
+    """발급이 필요한 키와, 그 키로 열어야 하는 데이터셋을 한 표로."""
+    keys = data.get("keys") or []
+    if not keys:
+        return []
+    total = len(keys) + sum(len(k.get("datasets", [])) for k in keys)
+    got = sum(k["status"] == "done" for k in keys) + sum(
+        ds["status"] == "done" for k in keys for ds in k.get("datasets", [])
+    )
+    L = [
+        "",
+        "---",
+        "",
+        f"## 발급이 필요한 API 키  `{got}/{total}`",
+        "",
+        f"`{bar(got, total)}`",
+        "",
+        "> 키 값 자체는 채팅에 붙이지 마세요. `config/.env` 에 넣고 `make doctor` 출력만 보내주시면 됩니다.",
+        "> (`.env` 는 gitignore 되어 커밋되지 않고, doctor 출력의 키는 `***` 로 가려집니다.)",
+        "",
+    ]
+    for k in keys:
+        mark = "x" if k["status"] == "done" else " "
+        L += [
+            f"### [{mark}] {k['id']} · `{k['env']}` — {k['name']}",
+            "",
+            f"- **필요도** {k['need']}  ·  **소요** {k['lead']}  ·  **포털** {k['portal']}",
+            f"- **왜** {k['why']}",
+            f"- **주의** {k['note']}",
+        ]
+        if k.get("datasets"):
+            L += [
+                "",
+                "| | 데이터셋 | 번호 | 이 프로젝트에서 | 필요도 |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+            for ds in k["datasets"]:
+                m = "x" if ds["status"] == "done" else " "
+                L.append(
+                    f"| [{m}] | [{ds['name']}]({ds['url']}) | `{ds['id']}` "
+                    f"| {ds['use']} | {ds['prio']} |"
+                )
+        L.append("")
+
+    nokey = data.get("nokey") or []
+    if nokey:
+        L += ["### 키가 필요 없는 것 (신청하지 마세요)", "",
+              "| 자료 | 이 프로젝트에서 | 받는 법 |", "| --- | --- | --- |"]
+        for n in nokey:
+            name = f"[{n['name']}]({n['url']})" if n["url"] else n["name"]
+            L.append(f"| {name} | {n['use']} | {n['how']} |")
+        L.append("")
+    return L
 
 
 def main() -> None:
@@ -58,11 +114,13 @@ def main() -> None:
             L.append(f"- {BADGE[t['status']]} `{t['id']}` {t['title']} — {t.get('note', '')}")
     else:
         L.append("- 없음")
-    L += ["", "### 사장님이 하셔야 할 대기 항목", ""]
+    L += ["", "### 대표님이 하셔야 할 대기 항목", ""]
     for t in mine[:8]:
         L.append(f"- `{t['id']}` {t['title']} — {t.get('note', '')}")
     if len(mine) > 8:
         L.append(f"- … 외 {len(mine) - 8}건")
+
+    L += _keys_section(data)
 
     L += ["", "---", "", "## 단계별 상세", ""]
     for p in phases:
