@@ -359,10 +359,17 @@ def cmd_status(args):
             print(progress.to_string(index=False))
 
 
+def cmd_doctor(args):
+    from .doctor import run
+    raise SystemExit(run())
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="redt", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("doctor", help="수집 전 점검 — 키·네트워크·저장경로").set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("tollgates", help="영업소 마스터 수집")
     p.add_argument("--path", help="API 대신 사용할 CSV 경로")

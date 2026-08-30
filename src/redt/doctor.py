@@ -1,0 +1,182 @@
+"""수집 전 점검 — 무엇이 막혀 있는지 한 번에 알려준다.
+
+키를 넣고 처음 돌릴 때, '왜 안 되는지'를 스택트레이스가 아니라 문장으로 본다.
+키 값 자체는 절대 출력하지 않는다 (길이만 표시).
+"""
+from __future__ import annotations
+
+import datetime as dt
+import importlib
+import re
+import sys
+
+from .config import DB_PATH, PROCESSED, ROOT, keys
+
+PACKAGES = [
+    ("requests", "API 호출"),
+    ("pandas", "표 처리"),
+    ("duckdb", "분석 DB"),
+    ("pyarrow", "parquet 저장"),
+    ("yaml", "설정 파일"),
+    ("dotenv", "키 로딩"),
+    ("tenacity", "재시도"),
+]
+
+_fail: list[str] = []
+_warn: list[str] = []
+
+# 오류 메시지에는 호출 URL 이 통째로 들어온다. 키가 그대로 찍히면
+# 이 출력을 붙여넣는 순간 새어나가므로 반드시 가린다.
+_SECRET = re.compile(r"(?i)\b(serviceKey|apiKey|authKey|key|accessKey)=[^&\s'\"]+")
+
+
+def _scrub(text: str) -> str:
+    return _SECRET.sub(r"\1=***", text)
+
+
+def _say(ok: bool | None, label: str, hint: str = "") -> None:
+    mark = "  ok   " if ok else ("  --   " if ok is None else "  FAIL ")
+    print(mark + label + (f"\n         → {_scrub(hint)}" if hint and not ok else ""))
+    if ok is False:
+        _fail.append(label)
+    elif ok is None:
+        _warn.append(label)
+
+
+def _recent_ym(months_back: int = 2) -> str:
+    """RTMS 는 신고 지연이 있어 최근 달은 비어 있다. 2개월 전을 쓴다."""
+    today = dt.date.today()
+    y, m = today.year, today.month - months_back
+    while m <= 0:
+        y, m = y - 1, m + 12
+    return f"{y}{m:02d}"
+
+
+def _check_packages() -> None:
+    print("\n1. 파이썬 패키지")
+    for name, why in PACKAGES:
+        try:
+            importlib.import_module(name)
+            _say(True, f"{name} ({why})")
+        except ImportError:
+            _say(False, f"{name} ({why})", "pip install -r requirements.txt")
+
+
+def _check_keys() -> None:
+    print("\n2. API 키 (config/.env)")
+    env = ROOT / "config" / ".env"
+    if not env.exists():
+        _say(False, "config/.env 파일",
+             "cp config/.env.example config/.env 로 만든 뒤 키를 채우세요")
+        return
+    _say(True, "config/.env 파일")
+    k = keys()
+    for attr, label, need in [
+        ("data_go_kr", "DATA_GO_KR_KEY  실거래가", True),
+        ("vworld", "VWORLD_KEY      지오코딩", True),
+        ("ex", "EX_API_KEY      교통량", False),
+    ]:
+        value = getattr(k, attr)
+        if value:
+            _say(True, f"{label}  ({len(value)}자)")
+        elif need:
+            _say(False, f"{label}  (비어 있음)", "이 키가 없으면 수집이 시작되지 않습니다")
+        else:
+            _say(None, f"{label}  (비어 있음)", "교통량은 파일 다운로드로 대체 가능")
+
+
+def _check_rtms() -> None:
+    print("\n3. 실거래가 API 실호출 (평택시 · 토지 · 최근 확정월)")
+    if not keys().data_go_kr:
+        _say(None, "건너뜀 — 키 없음")
+        return
+    try:
+        from .collect.rtms import fetch_page
+        ym = _recent_ym()
+        rows, total = fetch_page("land", "41220", ym, page=1, rows=5)
+        if total == 0:
+            _say(None, f"{ym} 응답 0건",
+                 "키는 유효하나 해당 월 데이터가 없습니다. 시군구 코드를 "
+                 "`redt regions --verify` 로 확인하세요")
+        else:
+            _say(True, f"{ym} 총 {total}건 · 표본 {len(rows)}건 파싱")
+    except Exception as exc:
+        _say(False, "실거래가 API 호출 실패", f"{type(exc).__name__}: {str(exc)[:200]}")
+
+
+def _check_vworld() -> None:
+    print("\n4. VWorld 지오코딩 실호출")
+    if not keys().vworld:
+        _say(None, "건너뜀 — 키 없음")
+        return
+    try:
+        from .collect.geocode import geocode_one
+        lat, lon = geocode_one("경기도 성남시 분당구 판교역로 235", kind="ROAD")
+        if lat and lon:
+            _say(True, f"좌표 회신 ({lat:.5f}, {lon:.5f})")
+        else:
+            _say(False, "좌표 없음",
+                 "키 승인 상태와 등록 도메인을 VWorld 마이페이지에서 확인하세요")
+    except Exception as exc:
+        _say(False, "VWorld 호출 실패", f"{type(exc).__name__}: {str(exc)[:200]}")
+
+
+def _check_ex() -> None:
+    print("\n5. 도로공사 API 실호출 (영업소 마스터)")
+    if not keys().ex:
+        _say(None, "건너뜀 — 키 없음")
+        return
+    try:
+        from .collect.tollgate import fetch_tollgates
+        df = fetch_tollgates(rows_per_page=10, max_pages=1)
+        _say(len(df) > 0, f"영업소 {len(df)}건 회신",
+             "키는 통과했으나 행이 비었습니다. `redt probe-ex` 로 엔드포인트를 확인하세요")
+    except Exception as exc:
+        _say(False, "도로공사 API 호출 실패", f"{type(exc).__name__}: {str(exc)[:200]}")
+
+
+def _check_storage() -> None:
+    print("\n6. 저장 경로")
+    try:
+        PROCESSED.mkdir(parents=True, exist_ok=True)
+        probe = PROCESSED / ".doctor"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink()
+        _say(True, f"쓰기 가능 — {PROCESSED.relative_to(ROOT)}/")
+    except Exception as exc:
+        _say(False, "쓰기 불가", str(exc)[:200])
+        return
+    try:
+        import duckdb
+        duckdb.connect(str(DB_PATH)).close()
+        _say(True, f"DuckDB 열기 — {DB_PATH.relative_to(ROOT)}")
+    except Exception as exc:
+        _say(False, "DuckDB 열기 실패", str(exc)[:200])
+
+
+def run() -> int:
+    print("=" * 60)
+    print(" redt doctor — 수집 전 점검")
+    print("=" * 60)
+    print(f"  python {sys.version.split()[0]}  ·  {ROOT}")
+    _check_packages()
+    _check_keys()
+    _check_rtms()
+    _check_vworld()
+    _check_ex()
+    _check_storage()
+
+    print("\n" + "=" * 60)
+    if _fail:
+        print(f" 막힌 항목 {len(_fail)}건 — 위 → 표시를 순서대로 해결하세요")
+        for item in _fail:
+            print(f"   · {item}")
+        return 1
+    if _warn:
+        print(f" 진행 가능 (선택 항목 {len(_warn)}건 미설정)")
+        for item in _warn:
+            print(f"   · {item}")
+        print("\n 다음: make collect")
+        return 0
+    print(" 전부 통과 — 다음: make collect")
+    return 0

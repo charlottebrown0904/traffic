@@ -92,55 +92,6 @@
       ]
     },
     {
-      "id": "P1",
-      "name": "첫 사용자 20명",
-      "goal": "수기 진단으로 '내가 실제로 무엇을 보는지'를 알아낸다",
-      "tasks": [
-        {
-          "id": "P1-1",
-          "title": "이벤트 신청 접수 (9/7 마감)",
-          "owner": "user",
-          "status": "doing",
-          "note": ""
-        },
-        {
-          "id": "P1-2",
-          "title": "9/8 추첨 20명 선정",
-          "owner": "user",
-          "status": "todo",
-          "note": ""
-        },
-        {
-          "id": "P1-3",
-          "title": "수기 진단 20건 수행",
-          "owner": "user",
-          "status": "todo",
-          "note": "여기가 제품의 원재료"
-        },
-        {
-          "id": "P1-4",
-          "title": "진단 기준 기록 — 무엇을 몇 번 봤나",
-          "owner": "both",
-          "status": "todo",
-          "note": "레이더 축의 실제 정의가 여기서 나온다"
-        },
-        {
-          "id": "P1-5",
-          "title": "진단 결과 피드백 수집",
-          "owner": "user",
-          "status": "todo",
-          "note": "어느 정보가 결정에 영향을 줬는가"
-        },
-        {
-          "id": "P1-6",
-          "title": "축 후보 확정 (6개 → 실제 쓴 3개)",
-          "owner": "both",
-          "status": "todo",
-          "note": ""
-        }
-      ]
-    },
-    {
       "id": "P2",
       "name": "데이터 기반",
       "goal": "파일럿 권역 실데이터로 가설이 성립하는지 확인",
@@ -149,14 +100,14 @@
           "id": "P2-1",
           "title": "공공데이터포털 키 발급 (5개 데이터셋)",
           "owner": "user",
-          "status": "todo",
+          "status": "doing",
           "note": ""
         },
         {
           "id": "P2-2",
           "title": "VWorld 지오코더 키",
           "owner": "user",
-          "status": "todo",
+          "status": "doing",
           "note": ""
         },
         {
@@ -361,6 +312,55 @@
           "owner": "claude",
           "status": "todo",
           "note": "법정 의무"
+        }
+      ]
+    },
+    {
+      "id": "P1",
+      "name": "첫 사용자 20명 (연기됨)",
+      "goal": "페이지 완성 후 진행. 수기 진단으로 '내가 실제로 무엇을 보는지'를 알아낸다. 이벤트 날짜(9/7 마감·9/8 추첨)는 그대로 두되, 착수 시점만 뒤로 뺐다.",
+      "tasks": [
+        {
+          "id": "P1-1",
+          "title": "이벤트 신청 접수 (9/7 마감)",
+          "owner": "user",
+          "status": "todo",
+          "note": "연기 — 페이지 완성 후"
+        },
+        {
+          "id": "P1-2",
+          "title": "9/8 추첨 20명 선정",
+          "owner": "user",
+          "status": "todo",
+          "note": "연기 — 페이지 완성 후"
+        },
+        {
+          "id": "P1-3",
+          "title": "수기 진단 20건 수행",
+          "owner": "user",
+          "status": "todo",
+          "note": "여기가 제품의 원재료 · 연기 — 페이지 완성 후"
+        },
+        {
+          "id": "P1-4",
+          "title": "진단 기준 기록 — 무엇을 몇 번 봤나",
+          "owner": "both",
+          "status": "todo",
+          "note": "레이더 축의 실제 정의가 여기서 나온다 · 연기 — 페이지 완성 후"
+        },
+        {
+          "id": "P1-5",
+          "title": "진단 결과 피드백 수집",
+          "owner": "user",
+          "status": "todo",
+          "note": "어느 정보가 결정에 영향을 줬는가 · 연기 — 페이지 완성 후"
+        },
+        {
+          "id": "P1-6",
+          "title": "축 후보 확정 (6개 → 실제 쓴 3개)",
+          "owner": "both",
+          "status": "todo",
+          "note": "연기 — 페이지 완성 후"
         }
       ]
     },

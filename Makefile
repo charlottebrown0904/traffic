@@ -1,9 +1,27 @@
 PY := PYTHONPATH=src python3
 
-.PHONY: install synthetic demo test test-server web serve serve-static plan progress status clean
+# make collect 수집 범위·대상 (덮어쓰기 예: make collect START=2015-01 KIND=land)
+START ?= 2016-01
+END   ?= 2025-12
+KIND  ?= land,factory
+
+.PHONY: install doctor collect synthetic demo test test-server web serve serve-static plan progress status clean
 
 install:
 	pip install -r requirements.txt
+
+## 수집 전 점검 — 키·네트워크·저장경로가 다 준비됐는지
+doctor:
+	$(PY) -m redt.cli doctor
+
+## 실데이터 수집 → 분석 → 화면까지 한 번에 (파일럿 권역)
+collect:
+	$(PY) -m redt.cli doctor
+	$(PY) -m redt.cli tollgates
+	$(PY) -m redt.cli trades --kind $(KIND) --start $(START) --end $(END)
+	$(PY) -m redt.cli geocode
+	$(PY) -m redt.cli link
+	$(PY) -m redt.cli status
 
 ## API 키 없이 파이프라인 검증 (심어둔 β를 되찾는지 확인)
 synthetic:
