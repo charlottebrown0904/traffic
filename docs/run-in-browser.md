@@ -7,20 +7,37 @@
 
 ## 1단계 — 키를 Codespaces Secrets 에 넣기 (파일 아님)
 
-**https://github.com/settings/codespaces** 를 엽니다.
+**https://github.com/charlottebrown0904/traffic/settings/secrets/codespaces**
 
-`Secrets` 항목에서 `New secret` 을 눌러 아래 두 개를 등록합니다.
+`New repository secret` 을 눌러 아래를 등록합니다.
 
 | Name | Value |
 |---|---|
 | `DATA_GO_KR_KEY` | 공공데이터포털 **Decoding** 인증키 |
-| `VWORLD_KEY` | 브이월드 인증키 |
+| `VWORLD_KEY` | 브이월드 인증키 (승인 후) |
 
-각각 `Repository access` 에서 **`charlottebrown0904/traffic`** 을 선택합니다.
+붙여넣을 때 앞뒤 공백·줄바꿈이 딸려오지 않게 하고, 따옴표는 붙이지 마세요.
+Decoding 키에 들어있는 `+` `/` `=` 는 그대로 두면 됩니다.
 
-> 여기 넣은 값은 **저장소에 저장되지 않습니다.** GitHub 가 암호화해서 보관하다가
-> Codespace 를 켤 때만 환경변수로 넣어줍니다. 커밋될 수 없는 구조라
-> `config/.env` 를 만들 필요도, 실수로 올릴 위험도 없습니다.
+### ⚠️ 헷갈리기 쉬운 곳 — Secrets 저장소가 세 개입니다
+
+저장소 `Settings` → 왼쪽 `Secrets and variables` 아래에 세 개가 나란히 있습니다.
+
+| | 쓰이는 곳 | 여기에 키를 넣나 |
+|---|---|---|
+| **Actions** | 워크플로 실행 | ❌ 아니요 |
+| **Codespaces** | 브라우저 개발환경 | ⭕ **여기입니다** |
+| Dependabot | 의존성 업데이트 | ❌ 아니요 |
+
+`Environment secrets` / `Repository secrets` 두 칸이 보이면 **Actions 화면**입니다.
+왼쪽에서 `Codespaces` 로 옮겨가세요.
+
+Actions 에는 넣지 마세요. 지금 Actions 에서 도는 것은 키 유출 검사뿐이라
+인증키가 필요 없고, 두면 노출 경로만 늘어납니다.
+
+> 개인 계정 전체에 걸어두려면 https://github.com/settings/codespaces 에서도
+> 등록할 수 있습니다. 그때는 `Repository access` 에서 이 저장소를 선택해야 합니다.
+> 저장소 한 곳에서만 쓸 것이므로 위의 저장소별 Secrets 가 더 간단합니다.
 
 ## 2단계 — Codespace 켜기
 
