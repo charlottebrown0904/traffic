@@ -137,7 +137,7 @@ src/redt/
     security.py      scrypt 해싱 · 토큰
     models.py        요청·응답 스키마
 
-web/                 배포 대상 (Vercel Output Directory)
+public/              배포 대상 (Vercel 이 설정 없이도 서빙하는 이름)
   index.html         /      프로모션 (임시)
   app/               /app   스크리닝 앱
     index.html       탐색 / 스코어보드 / 매물 3개 탭

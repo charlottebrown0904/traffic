@@ -347,6 +347,6 @@ def _fetch_owned(con, listing_id: int, broker_id: int):
 
 
 # ─────────────────────────── 정적 파일 ───────────────────────────
-WEB_DIR = ROOT / "web"
+WEB_DIR = ROOT / "public"
 if WEB_DIR.exists():
     app.mount("/", StaticFiles(directory=str(WEB_DIR), html=True), name="web")

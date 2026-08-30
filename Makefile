@@ -36,11 +36,11 @@ serve:
 
 ## 정적 화면만 (API 없이)
 serve-static:
-	@cd web && python3 -m http.server 8000
+	@cd public && python3 -m http.server 8000
 
 status:
 	$(PY) -m redt.cli status
 
 clean:
 	rm -f data/processed/redt.duckdb data/processed/*.parquet data/processed/*.csv
-	rm -f data/processed/.synthetic web/data/*.json
+	rm -f data/processed/.synthetic public/app/data/*.json

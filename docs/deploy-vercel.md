@@ -3,7 +3,7 @@
 ## 구조
 
 ```
-web/                     ← Vercel Output Directory
+public/                  ← Vercel Output Directory
   index.html             /        프로모션 (임시, 나중에 삭제)
   app/
     index.html           /app     스크리닝 앱
@@ -24,7 +24,7 @@ vercel.json              라우팅·캐시·보안 헤더
 
 ## 프로모션 페이지 — 이관 완료 ✅
 
-`web/index.html` 은 기존 **"사도 될까 — 토지 미래가치 무료 진단"** 페이지입니다.
+`public/index.html` 은 기존 **"사도 될까 — 토지 미래가치 무료 진단"** 페이지입니다.
 외부 CSS·JS·이미지 참조가 없어 (전부 인라인) 경로 이동으로 깨진 곳은 없습니다.
 
 원본에서 바뀐 것은 **`/app` 링크 3개 추가**뿐입니다.
@@ -39,7 +39,7 @@ vercel.json              라우팅·캐시·보안 헤더
 
 ### ⚠️ 출시 전 채워야 할 것
 
-`web/index.html` 하단 스크립트의 **`KAKAO_LINK` 이 비어 있습니다.**
+`public/index.html` 하단 스크립트의 **`KAKAO_LINK` 이 비어 있습니다.**
 지금 상태로 배포하면 신청 버튼이 안내 alert 만 띄우고 아무 데도 가지 않습니다.
 
 ```js
@@ -111,7 +111,7 @@ Vercel 은 기본적으로 **`main` 브랜치만 프로덕션 배포**합니다.
 |---|---|
 | Framework Preset | **Other** |
 | Build Command | **비움** (빌드 없음) |
-| Output Directory | `web` — `vercel.json` 에 이미 지정됨 |
+| Output Directory | `public` — `vercel.json` 에 이미 지정됨 |
 | Install Command | 비움 |
 | Root Directory | 저장소 루트 (비움) |
 
@@ -143,7 +143,7 @@ Vercel 은 서버리스라 **파일시스템이 요청마다 초기화**됩니�
 **해결은 Supabase 이전입니다** ([who-does-what.md](who-does-what.md) 트랙 B).
 Postgres 는 서버리스에서도 상태를 유지하고, RLS 로 권한도 DB 가 강제합니다.
 
-그때 바꿀 것은 `web/app/config.js` 한 줄입니다.
+그때 바꿀 것은 `public/app/config.js` 한 줄입니다.
 
 ```js
 apiBase: 'https://<프로젝트>.supabase.co/rest/v1',
@@ -153,14 +153,14 @@ apiBase: 'https://<프로젝트>.supabase.co/rest/v1',
 
 ## 데이터 갱신
 
-`web/app/data/*.json` 은 **커밋된 파일**입니다. Vercel 에 빌드가 없으므로
+`public/app/data/*.json` 은 **커밋된 파일**입니다. Vercel 에 빌드가 없으므로
 저장소에 있는 그대로 배포됩니다.
 
 분석을 다시 돌린 뒤에는 갱신해서 커밋하세요.
 
 ```bash
 make web          # 스코어 계산 + JSON 생성
-git add web/app/data && git commit -m "데이터 갱신" && git push
+git add public/app/data && git commit -m "데이터 갱신" && git push
 ```
 
 푸시하면 Vercel 이 자동 재배포합니다.
@@ -172,7 +172,7 @@ git add web/app/data && git commit -m "데이터 갱신" && git push
 
 ## 프로모션 페이지를 없앨 때
 
-1. `web/index.html` 삭제
+1. `public/index.html` 삭제
 2. `vercel.json` 에 rewrite 추가
 
 ```json
@@ -185,6 +185,6 @@ git add web/app/data && git commit -m "데이터 갱신" && git push
 }
 ```
 
-3. `web/app/config.js` 에서 `homeUrl` 을 `null` 로 — 앱의 **← 홈으로** 버튼이 사라집니다
+3. `public/app/config.js` 에서 `homeUrl` 을 `null` 로 — 앱의 **← 홈으로** 버튼이 사라집니다
 
 이 셋이면 `/` 가 바로 앱이 됩니다. 앱을 옮기지 않으므로 `/app` 링크도 계속 삽니다.

@@ -1,6 +1,6 @@
 # 웹 화면
 
-DB 에 직접 붙지 않습니다. `web/app/data/*.json` 만 읽으므로
+DB 에 직접 붙지 않습니다. `public/app/data/*.json` 만 읽으므로
 합성 데이터든 실데이터든 화면 코드는 동일합니다.
 
 ```bash

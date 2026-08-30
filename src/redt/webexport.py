@@ -16,7 +16,7 @@ from . import db
 from .analyze import scoring
 from .config import PROCESSED, ROOT, settings
 
-WEB_DATA = ROOT / "web" / "app" / "data"
+WEB_DATA = ROOT / "public" / "app" / "data"
 SYNTHETIC_MARK = PROCESSED / ".synthetic"
 # 배포 저장소에 커밋되는 파일이라 지도 표시용 표본은 작게 유지한다
 MAX_TRADE_POINTS = 2500

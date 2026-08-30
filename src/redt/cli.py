@@ -320,7 +320,7 @@ def cmd_score(args):
 
 def cmd_export_web(args):
     meta = webexport.export(band=args.band, volume_col=f"volume_{args.volume}")
-    print("web/app/data/ 에 4개 파일 생성")
+    print("public/app/data/ 에 4개 파일 생성")
     print(f"  영업소 {meta['counts']['tollgates']} (스코어 {meta['counts']['scored']})")
     print(f"  거래 {meta['counts']['trades_total']:,} 중 지도 표시 "
           f"{meta['counts']['trades_plotted']:,}")
