@@ -97,6 +97,13 @@
       "goal": "파일럿 권역 실데이터로 가설이 성립하는지 확인",
       "tasks": [
         {
+          "id": "P2-0",
+          "title": "실행 환경 준비 (브라우저 Codespaces 또는 로컬)",
+          "owner": "user",
+          "status": "doing",
+          "note": "키는 Codespaces Secrets 에 넣으면 config/.env 를 만들 필요가 없다 — docs/run-in-browser.md"
+        },
+        {
           "id": "P2-1",
           "title": "공공데이터포털 키 발급 (데이터셋 6종 활용신청)",
           "owner": "user",

@@ -54,26 +54,30 @@ def _check_packages() -> None:
 
 
 def _check_keys() -> None:
-    print("\n2. API 키 (config/.env)")
+    """키는 config/.env 로도, 환경변수로도 들어온다 (Codespaces Secrets 등).
+    파일이 없다고 실패시키면 안 된다 — 값이 있는지만 본다."""
     env = ROOT / "config" / ".env"
+    source = "config/.env" if env.exists() else "환경변수"
+    print(f"\n2. API 키  (읽은 곳: {source})")
     if not env.exists():
-        _say(False, "config/.env 파일",
-             "cp config/.env.example config/.env 로 만든 뒤 키를 채우세요")
-        return
-    _say(True, "config/.env 파일")
+        _say(None, "config/.env 파일 없음",
+             "환경변수로 넣으셨다면 정상입니다. 아니면 "
+             "cp config/.env.example config/.env 로 만드세요")
+
     k = keys()
     for attr, label, need in [
         ("data_go_kr", "DATA_GO_KR_KEY  실거래가", True),
-        ("vworld", "VWORLD_KEY      지오코딩", True),
+        ("vworld", "VWORLD_KEY      지오코딩·개별공시지가", True),
         ("ex", "EX_API_KEY      교통량", False),
     ]:
         value = getattr(k, attr)
         if value:
             _say(True, f"{label}  ({len(value)}자)")
         elif need:
-            _say(False, f"{label}  (비어 있음)", "이 키가 없으면 수집이 시작되지 않습니다")
+            _say(False, f"{label}  (비어 있음)",
+                 "config/.env 에 넣거나 환경변수로 지정하세요")
         else:
-            _say(None, f"{label}  (비어 있음)", "교통량은 파일 다운로드로 대체 가능")
+            _say(None, f"{label}  (비어 있음)", "선택 항목 — 없어도 수집은 진행됩니다")
 
 
 def _check_rtms() -> None:

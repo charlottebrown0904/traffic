@@ -1,0 +1,22 @@
+{
+  "name": "redt — 수집·분석 환경",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+
+  "postCreateCommand": "pip install -r requirements.txt && git config core.hooksPath .githooks",
+
+  "remoteEnv": {
+    "PYTHONPATH": "${containerWorkspaceFolder}/src"
+  },
+
+  "forwardPorts": [8000, 8900],
+  "portsAttributes": {
+    "8000": { "label": "매물 API + 화면" },
+    "8900": { "label": "진행률 보드 (비공개)" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["ms-python.python"]
+    }
+  }
+}
