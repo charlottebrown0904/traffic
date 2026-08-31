@@ -16,6 +16,7 @@ const { timingSafeEqual } = require("node:crypto");
 // 통과 전용 호스트는 공개 페이지·파일을 읽기 위한 것으로, 키가 붙지 않는다.
 const ALLOW = {
   "apis.data.go.kr": { param: "serviceKey", env: "DATA_GO_KR_KEY" },
+  "api.odcloud.kr":  { param: "serviceKey", env: "DATA_GO_KR_KEY" },
   "api.vworld.kr":   { param: "key",        env: "VWORLD_KEY" },
   "data.ex.co.kr":   { param: "key",        env: "EX_API_KEY" },
   "www.data.go.kr":  {},

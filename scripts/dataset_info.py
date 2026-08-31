@@ -62,6 +62,7 @@ def main() -> None:
         sns = sorted(set(re.findall(r"fileDetailSn=(\d+)", page)))
         links = sorted(set(re.findall(r"(/cmm/cmm/fileDownload\.do[^\"\'<> ]*)", page)))
         js = sorted(set(re.findall(r"fn_fileDataDown\(([^)]{0,80})\)", page)))
+        uddis = sorted(set(re.findall(r"uddi:[0-9a-fA-F-]{20,}", page)))
         if ids or links or js:
             print("  내려받기 단서:")
             for x in ids[:4]:
@@ -72,6 +73,10 @@ def main() -> None:
                 print("    링크 =", x[:160])
             for x in js[:3]:
                 print("    js =", x[:120])
+        if 'uddis' in dir() or True:
+            uddis = sorted(set(re.findall(r"uddi:[0-9a-fA-F-]{20,}", page)))
+            for x in uddis[:3]:
+                print("    ★ 오픈API =", f"https://api.odcloud.kr/api/{ds}/v1/{x}")
         # 파일데이터가 오픈API 로 자동변환됐는지
         if "오픈API" in page or "openapi" in page.lower():
             api = sorted(set(re.findall(r"(https://api\.odcloud\.kr[^\"\'<> ]*)", page)))
