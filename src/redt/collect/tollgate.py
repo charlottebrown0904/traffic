@@ -11,7 +11,15 @@ from ..config import RAW, keys
 from .http import get, polite_sleep
 
 EX_BASE = "https://data.ex.co.kr/openapi"
-BUSINESS_INFO = f"{EX_BASE}/business/curBusinessInfo"
+
+# 서울 경유 탐색으로 확인한 실제 경로 (2026-08-31).
+# 포털의 API 목록이 자바스크립트로 그려져 문서에서 읽을 수 없어, 이름을 훑어 찾았다.
+#   locationinfo/locationinfoUnit  영업소 590곳  unitCode·unitName·xValue·yValue
+#   locationinfo/locationinfoIc    IC 위치       icCode·icName
+#   locationinfo/locationinfoRest  휴게소 203곳
+# 예전에 쓰던 business/curBusinessInfo 는 존재하지 않는 경로였다.
+UNIT_INFO = f"{EX_BASE}/locationinfo/locationinfoUnit"
+IC_INFO = f"{EX_BASE}/locationinfo/locationinfoIc"
 
 ALIASES = {
     "tollgate_id": ["unitCode", "unitcode", "tcsUnitCode", "icCode", "영업소코드"],
@@ -36,7 +44,7 @@ def fetch_tollgates(rows_per_page: int = 500, max_pages: int = 20) -> pd.DataFra
     collected: list[dict] = []
     for page in range(1, max_pages + 1):
         resp = get(
-            BUSINESS_INFO,
+            UNIT_INFO,
             {
                 "key": keys().require("ex"),
                 "type": "json",
@@ -78,7 +86,10 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
         print(f"  좌표 이상치 {dropped}건 제외")
     out = out[valid].copy()
 
-    out["tollgate_id"] = out["tollgate_id"].astype(str)
+    # unitCode 는 "065 " 처럼 뒤에 공백이 붙어 온다. 이대로 두면 교통량 쪽
+    # 영업소코드와 조인이 어긋난다.
+    out["tollgate_id"] = out["tollgate_id"].astype(str).str.strip()
+    out["name"] = out["name"].astype(str).str.strip()
     out["sigungu_cd"] = None
     out["is_open_type"] = None
     return out.drop_duplicates(subset=["tollgate_id"])
