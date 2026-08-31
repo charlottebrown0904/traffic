@@ -50,12 +50,15 @@ def main() -> None:
         mark = "★" if hit else " "
         print(f"  {mark} {api_id:04d}  {len(page):>7}자  한글 {korean:>5}  {'일치' if hit else ''}")
         if hit:
+            text = re.sub(r"<[^>]+>", " ", page)
+            text = re.sub(r"[ \t]+", " ", text)
+            for m in re.finditer(re.escape(needle), text):
+                lo2 = max(0, m.start() - 400)
+                window = text[lo2:m.end() + 400].replace("\n", " ")
+                print("      주변:", re.sub(r"\s+", " ", window))
+                break
             names = sorted({m for m in IDENT.findall(page) if m not in NOISE})
-            print("      변수 후보:", names[:60])
-            for line in page.splitlines():
-                if needle in line:
-                    print("      원문:", line.strip()[:300])
-                    break
+            print("      변수 후보:", names[:80])
 
 
 if __name__ == "__main__":
