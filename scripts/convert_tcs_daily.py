@@ -43,6 +43,23 @@ def read_one(path: Path) -> pd.DataFrame:
     return df.loc[:, ~df.columns.str.startswith("Unnamed")]
 
 
+def parse_dates(col: pd.Series) -> pd.Series:
+    """집계일자를 읽는다. 파일마다 형식이 다르다.
+
+    2023-01 은 "20230101", 2023-02 부터는 "2023-02-01" 이었다. 형식을 지정하지
+    않고 to_datetime 에 넘기면 판다스가 20230101 을 **정수**로 보고 'epoch 이후
+    나노초' 로 해석해 1970-01-01 을 돌려준다. 오류가 아니라 조용히 틀린 값이
+    나오므로 errors="coerce" 로도 잡히지 않는다. 실제로 2023년 1월 한 달이
+    통째로 1970년으로 넘어가 있었다.
+
+    그래서 반드시 문자열로 바꾼 뒤, 형식을 명시해 두 가지를 차례로 시도한다.
+    """
+    raw = col.astype(str).str.strip()
+    out = pd.to_datetime(raw, format="%Y-%m-%d", errors="coerce")
+    out = out.fillna(pd.to_datetime(raw, format="%Y%m%d", errors="coerce"))
+    return out
+
+
 def names() -> dict[int, str]:
     """영업소명은 일별 파일에 없다. 기존 연간 파일에서 가져온다."""
     if not NAME_SOURCE.exists():
@@ -61,12 +78,18 @@ def main() -> int:
     frames, months = [], defaultdict(set)
     for p in sorted(Path(f) for f in args.files):
         df = read_one(p)
-        df["집계일자"] = pd.to_datetime(df["집계일자"], errors="coerce")
+        df["집계일자"] = parse_dates(df["집계일자"])
         bad = df["집계일자"].isna().sum()
         if bad:
             print(f"  ⚠ {p.name}: 날짜를 읽지 못한 {bad:,}행을 버립니다")
             df = df.dropna(subset=["집계일자"])
         df["연도"] = df["집계일자"].dt.year
+        # 형식을 잘못 읽으면 1970년 같은 값이 조용히 섞인다. 여기서 멈춘다 —
+        # 이런 행이 집계까지 흘러가면 한 해가 통째로 사라진 줄도 모르게 된다.
+        odd = df.loc[~df["연도"].between(1990, 2100), "연도"].unique()
+        if len(odd):
+            sys.exit(f"{p.name}: 말이 안 되는 연도 {sorted(int(y) for y in odd)} 가 "
+                     f"나왔습니다. 날짜 형식을 확인하세요.")
         for y, m in df.groupby("연도")["집계일자"]:
             months[int(y)] |= set(m.dt.month.unique())
         df["영업소코드"] = pd.to_numeric(

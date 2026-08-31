@@ -66,9 +66,17 @@ def main() -> int:
 
     print("1. 각 해가 12개월을 다 담고 있는가")
     for y, df in sorted(monthly.items()):
-        months = sorted(df["연월"].astype(str).str[-2:].unique())
+        ym = df["연월"].astype(str)
+        # 파일 이름의 연도와 다른 연도가 섞여 있는지부터 본다. 예전에 날짜
+        # 형식 때문에 2023-01 이 통째로 '1970-01' 이 된 적이 있는데, 뒤 두
+        # 자리만 보고 개월 수를 세면 그것도 1월로 세어져 12개월 '정상' 이
+        # 되어버린다. 연도까지 봐야 잡힌다.
+        stray = sorted(set(ym.str[:4]) - {str(y)})
+        say(not stray, f"{y}년 파일에 다른 연도 {stray}" if stray
+            else f"{y}년 파일에 다른 연도 섞임 없음")
+        months = sorted(ym[ym.str[:4] == str(y)].str[-2:].unique())
         say(len(months) == 12, f"{y}년 {len(months)}개월" +
-            ("" if len(months) == 12 else f" — 빠진 달 있음 {months}"))
+            ("" if len(months) == 12 else f" — 있는 달 {months}"))
     for y in sorted(set(annual) - set(monthly)):
         say(False, f"{y}년: 월별 파일이 없어 개월 수를 확인할 수 없습니다 "
                    f"(일별 원본에서 다시 만드는 것이 안전)")
