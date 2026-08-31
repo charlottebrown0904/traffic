@@ -19,6 +19,28 @@
     return viewList();
   }
 
+  /* 작성자 이름.
+     profile 은 본인 행만 읽히므로 남의 닉네임은 profile_public 뷰에서
+     가져온다. post → profile 은 외래키로 이어져 있지 않아(둘 다 auth.users
+     를 가리킨다) 서버 조인이 안 된다. 그래서 id 를 모아 한 번에 조회하고
+     여기서 맞춰 넣는다 — 글 50개라도 요청은 한 번이다. */
+  async function namesFor(rows) {
+    var ids = [];
+    (rows || []).forEach(function (r) {
+      if (r.user_id && ids.indexOf(r.user_id) < 0) ids.push(r.user_id);
+    });
+    if (!ids.length) return {};
+    var { data } = await window.SB.from("profile_public").select("id,nickname").in("id", ids);
+    var map = {};
+    (data || []).forEach(function (r) { map[r.id] = r.nickname; });
+    return map;
+  }
+
+  // 닉네임을 아직 정하지 않은 계정도 있다. 빈칸으로 두면 줄이 어긋난다.
+  function who(map, uid) {
+    return E((map && map[uid]) || "이용자");
+  }
+
   function needLogin(what) {
     return (
       '<div class="note" style="margin:1.5rem 0">' + what +
@@ -49,6 +71,7 @@
       })
       .join("");
 
+    var names = await namesFor(data);
     var rows = (data || []).length
       ? data
           .map(function (p) {
@@ -57,7 +80,8 @@
               '<span class="t">' +
               '<span class="badge ' + (p.category === "notice" ? "notice" : "") + '">' + CATS[p.category] + "</span>" +
               E(p.title) + "</span>" +
-              '<span class="m">' + window.SBUtil.when(p.created_at) + "</span></a></li>"
+              '<span class="m">' + who(names, p.user_id) + " · " +
+              window.SBUtil.when(p.created_at) + "</span></a></li>"
             );
           })
           .join("")
@@ -127,6 +151,8 @@
     var canDelPost = mine || admin;
     var { data: cmts } = await window.SB.from("comment")
       .select("*").eq("post_id", id).eq("is_deleted", false).order("created_at");
+    // 글쓴이와 댓글쓴이를 한 번에 조회한다
+    var names = await namesFor([p].concat(cmts || []));
 
     root.innerHTML =
       '<div class="board-head"><a class="btn ghost" href="#/">← 목록</a>' +
@@ -134,13 +160,15 @@
       '<h1 style="font-size:1.45rem;margin:.5rem 0 .35rem">' +
       '<span class="badge ' + (p.category === "notice" ? "notice" : "") + '">' + CATS[p.category] + "</span>" +
       E(p.title) + "</h1>" +
-      '<p class="m" style="color:var(--faint);font-size:.85rem">' + window.SBUtil.when(p.created_at) + "</p>" +
+      '<p class="m" style="color:var(--faint);font-size:.85rem">' +
+      who(names, p.user_id) + " · " + window.SBUtil.when(p.created_at) + "</p>" +
       '<div class="post-body">' + E(p.body) + "</div>" +
       '<h2 style="font-size:1.05rem">댓글 ' + (cmts ? cmts.length : 0) + "</h2>" +
       '<div id="cmts">' +
       ((cmts || []).map(function (c) {
         var canDel = admin || (me && me.user.id === c.user_id);
-        return '<div class="cmt"><div class="m">' + window.SBUtil.when(c.created_at) +
+        return '<div class="cmt"><div class="m">' +
+          "<strong>" + who(names, c.user_id) + "</strong> · " + window.SBUtil.when(c.created_at) +
           (canDel ? ' <button class="link-del" data-c="' + c.id + '">삭제</button>' : "") +
           "</div>" + E(c.body) + "</div>";
       }).join("") || '<p class="empty">첫 댓글을 남겨보세요.</p>') +
