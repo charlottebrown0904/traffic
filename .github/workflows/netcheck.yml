@@ -1,0 +1,64 @@
+# 러너(해외)에서 한국 공공 API 에 실제로 닿는지 측정한다.
+# 실패 원인이 '차단'인지 '느림'인지 '경로 오류'인지 추측하지 않고 가른다.
+name: 망 점검 (한국 공공 API 도달성)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  netcheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 러너 위치
+        run: |
+          echo "--- 러너 외부 IP·지역 ---"
+          curl -sS --max-time 10 https://ipinfo.io/json || echo "(조회 실패)"
+
+      - name: DNS 해석
+        run: |
+          for h in apis.data.go.kr api.vworld.kr data.ex.co.kr; do
+            printf '%-20s ' "$h"
+            getent hosts "$h" | head -1 || echo "해석 실패"
+          done
+
+      - name: TCP·TLS 연결 시간 측정
+        run: |
+          for h in apis.data.go.kr api.vworld.kr data.ex.co.kr www.data.go.kr; do
+            echo "=== $h ==="
+            curl -sS -o /dev/null --max-time 30 \
+              -w '  http=%{http_code}  dns=%{time_namelookup}s  connect=%{time_connect}s  tls=%{time_appconnect}s  total=%{time_total}s\n' \
+              "https://$h/" || echo "  실패 (exit $?)"
+          done
+
+      - name: 실거래가 엔드포인트 (잘못된 키로 — 도달만 확인)
+        run: |
+          curl -sS --max-time 60 -o /tmp/rtms.txt \
+            -w '  http=%{http_code}  total=%{time_total}s\n' \
+            'https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade?serviceKey=PROBE&LAWD_CD=41220&DEAL_YMD=202401&numOfRows=1' \
+            || echo "  연결 실패 (exit $?)"
+          echo "  --- 응답 앞부분 ---"
+          head -c 400 /tmp/rtms.txt 2>/dev/null || true; echo
+
+      - name: 브이월드 지오코더 (잘못된 키로)
+        run: |
+          curl -sS --max-time 60 -o /tmp/vw.txt \
+            -w '  http=%{http_code}  total=%{time_total}s\n' \
+            'https://api.vworld.kr/req/address?service=address&request=getcoord&version=2.0&crs=epsg:4326&type=ROAD&address=%EA%B2%BD%EA%B8%B0%EB%8F%84&key=PROBE' \
+            || echo "  연결 실패 (exit $?)"
+          echo "  --- 응답 앞부분 ---"
+          head -c 400 /tmp/vw.txt 2>/dev/null || true; echo
+
+      - name: 도로공사 엔드포인트 후보 탐색 (404 원인)
+        run: |
+          for p in \
+            "business/curBusinessInfo" \
+            "openapi/business/curBusinessInfo" \
+            "restinfo/restBusinessInfoList" \
+            "trafficapi/trafficIC" \
+            "openapi/trafficapi/trafficIC" ; do
+            printf '  %-42s ' "$p"
+            curl -sS -o /tmp/ex.txt --max-time 25 -w 'http=%{http_code}  ' \
+              "https://data.ex.co.kr/$p?key=PROBE&type=json&numOfRows=1&pageNo=1" || true
+            head -c 120 /tmp/ex.txt 2>/dev/null | tr '\n' ' '; echo
+          done
