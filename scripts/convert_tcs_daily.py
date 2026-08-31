@@ -27,7 +27,10 @@ from pathlib import Path
 import pandas as pd
 
 CLASSES = [f"{i}종교통량" for i in range(1, 7)]
-NAME_SOURCE = Path("data/raw/tcs_annual_2025.csv")
+# 영업소명은 일별 원본에 없다. 대표님이 직접 합치신 2025 엑셀에만 이름이
+# 들어 있어 그것만 이름 대조에 쓴다. 교통량 값은 쓰지 않는다 —
+# 다른 해와 집계가 어긋나 있다 (data/raw/PROVENANCE.md).
+NAME_SOURCE = Path("data/raw/legacy_tcs_annual_2025_from_xlsx.csv")
 
 
 def read_one(path: Path) -> pd.DataFrame:
