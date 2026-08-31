@@ -1,5 +1,6 @@
-# data.ex.co.kr 영업소 엔드포인트 찾기.
-# 목록 페이지가 JS 로 그려져 경로를 못 읽으므로, 서울 중계기를 통해 이름을 훑는다.
+# 교통량 API 파라미터 확정.
+# 응답 message 가 "무엇이 없다"를 알려주므로, 이름 후보를 하나씩 넣어
+# 메시지가 바뀌는지로 정답을 가른다.
 name: 도로공사 엔드포인트 탐색
 
 on:
@@ -8,50 +9,47 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
       RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
     steps:
-      - name: 후보 경로 훑기
+      - name: 교통량 파라미터 이름 찾기
         run: |
           [ -n "$RELAY_TOKEN" ] || { echo "토큰 없음"; exit 1; }
-          hit=0
-          try() {
-            code=$(curl -sS -o /tmp/c.txt --max-time 30 -G \
+
+          # $1 = 엔드포인트 뒤 경로, $2.. = 추가 쿼리
+          call() {
+            local path="$1"; shift
+            local q="type=json&numOfRows=2&pageNo=1"
+            for kv in "$@"; do q="$q&$kv"; done
+            curl -sS -o /tmp/r.json --max-time 30 -G \
               -H "x-relay-token: $RELAY_TOKEN" \
-              --data-urlencode "target=https://data.ex.co.kr/openapi/$1?type=json&numOfRows=2&pageNo=1" \
-              -w '%{http_code}' "${RELAY_URL}/api/relay" || echo ERR)
-            if [ "$code" = "200" ]; then
-              echo "  ★ 200  $1"
-              head -c 300 /tmp/c.txt | tr -d '\n'; echo; echo
-              hit=$((hit+1))
-            else
-              echo "     $code  $1"
-            fi
+              --data-urlencode "target=https://data.ex.co.kr/openapi/$path?$q" \
+              -w '' "${RELAY_URL}/api/relay" || true
+            python3 -c "
+import json,sys
+try:
+    d=json.load(open('/tmp/r.json'))
+except Exception:
+    print('  (JSON 아님)', open('/tmp/r.json',encoding='utf-8',errors='replace').read()[:120]); sys.exit()
+msg=d.get('message'); cnt=d.get('count'); lst=d.get('list')
+if lst:
+    print(f'  ★ 데이터 {cnt}건')
+    print('    키:', list(lst[0].keys()))
+    print('    첫행:', json.dumps(lst[0], ensure_ascii=False)[:300])
+else:
+    print(f'  code={d.get(\"code\")}  message={msg}')
+"
           }
 
-          echo "=== locationinfo 계열 ==="
-          for n in Rest Tg TG Ic IC Jc Sa Unit Tollgate TollGate Business \
-                   Service Node Link Ex Toll Gate Branch Office ; do
-            try "locationinfo/locationinfo$n"
-          done
+          echo "=== 기준: 파라미터 없이 ==="
+          call odtraffic/trafficAmountByUnit
 
           echo
-          echo "=== 교통량 계열 ==="
-          for p in odtraffic/trafficAmountByUnit odtraffic/trafficAmountByRoute \
-                   odtraffic/tcsInfo odtraffic/trafficAmount \
-                   trafficapi/trafficAmountByUnit trafficapi/trafficAmountByRoute \
-                   tcs/trafficAmountByUnit ; do
-            try "$p"
+          echo "=== 집계시간단위구분코드 이름 후보 ==="
+          for n in sumTmUnitTypeCode sumTmUnitType tmUnitTypeCode timeUnitCode \
+                   sumTmUnitCd unitTypeCode aggrTmUnitCode sumTimeUnitCode \
+                   tmUnitCode sumTmUnitTpCd ; do
+            printf '  %-22s' "$n"; echo; call odtraffic/trafficAmountByUnit "$n=1"
           done
-
-          echo
-          echo "=== 기타 후보 ==="
-          for p in business/businessInfo business/unitInfo unitinfo/unitInfo \
-                   basicinfo/unitInfo publicdata/unitInfo ; do
-            try "$p"
-          done
-
-          echo
-          echo "200 응답 $hit 건"
