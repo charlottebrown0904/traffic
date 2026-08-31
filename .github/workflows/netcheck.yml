@@ -62,3 +62,40 @@ jobs:
               "https://data.ex.co.kr/$p?key=PROBE&type=json&numOfRows=1&pageNo=1" || true
             head -c 120 /tmp/ex.txt 2>/dev/null | tr '\n' ' '; echo
           done
+
+      - name: 서울 중계기 상태 (토큰 없이 — 배포·환경변수 확인)
+        run: |
+          URL="${{ secrets.REDT_RELAY_URL }}"
+          [ -n "$URL" ] || URL="https://sado-toji.vercel.app"
+          echo "대상: $URL/api/relay"
+          curl -sS -o /tmp/relay.txt --max-time 30 \
+            -w '  http=%{http_code}  total=%{time_total}s\n' "$URL/api/relay" || true
+          echo "  --- 응답 ---"
+          head -c 300 /tmp/relay.txt 2>/dev/null; echo
+          echo
+          echo "  판정:"
+          if   grep -q '토큰이 일치하지 않습니다' /tmp/relay.txt; then
+            echo "    정상 — 함수 배포됨 + RELAY_TOKEN 설정됨"
+          elif grep -q 'RELAY_TOKEN 이 설정되지' /tmp/relay.txt; then
+            echo "    환경변수 미반영 — 재배포 필요"
+          else
+            echo "    함수를 찾지 못함 (배포 실패 또는 경로 문제)"
+          fi
+
+      - name: 중계기 실호출 (토큰 있으면)
+        env:
+          RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+          RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+        run: |
+          if [ -z "$RELAY_TOKEN" ]; then
+            echo "  REDT_RELAY_TOKEN 미설정 — 건너뜀 (GitHub Secrets 등록 후 확인)"
+            exit 0
+          fi
+          T='https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade?LAWD_CD=41220&DEAL_YMD=202401&numOfRows=1'
+          curl -sS -o /tmp/via.txt --max-time 60 -G \
+            -H "x-relay-token: $RELAY_TOKEN" \
+            --data-urlencode "target=$T" \
+            -w '  http=%{http_code}  total=%{time_total}s\n' \
+            "${RELAY_URL}/api/relay" || true
+          echo "  --- 응답 앞부분 ---"
+          head -c 500 /tmp/via.txt 2>/dev/null; echo
