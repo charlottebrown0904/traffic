@@ -86,8 +86,8 @@
           "id": "P0-10",
           "title": "저장소 private 전환",
           "owner": "user",
-          "status": "todo",
-          "note": "실데이터 커밋 전에"
+          "status": "done",
+          "note": "확인함 (GitHub API visibility=private, 2026-08-31)"
         },
         {
           "id": "P0-11",
