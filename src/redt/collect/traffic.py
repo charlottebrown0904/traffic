@@ -97,6 +97,22 @@ def _resolve(columns, hints: list[str]) -> str | None:
     return None
 
 
+
+def _vehicle_codes(col: pd.Series) -> pd.Series:
+    """차종 라벨을 코드로. '1종'·'1종교통량'·'1' 모두 1 이 된다.
+
+    숫자로 바로 바꾸면 '1종' 이 NaN → 0 이 되고, 여섯 차종이 조용히 한 덩어리로
+    합쳐진다. 가설이 차종별 교통량이므로 그렇게 뭉개지면 분석이 성립하지 않는다.
+    """
+    raw = col.astype(str).str.strip()
+    code = pd.to_numeric(raw.str.extract(r"(\d+)")[0], errors="coerce")
+    lost = code.isna() & raw.ne("") & raw.str.lower().ne("nan")
+    if lost.any():
+        examples = raw[lost].drop_duplicates().head(5).tolist()
+        print(f"  ⚠ 차종을 읽지 못한 값 {int(lost.sum()):,}건 → 0(전체)으로 둡니다: {examples}")
+    return code.fillna(0).astype(int)
+
+
 def _melt_wide(df: pd.DataFrame, year_cols: list[str]) -> pd.DataFrame:
     """연도가 컬럼으로 펼쳐진 형식을 long 으로 접는다."""
     id_cols = [c for c in df.columns if c not in year_cols]
@@ -164,7 +180,7 @@ def normalize(df: pd.DataFrame, mapping: dict | None = None, source: str = "unkn
         raise ValueError("연도를 만들 컬럼(year 또는 date)이 없습니다.")
 
     out["vehicle_type"] = (
-        pd.to_numeric(df[resolved["vehicle_type"]], errors="coerce").fillna(0).astype(int)
+        _vehicle_codes(df[resolved["vehicle_type"]])
         if resolved["vehicle_type"] else 0
     )
     out["direction"] = (
