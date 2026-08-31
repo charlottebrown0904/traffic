@@ -126,10 +126,10 @@
         },
         {
           "id": "P2-4",
-          "title": "교통량 시계열 확보 (백필 또는 파일)",
+          "title": "교통량 원천 확보 (15043774 활용신청)",
           "owner": "user",
           "status": "doing",
-          "note": "보유하신 전국 영업소 교통량 파일 필요 — redt traffic --path 로 바로 적재됨"
+          "note": "원천 확정 완료 — 활용신청만 하면 오픈API 로 자동 수집. docs/traffic-source.md"
         },
         {
           "id": "P2-5",
@@ -595,6 +595,14 @@
           "prio": "필수",
           "status": "done",
           "url": "https://www.data.go.kr/data/15126470/openapi.do"
+        },
+        {
+          "id": "15043774",
+          "name": "한국도로공사_영업소별 교통량",
+          "use": "일자×영업소×차종(1~6종)×하이패스구분 — 설명변수 원자료. 오픈API 자동수집 가능",
+          "prio": "필수",
+          "status": "todo",
+          "url": "https://www.data.go.kr/data/15043774/fileData.do"
         },
         {
           "id": "15134761",
