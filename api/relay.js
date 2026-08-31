@@ -95,11 +95,22 @@ module.exports = async function handler(req, res) {
     if (upstream.status >= 300 && upstream.status < 400) {
       return deny(res, 502, `상류가 리디렉션을 요구했습니다 (${upstream.status}) — 따라가지 않았습니다`);
     }
-    const body = scrub(await upstream.text(), secret);
     const type = upstream.headers.get("content-type") || "text/plain; charset=utf-8";
-    res.setHeader("content-type", type);
+    const textual = /^text\/|json|xml|javascript|html/i.test(type);
+
     res.setHeader("cache-control", "no-store");
-    res.status(upstream.status).send(body);
+    if (textual) {
+      res.setHeader("content-type", type);
+      res.status(upstream.status).send(scrub(await upstream.text(), secret));
+      return;
+    }
+    // zip·xlsx 같은 바이너리는 텍스트로 디코딩하면 깨진다. base64 로 감싸 보낸다.
+    const buf = Buffer.from(await upstream.arrayBuffer());
+    res.setHeader("content-type", "text/plain; charset=utf-8");
+    res.setHeader("x-relay-encoding", "base64");
+    res.setHeader("x-relay-content-type", type);
+    res.setHeader("x-relay-bytes", String(buf.length));
+    res.status(upstream.status).send(buf.toString("base64"));
   } catch (err) {
     const timedOut = err && err.name === "AbortError";
     // 오류 메시지에 target 을 넣지 않는다 — 키가 붙은 URL 이라 그대로 새어나간다.

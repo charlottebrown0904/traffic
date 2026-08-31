@@ -1,0 +1,32 @@
+# 포털 월별 파일을 중계기로 내려받아 본다.
+name: 교통량 파일 시험 다운로드
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "연도"
+        default: "2024"
+      month:
+        description: "월"
+        default: "01"
+
+jobs:
+  down:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/ex_download.py "${{ inputs.year }}" "${{ inputs.month }}" /tmp/t.zip
+      - name: 압축 내용 확인
+        if: always()
+        run: |
+          if [ -f /tmp/t.zip ]; then
+            unzip -l /tmp/t.zip | head -20
+            unzip -p /tmp/t.zip | head -3 | iconv -f cp949 -t utf-8 2>/dev/null || unzip -p /tmp/t.zip | head -3
+          else
+            echo "  zip 없음"
+          fi
