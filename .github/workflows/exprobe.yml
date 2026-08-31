@@ -13,11 +13,20 @@ on:
         description: "이미 확정된 파라미터 (공백 구분)"
         default: ""
       names:
-        description: "이번에 시험할 이름 후보 (공백 구분)"
-        required: true
+        description: "이번에 시험할 이름 후보 (공백 구분). 비우면 문서 스캔만"
+        default: ""
       value:
         description: "후보에 넣을 값"
         default: "1"
+      doc_from:
+        description: "문서 스캔 시작 apiId"
+        default: "100"
+      doc_to:
+        description: "문서 스캔 끝 apiId"
+        default: "160"
+      needle:
+        description: "문서에서 찾을 문자열"
+        default: "trafficAmountByUnit"
 
 jobs:
   probe:
@@ -29,10 +38,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: API 문서 페이지 스캔 (apiId 훑기)
+        if: inputs.names == ''
+        run: python scripts/ex_dump.py ${{ inputs.doc_from }} ${{ inputs.doc_to }} "${{ inputs.needle }}"
+
       - name: 기준 (base 만)
+        if: inputs.names != ''
         run: python scripts/ex_probe.py "${{ inputs.path }}" ${{ inputs.base }}
 
       - name: 후보 훑기
+        if: inputs.names != ''
         run: |
           for n in ${{ inputs.names }}; do
             echo "  --- $n=${{ inputs.value }}"
