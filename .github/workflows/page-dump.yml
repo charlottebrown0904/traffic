@@ -17,4 +17,9 @@ jobs:
       RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      - run: python scripts/page_dump.py ${{ inputs.urls }}
+      # URL 에 & 가 들어가므로 셸에 직접 펼치면 명령이 끊긴다. 환경변수로 넘긴다.
+      - env:
+          URLS: ${{ inputs.urls }}
+        run: |
+          set -- $URLS
+          python scripts/page_dump.py "$@"
