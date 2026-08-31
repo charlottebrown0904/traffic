@@ -7,5 +7,7 @@ window.SUPABASE = {
   key: "sb_publishable_S1otGjMvBab-ZtXUO_cM2Q_4VYxrdkQ",
 
   // 로그인 수단. 대시보드에서 켠 것만 실제로 동작한다.
-  providers: ["google", "apple", "kakao"],
+  // 애플은 유료 개발자 계정(연 $99)이 필요해 뒤로 미뤘다.
+  // 아이폰 사용자도 구글·카카오로 로그인된다.
+  providers: ["google", "kakao"],
 };

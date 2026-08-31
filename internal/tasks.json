@@ -261,8 +261,8 @@
           "id": "P4-0a",
           "title": "Supabase 프로젝트 생성 (서울 리전)",
           "owner": "user",
-          "status": "todo",
-          "note": "docs/prep-membership.md ① — Region 은 반드시 Northeast Asia (Seoul)"
+          "status": "done",
+          "note": "프로젝트 생성 완료 (서울 리전)"
         },
         {
           "id": "P4-0b",
@@ -270,6 +270,20 @@
           "owner": "user",
           "status": "todo",
           "note": "② — REST API 키 필요. 이메일 수집은 비즈앱 전환(사업자등록) 후"
+        },
+        {
+          "id": "P4-0e",
+          "title": "구글 OAuth 클라이언트 발급",
+          "owner": "user",
+          "status": "todo",
+          "note": "무료 15분. docs/auth-providers.md"
+        },
+        {
+          "id": "P4-0f",
+          "title": "Supabase URL Configuration 설정",
+          "owner": "user",
+          "status": "todo",
+          "note": "Site URL + Redirect URLs. 빠뜨리면 로그인 후 엉뚱한 곳으로 튕김"
         },
         {
           "id": "P4-0c",
@@ -296,15 +310,15 @@
           "id": "P4-2",
           "title": "스키마 마이그레이션 (broker/listing/inquiry/favorite)",
           "owner": "claude",
-          "status": "todo",
-          "note": ""
+          "status": "doing",
+          "note": "스키마 작성 완료 — 대시보드 SQL Editor 에서 실행 필요"
         },
         {
           "id": "P4-3",
           "title": "RLS 정책 — 기존 13개 보안 테스트를 정책 명세로",
           "owner": "claude",
-          "status": "todo",
-          "note": ""
+          "status": "done",
+          "note": "RLS 정책 17개. 기본 잠금 · 중개사 자가승인 차단 · 승인된 중개사만 매물 등록"
         },
         {
           "id": "P4-4",
@@ -317,8 +331,8 @@
           "id": "P4-5",
           "title": "카카오 로그인",
           "owner": "claude",
-          "status": "todo",
-          "note": "카카오 디벨로퍼스 앱 등록(P4-0b) 후 진행"
+          "status": "doing",
+          "note": "구글·카카오 우선. 애플은 유료 계정 필요해 연기"
         },
         {
           "id": "P4-6",
@@ -380,8 +394,8 @@
           "id": "P4-14",
           "title": "게시판 (자체 구현 — giscus 제외)",
           "owner": "claude",
-          "status": "todo",
-          "note": "giscus 는 글쓰기에 GitHub 로그인을 요구해 일반 사용자에게 부적합. 회원 시스템 위에 올린다"
+          "status": "done",
+          "note": "로그인·게시판 화면 구현 (목록/글쓰기/상세/댓글)"
         }
       ]
     },

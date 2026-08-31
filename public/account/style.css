@@ -1,0 +1,73 @@
+/* 로그인·게시판 공용 보강. 색·타이포는 /guide/style.css 토큰을 그대로 쓴다. */
+.auth-card{
+  max-width:26rem; margin:2.5rem auto; padding:1.75rem;
+  background:var(--surface); border:1px solid var(--border);
+  border-radius:14px; box-shadow:var(--shadow);
+}
+.auth-card h1{font-size:1.35rem; margin:0 0 .35rem}
+.auth-card p.lead{color:var(--muted); margin:0 0 1.5rem; font-size:.95rem}
+
+.btn-oauth{
+  display:flex; align-items:center; justify-content:center; gap:.6rem;
+  width:100%; padding:.85rem 1rem; margin-bottom:.6rem;
+  border:1px solid var(--border-strong); border-radius:10px;
+  background:var(--surface); color:var(--ink);
+  font-size:1rem; font-weight:600; cursor:pointer;
+  font-family:inherit;
+}
+.btn-oauth:hover{background:var(--surface-2)}
+.btn-oauth:disabled{opacity:.5; cursor:default}
+.btn-oauth .ic{width:1.15rem; height:1.15rem; flex:0 0 auto}
+.btn-oauth.kakao{background:#FEE500; border-color:#F5DC00; color:#191600}
+.btn-oauth.kakao:hover{background:#F5DC00}
+
+.note{
+  padding:.85rem 1rem; border-radius:10px; font-size:.9rem;
+  border:1px solid var(--border); background:var(--surface-2); color:var(--muted);
+}
+.note.block{background:var(--block-soft); border-color:var(--block); color:var(--block)}
+.note.ok{background:var(--ok-soft); border-color:var(--ok); color:var(--ok)}
+
+.field{margin-bottom:1rem}
+.field label{display:block; font-weight:600; font-size:.9rem; margin-bottom:.35rem}
+.field input, .field textarea, .field select{
+  width:100%; padding:.7rem .85rem; font:inherit; font-size:1rem;
+  background:var(--surface); color:var(--ink);
+  border:1px solid var(--border-strong); border-radius:9px;
+}
+.field textarea{min-height:9rem; resize:vertical; line-height:1.7}
+.btn{
+  padding:.75rem 1.4rem; border-radius:9px; border:1px solid transparent;
+  background:var(--accent); color:var(--on-accent);
+  font:inherit; font-weight:600; cursor:pointer;
+}
+.btn:disabled{opacity:.55; cursor:default}
+.btn.ghost{background:transparent; color:var(--accent); border-color:var(--border-strong)}
+
+/* 게시판 */
+.board-head{display:flex; align-items:baseline; justify-content:space-between; gap:1rem; margin:1.5rem 0 .75rem}
+.tabs{display:flex; gap:.4rem; flex-wrap:wrap; margin-bottom:1rem}
+.tabs button{
+  padding:.4rem .85rem; border-radius:999px; font:inherit; font-size:.9rem;
+  border:1px solid var(--border-strong); background:var(--surface); color:var(--muted); cursor:pointer;
+}
+.tabs button[aria-selected="true"]{background:var(--accent-soft); color:var(--accent); border-color:var(--accent)}
+
+.post-list{list-style:none; margin:0; padding:0; border-top:1px solid var(--border)}
+.post-list li{border-bottom:1px solid var(--border)}
+.post-list a{
+  display:block; padding:.95rem .25rem; color:inherit; text-decoration:none;
+}
+.post-list a:hover{background:var(--surface-2)}
+.post-list .t{font-weight:600; display:block; margin-bottom:.2rem}
+.post-list .m{font-size:.82rem; color:var(--faint)}
+.badge{
+  display:inline-block; padding:.1rem .45rem; border-radius:5px; font-size:.72rem;
+  background:var(--surface-2); color:var(--muted); margin-right:.4rem; vertical-align:.05rem;
+}
+.badge.notice{background:var(--warn-soft); color:var(--warn)}
+
+.post-body{white-space:pre-wrap; line-height:1.8; margin:1.25rem 0 2rem}
+.cmt{border-top:1px solid var(--border); padding:.85rem 0}
+.cmt .m{font-size:.82rem; color:var(--faint); margin-bottom:.25rem}
+.empty{padding:3rem 1rem; text-align:center; color:var(--faint)}
