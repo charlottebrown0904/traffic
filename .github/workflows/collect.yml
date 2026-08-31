@@ -9,14 +9,20 @@ on:
   workflow_dispatch:
     inputs:
       start:
+        # 교통량이 2021~2025 이고 1년 시차로 보므로 짝이 되는 거래는 2022~2025 다.
+        # 헤도닉 지수의 기준선을 잡을 여유로 한 해 앞부터 받는다.
         description: "수집 시작 (YYYY-MM)"
-        default: "2016-01"
+        default: "2021-01"
       end:
+        # 2026년은 아직 진행 중이라 연 단위 비교에 쓸 수 없다.
         description: "수집 끝 (YYYY-MM)"
         default: "2025-12"
       kind:
         description: "물건 종류 (쉼표구분)"
         default: "land,factory"
+      region:
+        description: "권역 (pilot_regions.yaml 의 이름, 또는 all)"
+        default: "gyeonggi_south"
       geocode_limit:
         description: "이번 실행에서 지오코딩할 최대 건수 (일일 한도 대비)"
         default: "4000"
@@ -78,6 +84,7 @@ jobs:
         run: |
           python -m redt.cli trades \
             --kind "${{ inputs.kind }}" \
+            --region "${{ inputs.region }}" \
             --start "${{ inputs.start }}" \
             --end "${{ inputs.end }}"
 

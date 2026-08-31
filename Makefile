@@ -1,7 +1,7 @@
 PY := PYTHONPATH=src python3
 
 # make collect 수집 범위·대상 (덮어쓰기 예: make collect START=2015-01 KIND=land)
-START ?= 2016-01
+START ?= 2021-01
 END   ?= 2025-12
 KIND  ?= land,factory
 
