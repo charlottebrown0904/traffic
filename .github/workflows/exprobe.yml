@@ -1,0 +1,57 @@
+# data.ex.co.kr 영업소 엔드포인트 찾기.
+# 목록 페이지가 JS 로 그려져 경로를 못 읽으므로, 서울 중계기를 통해 이름을 훑는다.
+name: 도로공사 엔드포인트 탐색
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - name: 후보 경로 훑기
+        run: |
+          [ -n "$RELAY_TOKEN" ] || { echo "토큰 없음"; exit 1; }
+          hit=0
+          try() {
+            code=$(curl -sS -o /tmp/c.txt --max-time 30 -G \
+              -H "x-relay-token: $RELAY_TOKEN" \
+              --data-urlencode "target=https://data.ex.co.kr/openapi/$1?type=json&numOfRows=2&pageNo=1" \
+              -w '%{http_code}' "${RELAY_URL}/api/relay" || echo ERR)
+            if [ "$code" = "200" ]; then
+              echo "  ★ 200  $1"
+              head -c 300 /tmp/c.txt | tr -d '\n'; echo; echo
+              hit=$((hit+1))
+            else
+              echo "     $code  $1"
+            fi
+          }
+
+          echo "=== locationinfo 계열 ==="
+          for n in Rest Tg TG Ic IC Jc Sa Unit Tollgate TollGate Business \
+                   Service Node Link Ex Toll Gate Branch Office ; do
+            try "locationinfo/locationinfo$n"
+          done
+
+          echo
+          echo "=== 교통량 계열 ==="
+          for p in odtraffic/trafficAmountByUnit odtraffic/trafficAmountByRoute \
+                   odtraffic/tcsInfo odtraffic/trafficAmount \
+                   trafficapi/trafficAmountByUnit trafficapi/trafficAmountByRoute \
+                   tcs/trafficAmountByUnit ; do
+            try "$p"
+          done
+
+          echo
+          echo "=== 기타 후보 ==="
+          for p in business/businessInfo business/unitInfo unitinfo/unitInfo \
+                   basicinfo/unitInfo publicdata/unitInfo ; do
+            try "$p"
+          done
+
+          echo
+          echo "200 응답 $hit 건"
