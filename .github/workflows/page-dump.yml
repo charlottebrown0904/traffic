@@ -1,0 +1,20 @@
+# 허용 호스트의 페이지 구조를 읽는다 (폼·다운로드 주소 찾기).
+name: 페이지 구조 확인
+
+on:
+  workflow_dispatch:
+    inputs:
+      urls:
+        description: "URL (공백 구분)"
+        required: true
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/page_dump.py ${{ inputs.urls }}
