@@ -12,10 +12,14 @@
 
 const { timingSafeEqual } = require("node:crypto");
 
+// param/env 가 있으면 인증키를 끼워 넣고, 없으면 그대로 통과시킨다.
+// 통과 전용 호스트는 공개 페이지·파일을 읽기 위한 것으로, 키가 붙지 않는다.
 const ALLOW = {
   "apis.data.go.kr": { param: "serviceKey", env: "DATA_GO_KR_KEY" },
   "api.vworld.kr":   { param: "key",        env: "VWORLD_KEY" },
   "data.ex.co.kr":   { param: "key",        env: "EX_API_KEY" },
+  "www.data.go.kr":  {},
+  "kosis.kr":        {},
 };
 
 const STRIP = ["serviceKey", "key", "apiKey", "authKey", "accessKey"];
@@ -68,12 +72,14 @@ module.exports = async function handler(req, res) {
   const rule = ALLOW[target.hostname];
   if (!rule) return deny(res, 403, `허용되지 않은 목적지: ${target.hostname}`);
 
-  const secret = process.env[rule.env];
-  if (!secret) return deny(res, 500, `${rule.env} 이 설정되지 않았습니다`);
-
-  // 호출 측이 실수로 키 비슷한 것을 넣어 보냈어도 우리 것으로 덮어쓴다.
-  for (const name of STRIP) target.searchParams.delete(name);
-  target.searchParams.set(rule.param, secret);
+  let secret = null;
+  if (rule.env) {
+    secret = process.env[rule.env];
+    if (!secret) return deny(res, 500, `${rule.env} 이 설정되지 않았습니다`);
+    // 호출 측이 실수로 키 비슷한 것을 넣어 보냈어도 우리 것으로 덮어쓴다.
+    for (const name of STRIP) target.searchParams.delete(name);
+    target.searchParams.set(rule.param, secret);
+  }
 
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), TIMEOUT_MS);
