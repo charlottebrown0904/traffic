@@ -1,14 +1,23 @@
-# 교통량 API 파라미터 확정.
-# 응답 message 가 "무엇이 없다"를 알려주므로, 이름 후보를 넣어보고
-# 메시지가 바뀌는지로 정답을 가른다.
-name: 도로공사 엔드포인트 탐색
+# 도로공사 API 파라미터를 하나씩 확정한다.
+# 응답 message 가 "무엇이 없다"를 알려주므로, 확정된 것을 base 에 쌓고
+# 다음 이름 후보를 names 로 훑어 메시지가 바뀌는 것을 고른다.
+name: 도로공사 파라미터 탐색
 
 on:
   workflow_dispatch:
     inputs:
-      extra:
-        description: "추가 파라미터 (예: sumTmUnitTypeCode=1 stdDt=20240101)"
+      path:
+        description: "엔드포인트 경로"
+        default: "odtraffic/trafficAmountByUnit"
+      base:
+        description: "이미 확정된 파라미터 (공백 구분)"
         default: ""
+      names:
+        description: "이번에 시험할 이름 후보 (공백 구분)"
+        required: true
+      value:
+        description: "후보에 넣을 값"
+        default: "1"
 
 jobs:
   probe:
@@ -20,18 +29,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 기준 — 파라미터 없이
-        run: python scripts/ex_probe.py odtraffic/trafficAmountByUnit
+      - name: 기준 (base 만)
+        run: python scripts/ex_probe.py "${{ inputs.path }}" ${{ inputs.base }}
 
-      - name: 집계시간단위구분코드 이름 후보
+      - name: 후보 훑기
         run: |
-          for n in sumTmUnitTypeCode sumTmUnitType tmUnitTypeCode timeUnitCode \
-                   sumTmUnitCd unitTypeCode aggrTmUnitCode sumTimeUnitCode \
-                   tmUnitCode sumTmUnitTpCd timeUnitTypeCode ; do
-            echo "  --- $n=1"
-            python scripts/ex_probe.py odtraffic/trafficAmountByUnit "$n=1"
+          for n in ${{ inputs.names }}; do
+            echo "  --- $n=${{ inputs.value }}"
+            python scripts/ex_probe.py "${{ inputs.path }}" ${{ inputs.base }} "$n=${{ inputs.value }}"
           done
-
-      - name: 직접 지정한 조합
-        if: inputs.extra != ''
-        run: python scripts/ex_probe.py odtraffic/trafficAmountByUnit ${{ inputs.extra }}
