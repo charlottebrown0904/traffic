@@ -1,0 +1,114 @@
+"""도로공사 포털의 '영업소별 일별 교통량' 원본을 연도별 집계로 바꾼다.
+
+포털에서 받는 파일은 확장자가 .zip 이지만 실제로는 **gzip** 이고, 안에는
+cp949 로 쓰인 CSV 가 하나 들어 있다. 한 달치가 5만 행쯤 된다.
+
+  집계일자 · 영업소코드 · 입출구구분코드 · TCS하이패스구분코드
+  · 고속도로운영기관구분코드 · 영업형태구분코드 · 1종~6종교통량 · 총교통량
+
+집계 규칙 — 입출구·TCS/하이패스·기관·영업형태를 **모두 합친다**.
+2026-01 서울(101) 1종을 이 방식으로 12개월 환산하면 58.5M 이 나오는데,
+기존 연간 파일의 2025년 값이 56.6M 이다. 입구만/출구만 합치면 절반인
+29M 이 되어 전혀 맞지 않는다. 연간 파일이 양방향 합계라는 근거다.
+
+총교통량 컬럼은 싣지 않는다. 차종 합과 중복이라 그대로 두면 두 배가 된다.
+
+  python scripts/convert_tcs_daily.py data/raw/ex/*.zip -o data/raw/tcs_annual.csv
+"""
+from __future__ import annotations
+
+import argparse
+import gzip
+import io
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+import pandas as pd
+
+CLASSES = [f"{i}종교통량" for i in range(1, 7)]
+NAME_SOURCE = Path("data/raw/tcs_annual_2025.csv")
+
+
+def read_one(path: Path) -> pd.DataFrame:
+    """gzip(.zip 로 위장) 이든 맨 csv 든 읽는다."""
+    raw = path.read_bytes()
+    if raw[:2] == b"\x1f\x8b":
+        raw = gzip.decompress(raw)
+    df = pd.read_csv(io.BytesIO(raw), encoding="cp949")
+    df.columns = [c.strip() for c in df.columns]
+    return df.loc[:, ~df.columns.str.startswith("Unnamed")]
+
+
+def names() -> dict[int, str]:
+    """영업소명은 일별 파일에 없다. 기존 연간 파일에서 가져온다."""
+    if not NAME_SOURCE.exists():
+        return {}
+    ann = pd.read_csv(NAME_SOURCE, encoding="utf-8-sig")
+    return dict(zip(ann["영업소코드"].astype(int), ann["영업소명"].astype(str)))
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("files", nargs="+")
+    ap.add_argument("-o", "--out", required=True)
+    args = ap.parse_args()
+
+    frames, months = [], defaultdict(set)
+    for p in sorted(Path(f) for f in args.files):
+        df = read_one(p)
+        df["집계일자"] = pd.to_datetime(df["집계일자"], errors="coerce")
+        bad = df["집계일자"].isna().sum()
+        if bad:
+            print(f"  ⚠ {p.name}: 날짜를 읽지 못한 {bad:,}행을 버립니다")
+            df = df.dropna(subset=["집계일자"])
+        df["연도"] = df["집계일자"].dt.year
+        for y, m in df.groupby("연도")["집계일자"]:
+            months[int(y)] |= set(m.dt.month.unique())
+        df["영업소코드"] = pd.to_numeric(
+            df["영업소코드"].astype(str).str.strip(), errors="coerce")
+        df = df.dropna(subset=["영업소코드"])
+        for c in CLASSES:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+        frames.append(df[["연도", "영업소코드", *CLASSES]])
+        print(f"  {p.name}  {len(df):,}행")
+
+    if not frames:
+        print("읽은 파일이 없습니다.")
+        return 1
+
+    wide = (pd.concat(frames)
+              .groupby(["연도", "영업소코드"], as_index=False)[CLASSES].sum())
+    long = wide.melt(id_vars=["연도", "영업소코드"], value_vars=CLASSES,
+                     var_name="차종", value_name="교통량")
+    long["차종"] = long["차종"].str.replace("교통량", "", regex=False)
+    long["영업소코드"] = long["영업소코드"].astype(int)
+    long["영업소명"] = long["영업소코드"].map(names()).fillna("")
+    long = long[["영업소코드", "영업소명", "연도", "차종", "교통량"]]
+    long = long.sort_values(["연도", "영업소코드", "차종"])
+
+    print()
+    for y in sorted(months):
+        ms = sorted(int(m) for m in months[y])
+        mark = "" if len(ms) == 12 else f"  ← {len(ms)}개월뿐 (온전한 해가 아님)"
+        print(f"  {y}년: {len(ms)}개월 {ms}{mark}")
+    if any(len(v) != 12 for v in months.values()):
+        print("  ⚠ 온전하지 않은 해가 있습니다. 연도끼리 비교하려면 같은 달만"
+              " 모아야 합니다 — 12개월과 7개월을 나란히 두면 안 됩니다.")
+
+    missing = int((long["영업소명"] == "").sum())
+    if missing:
+        codes = [int(c) for c in
+                 sorted(long.loc[long['영업소명'] == '', '영업소코드'].unique())[:5]]
+        print(f"  ⚠ 영업소명을 못 찾은 {missing:,}행 (코드 예: {codes})")
+
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    long.to_csv(out, index=False, encoding="utf-8-sig")
+    print(f"\n{out}  {len(long):,}행 · 영업소 {long['영업소코드'].nunique()}개"
+          f" · 연도 {[int(y) for y in sorted(long['연도'].unique())]}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
