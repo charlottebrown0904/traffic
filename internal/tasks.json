@@ -282,8 +282,8 @@
           "id": "P4-0e",
           "title": "구글 OAuth 클라이언트 발급",
           "owner": "user",
-          "status": "todo",
-          "note": "무료 15분. docs/auth-providers.md"
+          "status": "done",
+          "note": "Google Cloud OAuth 클라이언트 발급 → Supabase Google provider 연결 완료"
         },
         {
           "id": "P4-0f",
