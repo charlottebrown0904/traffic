@@ -275,8 +275,8 @@
           "id": "P4-0b",
           "title": "카카오 디벨로퍼스 앱 등록",
           "owner": "user",
-          "status": "todo",
-          "note": "② — REST API 키 필요. 이메일 수집은 비즈앱 전환(사업자등록) 후"
+          "status": "blocked",
+          "note": "카카오 콘솔이 모바일에서 플랫폼 등록 영역을 렌더링하지 않음 — PC 에서 진행"
         },
         {
           "id": "P4-0e",
@@ -338,8 +338,8 @@
           "id": "P4-5",
           "title": "카카오 로그인",
           "owner": "claude",
-          "status": "doing",
-          "note": "구글·카카오 우선. 애플은 유료 계정 필요해 연기"
+          "status": "blocked",
+          "note": "P4-0b 대기. 화면 버튼은 이미 있음"
         },
         {
           "id": "P4-6",
