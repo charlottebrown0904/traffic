@@ -57,6 +57,27 @@ def main() -> None:
         if not shown:
             print("  (본문에서 단서를 못 찾음)  길이", len(page))
 
+        # 자동으로 받아오려면 내려받기 주소가 필요하다.
+        ids = sorted(set(re.findall(r"atchFileId=([A-Za-z0-9_]+)", page)))
+        sns = sorted(set(re.findall(r"fileDetailSn=(\d+)", page)))
+        links = sorted(set(re.findall(r"(/cmm/cmm/fileDownload\.do[^\"\'<> ]*)", page)))
+        js = sorted(set(re.findall(r"fn_fileDataDown\(([^)]{0,80})\)", page)))
+        if ids or links or js:
+            print("  내려받기 단서:")
+            for x in ids[:4]:
+                print("    atchFileId =", x)
+            for x in sns[:4]:
+                print("    fileDetailSn =", x)
+            for x in links[:3]:
+                print("    링크 =", x[:160])
+            for x in js[:3]:
+                print("    js =", x[:120])
+        # 파일데이터가 오픈API 로 자동변환됐는지
+        if "오픈API" in page or "openapi" in page.lower():
+            api = sorted(set(re.findall(r"(https://api\.odcloud\.kr[^\"\'<> ]*)", page)))
+            for x in api[:3]:
+                print("    odcloud =", x[:160])
+
 
 if __name__ == "__main__":
     main()
