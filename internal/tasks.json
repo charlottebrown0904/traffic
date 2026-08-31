@@ -119,17 +119,17 @@
         },
         {
           "id": "P2-3",
-          "title": "probe-history — 교통량 과거 조회 가능 범위 판정",
+          "title": "교통량 API 과거조회 가능 여부 판정",
           "owner": "user",
-          "status": "doing",
-          "note": "odtraffic/trafficAmountByUnit 확인됨 — 집계시간단위구분코드 파라미터명 확정 필요"
+          "status": "done",
+          "note": "판정 완료 — 불가. 실시간/시간단위 API 라 연도별 과거를 못 준다. 파일 경로로 확정 (docs/traffic-api-findings.md)"
         },
         {
           "id": "P2-4",
           "title": "교통량 시계열 확보 (백필 또는 파일)",
-          "owner": "both",
-          "status": "todo",
-          "note": ""
+          "owner": "user",
+          "status": "doing",
+          "note": "보유하신 전국 영업소 교통량 파일 필요 — redt traffic --path 로 바로 적재됨"
         },
         {
           "id": "P2-5",
