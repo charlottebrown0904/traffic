@@ -100,15 +100,15 @@
           "id": "P2-0",
           "title": "실행 환경 준비 (브라우저 Codespaces 또는 로컬)",
           "owner": "user",
-          "status": "doing",
-          "note": "세 키 모두 Codespaces Secrets 등록 완료 — 다음은 make doctor"
+          "status": "done",
+          "note": "Actions + Vercel 서울 중계기로 확정. PC 불필요"
         },
         {
           "id": "P2-1",
           "title": "공공데이터포털 키 발급 (데이터셋 5종 활용신청)",
           "owner": "user",
-          "status": "doing",
-          "note": "키 재발급 완료 · 2/5 신청. 영업소 위치정보는 도로공사 포털 소관"
+          "status": "done",
+          "note": "키 재발급 + 데이터셋 활용신청"
         },
         {
           "id": "P2-2",
@@ -121,8 +121,8 @@
           "id": "P2-3",
           "title": "probe-history — 교통량 과거 조회 가능 범위 판정",
           "owner": "user",
-          "status": "todo",
-          "note": "프로젝트 방향을 가르는 한 줄"
+          "status": "doing",
+          "note": "odtraffic/trafficAmountByUnit 확인됨 — 집계시간단위구분코드 파라미터명 확정 필요"
         },
         {
           "id": "P2-4",
@@ -135,15 +135,15 @@
           "id": "P2-5",
           "title": "실거래가 수집 (경기 남부 8개 시군구)",
           "owner": "claude",
-          "status": "todo",
-          "note": ""
+          "status": "doing",
+          "note": "시험 범위(2024 1~3월 토지) 6,775건 수집 성공. 전 범위 확대 대기"
         },
         {
           "id": "P2-6",
           "title": "지오코딩 + 공간 조인",
           "owner": "claude",
-          "status": "todo",
-          "note": ""
+          "status": "done",
+          "note": "지오코딩 실패 0건·지번단위 88% / 공간조인 2,287쌍 동작 확인"
         },
         {
           "id": "P2-7",
