@@ -46,6 +46,20 @@ def load(pattern: str) -> dict[int, pd.DataFrame]:
 def main() -> int:
     annual = load("tcs_annual_*.csv")
     monthly = load("tcs_monthly_*.csv")
+
+    # 개통연도 표 (scripts/tollgate_events.py 가 만든다). 없으면 빈 표로 둔다 —
+    # 검사가 안 도는 것보다 설명 없이 경고하는 편이 낫다.
+    events: dict[int, int] = {}
+    ev_path = RAW / "tollgate_events.csv"
+    if ev_path.exists():
+        ev = pd.read_csv(ev_path, encoding="utf-8-sig")
+        ev = ev[ev["개통판정"] == "개통"]
+        events = dict(zip(ev["영업소코드"].astype(int),
+                          ev["첫관측월"].astype(str).str[:4].astype(int)))
+        print(f"개통연도 {len(events)}개 영업소 반영 (tollgate_events.csv)\n")
+    else:
+        print("tollgate_events.csv 가 없습니다 — 먼저 scripts/tollgate_events.py "
+              "를 돌리면 신설 영업소를 설명할 수 있습니다.\n")
     if not annual:
         print("검사할 연간 파일이 없습니다.")
         return 0
@@ -99,10 +113,20 @@ def main() -> int:
         common = pa.index.intersection(pb.index)
         growth = (pb[common] / pa[common] - 1)
         wild = growth[growth > 5]          # 500% 초과
-        say(wild.empty,
-            f"{a}→{b} 증감률 500% 초과 {len(wild)}개" +
-            ("" if wild.empty else
-             f" {sorted(wild.index)[:5]} — 연중 개통이면 그 해는 빼야 합니다"))
+        # 개통 시점을 아는 영업소는 '설명된 것' 으로 분리한다. 설명되지 않은
+        # 폭증만 남겨야 진짜 이상치가 눈에 띈다.
+        # a 년 '중' 개통이면 a 년 합계가 몇 달치뿐이라 a→b 증감이 무의미하다.
+        # 조건은 '> a' 가 아니라 '>= a' 다. 2024년 12월 개통을 2024→2025
+        # 비교에서 빼야 하는데, '>' 로 두면 하나도 안 걸러진다.
+        explained = {c for c in wild.index if events.get(c, -1) >= a}
+        rest = sorted(set(wild.index) - explained)
+        if explained:
+            print(f"  --   {a}→{b} 증감률 500% 초과 {len(wild)}개 중 "
+                  f"{len(explained)}개는 {a}년 연중 개통으로 설명됩니다 "
+                  f"{sorted(explained)[:5]}")
+        say(not rest,
+            f"{a}→{b} 설명되지 않는 증감률 500% 초과 {len(rest)}개" +
+            ("" if not rest else f" {rest[:5]} — 원본을 확인하세요"))
 
     print()
     if problems:

@@ -5,7 +5,7 @@ START ?= 2016-01
 END   ?= 2025-12
 KIND  ?= land,factory
 
-.PHONY: install hooks doctor collect synthetic demo test test-server check-traffic web serve serve-static plan progress status clean
+.PHONY: install hooks doctor collect synthetic demo test test-server check-traffic tollgate-events web serve serve-static plan progress status clean
 
 install:
 	pip install -r requirements.txt
@@ -32,8 +32,12 @@ collect:
 synthetic:
 	$(PY) scripts/make_synthetic.py
 
+## 영업소 개통·폐쇄 시점 추출 (월별 파일에서)
+tollgate-events:
+	$(PY) scripts/tollgate_events.py
+
 ## 교통량 자료 정합성 검사 — 연도를 새로 넣을 때마다 돌릴 것
-check-traffic:
+check-traffic: tollgate-events
 	$(PY) scripts/check_traffic.py
 
 ## 로직 검증 (API 키 불필요)

@@ -16,6 +16,7 @@ data/processed/*
 # 공개 자료이고 크기도 작다 (한 해 100KB 남짓).
 !data/raw/tcs_annual_*.csv
 !data/raw/tcs_monthly_*.csv
+!data/raw/tollgate_events.csv
 # 도로공사 포털에서 받은 원본 파일을 올릴 자리 (러너가 새로 체크아웃해도 잡히게)
 !data/raw/ex/
 !data/raw/ex/**
