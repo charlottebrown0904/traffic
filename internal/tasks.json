@@ -129,7 +129,14 @@
           "title": "교통량 원천 확보 (15043774 활용신청)",
           "owner": "user",
           "status": "doing",
-          "note": "원천 확정 완료 — 활용신청만 하면 오픈API 로 자동 수집. docs/traffic-source.md"
+          "note": "2025년 1년치 확보·적재 완료(475영업소×6차종). 연도별 변화 분석에는 3개년 이상 필요 — 포털 다운로드 자동화가 남음"
+        },
+        {
+          "id": "P2-4a",
+          "title": "포털 월별 파일 다운로드 자동화 (2015~2025, 132개)",
+          "owner": "claude",
+          "status": "doing",
+          "note": "/openoasis/portal/download/view2 · GET 404 → POST/세션 확인 중. 15043774 는 활용신청이 없는 데이터셋으로 확인됨"
         },
         {
           "id": "P2-5",
@@ -171,7 +178,7 @@
           "title": "개별공시지가 시계열 수집",
           "owner": "claude",
           "status": "todo",
-          "note": "브이월드 개별공시지가 속성조회 — VWORLD_KEY 사용 (data.go.kr 아님)"
+          "note": "브이월드 개별공시지가 — 교통량 다음"
         },
         {
           "id": "P2-9",
@@ -179,6 +186,13 @@
           "owner": "claude",
           "status": "todo",
           "note": ""
+        },
+        {
+          "id": "P2-6a",
+          "title": "영업소 로스터 불일치 해결 (API 86 vs 파일 475)",
+          "owner": "claude",
+          "status": "todo",
+          "note": "2025 파일이 정답지. locationinfoUnit 수집·중복제거 로직 재검토"
         }
       ]
     },

@@ -11,3 +11,7 @@ data/processed/*
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+
+# 교통량 원본은 러너가 매번 새로 받으므로 저장소에 있어야 한다.
+# 공개 자료이고 크기도 작다 (한 해 100KB 남짓).
+!data/raw/tcs_annual_*.csv
