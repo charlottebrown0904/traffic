@@ -5,7 +5,7 @@ START ?= 2016-01
 END   ?= 2025-12
 KIND  ?= land,factory
 
-.PHONY: install hooks doctor collect synthetic demo test test-server web serve serve-static plan progress status clean
+.PHONY: install hooks doctor collect synthetic demo test test-server check-traffic web serve serve-static plan progress status clean
 
 install:
 	pip install -r requirements.txt
@@ -31,6 +31,10 @@ collect:
 ## API 키 없이 파이프라인 검증 (심어둔 β를 되찾는지 확인)
 synthetic:
 	$(PY) scripts/make_synthetic.py
+
+## 교통량 자료 정합성 검사 — 연도를 새로 넣을 때마다 돌릴 것
+check-traffic:
+	$(PY) scripts/check_traffic.py
 
 ## 로직 검증 (API 키 불필요)
 test: test-server
