@@ -317,8 +317,8 @@
           "id": "P4-2",
           "title": "스키마 마이그레이션 (broker/listing/inquiry/favorite)",
           "owner": "claude",
-          "status": "doing",
-          "note": "스키마 작성 완료 — 대시보드 SQL Editor 에서 실행 필요"
+          "status": "done",
+          "note": "Supabase 에서 실행 확인 — 테이블 8, 정책 17, 가입 트리거 1"
         },
         {
           "id": "P4-3",
