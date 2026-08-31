@@ -101,7 +101,7 @@
           "title": "실행 환경 준비 (브라우저 Codespaces 또는 로컬)",
           "owner": "user",
           "status": "doing",
-          "note": "Codespaces Secrets 에 두 키 등록 완료 — Codespace 생성 후 make doctor"
+          "note": "세 키 모두 Codespaces Secrets 등록 완료 — 다음은 make doctor"
         },
         {
           "id": "P2-1",
@@ -621,9 +621,9 @@
       "env": "EX_API_KEY",
       "name": "한국도로공사 데이터포털 인증키",
       "portal": "https://data.ex.co.kr/openapi/apikey/requestKey",
-      "need": "권장",
+      "need": "발급완료",
       "lead": "즉시",
-      "status": "todo",
+      "status": "done",
       "why": "영업소(IC) 마스터와 좌표. 이게 없으면 거래를 어느 IC 에 붙일지 정할 수 없다. data.go.kr 15076728 은 목록만 제공하고 실제 발급·호출은 이 포털 키를 쓴다.",
       "note": "교통량 받으실 때 발급받은 키가 있으면 그대로 넣으면 된다. 키 없이 가려면 영업소 목록을 CSV 로 만들어 `redt tollgates --path` 로 넣는 우회로가 있다. 과거 교통량 조회 가능 여부(P2-3) 판정에도 이 키가 필요하다.",
       "datasets": [
