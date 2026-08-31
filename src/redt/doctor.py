@@ -87,7 +87,7 @@ def _check_keys() -> None:
 
 def _check_rtms() -> None:
     print("\n3. 실거래가 API 실호출 (평택시 · 토지 · 최근 확정월)")
-    if not keys().data_go_kr:
+    if not keys().data_go_kr and not relay().enabled:
         _say(None, "건너뜀 — 키 없음")
         return
     try:
@@ -106,7 +106,7 @@ def _check_rtms() -> None:
 
 def _check_vworld() -> None:
     print("\n4. VWorld 지오코딩 실호출")
-    if not keys().vworld:
+    if not keys().vworld and not relay().enabled:
         _say(None, "건너뜀 — 키 없음")
         return
     try:
@@ -123,7 +123,7 @@ def _check_vworld() -> None:
 
 def _check_ex() -> None:
     print("\n5. 도로공사 API 실호출 (영업소 마스터)")
-    if not keys().ex:
+    if not keys().ex and not relay().enabled:
         _say(None, "건너뜀 — 키 없음")
         return
     try:

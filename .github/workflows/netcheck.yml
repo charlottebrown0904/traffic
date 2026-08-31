@@ -99,3 +99,47 @@ jobs:
             "${RELAY_URL}/api/relay" || true
           echo "  --- 응답 앞부분 ---"
           head -c 500 /tmp/via.txt 2>/dev/null; echo
+
+      - name: 도로공사 API 목록을 서울 중계기로 읽기 (엔드포인트 확정용)
+        env:
+          RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+          RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+        run: |
+          [ -n "$RELAY_TOKEN" ] || { echo "  토큰 없음 — 건너뜀"; exit 0; }
+          via() {
+            curl -sS -o /tmp/ex.html --max-time 40 -G \
+              -H "x-relay-token: $RELAY_TOKEN" --data-urlencode "target=$1" \
+              -w '%{http_code}' "${RELAY_URL}/api/relay" || echo "ERR"
+          }
+          echo "=== OpenAPI 목록 페이지 ==="
+          printf '  http='; via 'https://data.ex.co.kr/openapi/intro/introduce02'; echo
+          echo "  --- apiId 후보 ---"
+          grep -oE 'apiId=[0-9]+' /tmp/ex.html | sort -u | head -40
+          echo "  --- openapi 경로 후보 ---"
+          grep -oE '/openapi/[A-Za-z0-9_/]+' /tmp/ex.html | sort -u | head -40
+          echo "  --- 본문 일부 ---"
+          tr -d '\r' < /tmp/ex.html | grep -oE '[가-힣]{2,20}' | sort -u | head -40
+
+      - name: 영업소 엔드포인트 후보 직접 시도 (서울 경유)
+        env:
+          RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+          RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+        run: |
+          [ -n "$RELAY_TOKEN" ] || { echo "  토큰 없음 — 건너뜀"; exit 0; }
+          for p in \
+            "business/curBusinessInfo" \
+            "business/curBusinessInfoList" \
+            "business/curBusinessTime" \
+            "restinfo/restBusinessInfoList" \
+            "locationinfo/locationinfoRest" \
+            "odtraffic/tollgateInfo" \
+            "trafficapi/trafficIC" \
+            "safeDriving/curBusinessInfo" ; do
+            printf '  %-36s ' "$p"
+            code=$(curl -sS -o /tmp/c.txt --max-time 40 -G \
+              -H "x-relay-token: $RELAY_TOKEN" \
+              --data-urlencode "target=https://data.ex.co.kr/openapi/$p?type=json&numOfRows=1&pageNo=1" \
+              -w '%{http_code}' "${RELAY_URL}/api/relay" || echo ERR)
+            printf 'http=%s  ' "$code"
+            head -c 110 /tmp/c.txt | tr -d '\n'; echo
+          done
