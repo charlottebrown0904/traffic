@@ -61,3 +61,34 @@ https://api.odcloud.kr/api/15043774/v1/uddi:3ad6de21-7ec9-4f46-b2c2-b29f1be09510
 `odtraffic/trafficAmountByUnit` 은 필수 파라미터가 집계시간단위구분코드 + 기준시라
 시간 단위 실시간 조회용이다. 과거 연도별 자료를 주지 않는다.
 자세한 조사 경과는 `docs/traffic-api-findings.md`.
+
+
+## 포털 직접 다운로드 (길 B) — 진행 상황
+
+다운로드 화면(`/portal/fdwn/view?type=TCS&num=34&requestfrom=dataset`)을 서울 경유로
+읽어 구조를 파악했다.
+
+```
+폼 action     /dataset/datasetList/list
+입력          dataSupplyDate
+선택          collectCycle, dataSupplyYear, dataSupplyMonth,
+              dataSupplyQuater, dataSupplyYearQ, dataSupplyYearY
+다운로드 후보  /openoasis/portal/download/view2
+```
+
+`/openoasis/portal/download/view2` 에 GET 으로 위 파라미터를 붙여 호출하면 **404** 다.
+POST 이거나 세션/토큰이 필요한 것으로 보인다. 계속 확인한다.
+
+## 우선순위 정리
+
+분석에 필요한 교통량 범위는 **2015~2025** 이다 (거래가 2016~2025, 1년 시차).
+2003년까지 거슬러 갈 필요는 없다.
+
+그리고 **첫 β 검증에는 2~3년이면 충분하다.** 파이프라인이 도는지, 밴드별 계수가
+어느 방향으로 나오는지 먼저 보고 나서 전 기간으로 넓히는 것이 순서다.
+
+따라서 지금 필요한 것은:
+
+1. 대표님이 이미 만들어두신 **2025년 1년치 파일** → 파이프라인 검증
+2. `15043774` **활용신청** → 오픈API 로 전 기간 자동 수집
+3. (예비) 포털 다운로드 자동화 — 1·2 가 되면 필요 없다
