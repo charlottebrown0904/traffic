@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import time
 import xml.etree.ElementTree as ET
+from urllib.parse import urlencode, urlsplit
 
 import requests
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from ..config import VIA_RELAY, relay
 from ..scrub import scrub
 
 _session = requests.Session()
@@ -17,6 +19,30 @@ class ApiError(RuntimeError):
     pass
 
 
+# 중계기가 키를 끼워 넣으므로, 이쪽에서 보낸 키 자리는 지우고 보낸다.
+_KEY_PARAMS = ("serviceKey", "key", "apiKey", "authKey", "accessKey")
+
+
+def _via_relay(url: str, params: dict) -> tuple[str, dict, dict]:
+    """(요청URL, 파라미터, 헤더) 를 중계기 경유 형태로 바꾼다."""
+    cfg = relay()
+    carried = {k: v for k, v in params.items() if k not in _KEY_PARAMS}
+    target = f"{url}?{urlencode(carried)}" if carried else url
+    return (f"{cfg.url}/api/relay", {"target": target}, {"x-relay-token": cfg.token})
+
+
+def _should_relay(url: str, params: dict) -> bool:
+    if not relay().enabled:
+        return False
+    # 키가 진짜로 있으면 (국내 실행) 굳이 돌아가지 않는다.
+    if any(params.get(k) not in (None, "", VIA_RELAY) for k in _KEY_PARAMS):
+        return False
+    return urlsplit(url).netloc in RELAYED_HOSTS
+
+
+RELAYED_HOSTS = {"apis.data.go.kr", "api.vworld.kr", "data.ex.co.kr"}
+
+
 @retry(
     retry=retry_if_exception_type((requests.RequestException, ApiError)),
     stop=stop_after_attempt(4),
@@ -24,7 +50,10 @@ class ApiError(RuntimeError):
     reraise=True,
 )
 def get(url: str, params: dict, timeout: int = 30) -> requests.Response:
-    resp = _session.get(url, params=params, timeout=timeout)
+    headers = None
+    if _should_relay(url, params):
+        url, params, headers = _via_relay(url, params)
+    resp = _session.get(url, params=params, timeout=timeout, headers=headers)
     if resp.status_code >= 500:
         raise ApiError(f"{resp.status_code} from {url}")
     try:

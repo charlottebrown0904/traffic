@@ -35,11 +35,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
 
+    # 한국 공공 API 는 해외 IP 를 막는다 (docs/finding-geoblock.md).
+    # 러너는 미국이므로 서울 리전 중계기를 거친다. 인증키는 Vercel 쪽에만 있고
+    # 여기에는 중계기 주소와 토큰만 둔다.
     env:
       PYTHONPATH: src
-      DATA_GO_KR_KEY: ${{ secrets.DATA_GO_KR_KEY }}
-      VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
-      EX_API_KEY: ${{ secrets.EX_API_KEY }}
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4

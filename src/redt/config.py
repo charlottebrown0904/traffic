@@ -18,6 +18,27 @@ GEOCODE_CACHE = INTERIM / "geocode_cache.jsonl"
 load_dotenv(ROOT / "config" / ".env")
 
 
+# 한국 공공 API 는 해외 IP 를 막는다 (docs/finding-geoblock.md).
+# 해외에서 돌 때는 서울 리전 중계기를 거친다. 그때 인증키는 중계기 쪽에만 있고
+# 이쪽에는 없으므로, require() 가 키 없음으로 막아서면 안 된다.
+VIA_RELAY = "__via_relay__"
+
+
+@dataclass(frozen=True)
+class Relay:
+    url: str = os.getenv("REDT_RELAY_URL", "").rstrip("/")
+    token: str = os.getenv("REDT_RELAY_TOKEN", "")
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.url and self.token)
+
+
+@lru_cache(maxsize=1)
+def relay() -> Relay:
+    return Relay()
+
+
 @dataclass(frozen=True)
 class Keys:
     data_go_kr: str = os.getenv("DATA_GO_KR_KEY", "")
@@ -26,12 +47,15 @@ class Keys:
 
     def require(self, name: str) -> str:
         value = getattr(self, name)
-        if not value:
-            raise RuntimeError(
-                f"API 키가 없습니다: {name}. config/.env 를 만들고 채워주세요 "
-                f"(config/.env.example 참고)."
-            )
-        return value
+        if value:
+            return value
+        if relay().enabled:
+            # 중계기가 자기 환경변수의 진짜 키로 바꿔 끼운다.
+            return VIA_RELAY
+        raise RuntimeError(
+            f"API 키가 없습니다: {name}. config/.env 를 만들고 채우거나 "
+            f"환경변수로 지정하세요 (config/.env.example 참고)."
+        )
 
 
 @lru_cache(maxsize=1)

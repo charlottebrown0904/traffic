@@ -9,7 +9,7 @@ import datetime as dt
 import importlib
 import sys
 
-from .config import DB_PATH, PROCESSED, ROOT, keys
+from .config import DB_PATH, PROCESSED, ROOT, keys, relay
 from .scrub import scrub as _scrub
 
 PACKAGES = [
@@ -58,6 +58,11 @@ def _check_keys() -> None:
     파일이 없다고 실패시키면 안 된다 — 값이 있는지만 본다."""
     env = ROOT / "config" / ".env"
     source = "config/.env" if env.exists() else "환경변수"
+    cfg = relay()
+    if cfg.enabled:
+        print("\n2. API 키  (서울 중계기 경유 — 키는 중계기 쪽에 있습니다)")
+        _say(True, f"중계기 {cfg.url}/api/relay")
+        return
     print(f"\n2. API 키  (읽은 곳: {source})")
     if not env.exists():
         _say(None, "config/.env 파일 없음",
