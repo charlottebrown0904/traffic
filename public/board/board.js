@@ -120,13 +120,17 @@
       root.innerHTML = '<div class="note block" style="margin-top:2rem">글을 찾지 못했습니다.</div>';
       return;
     }
-    var mine = me && me.user.id === p.user_id;
+    var admin = !!(me && me.profile && me.profile.role === "admin");
+    var mine = !!(me && me.user.id === p.user_id);
+    // 관리자는 남의 글도 내릴 수 있어야 신고를 처리할 수 있다. RLS 는 이미
+    // 허용하고 있었는데 버튼만 없어서 못 하던 상태였다.
+    var canDelPost = mine || admin;
     var { data: cmts } = await window.SB.from("comment")
       .select("*").eq("post_id", id).eq("is_deleted", false).order("created_at");
 
     root.innerHTML =
       '<div class="board-head"><a class="btn ghost" href="#/">← 목록</a>' +
-      (mine ? '<button class="btn ghost" id="del">삭제</button>' : "") + "</div>" +
+      (canDelPost ? '<button class="btn ghost" id="del">삭제</button>' : "") + "</div>" +
       '<h1 style="font-size:1.45rem;margin:.5rem 0 .35rem">' +
       '<span class="badge ' + (p.category === "notice" ? "notice" : "") + '">' + CATS[p.category] + "</span>" +
       E(p.title) + "</h1>" +
@@ -135,8 +139,10 @@
       '<h2 style="font-size:1.05rem">댓글 ' + (cmts ? cmts.length : 0) + "</h2>" +
       '<div id="cmts">' +
       ((cmts || []).map(function (c) {
-        return '<div class="cmt"><div class="m">' + window.SBUtil.when(c.created_at) + "</div>" +
-          E(c.body) + "</div>";
+        var canDel = admin || (me && me.user.id === c.user_id);
+        return '<div class="cmt"><div class="m">' + window.SBUtil.when(c.created_at) +
+          (canDel ? ' <button class="link-del" data-c="' + c.id + '">삭제</button>' : "") +
+          "</div>" + E(c.body) + "</div>";
       }).join("") || '<p class="empty">첫 댓글을 남겨보세요.</p>') +
       "</div>" +
       (me
@@ -144,7 +150,18 @@
           '<button class="btn" id="csave">댓글 등록</button>'
         : needLogin("댓글을 쓰려면"));
 
-    if (mine) {
+    Array.prototype.forEach.call(root.querySelectorAll("[data-c]"), function (btn) {
+      btn.addEventListener("click", async function () {
+        if (!confirm("이 댓글을 삭제할까요?")) return;
+        btn.disabled = true;
+        var { error } = await window.SB.from("comment")
+          .update({ is_deleted: true }).eq("id", btn.dataset.c);
+        if (error) { btn.disabled = false; alert("삭제하지 못했습니다 — " + error.message); return; }
+        viewPost(id);
+      });
+    });
+
+    if (canDelPost) {
       document.getElementById("del").addEventListener("click", async function () {
         if (!confirm("이 글을 삭제할까요?")) return;
         await window.SB.from("post").update({ is_deleted: true }).eq("id", id);
