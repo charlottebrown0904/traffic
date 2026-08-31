@@ -289,8 +289,8 @@
           "id": "P4-0f",
           "title": "Supabase URL Configuration 설정",
           "owner": "user",
-          "status": "todo",
-          "note": "Site URL + Redirect URLs. 빠뜨리면 로그인 후 엉뚱한 곳으로 튕김"
+          "status": "done",
+          "note": "Site URL + Redirect URLs(/**) 설정 완료"
         },
         {
           "id": "P4-0c",
