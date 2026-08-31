@@ -42,6 +42,7 @@ def _pick(row: dict, aliases: list[str]):
 def fetch_tollgates(rows_per_page: int = 500, max_pages: int = 20) -> pd.DataFrame:
     """영업소 목록 전체를 페이지네이션으로 수집."""
     collected: list[dict] = []
+    seen_first: str | None = None
     for page in range(1, max_pages + 1):
         resp = get(
             UNIT_INFO,
@@ -60,6 +61,13 @@ def fetch_tollgates(rows_per_page: int = 500, max_pages: int = 20) -> pd.DataFra
         )
         if not items:
             break
+        # pageNo 를 무시하고 같은 페이지를 되돌려주는 API 가 있다. 그대로 두면
+        # 같은 행을 max_pages 만큼 쌓고 뒤에서 조용히 합쳐진다.
+        first = str(items[0])
+        if seen_first is not None and first == seen_first:
+            print(f"  {page}페이지가 이전과 동일 — 페이지네이션 미지원으로 보고 중단")
+            break
+        seen_first = first
         collected.extend(items)
         if len(items) < rows_per_page:
             break
@@ -92,7 +100,19 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
     out["name"] = out["name"].astype(str).str.strip()
     out["sigungu_cd"] = None
     out["is_open_type"] = None
-    return out.drop_duplicates(subset=["tollgate_id"])
+
+    # 같은 영업소가 노선·방향별로 여러 줄 올 수 있어 코드 기준으로 합친다.
+    # 몇 건이 합쳐졌는지 밝혀두지 않으면 "590건 받았는데 86건 저장"처럼
+    # 조용히 줄어든 것을 나중에 알아채기 어렵다.
+    blank = out["tollgate_id"].isin(["", "None", "nan"]).sum()
+    if blank:
+        print(f"  영업소코드 없음 {blank}건 제외")
+        out = out[~out["tollgate_id"].isin(["", "None", "nan"])].copy()
+    before = len(out)
+    out = out.drop_duplicates(subset=["tollgate_id"])
+    if before != len(out):
+        print(f"  중복 영업소코드 {before - len(out)}건 병합 ({before} → {len(out)})")
+    return out
 
 
 def load_from_csv(path=None) -> pd.DataFrame:
