@@ -96,18 +96,20 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
 
     # unitCode 는 "065 " 처럼 뒤에 공백이 붙어 온다. 이대로 두면 교통량 쪽
     # 영업소코드와 조인이 어긋난다.
-    out["tollgate_id"] = out["tollgate_id"].astype(str).str.strip()
-    out["name"] = out["name"].astype(str).str.strip()
+    # fillna 를 먼저 해야 한다. NaN 은 .str 접근자를 그대로 통과해
+    # 아래 빈값 검사를 빠져나간다.
+    out["tollgate_id"] = out["tollgate_id"].fillna("").astype(str).str.strip()
+    out["name"] = out["name"].fillna("").astype(str).str.strip()
     out["sigungu_cd"] = None
     out["is_open_type"] = None
 
     # 같은 영업소가 노선·방향별로 여러 줄 올 수 있어 코드 기준으로 합친다.
     # 몇 건이 합쳐졌는지 밝혀두지 않으면 "590건 받았는데 86건 저장"처럼
     # 조용히 줄어든 것을 나중에 알아채기 어렵다.
-    blank = out["tollgate_id"].isin(["", "None", "nan"]).sum()
-    if blank:
-        print(f"  영업소코드 없음 {blank}건 제외")
-        out = out[~out["tollgate_id"].isin(["", "None", "nan"])].copy()
+    bad = out["tollgate_id"].isin(["", "None", "nan", "NaN", "<NA>"])
+    if bad.any():
+        print(f"  영업소코드 없음 {int(bad.sum())}건 제외")
+        out = out[~bad].copy()
     before = len(out)
     out = out.drop_duplicates(subset=["tollgate_id"])
     if before != len(out):
