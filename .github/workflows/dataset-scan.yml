@@ -1,0 +1,21 @@
+# 어느 데이터셋이 '연도별 × 영업소 단위' 교통량인지 확인한다.
+# www.data.go.kr 이 해외 러너에서 막히므로 서울 중계기를 거친다.
+name: 데이터셋 조사
+
+on:
+  workflow_dispatch:
+    inputs:
+      ids:
+        description: "데이터셋 번호 (공백 구분)"
+        default: "15043774 15062249 15043784 15043772 15062529 15087176"
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/dataset_info.py ${{ inputs.ids }}
