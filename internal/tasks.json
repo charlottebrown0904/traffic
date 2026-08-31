@@ -1,5 +1,5 @@
 {
-  "updated": "2026-08-30",
+  "updated": "2026-08-31",
   "legend": {
     "owner": {
       "user": "사용자",
@@ -88,6 +88,13 @@
           "owner": "user",
           "status": "todo",
           "note": "실데이터 커밋 전에"
+        },
+        {
+          "id": "P0-11",
+          "title": "서비스명 확정 '사도 토지' + 앱·브라우저 아이콘 (파스텔 브라운)",
+          "owner": "claude",
+          "status": "done",
+          "note": "favicon.ico/svg, apple-touch-icon, PWA manifest, accent 색 브라운 전환"
         }
       ]
     },

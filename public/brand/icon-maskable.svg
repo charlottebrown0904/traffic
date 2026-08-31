@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="사도 토지">
+  <title>사도 토지</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0" stop-color="#F0E2D0"/>
+      <stop offset="1" stop-color="#CFAE8A"/>
+    </linearGradient>
+    <clipPath id="plot">
+      <path d="M256 138 L424 256 L256 374 L88 256 Z"/>
+    </clipPath>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <g transform="translate(256 256) scale(0.76) translate(-256 -256)">
+
+  <!-- 필지: 위에서 내려다본 땅 -->
+  <path d="M256 138 L424 256 L256 374 L88 256 Z" fill="#FFF8F0"/>
+  <g clip-path="url(#plot)" stroke="#E5D3BE" stroke-width="6">
+    <path d="M-21 97 L315 333"/>
+    <path d="M37 55 L374 292"/>
+  </g>
+
+  <!-- 도로: 땅을 가로질러 위로 뻗는다 (교통량 = 미래가치) -->
+  <g clip-path="url(#plot)">
+    <path d="M133.3 342.1 L303.6 209.9 L320.4 229.9 L166.7 381.9 Z" fill="#8A6547"/>
+  </g>
+  <path d="M282.4 200.4 L400 146 L326.2 252.4 Z" fill="#8A6547"/>
+
+  </g>
+</svg>

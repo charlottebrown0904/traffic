@@ -62,7 +62,24 @@ for i, raw in enumerate((ROOT / ".vercelignore").read_text(encoding="utf-8").spl
         f".vercelignore:{i} '{line}' — 앞에 / 를 붙여 최상위로 한정할 것",
     )
 
-print("4. 앱 데이터 파일이 존재한다")
+print("4. 모든 페이지에 아이콘·manifest 가 걸려 있다")
+BRAND = [
+    '<link rel="icon" href="/favicon.ico"',
+    '<link rel="icon" href="/favicon.svg"',
+    '<link rel="apple-touch-icon" href="/apple-touch-icon.png">',
+    '<link rel="manifest" href="/site.webmanifest">',
+    '<meta name="theme-color"',
+]
+for html in sorted(PUBLIC.rglob("*.html")):
+    text = html.read_text(encoding="utf-8")
+    missing = [tag for tag in BRAND if tag not in text]
+    check(not missing, f"{html.relative_to(ROOT)} 빠진 태그 {missing}")
+for name in ("favicon.ico", "favicon.svg", "icon.svg", "apple-touch-icon.png",
+             "site.webmanifest", "brand/icon-192.png", "brand/icon-512.png",
+             "brand/icon-maskable-512.png"):
+    check((PUBLIC / name).is_file(), f"public/{name}")
+
+print("5. 앱 데이터 파일이 존재한다")
 for name in REQUIRED_DATA:
     check((PUBLIC / "app" / "data" / name).is_file(), f"public/app/data/{name}")
 

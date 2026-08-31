@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="사도 토지">
+  <title>사도 토지</title>
+  <defs>
+    <clipPath id="plot">
+      <path d="M256 130 L432 256 L256 382 L80 256 Z"/>
+    </clipPath>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="#C9A47C"/>
+  <path d="M256 130 L432 256 L256 382 L80 256 Z" fill="#FFF8F0"/>
+  <g clip-path="url(#plot)">
+    <path d="M124.6 344.6 L299.5 208.9 L326.4 240.9 L162.9 386.6 Z" fill="#6E4B2E"/>
+  </g>
+  <path d="M276.5 196.6 L404 140 L327.4 255.1 Z" fill="#6E4B2E"/>
+</svg>

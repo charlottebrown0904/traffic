@@ -1,3 +1,12 @@
+/* 브랜드 워드마크 — 아이콘 + 이름 */
+.brand{
+  display:inline-flex; align-items:center; gap:.5rem;
+  font-weight:700; text-decoration:none; color:inherit;
+}
+.brand,
+.brand:hover{border-bottom:0}
+.brand img{display:block; border-radius:6px}
+
 /* 로그인·게시판 공용 보강. 색·타이포는 /guide/style.css 토큰을 그대로 쓴다. */
 .auth-card{
   max-width:26rem; margin:2.5rem auto; padding:1.75rem;
