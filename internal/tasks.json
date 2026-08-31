@@ -105,10 +105,10 @@
         },
         {
           "id": "P2-1",
-          "title": "공공데이터포털 키 발급 (데이터셋 6종 활용신청)",
+          "title": "공공데이터포털 키 발급 (데이터셋 5종 활용신청)",
           "owner": "user",
           "status": "doing",
-          "note": "키 재발급 완료 · 데이터셋 2/6 활용신청"
+          "note": "키 재발급 완료 · 2/5 신청. 영업소 위치정보는 도로공사 포털 소관"
         },
         {
           "id": "P2-2",
@@ -555,14 +555,6 @@
           "url": "https://www.data.go.kr/data/15126470/openapi.do"
         },
         {
-          "id": "15076728",
-          "name": "한국도로공사_영업소 위치정보",
-          "use": "IC 좌표 — EX 키 없이도 이 경로로 확보 가능",
-          "prio": "권장",
-          "status": "todo",
-          "url": "https://www.data.go.kr/data/15076728/openapi.do"
-        },
-        {
           "id": "15134761",
           "name": "한국부동산원_부동산통계 조회 서비스",
           "use": "지가변동률 시군구 분기 (P2-9) — 거시 통제변수",
@@ -622,12 +614,29 @@
       "env": "EX_API_KEY",
       "name": "한국도로공사 데이터포털 인증키",
       "portal": "https://data.ex.co.kr/openapi/apikey/requestKey",
-      "need": "선택",
+      "need": "권장",
       "lead": "즉시",
       "status": "todo",
-      "why": "영업소 마스터와 실시간 교통량. 교통량을 이미 받으실 때 발급받은 키가 있으면 그대로 쓴다.",
-      "note": "K1 의 15076728(영업소 위치정보)로 대체 가능하고, CSV 직접 투입도 된다. 과거 교통량 조회 가능 여부(P2-3)를 판정할 때 필요하다.",
-      "datasets": []
+      "why": "영업소(IC) 마스터와 좌표. 이게 없으면 거래를 어느 IC 에 붙일지 정할 수 없다. data.go.kr 15076728 은 목록만 제공하고 실제 발급·호출은 이 포털 키를 쓴다.",
+      "note": "교통량 받으실 때 발급받은 키가 있으면 그대로 넣으면 된다. 키 없이 가려면 영업소 목록을 CSV 로 만들어 `redt tollgates --path` 로 넣는 우회로가 있다. 과거 교통량 조회 가능 여부(P2-3) 판정에도 이 키가 필요하다.",
+      "datasets": [
+        {
+          "id": "curBusinessInfo",
+          "name": "영업소 위치·기본정보",
+          "use": "IC 좌표 — 거래-영업소 공간 조인의 기준점",
+          "prio": "필수",
+          "status": "todo",
+          "url": "https://data.ex.co.kr/openapi/business/curBusinessInfo"
+        },
+        {
+          "id": "trafficIC",
+          "name": "영업소별 차종 교통량",
+          "use": "설명변수 원자료 (과거 조회 가능 여부는 P2-3 에서 판정)",
+          "prio": "권장",
+          "status": "todo",
+          "url": "https://data.ex.co.kr/openapi/intro/introduce02"
+        }
+      ]
     }
   ],
   "nokey": [
@@ -648,6 +657,64 @@
       "use": "교통량 원자료",
       "how": "보유 파일 → redt traffic --path",
       "url": ""
+    }
+  ],
+  "source_map": [
+    {
+      "source": "실거래가 (토지·공장·주택·상업)",
+      "provider": "국토교통부 RTMS",
+      "portal": "data.go.kr",
+      "key": "DATA_GO_KR_KEY",
+      "note": "데이터셋별 활용신청 필요"
+    },
+    {
+      "source": "지가변동률",
+      "provider": "한국부동산원",
+      "portal": "data.go.kr",
+      "key": "DATA_GO_KR_KEY",
+      "note": "부동산통계 조회 서비스 15134761"
+    },
+    {
+      "source": "지오코딩 (지번→좌표)",
+      "provider": "국토교통부 브이월드",
+      "portal": "vworld.kr",
+      "key": "VWORLD_KEY",
+      "note": "활용API 에서 지오코더 체크"
+    },
+    {
+      "source": "개별공시지가",
+      "provider": "국토교통부 브이월드",
+      "portal": "vworld.kr",
+      "key": "VWORLD_KEY",
+      "note": "⚠ data.go.kr 15029071 은 브이월드로 연결만 됨"
+    },
+    {
+      "source": "영업소(IC) 위치·좌표",
+      "provider": "한국도로공사",
+      "portal": "data.ex.co.kr",
+      "key": "EX_API_KEY",
+      "note": "⚠ data.go.kr 15076728 은 목록만 — 발급은 도로공사 포털"
+    },
+    {
+      "source": "영업소별 교통량",
+      "provider": "한국도로공사",
+      "portal": "data.ex.co.kr",
+      "key": "EX_API_KEY",
+      "note": "보유 파일로 대체 가능"
+    },
+    {
+      "source": "산업단지 현황",
+      "provider": "한국산업단지공단",
+      "portal": "data.go.kr",
+      "key": "—",
+      "note": "파일 다운로드, 로그인 불필요"
+    },
+    {
+      "source": "법정동코드",
+      "provider": "행정안전부",
+      "portal": "code.go.kr",
+      "key": "—",
+      "note": "파일 다운로드"
     }
   ]
 }
