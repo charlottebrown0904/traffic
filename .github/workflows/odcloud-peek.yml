@@ -1,0 +1,23 @@
+# 파일데이터 자동변환 오픈API 를 들여다본다 (건수·컬럼·기간).
+name: 데이터셋 내용 확인
+
+on:
+  workflow_dispatch:
+    inputs:
+      ds:
+        description: "데이터셋 번호"
+        default: "15043774"
+      uddi:
+        description: "uddi:..."
+        default: "uddi:3ad6de21-7ec9-4f46-b2c2-b29f1be09510"
+
+jobs:
+  peek:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python scripts/odcloud_peek.py "${{ inputs.ds }}" "${{ inputs.uddi }}"
