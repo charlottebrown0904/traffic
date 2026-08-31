@@ -157,7 +157,14 @@
           "title": "개별공시지가 API 스펙 판정 (연도 파라미터 지원?)",
           "owner": "claude",
           "status": "todo",
-          "note": "브이월드 제공. 과거 연도 조회가 되는지에 따라 baseline 이 시계열이 될지 단면이 될지 갈린다"
+          "note": "브이월드 제공. 도로공사 인근지역 API 설명에 '연도별로 구분'이 있어 시계열 가능성이 높다 — 두 소스 모두 확인할 것"
+        },
+        {
+          "id": "P2-8b",
+          "title": "도로공사 '인근지역 개별공시지가' 스펙 확인 후 보조 소스로 편입",
+          "owner": "both",
+          "status": "todo",
+          "note": "요청 URL·변수·응답 필드 확인 필요. 지번 조회가 되면 주력 후보로 승격 검토"
         },
         {
           "id": "P2-8",
@@ -635,6 +642,14 @@
           "prio": "권장",
           "status": "todo",
           "url": "https://data.ex.co.kr/openapi/intro/introduce02"
+        },
+        {
+          "id": "landprice-near",
+          "name": "휴게소별/영업소별 인근지역 개별공시지가",
+          "use": "보조 — 예비검증·교차검증. 연도별 제공. '인근' 반경을 우리가 통제 못 해 위약 밴드를 못 만들므로 주력 불가",
+          "prio": "보조",
+          "status": "todo",
+          "url": "https://data.ex.co.kr/openapi/intro/introduce02"
         }
       ]
     }
@@ -694,6 +709,13 @@
       "portal": "data.ex.co.kr",
       "key": "EX_API_KEY",
       "note": "⚠ data.go.kr 15076728 은 목록만 — 발급은 도로공사 포털"
+    },
+    {
+      "source": "인근지역 개별공시지가 (영업소 단위)",
+      "provider": "한국도로공사",
+      "portal": "data.ex.co.kr",
+      "key": "EX_API_KEY",
+      "note": "보조 — 대조군이 없어 주력 불가. 연도별 조회 가능"
     },
     {
       "source": "영업소별 교통량",
