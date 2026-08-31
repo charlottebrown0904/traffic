@@ -14,7 +14,7 @@ import pandas as pd
 
 from . import db
 from .analyze import scoring
-from .config import PROCESSED, ROOT, settings
+from .config import PROCESSED, ROOT, primary_band, settings
 
 WEB_DATA = ROOT / "public" / "app" / "data"
 SYNTHETIC_MARK = PROCESSED / ".synthetic"
@@ -55,7 +55,8 @@ def _write(name: str, payload) -> Path:
     return path
 
 
-def export(band: str = "0-3", volume_col: str = "volume_freight") -> dict:
+def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
+    band = band or primary_band()
     panel_path = PROCESSED / "panel.parquet"
     if not panel_path.exists():
         raise FileNotFoundError("panel.parquet 이 없습니다. `panel` 을 먼저 실행하세요.")

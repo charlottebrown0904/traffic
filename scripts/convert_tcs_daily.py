@@ -52,6 +52,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("files", nargs="+")
     ap.add_argument("-o", "--out", required=True)
+    ap.add_argument("--monthly-out", help="생략하면 out 의 annual 을 monthly 로 바꿔 씁니다")
     args = ap.parse_args()
 
     frames, months = [], defaultdict(set)
@@ -70,22 +71,30 @@ def main() -> int:
         df = df.dropna(subset=["영업소코드"])
         for c in CLASSES:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-        frames.append(df[["연도", "영업소코드", *CLASSES]])
+        df["연월"] = df["집계일자"].dt.strftime("%Y-%m")
+        frames.append(df[["연도", "연월", "영업소코드", *CLASSES]])
         print(f"  {p.name}  {len(df):,}행")
 
     if not frames:
         print("읽은 파일이 없습니다.")
         return 1
 
-    wide = (pd.concat(frames)
-              .groupby(["연도", "영업소코드"], as_index=False)[CLASSES].sum())
-    long = wide.melt(id_vars=["연도", "영업소코드"], value_vars=CLASSES,
-                     var_name="차종", value_name="교통량")
-    long["차종"] = long["차종"].str.replace("교통량", "", regex=False)
-    long["영업소코드"] = long["영업소코드"].astype(int)
-    long["영업소명"] = long["영업소코드"].map(names()).fillna("")
-    long = long[["영업소코드", "영업소명", "연도", "차종", "교통량"]]
-    long = long.sort_values(["연도", "영업소코드", "차종"])
+    allrows = pd.concat(frames)
+    name_map = names()
+
+    def fold(keys: list[str]) -> pd.DataFrame:
+        wide = allrows.groupby(keys, as_index=False)[CLASSES].sum()
+        long = wide.melt(id_vars=keys, value_vars=CLASSES,
+                         var_name="차종", value_name="교통량")
+        long["차종"] = long["차종"].str.replace("교통량", "", regex=False)
+        long["영업소코드"] = long["영업소코드"].astype(int)
+        long["영업소명"] = long["영업소코드"].map(name_map).fillna("")
+        cols = ["영업소코드", "영업소명"] + [k for k in keys if k != "영업소코드"] \
+               + ["차종", "교통량"]
+        return long[cols].sort_values([k for k in keys] + ["차종"])
+
+    long = fold(["연도", "영업소코드"])
+    monthly = fold(["연월", "영업소코드"])
 
     print()
     for y in sorted(months):
@@ -107,6 +116,15 @@ def main() -> int:
     long.to_csv(out, index=False, encoding="utf-8-sig")
     print(f"\n{out}  {len(long):,}행 · 영업소 {long['영업소코드'].nunique()}개"
           f" · 연도 {[int(y) for y in sorted(long['연도'].unique())]}")
+
+    # 월별도 함께 낸다. 원본이 일별이라 공짜로 나오고, 화면의 월별/연별
+    # 전환과 계절성 통제에 쓴다. 연별만 남기면 나중에 원본을 다시 받아야 한다.
+    mout = Path(args.monthly_out) if args.monthly_out else Path(
+        str(out).replace("annual", "monthly"))
+    if mout == out:
+        mout = out.with_name(out.stem + "_monthly" + out.suffix)
+    monthly.to_csv(mout, index=False, encoding="utf-8-sig")
+    print(f"{mout}  {len(monthly):,}행 · 월 {monthly['연월'].nunique()}개")
     return 0
 
 

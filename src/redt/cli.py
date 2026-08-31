@@ -246,7 +246,7 @@ def cmd_geocode(args):
     print("\n거래 기준 좌표 정밀도")
     print(breakdown.to_string(index=False))
     print("\n※ 지번단위(parcel)가 아닌 건은 법정동 중심점이라 오차 ±1~2km 입니다.")
-    print("   0-3km 밴드 분석에서는 settings.yaml 의 require_parcel_bands 로 걸러집니다.")
+    print("   근거리 밴드 분석에서는 settings.yaml 의 require_parcel_bands 로 걸러집니다.")
 
 
 def cmd_link(args):
@@ -434,13 +434,15 @@ def main(argv=None):
     p.set_defaults(func=cmd_analyze)
 
     p = sub.add_parser("score", help="영업소별 투자 스크리닝 스코어")
-    p.add_argument("--band", default="0-3")
+    p.add_argument("--band", default=None,
+                   help="기본값은 settings.yaml 의 spatial.primary_band")
     p.add_argument("--volume", default="freight",
                    choices=["total", "freight", "passenger", "mid"])
     p.set_defaults(func=cmd_score)
 
     p = sub.add_parser("export-web", help="웹 화면용 JSON 생성")
-    p.add_argument("--band", default="0-3")
+    p.add_argument("--band", default=None,
+                   help="기본값은 settings.yaml 의 spatial.primary_band")
     p.add_argument("--volume", default="freight",
                    choices=["total", "freight", "passenger", "mid"])
     p.set_defaults(func=cmd_export_web)

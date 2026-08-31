@@ -17,6 +17,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from ..config import primary_band
+
 QUADRANTS = {
     (True, False): ("저평가 후보", "undervalued",
                     "통행량은 늘었는데 가격은 아직 따라오지 않은 구간"),
@@ -47,9 +49,10 @@ def _percentile(values: pd.Series) -> pd.Series:
 
 
 def build_scores(panel: pd.DataFrame, window: int = 3,
-                 band: str = "0-3", volume_col: str = "volume_freight",
+                 band: str | None = None, volume_col: str = "volume_freight",
                  min_years: int = 2) -> pd.DataFrame:
     """패널 → 영업소별 스코어 한 줄."""
+    band = band or primary_band()
     required = {"tollgate_id", "year", "band", "price_index", volume_col}
     missing = required - set(panel.columns)
     if missing:

@@ -16,12 +16,27 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from redt import db  # noqa: E402
-from redt.config import PROCESSED  # noqa: E402
+from redt.config import PROCESSED, bands  # noqa: E402
 
 RNG = np.random.default_rng(20260827)
 
-TRUE_BETA = {"0-3": 0.50, "3-5": 0.30, "5-10": 0.10, "10-20": 0.00}
-BAND_RANGE = {"0-3": (0.3, 3), "3-5": (3, 5), "5-10": (5, 10), "10-20": (10, 20)}
+# 밴드 경계는 settings.yaml 한 곳에서만 정한다. 여기에 숫자를 또 적으면
+# 설정을 바꿨을 때 합성 데이터만 옛 경계를 쓰게 되고, 검정이 통과해도
+# 실제 파이프라인은 다른 것을 재고 있게 된다.
+BAND_RANGE = {}
+for _lo, _hi in bands():
+    # 0-1 밴드는 하한을 0.3km 로 둔다. 영업소 부지 안쪽 좌표는 현실에 없다.
+    BAND_RANGE[f"{_lo:g}-{_hi:g}"] = (max(_lo, 0.3), _hi)
+
+# 선행연구(docs/literature.md 1번)가 말하는 역U자를 일부러 심는다.
+# 가장 가까운 구간이 정점이 아니라 그 다음 구간이 정점이다. 회복 검정이
+# 단조 감소만 잡아낸다면, 정작 현실에서 중요한 모양을 놓치게 된다.
+_SHAPE = {"0-1": 0.30, "1-3": 0.50, "3-5": 0.30, "5-10": 0.10, "10-20": 0.00}
+TRUE_BETA = {k: _SHAPE.get(k, 0.0) for k in BAND_RANGE}
+_unknown = [k for k in BAND_RANGE if k not in _SHAPE]
+if _unknown:
+    print(f"  ⚠ 참값을 정해두지 않은 밴드 {_unknown} → β=0 으로 둡니다")
+
 YEARS = list(range(2015, 2025))
 KINDS = ["land", "factory"]
 LAND_USES = ["전", "답", "대", "임야", "공장용지"]

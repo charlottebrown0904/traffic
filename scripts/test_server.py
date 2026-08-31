@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from fastapi.testclient import TestClient  # noqa: E402
 
 from redt.server import app as app_module  # noqa: E402
+from redt.config import band_label  # noqa: E402
 from redt.server import store  # noqa: E402
 
 BROKER_A = {
@@ -87,7 +88,9 @@ def main():
     assert item["status"] == "pending_payment", item["status"]
     assert item["nearest_tollgate_id"] == "TG001", item
     assert item["nearest_km"] < 2, item["nearest_km"]
-    assert item["band"] == "0-3", item["band"]
+    # 밴드 경계는 설정에서 온다. 여기에 문자열을 박아두면 경계를 바꿀 때마다
+    # 서버는 멀쩡한데 검사만 깨진다.
+    assert item["band"] == band_label(item["nearest_km"]), item
     assert item["license_no"] == BROKER_A["license_no"], "표시·광고 명시사항 누락"
     ok.append(f"등록 → pending_payment · 최근접 {item['nearest_name']} "
               f"{item['nearest_km']}km ({item['band']}) · 등록번호 표시")

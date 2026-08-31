@@ -77,20 +77,44 @@ def elasticity_by_band(panel: pd.DataFrame, volume_col: str = "volume_total",
 
 
 def interpret(elasticity: pd.DataFrame) -> str:
-    """위약 밴드 검사 — 결과를 믿어도 되는지 자동 판정."""
+    """위약 밴드 검사 — 결과를 믿어도 되는지 자동 판정.
+
+    **가장 가까운 밴드를 근거리 대표로 쓰면 안 된다.** 선행연구(docs/literature.md 1번)
+    에서 IC 인접은 오히려 가격이 낮고 2~4km 가 정점이었다. 최근접 밴드만 보고
+    '효과 없음' 이라 결론내면, 정작 효과가 있는 구간을 통째로 놓친다.
+
+    그래서 위약 밴드(가장 먼 구간)를 뺀 나머지 중 **계수가 가장 큰 밴드**를
+    골라 위약과 비교한다. 어느 거리에서 효과가 나타나는지는 데이터가 답한다.
+    """
     lines = []
     for kind, grp in elasticity.dropna(subset=["beta"]).groupby("kind"):
         grp = grp.copy()
         grp["lo"] = grp["band"].str.split("-").str[0].astype(float)
         grp = grp.sort_values("lo")
-        near, far = grp.iloc[0], grp.iloc[-1]
+        if len(grp) < 2:
+            lines.append(f"[{kind}] 밴드가 하나뿐이라 위약 검정을 할 수 없습니다.")
+            continue
+
+        far = grp.iloc[-1]                       # 위약 대조군 = 가장 먼 밴드
+        inner = grp.iloc[:-1]
+        peak = inner.loc[inner["beta"].abs().idxmax()]
+
         verdict = (
             "✅ 거리 감쇠 확인 — IC 효과로 해석 가능"
-            if abs(near["beta"]) > abs(far["beta"]) * 1.5 and near["p"] < 0.05
+            if abs(peak["beta"]) > abs(far["beta"]) * 1.5 and peak["p"] < 0.05
             else "⚠️ 원거리 밴드에서도 계수가 큼 — 지역 효과일 가능성. 통제변수 보강 필요"
         )
+        shape = " · ".join(
+            f"{r['band']} {r['beta']:+.2f}" for _, r in inner.iterrows())
+        near = inner.iloc[0]
+        note = ""
+        if peak["band"] != near["band"]:
+            note = (f"\n        └ 정점이 최근접({near['band']}km, β={near['beta']:+.2f})이 아니라 "
+                    f"{peak['band']}km 입니다 — 역U자. 선행연구와 같은 모양입니다.")
+
         lines.append(
-            f"[{kind}] 근거리 {near['band']}km β={near['beta']:.3f}(p={near['p']:.3f}) / "
-            f"원거리 {far['band']}km β={far['beta']:.3f}(p={far['p']:.3f}) → {verdict}"
+            f"[{kind}] 정점 {peak['band']}km β={peak['beta']:.3f}(p={peak['p']:.3f}) / "
+            f"위약 {far['band']}km β={far['beta']:.3f}(p={far['p']:.3f}) → {verdict}"
+            f"\n        밴드별: {shape}{note}"
         )
     return "\n".join(lines) if lines else "추정 가능한 계수가 없습니다 (표본 부족)."

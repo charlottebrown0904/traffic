@@ -73,6 +73,29 @@ def bands() -> list[tuple[float, float]]:
     return [tuple(b) for b in settings()["spatial"]["bands"]]
 
 
+def band_labels() -> list[str]:
+    return [f"{lo:g}-{hi:g}" for lo, hi in bands()]
+
+
+def primary_band() -> str:
+    """스코어·화면이 기본으로 쓰는 밴드.
+
+    밴드 경계를 바꿀 때마다 코드 여러 곳의 기본값 문자열이 같이 안 바뀌면,
+    그 명령들은 오류 없이 **빈 결과**를 낸다. 표본이 없는 것과 밴드 이름이
+    틀린 것을 구분할 수 없게 되므로, 여기서 미리 막고 소리 내어 죽는다.
+    """
+    labels = band_labels()
+    want = settings()["spatial"].get("primary_band")
+    if want is None:
+        return labels[0]
+    if want not in labels:
+        raise ValueError(
+            f"settings.yaml 의 spatial.primary_band='{want}' 가 밴드 목록에 없습니다. "
+            f"쓸 수 있는 값: {labels}"
+        )
+    return want
+
+
 def band_label(km: float) -> str | None:
     """거리(km)를 밴드 라벨로. 어느 밴드에도 안 들면 None."""
     for lo, hi in bands():
