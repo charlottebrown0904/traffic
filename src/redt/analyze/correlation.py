@@ -113,42 +113,77 @@ def elasticity_by_band(panel: pd.DataFrame, volume_col: str = "volume_total",
 def interpret(elasticity: pd.DataFrame) -> str:
     """위약 밴드 검사 — 결과를 믿어도 되는지 자동 판정.
 
-    **가장 가까운 밴드를 근거리 대표로 쓰면 안 된다.** 선행연구(docs/literature.md 1번)
-    에서 IC 인접은 오히려 가격이 낮고 2~4km 가 정점이었다. 최근접 밴드만 보고
-    '효과 없음' 이라 결론내면, 정작 효과가 있는 구간을 통째로 놓친다.
+    두 가지를 반드시 먼저 확인한다. 이 확인 없이 '정점' 을 고르면, 전부
+    잡음인 계수 중 절댓값이 가장 큰 것을 뽑아 그럴듯한 이야기를 만들게 된다.
 
-    그래서 위약 밴드(가장 먼 구간)를 뺀 나머지 중 **계수가 가장 큰 밴드**를
-    골라 위약과 비교한다. 어느 거리에서 효과가 나타나는지는 데이터가 답한다.
+      1. 위약 밴드(가장 먼 구간)가 추정됐는가.
+         표본 부족으로 비었는데 그 안쪽 밴드를 위약이라 부르면, 하지도 않은
+         검정을 한 것처럼 보인다. 실제로 10-20km 가 비었을 때 5-10km 를
+         위약으로 쓰고 '지역 효과 가능성' 이라 단정한 적이 있다.
+      2. 유의한 계수가 하나라도 있는가.
+         전부 p>0.05 면 방향을 말할 근거가 없다. '효과가 없다' 도 아니고
+         '아직 모른다' 이다.
+
+    **가장 가까운 밴드를 근거리 대표로 쓰지 않는다.** 선행연구
+    (docs/literature.md 1번)에서 IC 인접은 오히려 가격이 낮고 2~4km 가
+    정점이었다. 위약을 뺀 나머지 중 계수가 가장 큰 밴드를 찾아 비교한다.
     """
     lines = []
-    for kind, grp in elasticity.dropna(subset=["beta"]).groupby("kind"):
+    for kind, grp in elasticity.groupby("kind"):
         grp = grp.copy()
         grp["lo"] = grp["band"].str.split("-").str[0].astype(float)
         grp = grp.sort_values("lo")
-        if len(grp) < 2:
-            lines.append(f"[{kind}] 밴드가 하나뿐이라 위약 검정을 할 수 없습니다.")
+
+        fitted = grp.dropna(subset=["beta"])
+        thin = grp[grp["beta"].isna()]
+        thin_note = ""
+        if len(thin):
+            names = " · ".join(f"{r['band']}({int(r['n'])}행)" for _, r in thin.iterrows())
+            thin_note = f"\n        표본 부족으로 추정 못 한 밴드: {names}"
+
+        if len(fitted) < 2:
+            lines.append(f"[{kind}] 추정된 밴드가 {len(fitted)}개뿐이라 비교할 수 "
+                         f"없습니다.{thin_note}")
             continue
 
-        far = grp.iloc[-1]                       # 위약 대조군 = 가장 먼 밴드
-        inner = grp.iloc[:-1]
-        peak = inner.loc[inner["beta"].abs().idxmax()]
+        far = grp.iloc[-1]                       # 위약 = 설계상 가장 먼 밴드
+        if pd.isna(far["beta"]):
+            shape = " · ".join(f"{r['band']} {r['beta']:+.2f}(p={r['p']:.2f})"
+                               for _, r in fitted.iterrows())
+            lines.append(
+                f"[{kind}] ⚠️ 위약 밴드 {far['band']}km 를 추정하지 못했습니다"
+                f"(표본 {int(far['n'])}행). **위약 검정을 하지 못했으므로 아래 계수를"
+                f" IC 효과로 해석할 수 없습니다.**\n        밴드별: {shape}{thin_note}")
+            continue
 
+        inner = fitted[fitted["band"] != far["band"]]
+        sig = inner[inner["p"] < 0.05]
+        shape = " · ".join(f"{r['band']} {r['beta']:+.2f}(p={r['p']:.2f})"
+                           for _, r in inner.iterrows())
+
+        if sig.empty:
+            lines.append(
+                f"[{kind}] 어느 밴드에서도 유의한 관계가 없습니다 (모두 p≥0.05). "
+                f"효과가 없다는 뜻이 아니라 **아직 판단할 표본이 아니라는 뜻**입니다."
+                f"\n        밴드별: {shape}"
+                f"\n        위약 {far['band']}km β={far['beta']:+.2f}(p={far['p']:.2f})"
+                f"{thin_note}")
+            continue
+
+        peak = sig.loc[sig["beta"].abs().idxmax()]
         verdict = (
             "✅ 거리 감쇠 확인 — IC 효과로 해석 가능"
-            if abs(peak["beta"]) > abs(far["beta"]) * 1.5 and peak["p"] < 0.05
-            else "⚠️ 원거리 밴드에서도 계수가 큼 — 지역 효과일 가능성. 통제변수 보강 필요"
+            if abs(peak["beta"]) > abs(far["beta"]) * 1.5
+            else "⚠️ 위약 밴드에서도 계수가 큼 — 지역 효과일 가능성. 통제변수 보강 필요"
         )
-        shape = " · ".join(
-            f"{r['band']} {r['beta']:+.2f}" for _, r in inner.iterrows())
         near = inner.iloc[0]
         note = ""
         if peak["band"] != near["band"]:
-            note = (f"\n        └ 정점이 최근접({near['band']}km, β={near['beta']:+.2f})이 아니라 "
-                    f"{peak['band']}km 입니다 — 역U자. 선행연구와 같은 모양입니다.")
-
+            note = (f"\n        └ 정점이 최근접({near['band']}km, β={near['beta']:+.2f})이"
+                    f" 아니라 {peak['band']}km 입니다 — 역U자. 선행연구와 같은 모양입니다.")
         lines.append(
             f"[{kind}] 정점 {peak['band']}km β={peak['beta']:.3f}(p={peak['p']:.3f}) / "
             f"위약 {far['band']}km β={far['beta']:.3f}(p={far['p']:.3f}) → {verdict}"
-            f"\n        밴드별: {shape}{note}"
-        )
+            f"\n        밴드별: {shape}{note}{thin_note}")
+
     return "\n".join(lines) if lines else "추정 가능한 계수가 없습니다 (표본 부족)."
