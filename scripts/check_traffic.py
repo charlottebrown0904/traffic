@@ -20,10 +20,31 @@ import pandas as pd
 
 RAW = Path(__file__).resolve().parents[1] / "data" / "raw"
 
-# 연도 간 총교통량 변화의 상식적 범위. 코로나(2020)처럼 실제로 크게 움직인
-# 해가 있으므로 넉넉히 잡되, 넘으면 반드시 사람이 확인하게 한다.
-TOTAL_SHIFT_WARN = 0.07      # 전체 합계 ±7%
-MEDIAN_SHIFT_WARN = 0.05     # 영업소별 증감률 중앙값 ±5%
+# 임계값을 정하며 한 번 헛짚었으므로, 무엇이 통하고 무엇이 안 통하는지 남긴다.
+#
+# 실측 (2026-09-01)
+#     2020→2021 코로나 회복      중앙값 +6.2%   사분위폭 5.8%
+#     2021→2022                  중앙값 +1.9%   사분위폭 4.4%
+#     2024→2025                  중앙값 -1.0%   사분위폭 5.4%
+#     2024→2025 (11월 누락 파일)  중앙값 -9.6%   사분위폭 4.7%   ← 사고
+#     2025 정상 → 2025 누락       중앙값 -8.7%   사분위폭 0.5%   ← 같은 해끼리
+#
+# 처음에 '사고는 퍼짐이 붕괴한다' 고 보고 사분위폭으로 가르려 했는데, 그
+# 0.5% 는 **같은 해끼리** 비교한 값이었다. 검사기가 실제로 하는 연도 간
+# 비교에서는 누락 오류 위에 진짜 연도 변동이 얹혀 4.7% 로 유지된다. 즉
+# 사분위폭만으로는 연도 간 사고를 가려낼 수 없다.
+#
+# 그래서 중앙값 임계값이 여전히 주력이다. 진짜 변화의 최대치(코로나 회복
+# +6.2%)와 사고(-9.6%) 사이에 선을 긋는다. 폭이 좁아 아슬아슬하므로,
+# **1번 검사(12개월 완비)가 실제 방어선**이라는 점을 잊으면 안 된다. 이번
+# 사고도 결국 거기서 확정됐다.
+#
+# 사분위폭 검사는 보조로 남긴다. 같은 해를 다시 만들어 견줄 때는 유효하다.
+# 표준편차는 쓰지 않는다 — 연중 개통 영업소 하나가 값을 통째로 날린다(실측 192,525%).
+TOTAL_SHIFT_WARN = 0.09      # 전체 합계
+MEDIAN_SHIFT_WARN = 0.08     # 중앙값 — 코로나 회복(6.2%)과 누락 사고(9.6%) 사이
+IQR_COLLAPSE = 0.02          # 사분위폭 붕괴 (같은 해끼리 견줄 때 유효)
+MEDIAN_WITH_COLLAPSE = 0.03  # 위 조건과 함께 중앙값이 3% 넘게 움직였을 때
 
 problems: list[str] = []
 
@@ -95,14 +116,21 @@ def main() -> int:
             continue
 
         total = pb[common].sum() / pa[common].sum() - 1
-        med = (pb[common] / pa[common] - 1).median()
+        growth = pb[common] / pa[common] - 1
+        med = growth.median()
+        iqr = growth.quantile(.75) - growth.quantile(.25)
+
         say(abs(total) <= TOTAL_SHIFT_WARN,
             f"{a}→{b} 총교통량 {total:+.1%} (공통 {len(common)}개 영업소)")
-        say(abs(med) <= MEDIAN_SHIFT_WARN,
-            f"{a}→{b} 영업소별 증감률 중앙값 {med:+.1%}" +
-            ("" if abs(med) <= MEDIAN_SHIFT_WARN else
-             " — 균일한 이동입니다. 교통 변화가 아니라 집계가 어긋났을 가능성이"
-             " 큽니다. 두 해가 같은 원본·같은 정의인지 확인하세요."))
+
+        collapsed = iqr < IQR_COLLAPSE and abs(med) > MEDIAN_WITH_COLLAPSE
+        say(not collapsed and abs(med) <= MEDIAN_SHIFT_WARN,
+            f"{a}→{b} 증감률 중앙값 {med:+.1%} · 사분위폭 {iqr:.1%}" +
+            (" — 영업소마다 사정이 다른데 퍼짐이 사라졌습니다. 실제 교통 변화가"
+             " 아니라 집계가 기계적으로 어긋났을 가능성이 큽니다(한 달 누락 등)."
+             " 두 해가 같은 원본·같은 정의인지 확인하세요." if collapsed else
+             " — 폭이 큽니다. 이유를 확인하세요." if abs(med) > MEDIAN_SHIFT_WARN
+             else ""))
 
     print("\n3. 영업소 명단이 해마다 얼마나 달라지는가")
     for a, b in zip(years, years[1:]):

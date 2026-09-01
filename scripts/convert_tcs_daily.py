@@ -33,14 +33,38 @@ CLASSES = [f"{i}종교통량" for i in range(1, 7)]
 NAME_SOURCE = Path("data/raw/legacy_tcs_annual_2025_from_xlsx.csv")
 
 
+# 2020년 이전 파일에는 머리글 줄이 없다. 컬럼 순서는 같으므로 이름만 얹는다.
+COLUMNS = ["집계일자", "영업소코드", "입출구구분코드", "TCS하이패스구분코드",
+           "고속도로운영기관구분코드", "영업형태구분코드",
+           *[f"{i}종교통량" for i in range(1, 7)], "총교통량"]
+
+
 def read_one(path: Path) -> pd.DataFrame:
-    """gzip(.zip 로 위장) 이든 맨 csv 든 읽는다."""
+    """gzip(.zip 로 위장) 이든 맨 csv 든 읽는다.
+
+    파일마다 생김새가 다르다. 2021년 이후는 따옴표 친 머리글이 있고,
+    2020년 이전은 머리글 없이 값부터 시작한다. 머리글 없는 파일을 그냥
+    읽으면 첫 줄(실제 데이터)이 컬럼 이름이 되어 하루치가 조용히 사라지고,
+    '집계일자' 를 찾지 못해 뒤에서 KeyError 가 난다.
+    """
     raw = path.read_bytes()
     if raw[:2] == b"\x1f\x8b":
         raw = gzip.decompress(raw)
-    df = pd.read_csv(io.BytesIO(raw), encoding="cp949")
-    df.columns = [c.strip() for c in df.columns]
-    return df.loc[:, ~df.columns.str.startswith("Unnamed")]
+    head = raw[:200].decode("cp949", errors="replace")
+    has_header = "집계일자" in head
+
+    if has_header:
+        df = pd.read_csv(io.BytesIO(raw), encoding="cp949")
+        df.columns = [c.strip() for c in df.columns]
+    else:
+        df = pd.read_csv(io.BytesIO(raw), encoding="cp949", header=None)
+        # 줄 끝 쉼표 때문에 빈 열이 하나 더 붙는다
+        df = df.iloc[:, :len(COLUMNS)]
+        if df.shape[1] != len(COLUMNS):
+            sys.exit(f"{path.name}: 열이 {df.shape[1]}개입니다 "
+                     f"({len(COLUMNS)}개를 기대). 형식이 또 다릅니다.")
+        df.columns = COLUMNS
+    return df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
 
 
 def parse_dates(col: pd.Series) -> pd.Series:
