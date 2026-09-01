@@ -64,6 +64,20 @@ def get(url: str, params: dict, timeout: int = 30) -> requests.Response:
     return resp
 
 
+def get_once(url: str, params: dict, timeout: int = 15) -> requests.Response:
+    """재시도 없이 한 번만 부른다.
+
+    엔드포인트 이름을 **탐침**할 때 쓴다. 틀린 주소는 404 로 돌아오는데,
+    `get()` 은 그것을 일시적 장애로 보고 네 번 다시 부른다. 후보가 수십
+    개면 그 헛기다림만으로 작업 시간 제한에 걸린다. 틀린 주소는 다시
+    불러도 틀린 주소다.
+    """
+    headers = None
+    if _should_relay(url, params):
+        url, params, headers = _via_relay(url, params)
+    return _session.get(url, params=params, timeout=timeout, headers=headers)
+
+
 def get_xml(url: str, params: dict, timeout: int = 30) -> ET.Element:
     resp = get(url, params, timeout)
     text = resp.text.lstrip("﻿")

@@ -19,7 +19,7 @@ import re
 import xml.etree.ElementTree as ET
 
 from ..config import keys
-from .http import get, polite_sleep
+from .http import get_once, polite_sleep
 
 BASE = "https://apis.data.go.kr/1611000/nsdi"
 
@@ -134,10 +134,16 @@ def probe(verbose: bool = True) -> list[dict]:
             for params, label in _param_sets(shape):
                 row = {"service": service, "shape": shape, "params": label}
                 try:
-                    resp = get(url, {"serviceKey": key, "format": "xml",
-                                     "numOfRows": 5, "pageNo": 1, **params},
-                               timeout=25)
+                    resp = get_once(url, {"serviceKey": key, "format": "xml",
+                                          "numOfRows": 5, "pageNo": 1, **params})
                     row["http"] = resp.status_code
+                    if resp.status_code >= 400:
+                        row["result"] = "0건"
+                        row["n_rows"] = 0
+                        row["memo"] = f"HTTP {resp.status_code}"
+                        findings.append(row)
+                        polite_sleep(0.25)
+                        continue
                     n, fields, memo = _summarize(resp.text)
                     row.update(n_rows=n, fields=fields, memo=memo)
                     row["result"] = "OK" if n else "0건"
