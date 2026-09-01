@@ -11,7 +11,7 @@ traffic 테이블에 넣는 단계가 없어서 패널이 비어 있었다. 수�
 """
 from __future__ import annotations
 
-import re
+import calendar
 from pathlib import Path
 
 import pandas as pd
@@ -20,6 +20,32 @@ from ..config import RAW
 from ..ids import canon_series
 
 SOURCE = "tcs"
+
+
+def observed_days() -> pd.DataFrame:
+    """영업소×연도별로 실제 관측된 날 수.
+
+    패널은 연 합계가 아니라 **일평균**을 쓴다. 관측일수가 해마다 다르면
+    교통량이 아니라 집계 범위가 변한 것을 β 로 잡아내기 때문이다. 그래서
+    월별 파일에서 그 해에 실제로 자료가 있는 달을 세어 날 수로 환산한다.
+
+    연중 개통한 영업소는 그 해 관측 달이 적으므로 여기서 자동으로 걸러진다
+    — 12월 한 달만 있는 영업소를 365일로 나누면 교통량이 1/12 로 보인다.
+    """
+    rows = []
+    for path in sorted(Path(RAW).glob("tcs_monthly_*.csv")):
+        df = pd.read_csv(path, encoding="utf-8-sig", usecols=["영업소코드", "연월"])
+        df = df.drop_duplicates()
+        df["year"] = df["연월"].astype(str).str[:4].astype(int)
+        df["month"] = df["연월"].astype(str).str[-2:].astype(int)
+        df["days"] = [calendar.monthrange(y, m)[1]
+                      for y, m in zip(df["year"], df["month"])]
+        rows.append(df)
+    if not rows:
+        return pd.DataFrame(columns=["tollgate_id", "year", "days"])
+    all_rows = pd.concat(rows, ignore_index=True)
+    all_rows["tollgate_id"] = canon_series(all_rows["영업소코드"])
+    return (all_rows.groupby(["tollgate_id", "year"], as_index=False)["days"].sum())
 
 
 def load_files(pattern: str = "tcs_annual_*.csv") -> pd.DataFrame:
@@ -50,7 +76,6 @@ def load_files(pattern: str = "tcs_annual_*.csv") -> pd.DataFrame:
             raw["차종"].astype(str).str.extract(r"(\d+)")[0], errors="coerce"),
         "direction": "all",
         "volume": pd.to_numeric(raw["교통량"], errors="coerce"),
-        "avg_daily": None,
         "source": SOURCE,
         "unit_type": "tollgate",
         "match_km": 0.0,
@@ -63,6 +88,25 @@ def load_files(pattern: str = "tcs_annual_*.csv") -> pd.DataFrame:
     out["year"] = out["year"].astype(int)
     out["vehicle_type"] = out["vehicle_type"].astype(int)
     out["volume"] = out["volume"].astype("int64")
+
+    # 일평균을 채운다. 이 칸이 비어 있으면 패널이 교통량을 0 으로 읽는다 —
+    # 실제로 그렇게 되어 β 가 통째로 안 나온 적이 있다.
+    days = observed_days()
+    if days.empty:
+        print("  ⚠ 월별 파일이 없어 일평균을 낼 수 없습니다. 365일로 나눕니다 "
+              "— 연중 개통한 영업소가 과소평가됩니다.")
+        out["avg_daily"] = out["volume"] / 365.0
+    else:
+        out = out.merge(days, on=["tollgate_id", "year"], how="left")
+        missing = out["days"].isna().sum()
+        if missing:
+            print(f"  ⚠ 관측일수를 못 찾은 {missing:,}행 → 365일로 나눕니다")
+        out["avg_daily"] = out["volume"] / out["days"].fillna(365.0)
+        short = days[days["days"] < 350]
+        if len(short):
+            print(f"  관측일수가 350일 미만인 영업소×연도 {len(short)}건 "
+                  "(연중 개통·폐쇄로 보이며, 일평균으로 보정됩니다)")
+        out = out.drop(columns=["days"])
     return out
 
 

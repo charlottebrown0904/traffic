@@ -103,6 +103,9 @@ def elasticity_by_band(panel: pd.DataFrame, volume_col: str = "volume_total",
             "note": "",
         })
 
+    if not rows:
+        return pd.DataFrame(columns=["band", "kind", "n", "n_tollgates", "beta",
+                                     "se", "t", "p", "r2", "note"])
     out = pd.DataFrame(rows).sort_values(["kind", "band"])
     return out
 

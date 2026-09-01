@@ -114,6 +114,18 @@ def traffic_by_group(traffic: pd.DataFrame) -> pd.DataFrame:
     traffic = pick_traffic_source(traffic)
 
     value = "avg_daily" if "avg_daily" in traffic.columns else "volume"
+    # 컬럼이 있는데 값이 전부 비어 있으면 합계가 0 이 되어, 교통량이 없는 것과
+    # 구분할 수 없게 된다. 실제로 그렇게 되어 β 가 통째로 안 나온 적이 있다.
+    if traffic[value].notna().sum() == 0:
+        alt = "volume" if value == "avg_daily" else "avg_daily"
+        if alt in traffic.columns and traffic[alt].notna().sum() > 0:
+            print(f"  ⚠️ '{value}' 가 전부 비어 있어 '{alt}' 로 대체합니다. "
+                  "일평균이 아니면 관측일수 차이가 β 에 섞입니다 — 원인을 확인하세요.")
+            value = alt
+        else:
+            raise ValueError(
+                f"교통량 값이 전부 비어 있습니다 ('{value}'). 적재를 확인하세요."
+            )
     # 방향(입/출)은 합산 — 개방식 요금소는 방향 구분이 없는 경우가 많다
     base = traffic.groupby(["tollgate_id", "year", "vehicle_type"],
                            as_index=False)[value].sum()
