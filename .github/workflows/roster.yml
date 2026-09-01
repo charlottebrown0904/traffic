@@ -1,0 +1,21 @@
+# 영업소 명단이 왜 86개만 남는지 확인한다 (P2-6a).
+# 교통량 파일에는 475개가 있는데 마스터는 86개다. API 응답을 가공 없이 센다.
+name: 영업소 명단 진단
+
+on:
+  workflow_dispatch:
+
+jobs:
+  roster:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 명단 훑기
+        run: python scripts/ex_roster.py
