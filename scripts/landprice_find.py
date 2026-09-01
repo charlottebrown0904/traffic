@@ -198,6 +198,33 @@ def vworld_layers(url: str) -> None:
     for h in dict.fromkeys(hits[:20]):
         print("    ", h[:120])
 
+    # 레이어 이름은 목록이 아니라 기능별 상세 페이지에 있다.
+    detail = re.findall(r'(dtna_apiSvcDetail[^"\'<>\s]*)', page)
+    detail += re.findall(r"apiSvcDetail\w*\.do\?[^\"'<>\s]*", page)
+    ids = re.findall(r"apiId=(\d+)", page) or re.findall(r"svcId=(\w+)", page)
+    print("   상세 링크:", ", ".join(dict.fromkeys(detail))[:300] or "(없음)")
+    print("   apiId:", ", ".join(dict.fromkeys(ids))[:200] or "(없음)")
+
+    base = "https://www.vworld.kr/dtna/"
+    for link in list(dict.fromkeys(detail))[:6]:
+        sub = fetch(base + link.lstrip("/"))
+        if sub.startswith("__ERR__"):
+            print(f"   {link[:60]}: {sub[:100]}")
+            continue
+        layers = sorted(set(LAYER_RE.findall(sub)))
+        urls = sorted(set(re.findall(r"https?://api\.vworld\.kr/[^\s\"'<>]+", sub)))
+        print(f"   [{link[:70]}]")
+        if layers:
+            print("     레이어:", ", ".join(layers[:20]))
+        if urls:
+            for u in urls[:6]:
+                print("     예시:", u[:180])
+        if not layers and not urls:
+            stext = [ln.strip() for ln in strip_tags(sub).splitlines() if ln.strip()]
+            for ln in stext[:40]:
+                if any(k in ln for k in ("data=", "WFS", "typename", "key=", "domain")):
+                    print("     ", ln[:120])
+
 
 def main() -> None:
     if not RELAY or not TOKEN:
