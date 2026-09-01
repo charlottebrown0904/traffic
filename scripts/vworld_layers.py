@@ -124,11 +124,11 @@ def main() -> None:
         print(f"   '{' / '.join(needles)}' 걸린 것: {len(hits)}개")
         for n, t in hits[:40]:
             print(f"     {n:34s} {t}")
-        if not hits:
-            print("   전체 앞 40개:")
-            for n, t in types[:40]:
-                print(f"     {n:34s} {t}")
-        return   # 되는 버전 하나면 충분하다
+        if hits:
+            return   # 찾았으면 끝
+        # 목록은 왔지만 찾는 것이 없다. 다음 후보(/ned 등)를 마저 봐야 한다.
+        # 첫 성공에서 멈추면 정작 필요한 곳을 시도조차 못 한다.
+        print("   (여기엔 없음 — 다음 후보로)")
 
     print("\nGetCapabilities 로는 못 찾았습니다. 오퍼레이션을 직접 두드려 봅니다.\n")
     for op in NED_OPS:
