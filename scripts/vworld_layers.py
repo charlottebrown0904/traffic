@@ -19,12 +19,17 @@ RELAY = os.environ.get("RELAY_URL", "").rstrip("/")
 TOKEN = os.environ.get("RELAY_TOKEN", "")
 
 # 중계기가 key 를 끼워 넣으므로 이쪽에서는 비워 보낸다.
+# 웹사이트 유형 키는 등록된 도메인에서 온 요청인지를 본다. 중계기가 Referer 를
+# 실어 보내도록 고쳤고, 브이월드가 따로 받는 domain 파라미터도 같이 시험한다.
+DOMAIN = "sado-toji.vercel.app"
+BASE = {"SERVICE": "WFS", "REQUEST": "GetCapabilities"}
+
 CANDIDATES = [
-    ("https://api.vworld.kr/req/wfs", {"SERVICE": "WFS", "REQUEST": "GetCapabilities",
-                                       "VERSION": "2.0.0"}),
-    ("https://api.vworld.kr/req/wfs", {"SERVICE": "WFS", "REQUEST": "GetCapabilities",
-                                       "VERSION": "1.1.0"}),
-    ("https://api.vworld.kr/req/wfs", {"SERVICE": "WFS", "REQUEST": "GetCapabilities"}),
+    ("https://api.vworld.kr/req/wfs", {**BASE, "VERSION": "2.0.0"}),
+    ("https://api.vworld.kr/req/wfs", {**BASE, "VERSION": "1.1.0"}),
+    ("https://api.vworld.kr/req/wfs", {**BASE, "VERSION": "1.1.0", "DOMAIN": DOMAIN}),
+    ("https://api.vworld.kr/req/wfs", {**BASE, "VERSION": "1.1.0", "domain": DOMAIN}),
+    ("https://api.vworld.kr/req/wfs", dict(BASE)),
 ]
 
 
@@ -92,6 +97,8 @@ def main() -> None:
 
     for url, params in CANDIDATES:
         label = params.get("VERSION", "버전없음")
+        if "DOMAIN" in params or "domain" in params:
+            label += "+domain"
         body = fetch(url, params)
         if body.startswith("__ERR__"):
             print(f"[{label}] {body[:160]}")

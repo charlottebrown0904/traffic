@@ -17,7 +17,12 @@ const { timingSafeEqual } = require("node:crypto");
 const ALLOW = {
   "apis.data.go.kr": { param: "serviceKey", env: "DATA_GO_KR_KEY" },
   "api.odcloud.kr":  { param: "serviceKey", env: "DATA_GO_KR_KEY" },
-  "api.vworld.kr":   { param: "key",        env: "VWORLD_KEY" },
+  // 브이월드 키는 '웹사이트' 유형으로 서비스URL 이 등록돼 있다. WMS/WFS 는
+  // 요청이 그 도메인에서 왔는지를 Referer 로 본다. 중계기는 서버라 브라우저
+  // 처럼 Referer 를 붙이지 않으므로, 등록된 주소를 직접 실어 보낸다.
+  // 지오코더는 이것을 따지지 않아 지금까지 드러나지 않았다.
+  "api.vworld.kr":   { param: "key",        env: "VWORLD_KEY",
+                       referer: process.env.VWORLD_REFERER || "https://sado-toji.vercel.app/" },
   "data.ex.co.kr":   { param: "key",        env: "EX_API_KEY" },
   "www.data.go.kr":  {},
   // 표준지공시지가는 포털이 아니라 브이월드가 제공한다(링크 API). 어떤
@@ -94,7 +99,11 @@ module.exports = async function handler(req, res) {
       // 리디렉션을 따라가면 인증키가 붙은 요청이 우리가 허용하지 않은 호스트로
       // 그대로 전달된다. 따라가지 않고 상태 코드만 돌려준다.
       redirect: "manual",
-      headers: { "User-Agent": "redt-relay/1.0", Accept: "*/*" },
+      headers: {
+        "User-Agent": "redt-relay/1.0",
+        Accept: "*/*",
+        ...(rule.referer ? { Referer: rule.referer } : {}),
+      },
     });
     if (upstream.status >= 300 && upstream.status < 400) {
       return deny(res, 502, `상류가 리디렉션을 요구했습니다 (${upstream.status}) — 따라가지 않았습니다`);
