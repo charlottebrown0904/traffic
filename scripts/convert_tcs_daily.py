@@ -42,22 +42,33 @@ COLUMNS = ["집계일자", "영업소코드", "입출구구분코드", "TCS하�
 def read_one(path: Path) -> pd.DataFrame:
     """gzip(.zip 로 위장) 이든 맨 csv 든 읽는다.
 
-    파일마다 생김새가 다르다. 2021년 이후는 따옴표 친 머리글이 있고,
-    2020년 이전은 머리글 없이 값부터 시작한다. 머리글 없는 파일을 그냥
-    읽으면 첫 줄(실제 데이터)이 컬럼 이름이 되어 하루치가 조용히 사라지고,
-    '집계일자' 를 찾지 못해 뒤에서 KeyError 가 난다.
+    파일마다 생김새가 다르다. 확인된 것만 세 가지다.
+      2021년 이후  따옴표 친 머리글 + 쉼표
+      2020년       머리글 없음 + 쉼표
+      2019년       머리글 없음 + **파이프**, 단 3월만 머리글 + 쉼표
+
+    머리글 없는 파일을 그냥 읽으면 첫 줄(실제 데이터)이 컬럼 이름이 되어
+    하루치가 조용히 사라진다. 구분자를 틀리면 열이 하나로 뭉쳐 읽힌다.
+    둘 다 매번 확인한다 — 같은 해 안에서도 달마다 다르기 때문이다.
     """
     raw = path.read_bytes()
     if raw[:2] == b"\x1f\x8b":
         raw = gzip.decompress(raw)
-    head = raw[:200].decode("cp949", errors="replace")
+    head = raw[:400].decode("cp949", errors="replace")
+    first = head.splitlines()[0] if head.splitlines() else ""
     has_header = "집계일자" in head
 
+    # 구분자도 파일마다 다르다. 2019년은 대부분 파이프인데 3월만 쉼표에
+    # 머리글까지 있었다. 같은 해 안에서도 달마다 다르므로 매번 확인한다.
+    sep = max((",", "|", "\t"), key=first.count)
+    if first.count(sep) < 5:
+        sys.exit(f"{path.name}: 구분자를 찾지 못했습니다. 첫 줄: {first[:80]!r}")
+
     if has_header:
-        df = pd.read_csv(io.BytesIO(raw), encoding="cp949")
+        df = pd.read_csv(io.BytesIO(raw), encoding="cp949", sep=sep)
         df.columns = [c.strip() for c in df.columns]
     else:
-        df = pd.read_csv(io.BytesIO(raw), encoding="cp949", header=None)
+        df = pd.read_csv(io.BytesIO(raw), encoding="cp949", sep=sep, header=None)
         # 줄 끝 쉼표 때문에 빈 열이 하나 더 붙는다
         df = df.iloc[:, :len(COLUMNS)]
         if df.shape[1] != len(COLUMNS):
