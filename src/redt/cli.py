@@ -169,6 +169,30 @@ def _target_sigungu(args, con) -> dict[str, str]:
     return rg.sigungu_codes(names)
 
 
+def cmd_sweep_codes(args):
+    """접두사로 시군구 코드 범위를 훑어 실제로 자료가 있는 코드를 찾는다.
+
+    구가 있는 시는 시 단위 코드에 0건이 온다. 게다가 행정구역 개편으로
+    코드가 바뀌기도 한다 — 추측으로 적어 넣으면 그 시군구만 조용히 빈다.
+    범위를 훑어 사실을 확인하는 편이 빠르고 확실하다.
+    """
+    prefix = args.prefix
+    print(f"{prefix}00 ~ {prefix}99 를 훑습니다 ({args.probe_ymd}, land)")
+    found = []
+    for tail in range(100):
+        code = f"{prefix}{tail:02d}"
+        try:
+            _, total = rtms.fetch_page("land", code, args.probe_ymd, page=1, rows=1)
+        except Exception as exc:                     # noqa: BLE001
+            print(f"  ERR {code} {exc}")
+            continue
+        if total > 0:
+            print(f"  OK  {code}  totalCount={total}")
+            found.append((code, total))
+        rtms.polite_sleep()
+    print(f"\n자료가 있는 코드 {len(found)}개: {[c for c, _ in found]}")
+
+
 def cmd_regions(args):
     """권역 목록 확인. --verify 는 각 시군구 코드로 1개월 시험 조회를 한다."""
     for name, meta in rg.all_regions().items():
@@ -477,6 +501,11 @@ def main(argv=None):
     p = sub.add_parser("analyze", help="상관·탄력성 분석")
     p.add_argument("--volume", default="total", choices=["total", "freight", "passenger", "mid"])
     p.set_defaults(func=cmd_analyze)
+
+    p = sub.add_parser("sweep-codes", help="시군구 코드 범위를 훑어 유효한 것 찾기")
+    p.add_argument("--prefix", required=True, help="앞 3자리 (예: 415)")
+    p.add_argument("--probe-ymd", default="202506")
+    p.set_defaults(func=cmd_sweep_codes)
 
     p = sub.add_parser("load-traffic",
                        help="정리해둔 연간 교통량 CSV 를 DB 에 싣기")
