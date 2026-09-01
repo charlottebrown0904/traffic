@@ -118,6 +118,43 @@ def describe(ds: str) -> None:
             print("   ", ln[:110])
 
 
+# 오퍼레이션 목록은 정적 HTML 에 없고 별도 조회로 붙는다. 그 조회 주소를
+# 찾기 위해 원문에서 단서를 그대로 긁는다. 정제하면 정작 필요한 것이 지워진다.
+CLUES = ("nsdi", "1611000", "publicDataDetailPk", "publicDataPk",
+         "callBackUrl", "callBackURL", "endpoint", "operation",
+         "apis.data.go.kr", "api.vworld.kr", "openapi.nsdi")
+
+DETAIL_URLS = [
+    "https://www.data.go.kr/tcs/dss/selectApiDataDetailView.do?publicDataPk={ds}",
+    "https://www.data.go.kr/data/{ds}/openapi.do?recommendDataYn=Y",
+]
+
+
+def raw_clues(ds: str) -> None:
+    """원문에서 오퍼레이션 주소의 단서를 그대로 긁는다."""
+    print(f"\n----- {ds} 원문 단서 -----")
+    pages = [fetch(f"https://www.data.go.kr/data/{ds}/openapi.do")]
+    for tmpl in DETAIL_URLS:
+        pages.append(fetch(tmpl.format(ds=ds)))
+
+    seen: set[str] = set()
+    for page in pages:
+        if page.startswith("__ERR__"):
+            continue
+        for clue in CLUES:
+            for m in re.finditer(re.escape(clue), page, re.I):
+                frag = page[max(0, m.start() - 90): m.start() + 130]
+                frag = re.sub(r"\s+", " ", frag).strip()
+                if frag in seen:
+                    continue
+                seen.add(frag)
+                print(f"  [{clue}] {frag[:200]}")
+                if len(seen) > 60:
+                    return
+    if not seen:
+        print("  단서 없음.")
+
+
 def main() -> None:
     if not RELAY or not TOKEN:
         sys.exit("RELAY_URL / RELAY_TOKEN 이 필요합니다.")
@@ -131,6 +168,7 @@ def main() -> None:
         print(f"  {ds}  {title}")
     for ds, _ in hits[:5]:
         describe(ds)
+        raw_clues(ds)
 
 
 if __name__ == "__main__":
