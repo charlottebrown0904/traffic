@@ -110,6 +110,13 @@ jobs:
         continue-on-error: true
         run: python -m redt.cli panel
 
+      # 계수가 로그에 안 남으면 무엇이 나왔는지 알 수 없습니다.
+      - name: 밴드별 탄력성
+        continue-on-error: true
+        run: |
+          python -m redt.cli analyze --volume total
+          python -m redt.cli analyze --volume freight
+
       - name: 스코어 산출
         continue-on-error: true
         run: python -m redt.cli score
