@@ -306,12 +306,20 @@ def cmd_analyze(args):
     panel = pd.read_parquet(path)
     col = f"volume_{args.volume}" if args.volume != "total" else "volume_total"
 
+    print(f"\n=== 표본 점검 (패널 {len(panel):,}행) ===")
+    health = correlation.panel_health(panel, col)
+    print(health.to_string(index=False))
+    print("  패널행이 많아도 셀당 최소 거래건수를 못 채우면 가격지수가 결측이라"
+          " 회귀에 못 들어갑니다.")
+
     print("\n=== L1 수준 상관 (참고용, 교란 있음) ===")
-    print(correlation.level_correlation(panel, col).to_string(index=False))
+    lvl = correlation.level_correlation(panel, col)
+    print(lvl.to_string(index=False) if len(lvl)
+          else "  밴드×종류마다 30행을 넘는 칸이 없습니다 — 위 표의 '수준분석가능' 을 보세요.")
 
     print(f"\n=== L2/L3 거리밴드별 탄력성 ({col}, 1년 시차) ===")
     elast = correlation.elasticity_by_band(panel, col)
-    print(elast.to_string(index=False))
+    print(elast.to_string(index=False) if len(elast) else "  추정할 칸이 없습니다.")
     elast.to_csv(PROCESSED / f"elasticity_{col}.csv", index=False)
 
     print("\n=== 해석 ===")

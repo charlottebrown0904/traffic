@@ -34,7 +34,38 @@ def level_correlation(panel: pd.DataFrame, volume_col: str = "volume_total") -> 
             "pearson_lnP_lnT": grp["price_index"].corr(ln_vol),
             "spearman": grp["price_index"].corr(ln_vol, method="spearman"),
         })
+    # 셀이 하나도 조건을 못 채우면 빈 표가 된다. 그대로 sort_values 를 부르면
+    # 컬럼이 없어 KeyError 로 죽는다. 그러면 '표본이 얇다' 가 아니라 '코드가
+    # 깨졌다' 처럼 보인다. 컬럼을 갖춘 빈 표를 돌려준다.
+    cols = ["band", "kind", "n", "pearson_lnP_lnT", "spearman"]
+    if not rows:
+        return pd.DataFrame(columns=cols)
     return pd.DataFrame(rows).sort_values(["kind", "band"])
+
+
+def panel_health(panel: pd.DataFrame, volume_col: str = "volume_total") -> pd.DataFrame:
+    """밴드×종류별로 쓸 수 있는 행이 몇 개인지.
+
+    패널 행수만 보면 넉넉해 보여도, 셀당 최소 거래건수를 못 채운 칸은
+    price_index 가 결측이라 회귀에 들어가지 못한다. 그 차이를 눈으로
+    보여주지 않으면 '표본 부족' 이라는 말이 어디서 왔는지 알 수 없다.
+    """
+    out = []
+    for (band, kind), grp in panel.groupby(["band", "kind"]):
+        usable = grp.dropna(subset=["price_index", volume_col])
+        usable = usable[usable[volume_col] > 0]
+        d_col = f"d_ln_{volume_col}_lag1"
+        diffable = (grp.dropna(subset=["d_ln_price", d_col])
+                    if d_col in grp.columns else grp.iloc[0:0])
+        out.append({
+            "band": band, "kind": kind,
+            "패널행": len(grp),
+            "가격지수있음": int(grp["price_index"].notna().sum()),
+            "수준분석가능": len(usable),
+            "변화분석가능": len(diffable),
+            "영업소수": int(diffable["tollgate_id"].nunique()) if len(diffable) else 0,
+        })
+    return pd.DataFrame(out).sort_values(["kind", "band"])
 
 
 def elasticity_by_band(panel: pd.DataFrame, volume_col: str = "volume_total",
