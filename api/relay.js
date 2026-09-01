@@ -20,6 +20,10 @@ const ALLOW = {
   "api.vworld.kr":   { param: "key",        env: "VWORLD_KEY" },
   "data.ex.co.kr":   { param: "key",        env: "EX_API_KEY" },
   "www.data.go.kr":  {},
+  // 표준지공시지가는 포털이 아니라 브이월드가 제공한다(링크 API). 어떤
+  // 레이어 이름으로 열려 있는지는 목록 페이지에만 적혀 있다. 읽기만 하므로
+  // 키를 붙이지 않는다.
+  "www.vworld.kr":   {},
   "kosis.kr":        {},
 };
 

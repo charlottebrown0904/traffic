@@ -171,6 +171,33 @@ def link_url(ds: str) -> None:
         return
     print("  ", body[:800].replace("\n", " "))
 
+    m = re.search(r'"linkUrl"\s*:\s*"([^"]+)"', body)
+    if not m:
+        return
+    provider = m.group(1).replace("\\/", "/")
+    print("  제공처:", provider[:200])
+    vworld_layers(provider)
+
+
+# 브이월드 목록 페이지에서 레이어 이름을 뽑는다. WFS 를 부르려면 이 이름이
+# 있어야 하고, 이름은 목록에만 적혀 있다.
+LAYER_RE = re.compile(r"\b(L[TPD]_[A-Z]_[A-Z0-9_]{3,30})\b")
+
+
+def vworld_layers(url: str) -> None:
+    page = fetch(url)
+    if page.startswith("__ERR__"):
+        print("   목록 페이지:", page[:160])
+        return
+    layers = sorted(set(LAYER_RE.findall(page)))
+    print("   레이어 후보:", ", ".join(layers[:40]) if layers else "(없음)")
+
+    text = strip_tags(page)
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    hits = [ln for ln in lines if "공시지가" in ln]
+    for h in dict.fromkeys(hits[:20]):
+        print("    ", h[:120])
+
 
 def main() -> None:
     if not RELAY or not TOKEN:
