@@ -64,10 +64,31 @@ def feature_types(xml_text: str) -> list[tuple[str, str]]:
     return out
 
 
+# 키가 죽은 것인지, WFS 에만 권한이 없는 것인지 갈라야 다음 수가 정해진다.
+# 지오코더는 이미 쓰고 있으므로 그것으로 키의 생사를 확인한다.
+def key_alive() -> None:
+    print("[대조] 지오코더로 키 생사 확인")
+    body = fetch("https://api.vworld.kr/req/address",
+                 {"service": "address", "request": "getcoord", "version": "2.0",
+                  "crs": "EPSG:4326", "type": "PARCEL",
+                  "address": "경기도 화성시 향남읍 발안리 1"})
+    if body.startswith("__ERR__"):
+        print("   ", body[:200])
+        return
+    snippet = re.sub(r"\s+", " ", body[:300])
+    print("   ", snippet)
+    if '"status":"OK"' in body or "NOT_FOUND" in body:
+        print("   → 키는 살아 있습니다. WFS 쪽 권한·도메인 문제입니다.")
+    elif "INCORRECT_KEY" in body or "AUTH" in body.upper():
+        print("   → 키 자체가 거부됩니다.")
+
+
 def main() -> None:
     if not RELAY or not TOKEN:
         sys.exit("RELAY_URL / RELAY_TOKEN 이 필요합니다.")
     needles = sys.argv[1:] or ["공시지가"]
+    key_alive()
+    print()
 
     for url, params in CANDIDATES:
         label = params.get("VERSION", "버전없음")
