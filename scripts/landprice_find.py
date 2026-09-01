@@ -69,19 +69,28 @@ URL_RE = re.compile(r"https?://apis?\.(?:data\.go\.kr|odcloud\.kr)/[^\s\"'<>]+")
 OP_RE = re.compile(r"\b(get[A-Za-z]{4,60})\b")
 
 
+# 포털 링크는 openApi.do 로 적혀 있지만 실제 주소는 소문자 openapi.do 다.
+# 링크를 그대로 옮겨 적었다가 404 를 받았다.
+PAGE_PATHS = ["openapi.do", "openApi.do", "fileData.do", "standard.do"]
+
+
 def describe(ds: str) -> None:
     print(f"\n===== {ds} =====")
-    page = fetch(f"https://www.data.go.kr/data/{ds}/openApi.do")
+    page = ""
+    for path in PAGE_PATHS:
+        page = fetch(f"https://www.data.go.kr/data/{ds}/{path}")
+        if not page.startswith("__ERR__"):
+            print(f"  경로: {path}")
+            break
+        print(f"  {path}: {page[:80]}")
     if page.startswith("__ERR__"):
-        print("  ", page[:200])
         return
     text = strip_tags(page)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
 
-    for ln in lines[:400]:
-        if "데이터명" in ln or "국토교통부_" in ln:
-            print("  제목:", ln[:120])
-            break
+    title = next((ln for ln in lines[:400]
+                  if "국토교통부_" in ln or "데이터명" in ln), "")
+    print("  제목:", title[:120] if title else "(못 찾음)")
 
     urls = sorted(set(URL_RE.findall(page)))
     if urls:
@@ -101,8 +110,12 @@ def describe(ds: str) -> None:
                                       "용도지역", "지목", "공시지가", "PNU", "필지"))]
     if hints:
         print("  필드 힌트:")
-        for h in dict.fromkeys(hints[:25]):
+        for h in dict.fromkeys(hints[:30]):
             print("   ", h[:110])
+    else:
+        print("  필드 힌트 없음. 본문 앞부분:")
+        for ln in lines[:60]:
+            print("   ", ln[:110])
 
 
 def main() -> None:
