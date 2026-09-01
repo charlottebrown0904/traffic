@@ -18,6 +18,7 @@ import json
 import os
 import re
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -38,12 +39,21 @@ YEARS = ["2018", "2020", "2022", "2024", "2025"]
 
 
 def fetch(url: str, params: dict) -> str:
+    """오류 응답이어도 본문을 돌려준다.
+
+    urlopen 은 500 에서 예외를 던지는데, 그 예외 객체 안에 본문이 들어
+    있다. 그것을 읽지 않고 상태 코드만 적으면 서버가 무엇이 잘못됐다고
+    말하는지 영영 못 본다. typename 을 알려준 것도 오류 본문이었다.
+    """
     target = f"{url}?{urllib.parse.urlencode(params)}"
     relayed = f"{RELAY}/api/relay?" + urllib.parse.urlencode({"target": target})
     req = urllib.request.Request(relayed, headers={"x-relay-token": TOKEN})
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
             return resp.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", "replace")
+        return body if body.strip() else f"__ERR__ HTTP {exc.code} (본문 없음)"
     except Exception as exc:                       # noqa: BLE001
         return f"__ERR__ {type(exc).__name__} {exc}"
 
@@ -110,23 +120,39 @@ def judge(fields: list[str]) -> None:
         print(f"    {label:6s} {'○ ' + ', '.join(hit[:4]) if hit else '✗'}")
 
 
+BASE_PARAMS = {
+    "typename": None,          # 호출 때 채운다
+    "bbox": None,
+    "maxFeatures": "3",
+    "resultType": "results",
+    "srsName": "EPSG:4326",
+    "domain": DOMAIN,
+}
+
+# 500 은 인자 문제다. 무엇이 다른지 하나씩 갈라 본다.
+VARIANTS = [
+    ({}, "기본"),
+    ({"output": "GML2"}, "output=GML2"),
+    ({"output": "application/json"}, "output=json"),
+    ({"format": "xml"}, "format=xml"),
+    ({"srsName": "EPSG:4326", "output": "GML2", "stdrYear": "2024"}, "GML2+연도"),
+    ({"srsName": "EPSG:5179"}, "srs=5179"),
+    ({"bbox": BBOX + ",EPSG:4326"}, "bbox에 crs"),
+    ({"maxFeatures": "10", "resultType": "hits"}, "resultType=hits"),
+    ({"pnu": "4159025329106740000", "bbox": None}, "pnu"),
+]
+
+
 def call(op: str, typename: str, extra: dict | None = None) -> tuple[list[dict], str]:
-    params = {
-        "typename": typename,
-        "bbox": BBOX,
-        "maxFeatures": "3",
-        "resultType": "results",
-        "srsName": "EPSG:4326",
-        "domain": DOMAIN,
-        **(extra or {}),
-    }
+    params = {**BASE_PARAMS, "typename": typename, "bbox": BBOX, **(extra or {})}
+    params = {k: v for k, v in params.items() if v is not None}
     body = fetch(f"https://api.vworld.kr/ned/wfs/{op}", params)
     msg = why(body)
     if msg:
         return [], msg
     feats = parse_features(body)
     if not feats:
-        return [], re.sub(r"\s+", " ", body[:200])
+        return [], re.sub(r"\s+", " ", body[:220])
     return feats, ""
 
 
@@ -140,10 +166,14 @@ def main() -> None:
 
     for op, typename, label in TARGETS:
         print(f"===== {label}  {op}  typename={typename} =====")
-        feats, msg = call(op, typename)
-        if msg:
-            print("  ", msg)
-            print()
+        feats, msg = None, None
+        for extra, vlabel in VARIANTS:
+            f, m = call(op, typename, extra)
+            print(f"  [{vlabel:14s}] " + (f"피처 {len(f)}개" if f else m[:120]))
+            if f and feats is None:
+                feats, msg = f, ""
+        if not feats:
+            print("   되는 조합이 없습니다.\n")
             continue
         fields = sorted({k for f in feats for k in f})
         print(f"  피처 {len(feats)}개 · 필드 {len(fields)}개")
