@@ -8,6 +8,7 @@ from __future__ import annotations
 import pandas as pd
 
 from ..config import RAW, keys
+from ..ids import canon_series
 from .http import get, polite_sleep
 
 EX_BASE = "https://data.ex.co.kr/openapi"
@@ -98,7 +99,9 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
     # 영업소코드와 조인이 어긋난다.
     # fillna 를 먼저 해야 한다. NaN 은 .str 접근자를 그대로 통과해
     # 아래 빈값 검사를 빠져나간다.
-    out["tollgate_id"] = out["tollgate_id"].fillna("").astype(str).str.strip()
+    # 교통량 파일은 코드를 정수로(11), API 는 세 자리 문자열로("011 ") 준다.
+    # 같은 규칙으로 접지 않으면 100 미만 코드 25개가 조인에서 통째로 빠진다.
+    out["tollgate_id"] = canon_series(out["tollgate_id"]).fillna("")
     out["name"] = out["name"].fillna("").astype(str).str.strip()
     out["sigungu_cd"] = None
     out["is_open_type"] = None
@@ -114,6 +117,9 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
     out = out.drop_duplicates(subset=["tollgate_id"])
     if before != len(out):
         print(f"  중복 영업소코드 {before - len(out)}건 병합 ({before} → {len(out)})")
+    # 교통량 파일과 조인이 어긋나면 패널이 조용히 빈다. 어떤 모양의 코드가
+    # 저장됐는지 남겨두면 로그만 보고 표기 차이를 알아챌 수 있다.
+    print(f"  코드 예시: {sorted(out['tollgate_id'])[:8]}")
     return out
 
 

@@ -99,6 +99,13 @@ jobs:
         run: python -m redt.cli status
 
       # 여기부터는 실패해도 수집 결과는 지키도록 계속 진행합니다.
+      # 포털에서 받아 저장소에 넣어둔 연간 교통량을 DB 에 싣습니다.
+      # 이 단계가 없어서 traffic 테이블이 빈 채로 패널이 만들어지지
+      # 않은 적이 있습니다 (run 6).
+      - name: 교통량 적재 (저장소의 연간 CSV)
+        continue-on-error: true
+        run: python -m redt.cli load-traffic
+
       - name: 분석 패널
         continue-on-error: true
         run: python -m redt.cli panel
@@ -110,6 +117,17 @@ jobs:
       - name: 화면용 JSON 생성
         continue-on-error: true
         run: python -m redt.cli export-web
+
+      # continue-on-error 가 실패를 가려서, 분석이 통째로 실패했는데도
+      # 초록색으로 끝난 적이 있습니다. 결과물이 실제로 나왔는지 봅니다.
+      - name: 결과 확인
+        run: |
+          if [ ! -f data/processed/panel.parquet ]; then
+            echo "::error::패널이 만들어지지 않았습니다. 위 '분석 패널' 단계의 로그를 보세요."
+            python -m redt.cli status || true
+            exit 1
+          fi
+          echo "패널 생성 확인"
 
       - name: 수집분 보관
         if: always()

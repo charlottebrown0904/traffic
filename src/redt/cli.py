@@ -21,6 +21,7 @@ from . import db, webexport
 from .analyze import correlation, scoring
 from .collect import geocode as gc
 from .collect import backfill, ex_api, rtms, tollgate, traffic as tr
+from .collect import traffic_files as tfiles
 from . import regions as rg
 from .config import PROCESSED, settings
 from .transform import panel as pn
@@ -37,6 +38,25 @@ def cmd_tollgates(args):
     with db.connect() as con:
         n = db.upsert(con, "tollgate", df)
     print(f"영업소 {n}건 저장")
+
+
+def cmd_load_traffic(args):
+    """포털에서 받아 정리해둔 연간 교통량 CSV 를 traffic 테이블에 싣는다."""
+    df = tfiles.load_files(args.pattern)
+    if df.empty:
+        sys.exit("실을 교통량 파일이 없습니다. scripts/convert_tcs_daily.py 로 "
+                 "data/raw/tcs_annual_<연도>.csv 를 먼저 만드세요.")
+    with db.connect() as con:
+        ids = {r[0] for r in con.execute(
+            "SELECT DISTINCT tollgate_id FROM tollgate").fetchall()}
+        rate = tfiles.report_match(df, ids)
+        n = db.upsert(con, "traffic", df)
+    print(f"교통량 {n:,}행 저장 · 영업소 {df['tollgate_id'].nunique()}개 "
+          f"· 연도 {[int(y) for y in sorted(df['year'].unique())]}")
+    # 짝이 거의 안 맞으면 여기서 멈춘다. 그대로 두면 패널이 조용히 비고,
+    # 표본이 없는 것인지 조인이 어긋난 것인지 구분할 수 없다.
+    if ids and rate < 0.2:
+        sys.exit("영업소 마스터와 짝이 거의 맞지 않습니다. 위 경고를 확인하세요.")
 
 
 def cmd_traffic(args):
@@ -432,6 +452,12 @@ def main(argv=None):
     p = sub.add_parser("analyze", help="상관·탄력성 분석")
     p.add_argument("--volume", default="total", choices=["total", "freight", "passenger", "mid"])
     p.set_defaults(func=cmd_analyze)
+
+    p = sub.add_parser("load-traffic",
+                       help="정리해둔 연간 교통량 CSV 를 DB 에 싣기")
+    p.add_argument("--pattern", default="tcs_annual_*.csv",
+                   help="data/raw 안에서 찾을 파일 패턴")
+    p.set_defaults(func=cmd_load_traffic)
 
     p = sub.add_parser("score", help="영업소별 투자 스크리닝 스코어")
     p.add_argument("--band", default=None,
