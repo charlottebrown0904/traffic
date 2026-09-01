@@ -25,11 +25,20 @@ DOMAIN = "sado-toji.vercel.app"
 BASE = {"SERVICE": "WFS", "REQUEST": "GetCapabilities"}
 
 CANDIDATES = [
+    # 일반 WFS. 177개가 오지만 공시지가는 여기 없다.
     ("https://api.vworld.kr/req/wfs", {**BASE, "VERSION": "2.0.0"}),
-    ("https://api.vworld.kr/req/wfs", {**BASE, "VERSION": "1.1.0"}),
-    ("https://api.vworld.kr/req/wfs", {**BASE, "VERSION": "1.1.0", "DOMAIN": DOMAIN}),
-    ("https://api.vworld.kr/req/wfs", {**BASE, "VERSION": "1.1.0", "domain": DOMAIN}),
-    ("https://api.vworld.kr/req/wfs", dict(BASE)),
+    # 국가중점데이터는 /ned 아래에 따로 있다. 대표님 키에 '국가중점 API' 가
+    # 켜져 있고, 공시지가가 바로 그 국가중점데이터다.
+    ("https://api.vworld.kr/ned/wfs", {**BASE, "VERSION": "2.0.0"}),
+    ("https://api.vworld.kr/ned/wfs", {**BASE, "VERSION": "1.1.0"}),
+    ("https://api.vworld.kr/ned/wfs", dict(BASE)),
+]
+
+# 목록이 안 나오면 오퍼레이션 이름을 직접 두드려 본다. 국가중점데이터는
+# 데이터셋마다 오퍼레이션이 따로 있고 GetCapabilities 를 안 주기도 한다.
+NED_OPS = [
+    "getStdrLandPriceWFS", "getStandardLandPriceWFS", "getStdLandPriceWFS",
+    "getIndvdLandPriceWFS", "getLandCharacteristicsWFS",
 ]
 
 
@@ -121,7 +130,16 @@ def main() -> None:
                 print(f"     {n:34s} {t}")
         return   # 되는 버전 하나면 충분하다
 
-    print("\nGetCapabilities 가 되는 버전이 없습니다. 위 오류 문구를 먼저 보세요.")
+    print("\nGetCapabilities 로는 못 찾았습니다. 오퍼레이션을 직접 두드려 봅니다.\n")
+    for op in NED_OPS:
+        for base in ("https://api.vworld.kr/ned/wfs", "https://api.vworld.kr/ned/data"):
+            body = fetch(f"{base}/{op}",
+                         {"typename": op.replace("get", "").replace("WFS", ""),
+                          "maxFeatures": "1", "resultType": "results",
+                          "srsName": "EPSG:4326", "domain": DOMAIN})
+            head = re.sub(r"\s+", " ", body[:220])
+            print(f"  {base.rsplit('/', 1)[1]}/{op}")
+            print(f"    {head}")
 
 
 if __name__ == "__main__":
