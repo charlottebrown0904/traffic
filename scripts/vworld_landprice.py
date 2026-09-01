@@ -177,12 +177,12 @@ def attr_years(pnu: str) -> None:
     필지의 연도별 목록을 돌려준다. 그것이 사실인지 확인한다.
     """
     print(f"\n===== 속성 조회로 연도별이 오는가  pnu={pnu} =====")
-    for extra, label in (
-        ({}, "연도 없이"),
-        ({"stdrYear": "2020"}, "stdrYear=2020"),
-        ({"stdrYear": "2024"}, "stdrYear=2024"),
-    ):
-        params = {"pnu": pnu, "format": "json", "numOfRows": "30", "pageNo": "1",
+    # 몇 년치가 실제로 있는지가 이 축의 성패를 가른다. 연도 FE 를 넣는
+    # 패널 회귀에 두세 해로는 못 들어간다. 전 구간을 훑는다.
+    probes = [({}, "연도 없이")]
+    probes += [({"stdrYear": str(y)}, f"{y}") for y in range(2010, 2027)]
+    for extra, label in probes:
+        params = {"pnu": pnu, "format": "json", "numOfRows": "200", "pageNo": "1",
                   "domain": DOMAIN, **extra}
         body = fetch("https://api.vworld.kr/ned/data/getIndvdLandPriceAttr", params)
         msg = why(body)
