@@ -155,6 +155,23 @@ def raw_clues(ds: str) -> None:
         print("  단서 없음.")
 
 
+def link_url(ds: str) -> None:
+    """링크 API 의 제공처 주소를 묻는다.
+
+    이 데이터셋은 포털이 직접 서비스하지 않고 제공처로 넘기는 '링크 API' 다.
+    페이지의 바로가기 버튼이 selectApiLinkUrl.do 로 주소를 물어보고 있었다.
+    그래서 apis.data.go.kr 아래를 아무리 뒤져도 400 만 나왔던 것이다.
+    """
+    print(f"\n----- {ds} 제공처 주소 -----")
+    url = ("https://www.data.go.kr/tcs/dss/selectApiLinkUrl.do?"
+           + urllib.parse.urlencode({"publicDataPk": ds}))
+    body = fetch(url)
+    if body.startswith("__ERR__"):
+        print("  ", body[:200])
+        return
+    print("  ", body[:800].replace("\n", " "))
+
+
 def main() -> None:
     if not RELAY or not TOKEN:
         sys.exit("RELAY_URL / RELAY_TOKEN 이 필요합니다.")
@@ -168,6 +185,7 @@ def main() -> None:
         print(f"  {ds}  {title}")
     for ds, _ in hits[:5]:
         describe(ds)
+        link_url(ds)
         raw_clues(ds)
 
 
