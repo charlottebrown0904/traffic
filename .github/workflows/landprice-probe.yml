@@ -1,0 +1,31 @@
+# 표준지공시지가 API 가 실제로 무엇을 돌려주는지 확인한다.
+#
+# 확인하려는 것은 세 가지다 (docs/land-price-fallback.md).
+#   1. 좌표가 오는가 — 오면 지오코딩 대기열이 통째로 사라진다
+#   2. 연도별로 되는가 — 우리는 변화량을 보므로 한 해로는 못 쓴다
+#   3. 용도지역이 오는가 — 계획관리·생산관리·자연녹지 필터를 그대로 쓸 수 있어야 한다
+#
+# NSDI 계열은 서비스 이름이 데이터셋마다 달라 추측이 위험하다. 그래서
+# 후보를 실제로 하나씩 호출해 본다.
+name: 공시지가 API 탐침
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 탐침
+        run: python -m redt.cli probe-landprice

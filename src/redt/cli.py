@@ -93,6 +93,11 @@ def cmd_probe_ex(args):
     ex_api.probe()
 
 
+def cmd_probe_landprice(args):
+    from .collect import landprice
+    landprice.probe()
+
+
 def cmd_probe_history(args):
     ex_api.probe_history(args.endpoint, args.date_param)
 
@@ -456,6 +461,9 @@ def main(argv=None):
     p.set_defaults(func=cmd_traffic)
 
     sub.add_parser("probe-ex", help="도로공사 API 엔드포인트 탐침").set_defaults(func=cmd_probe_ex)
+    sub.add_parser("probe-landprice",
+                   help="표준지공시지가 API 탐침 — 좌표·연도·용도지역이 오는지"
+                   ).set_defaults(func=cmd_probe_landprice)
 
     p = sub.add_parser("probe-history",
                        help="과거 날짜 조회 가능 범위 판정 (일별 백필 가능 여부)")
