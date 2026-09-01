@@ -76,7 +76,27 @@ def tag(el) -> str:
 
 
 def parse_features(body: str) -> list[dict]:
-    """GML/WFS 응답에서 피처의 필드와 값을 뽑는다."""
+    """WFS 응답에서 피처의 필드와 값을 뽑는다. GeoJSON 과 GML 둘 다 받는다."""
+    stripped = body.lstrip()
+    if stripped.startswith("{"):
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            return []
+        out = []
+        for feat in payload.get("features", []):
+            row = dict(feat.get("properties") or {})
+            geom = feat.get("geometry") or {}
+            if geom.get("type"):
+                row["__geom__"] = geom["type"]
+                coords = geom.get("coordinates")
+                # 좌표가 실제로 값이 있는지까지 봐야 한다. 형만 있고 비어
+                # 있으면 지오코딩이 필요 없다는 말을 할 수 없다.
+                flat = json.dumps(coords)[:60] if coords else ""
+                if flat:
+                    row["__coords__"] = flat
+            out.append({k: str(v) for k, v in row.items() if v not in (None, "")})
+        return out
     try:
         root = ET.fromstring(body)
     except ET.ParseError:
@@ -120,27 +140,20 @@ def judge(fields: list[str]) -> None:
         print(f"    {label:6s} {'○ ' + ', '.join(hit[:4]) if hit else '✗'}")
 
 
+# 되는 조합. output=application/json 이 결정적이었다. 나머지 표기는
+# 중계기(Vercel)를 통과하지 못하고 FUNCTION_INVOCATION_FAILED 로 죽는다.
 BASE_PARAMS = {
     "typename": None,          # 호출 때 채운다
     "bbox": None,
     "maxFeatures": "3",
     "resultType": "results",
     "srsName": "EPSG:4326",
+    "output": "application/json",
     "domain": DOMAIN,
 }
 
 # 500 은 인자 문제다. 무엇이 다른지 하나씩 갈라 본다.
-VARIANTS = [
-    ({}, "기본"),
-    ({"output": "GML2"}, "output=GML2"),
-    ({"output": "application/json"}, "output=json"),
-    ({"format": "xml"}, "format=xml"),
-    ({"srsName": "EPSG:4326", "output": "GML2", "stdrYear": "2024"}, "GML2+연도"),
-    ({"srsName": "EPSG:5179"}, "srs=5179"),
-    ({"bbox": BBOX + ",EPSG:4326"}, "bbox에 crs"),
-    ({"maxFeatures": "10", "resultType": "hits"}, "resultType=hits"),
-    ({"pnu": "4159025329106740000", "bbox": None}, "pnu"),
-]
+VARIANTS = [({}, "기본")]
 
 
 def call(op: str, typename: str, extra: dict | None = None) -> tuple[list[dict], str]:
