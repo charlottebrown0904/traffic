@@ -145,6 +145,30 @@ def traffic_by_group(traffic: pd.DataFrame) -> pd.DataFrame:
     return out.fillna({f"volume_{n}": 0 for n in groups})
 
 
+def filter_land_use(trades: pd.DataFrame) -> pd.DataFrame:
+    """설정한 용도지역만 남긴다. 비어 있으면 전부 통과.
+
+    부분일치로 본다. API 가 '계획관리' 로도 '계획관리지역' 으로도 주기 때문에
+    정확일치로 걸면 한쪽이 통째로 사라진다 — 그러면 표본이 줄어든 이유가
+    필터인지 자료인지 알 수 없다.
+    """
+    wanted = settings().get("land_use_filter") or []
+    if not wanted or "land_use" not in trades.columns:
+        return trades
+
+    col = trades["land_use"].fillna("").astype(str)
+    hit = col.str.contains("|".join(wanted), regex=True, na=False)
+    before = len(trades)
+    out = trades[hit]
+    print(f"  용도지역 필터 {wanted}: {before:,} → {len(out):,}건")
+    if out.empty:
+        top = col[col != ""].value_counts().head(10).to_dict()
+        print(f"  ⚠ 남은 거래가 없습니다. 실제 값 상위: {top}")
+    elif len(out) < before * 0.02:
+        print(f"  ⚠ 2% 미만만 남았습니다. 용도지역 표기를 확인하세요.")
+    return out
+
+
 def build_panel(trades: pd.DataFrame, links: pd.DataFrame,
                 traffic: pd.DataFrame, nearest_only: bool = True) -> pd.DataFrame:
     cfg = settings()["panel"]
@@ -160,7 +184,10 @@ def build_panel(trades: pd.DataFrame, links: pd.DataFrame,
     dropped = int((~keep).sum())
     if dropped:
         print(f"  제외: 지분/해제/직거래 {dropped:,}건")
-    priced = hedonic_adjust(trades[keep])
+
+    kept = trades[keep]
+    kept = filter_land_use(kept)
+    priced = hedonic_adjust(kept)
     if priced.empty:
         return pd.DataFrame()
     priced = priced.rename(columns={"deal_year": "year"})

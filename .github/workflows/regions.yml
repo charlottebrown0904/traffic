@@ -1,0 +1,31 @@
+# 시군구 코드를 실호출로 검증한다.
+#
+# RTMS 는 잘못된 코드에 오류가 아니라 '0건' 을 조용히 돌려준다. 검증 없이
+# 수집을 돌리면 그 시군구만 통째로 비는데, 로그에는 아무 표시도 남지 않는다.
+# 권역을 넓히기 전에 반드시 한 번 돌릴 것.
+name: 시군구 코드 검증
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe_ymd:
+        description: "시험 조회할 연월 (YYYYMM)"
+        default: "202506"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 코드 검증
+        run: python -m redt.cli regions --verify --probe-ymd "${{ inputs.probe_ymd }}"

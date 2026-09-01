@@ -228,10 +228,25 @@ def cmd_trades(args):
 
 
 def cmd_geocode(args):
+    # 분석에 쓰지 않을 용도지역까지 좌표를 찍으면 일일 한도만 태운다.
+    # 권역을 넓히면 대기열이 백만 건 단위가 되므로 여기서 걸러야 한다.
+    wanted = [] if args.all else (settings().get("land_use_filter") or [])
+    where = "lat IS NULL"
+    if wanted:
+        cond = " OR ".join(f"land_use LIKE '%{w}%'" for w in wanted)
+        where += f" AND ({cond})"
+
     with db.connect() as con:
+        if wanted:
+            total = con.execute(
+                "SELECT count(DISTINCT (sigungu, umd, jibun)) FROM trade WHERE lat IS NULL"
+            ).fetchone()[0]
         todo = con.execute(
-            "SELECT DISTINCT sigungu, umd, jibun FROM trade WHERE lat IS NULL"
+            f"SELECT DISTINCT sigungu, umd, jibun FROM trade WHERE {where}"
         ).fetchdf()
+        if wanted:
+            print(f"  용도지역 {wanted} 만 지오코딩합니다 — 대기 {len(todo):,} "
+                  f"(전체 {total:,} 중). --all 로 전부 처리할 수 있습니다.")
         if todo.empty:
             print("지오코딩할 거래가 없습니다.")
             return
@@ -452,6 +467,8 @@ def main(argv=None):
 
     p = sub.add_parser("geocode", help="지번 → 좌표")
     p.add_argument("--limit", type=int, help="이번 실행에서 신규 호출 상한")
+    p.add_argument("--all", action="store_true",
+                   help="용도지역 필터를 무시하고 전부 지오코딩")
     p.set_defaults(func=cmd_geocode)
 
     sub.add_parser("link", help="거래-영업소 공간 조인").set_defaults(func=cmd_link)
