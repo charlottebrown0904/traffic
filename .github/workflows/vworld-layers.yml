@@ -1,0 +1,31 @@
+# 브이월드가 어떤 레이어를 열어두었는지 WFS GetCapabilities 로 직접 묻는다.
+#
+# 표준지공시지가 WFS 를 부르려면 레이어 이름이 필요한데, 포털·브이월드
+# 페이지가 자바스크립트로 그려져 긁히지 않았다. 페이지를 긁을 이유가
+# 없다 — WFS 표준에 서버가 가진 목록을 돌려주는 요청이 있다.
+name: 브이월드 레이어 목록
+
+on:
+  workflow_dispatch:
+    inputs:
+      needles:
+        description: "레이어 이름/제목에서 찾을 말 (공백 구분)"
+        default: "공시지가"
+
+jobs:
+  layers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - env:
+          NEEDLES: ${{ inputs.needles }}
+        run: |
+          set -- $NEEDLES
+          python scripts/vworld_layers.py "$@"
