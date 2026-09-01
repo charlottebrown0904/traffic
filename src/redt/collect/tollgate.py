@@ -41,9 +41,24 @@ def _pick(row: dict, aliases: list[str]):
 
 
 def fetch_tollgates(rows_per_page: int = 500, max_pages: int = 20) -> pd.DataFrame:
-    """영업소 목록 전체를 페이지네이션으로 수집."""
+    """영업소 목록 전체를 페이지네이션으로 수집.
+
+    이 API 는 우리가 보낸 numOfRows 를 무시하고 자기 기준(99행)으로 쪼개
+    돌려준다. 응답 메타가 그것을 밝힌다.
+
+        {"count": 590, "pageNo": 1, "numOfRows": 99, "pageSize": 6, ...}
+
+    예전에는 '요청한 크기보다 적게 왔으니 마지막 페이지' 로 보고 1페이지에서
+    멈췄다. 그래서 590건 중 99건만 받았고, 좌표가 정상인 86개만 남아
+    교통량 파일의 475개 영업소 중 18% 밖에 못 맞췄다. 오류가 아니라 그냥
+    적게 받은 것이라 로그만 봐서는 알 수 없었다.
+
+    이제는 응답이 알려주는 count 를 끝 조건으로 쓴다.
+    """
     collected: list[dict] = []
     seen_first: str | None = None
+    total: int | None = None
+
     for page in range(1, max_pages + 1):
         resp = get(
             UNIT_INFO,
@@ -55,6 +70,10 @@ def fetch_tollgates(rows_per_page: int = 500, max_pages: int = 20) -> pd.DataFra
             },
         )
         payload = resp.json()
+        if total is None and isinstance(payload.get("count"), int):
+            total = payload["count"]
+            print(f"  응답이 알려준 전체 건수 {total:,}")
+
         # 응답 래퍼 키가 버전마다 달라 리스트를 담은 첫 키를 찾는다
         items = next(
             (v for v in payload.values() if isinstance(v, list) and v and isinstance(v[0], dict)),
@@ -70,10 +89,19 @@ def fetch_tollgates(rows_per_page: int = 500, max_pages: int = 20) -> pd.DataFra
             break
         seen_first = first
         collected.extend(items)
-        if len(items) < rows_per_page:
+
+        if total is not None:
+            if len(collected) >= total:
+                break
+        elif len(items) < rows_per_page:
+            # count 를 안 주는 응답에서만 쓰는 보조 조건
             break
         polite_sleep()
 
+    if total is not None and len(collected) < total:
+        print(f"  ⚠ {total:,}건 중 {len(collected):,}건만 받았습니다 "
+              f"(max_pages={max_pages}). 페이지 수를 늘려야 할 수 있습니다.")
+    print(f"  원본 {len(collected):,}행 수신")
     return normalize(pd.DataFrame(collected))
 
 

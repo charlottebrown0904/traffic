@@ -87,7 +87,8 @@ def sweep(path: str, per_page: int) -> None:
             if (lat := num(r.get("yValue"))) is not None
             and (lon := num(r.get("xValue"))) is not None
             and 33 <= lat <= 39 and 124 <= lon <= 132]
-    gcodes = {str(r.get("unitCode", "")).strip() for r in good} - {""}
+    # IC 응답에는 unitCode 가 없고 icCode 를 쓴다. unitCode 만 보면 0 이 나온다.
+    gcodes = {str(r.get("unitCode", r.get("icCode", ""))).strip() for r in good} - {""}
     print(f"  좌표 정상 {len(good)}행 · 그 중 서로 다른 코드 {len(gcodes)}")
 
 
