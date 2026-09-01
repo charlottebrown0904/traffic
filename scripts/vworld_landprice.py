@@ -169,6 +169,53 @@ def call(op: str, typename: str, extra: dict | None = None) -> tuple[list[dict],
     return feats, ""
 
 
+def attr_years(pnu: str) -> None:
+    """한 필지의 연도별 공시지가를 속성 API 로 받아 본다.
+
+    WFS 는 stdrYear 를 무시하고 현재 스냅샷만 준다(확인됨). 변화량을
+    보려면 시계열이 필요하고, 국가중점데이터의 속성 조회는 보통 한
+    필지의 연도별 목록을 돌려준다. 그것이 사실인지 확인한다.
+    """
+    print(f"\n===== 속성 조회로 연도별이 오는가  pnu={pnu} =====")
+    for extra, label in (
+        ({}, "연도 없이"),
+        ({"stdrYear": "2020"}, "stdrYear=2020"),
+        ({"stdrYear": "2024"}, "stdrYear=2024"),
+    ):
+        params = {"pnu": pnu, "format": "json", "numOfRows": "30", "pageNo": "1",
+                  "domain": DOMAIN, **extra}
+        body = fetch("https://api.vworld.kr/ned/data/getIndvdLandPriceAttr", params)
+        msg = why(body)
+        if msg:
+            print(f"  [{label:14s}] {msg[:110]}")
+            continue
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            head = re.sub(r"\s+", " ", body[:150])
+            print(f"  [{label:14s}] JSON 아님: {head}")
+            continue
+        rows = _rows(payload)
+        years = [(r.get("stdrYear") or r.get("stdr_year") or "?",
+                  r.get("pblntfPclnd") or r.get("pblntf_pclnd") or "?") for r in rows]
+        print(f"  [{label:14s}] {len(rows)}건  " +
+              ", ".join(f"{y}:{v}" for y, v in years[:12]))
+        if len(rows) > 1 and len({y for y, _ in years}) > 1:
+            print("    → 연도별 시계열이 옵니다. 변화량을 낼 수 있습니다.")
+
+
+def _rows(payload) -> list[dict]:
+    if isinstance(payload, dict):
+        for value in payload.values():
+            if isinstance(value, list) and value and isinstance(value[0], dict):
+                return value
+            if isinstance(value, dict):
+                got = _rows(value)
+                if got:
+                    return got
+    return []
+
+
 def main() -> None:
     if not RELAY or not TOKEN:
         sys.exit("RELAY_URL / RELAY_TOKEN 이 필요합니다.")
@@ -220,6 +267,9 @@ def main() -> None:
             verdict = "값이 해마다 다름 ○" if len(set(vals) - {"-"}) > 1 else "전부 같음 ✗"
             print(f"    {pnu}  {' / '.join(vals)}   {verdict}")
         print()
+
+    # WFS 가 현재 스냅샷만 준다는 것이 확인됐다. 시계열은 다른 데서 와야 한다.
+    attr_years("4122025923100080085")
 
 
 if __name__ == "__main__":
