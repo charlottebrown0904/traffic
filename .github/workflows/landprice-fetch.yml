@@ -1,7 +1,8 @@
-# 개별공시지가·토지특성을 브이월드 WFS 로 실제로 받아 본다.
+# 개별공시지가·토지특성을 브이월드 WFS/속성 API 로 실제로 받아 본다.
 #
-# 서버가 유효한 typename 을 알려줬다: dt_d150(개별공시지가), dt_d194(토지특성).
-# 좌표·연도·용도지역이 실제로 오는지 확인한다.
+# 결과를 로그에만 남기지 않고 저장소에 커밋한다. 로그를 읽으려면 실행
+# 목록부터 훑어야 하는데 그 조회가 캐시로 늦고 비쌌다. 파일로 남기면
+# git pull 한 번이면 된다.
 name: 공시지가 받아보기
 
 on:
@@ -11,10 +12,13 @@ on:
         description: "조회 영역 minx,miny,maxx,maxy (EPSG:4326)"
         default: "126.87,37.06,126.93,37.11"
 
+permissions:
+  contents: write
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
       RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
@@ -23,6 +27,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - env:
+      - name: 탐침
+        env:
           BBOX: ${{ inputs.bbox }}
-        run: python scripts/vworld_landprice.py "$BBOX"
+        run: |
+          mkdir -p data/raw
+          python scripts/vworld_landprice.py "$BBOX" 2>&1 \
+            | tee data/raw/landprice_probe.txt
+      - name: 결과 커밋
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/raw/landprice_probe.txt
+          git diff --cached --quiet && echo "변화 없음" && exit 0
+          git commit -m "chore(probe): 공시지가 탐침 결과"
+          git pull --rebase origin main
+          git push origin HEAD:main
