@@ -241,6 +241,11 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="/app/config.js"></script>
-<script src="/app/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="/app/supabase.js"></script>
+<script src="/lib/supabase-init.js"></script>
+<!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
+     로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
+<script src="/app/gate.js"></script>
 </body>
 </html>

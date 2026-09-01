@@ -30,7 +30,7 @@
       (msg ? '<div class="note block" style="margin-bottom:1rem">' + msg + "</div>" : "") +
       list +
       '<p class="note" style="margin-top:1.25rem">' +
-      "관심 매물 저장과 게시판 글쓰기에 로그인이 필요합니다. 지도와 가이드는 로그인 없이 볼 수 있습니다." +
+      "지도와 관심 매물, 게시판 글쓰기에 로그인이 필요합니다. 가이드는 로그인 없이 볼 수 있습니다." +
       "</p></div>";
 
     Array.prototype.forEach.call(root.querySelectorAll("[data-p]"), function (btn) {

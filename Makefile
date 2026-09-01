@@ -45,6 +45,7 @@ test: test-server
 	$(PY) scripts/test_backfill.py
 	$(PY) scripts/test_web.py
 	node scripts/test_board.js
+	node scripts/test_gate.js
 
 ## 매물 API 인증·권한 검증
 test-server:
