@@ -37,6 +37,16 @@ TARGETS = [
 
 YEARS = ["2018", "2020", "2022", "2024", "2025"]
 
+# 앞선 실행에서 실제로 나온 필지들. 화성·평택 두 곳을 섞었다.
+PNUS = [
+    "4122025923100080085",   # 평택 — 2024년부터만 나왔던 필지
+    "4122025923100100010",
+    "4122025923100130006",
+    "4159134036200190003",   # 화성
+    "4159134036200210001",
+    "4159134036100350003",
+]
+
 
 def fetch(url: str, params: dict) -> str:
     """오류 응답이어도 본문을 돌려준다.
@@ -179,6 +189,7 @@ def attr_years(pnu: str) -> None:
     print(f"\n===== 속성 조회로 연도별이 오는가  pnu={pnu} =====")
     # 몇 년치가 실제로 있는지가 이 축의 성패를 가른다. 연도 FE 를 넣는
     # 패널 회귀에 두세 해로는 못 들어간다. 전 구간을 훑는다.
+    found: list[str] = []
     probes = [({}, "연도 없이")]
     probes += [({"stdrYear": str(y)}, f"{y}") for y in range(2010, 2027)]
     for extra, label in probes:
@@ -198,10 +209,13 @@ def attr_years(pnu: str) -> None:
         rows = _rows(payload)
         years = [(r.get("stdrYear") or r.get("stdr_year") or "?",
                   r.get("pblntfPclnd") or r.get("pblntf_pclnd") or "?") for r in rows]
-        print(f"  [{label:14s}] {len(rows)}건  " +
-              ", ".join(f"{y}:{v}" for y, v in years[:12]))
-        if len(rows) > 1 and len({y for y, _ in years}) > 1:
-            print("    → 연도별 시계열이 옵니다. 변화량을 낼 수 있습니다.")
+        if label == "연도 없이":
+            print(f"  [연도 없이] {len(rows)}건  " +
+                  ", ".join(f"{y}:{v}" for y, v in years[:14]))
+        elif rows:
+            found.append(label)
+    print(f"  → 확보 연도 {len(found)}개: "
+          + (", ".join(found) if found else "없음"))
 
 
 def _rows(payload) -> list[dict]:
@@ -269,7 +283,12 @@ def main() -> None:
         print()
 
     # WFS 가 현재 스냅샷만 준다는 것이 확인됐다. 시계열은 다른 데서 와야 한다.
-    attr_years("4122025923100080085")
+    #
+    # 필지 하나로 판단하면 안 된다. 2024년부터만 나온 그 필지는 그해에
+    # 신설·분할됐을 수 있고(2024→2025 값이 152% 뛰었다), 그러면 API 한계가
+    # 아니라 그 필지의 사정이다. 여러 곳을 봐야 갈린다.
+    for pnu in PNUS:
+        attr_years(pnu)
 
 
 if __name__ == "__main__":
