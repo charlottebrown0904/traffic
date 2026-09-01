@@ -11,6 +11,9 @@ on:
       probe_ymd:
         description: "시험 조회할 연월 (YYYYMM)"
         default: "202506"
+      sweep_prefixes:
+        description: "코드 범위를 훑을 앞 3자리 (공백 구분, 비우면 생략)"
+        default: ""
 
 jobs:
   verify:
@@ -29,3 +32,15 @@ jobs:
       - run: pip install -r requirements.txt
       - name: 코드 검증
         run: python -m redt.cli regions --verify --probe-ymd "${{ inputs.probe_ymd }}"
+
+      # 구 신설·행정구역 개편으로 코드가 바뀐 시군구를 찾는다.
+      - name: 코드 범위 훑기
+        if: inputs.sweep_prefixes != ''
+        env:
+          PREFIXES: ${{ inputs.sweep_prefixes }}
+        run: |
+          set -- $PREFIXES
+          for pre in "$@"; do
+            python -m redt.cli sweep-codes --prefix "$pre" \
+              --probe-ymd "${{ inputs.probe_ymd }}"
+          done
