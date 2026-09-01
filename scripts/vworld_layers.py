@@ -36,10 +36,45 @@ CANDIDATES = [
 
 # 목록이 안 나오면 오퍼레이션 이름을 직접 두드려 본다. 국가중점데이터는
 # 데이터셋마다 오퍼레이션이 따로 있고 GetCapabilities 를 안 주기도 한다.
+# 이름을 알아듣는지 못 알아듣는지는 응답이 갈라준다.
+#   "잘못된 URL 입니다"(URL_TYPE) → 그런 오퍼레이션이 없다
+#   500 또는 파라미터 오류        → 이름은 맞고 인자에서 걸렸다
 NED_OPS = [
+    # 개별공시지가 — 앞선 시험에서 이름을 알아들었다(500)
+    "getIndvdLandPriceWFS", "getIndvdLandPriceAttr",
+    # 토지특성 — 역시 알아들었다. 용도지역이 여기 들어 있을 수 있다
+    "getLandCharacteristicsWFS", "getLandCharacteristicsAttr",
+    # 표준지 — 아래 이름들은 아직 못 찾았다
     "getStdrLandPriceWFS", "getStandardLandPriceWFS", "getStdLandPriceWFS",
-    "getIndvdLandPriceWFS", "getLandCharacteristicsWFS",
+    "getPblntfLandPriceWFS", "getLandPriceWFS", "getStdLandWFS",
+    "getStdrLandPriceAttr", "getPblntfPcWFS",
 ]
+
+# 화성 향남 일대. 계획관리·공장이 실제로 많은 곳이다.
+BBOX = "126.87,37.06,126.93,37.11"
+PARAM_SETS = [
+    ({"typename": "", "bbox": BBOX, "maxFeatures": "3", "resultType": "results",
+      "srsName": "EPSG:4326", "output": "application/json", "domain": DOMAIN,
+      "stdrYear": "2024"}, "bbox+연도"),
+    ({"pnu": "4159025329106740000", "format": "json", "numOfRows": "3",
+      "pageNo": "1", "domain": DOMAIN, "stdrYear": "2024"}, "pnu+연도"),
+]
+
+
+def why(body: str) -> str:
+    """응답에서 서버가 하는 말만 뽑는다. 원문을 그대로 흘리면 안 읽힌다."""
+    m = re.search(r'"resultMsg"\s*:\s*"([^"]*)"', body)
+    if m:
+        code = re.search(r'"resultCode"\s*:\s*"([^"]*)"', body)
+        return f"{code.group(1) if code else ''} {m.group(1)}".strip()
+    m = re.search(r'<ServiceException[^>]*code="([^"]*)"[^>]*>([^<]*)', body)
+    if m:
+        return f"{m.group(1)} {m.group(2).strip()}"
+    if body.startswith("__ERR__"):
+        return body[:90]
+    if "FeatureCollection" in body or '"features"' in body:
+        return f"★ 자료 옴 ({len(body):,}바이트)"
+    return re.sub(r"\s+", " ", body[:110])
 
 
 def fetch(url: str, params: dict) -> str:
@@ -132,14 +167,17 @@ def main() -> None:
 
     print("\nGetCapabilities 로는 못 찾았습니다. 오퍼레이션을 직접 두드려 봅니다.\n")
     for op in NED_OPS:
-        for base in ("https://api.vworld.kr/ned/wfs", "https://api.vworld.kr/ned/data"):
-            body = fetch(f"{base}/{op}",
-                         {"typename": op.replace("get", "").replace("WFS", ""),
-                          "maxFeatures": "1", "resultType": "results",
-                          "srsName": "EPSG:4326", "domain": DOMAIN})
-            head = re.sub(r"\s+", " ", body[:220])
-            print(f"  {base.rsplit('/', 1)[1]}/{op}")
-            print(f"    {head}")
+        base = ("https://api.vworld.kr/ned/wfs" if op.endswith("WFS")
+                else "https://api.vworld.kr/ned/data")
+        for params, plabel in PARAM_SETS:
+            q = dict(params)
+            if "typename" in q:
+                q["typename"] = op[3:-3] if op.endswith("WFS") else op[3:]
+            body = fetch(f"{base}/{op}", q)
+            print(f"  {base.rsplit('/', 1)[1]}/{op:28s} [{plabel}] {why(body)}")
+            if "★" in why(body):
+                print("    " + re.sub(r"\s+", " ", body[:600]))
+                return
 
 
 if __name__ == "__main__":
