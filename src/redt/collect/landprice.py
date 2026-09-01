@@ -138,9 +138,12 @@ def probe(verbose: bool = True) -> list[dict]:
                                           "numOfRows": 5, "pageNo": 1, **params})
                     row["http"] = resp.status_code
                     if resp.status_code >= 400:
+                        # 본문을 버리면 안 된다. 400 이 '주소가 틀렸다' 인지
+                        # '키가 아직 안 풀렸다' 인지는 본문에만 적혀 있다.
                         row["result"] = "0건"
                         row["n_rows"] = 0
-                        row["memo"] = f"HTTP {resp.status_code}"
+                        _, _, memo = _summarize(resp.text)
+                        row["memo"] = f"HTTP {resp.status_code} {memo or resp.text[:100]}"
                         findings.append(row)
                         polite_sleep(0.25)
                         continue
@@ -166,7 +169,7 @@ def _report(findings: list[dict]) -> None:
     for row in findings:
         print(f"{row['service']:30s} {row['shape']:5s} {row['params']:12s} "
               f"{row.get('result', ''):5s} {str(row.get('n_rows', '')):5s} "
-              f"{row.get('memo', '')[:40]}")
+              f"{row.get('memo', '')[:60]}")
 
     working = [r for r in findings if r.get("result") == "OK"]
     if not working:

@@ -1,0 +1,29 @@
+# 표준지공시지가 OpenAPI 의 실제 주소를 포털에서 찾는다.
+#
+# 서비스 이름 후보 30개가 전부 400 이었다. 이름을 계속 추측하는 대신
+# 정답이 적혀 있는 포털 페이지를 읽는다. www.data.go.kr 은 해외에서
+# 막혀 있으므로 서울 중계기를 거친다.
+name: 공시지가 API 주소 찾기
+
+on:
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: "포털 검색어"
+        default: "표준지공시지가"
+
+jobs:
+  find:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - env:
+          KEYWORD: ${{ inputs.keyword }}
+        run: python scripts/landprice_find.py "$KEYWORD"
