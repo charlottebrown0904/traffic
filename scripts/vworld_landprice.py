@@ -196,11 +196,29 @@ def main() -> None:
         for k, v in list(feats[0].items())[:24]:
             print(f"    {k:24s} {v[:60]}")
 
-        # 연도별로 되는지. 변화량을 보므로 이게 안 되면 쓸 수 없다.
-        print("  연도별:")
+        # 연도별로 되는지. 건수만 세면 안 된다 — 서버가 stdrYear 를 무시하고
+        # 같은 자료를 돌려줘도 건수는 똑같이 나온다. 같은 필지의 값이 해마다
+        # 실제로 달라지는지까지 봐야 '연도별로 된다' 고 말할 수 있다.
+        print("  연도별 (같은 필지의 공시지가가 실제로 달라지는가):")
+        seen: dict[str, dict[str, str]] = {}
         for y in YEARS:
             f2, m2 = call(op, typename, {"stdrYear": y})
-            print(f"    {y}  {len(f2)}건" + (f"  {m2[:70]}" if m2 else ""))
+            if m2:
+                print(f"    {y}  {m2[:80]}")
+                continue
+            for row in f2:
+                pnu = row.get("pnu", "")
+                if pnu:
+                    seen.setdefault(pnu, {})[y] = (
+                        row.get("pblntf_pclnd") or row.get("stdr_year") or "-")
+            got = f2[0] if f2 else {}
+            print(f"    {y}  {len(f2)}건  응답연도={got.get('stdr_year', '?')}"
+                  f"  값={got.get('pblntf_pclnd', '?')}")
+
+        for pnu, byyear in list(seen.items())[:3]:
+            vals = [byyear.get(y, "-") for y in YEARS]
+            verdict = "값이 해마다 다름 ○" if len(set(vals) - {"-"}) > 1 else "전부 같음 ✗"
+            print(f"    {pnu}  {' / '.join(vals)}   {verdict}")
         print()
 
 
