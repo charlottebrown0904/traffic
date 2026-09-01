@@ -223,6 +223,64 @@ def cmd_regions(args):
             rtms.polite_sleep()
 
 
+# 한 요청에 1.6초가 걸리는데 그 대부분이 왕복 대기다. 미국 러너에서
+# 서울 중계기를 거쳐 국토부까지 갔다 온다. 순차로 만 번을 돌면 다섯 시간이
+# 넘고, 그 시간의 거의 전부가 기다림이다. 동시에 보내면 그만큼 줄어든다.
+#
+# 가져오기만 여러 스레드로 하고, DB 쓰기는 이 스레드에서만 한다. DuckDB
+# 연결은 여러 스레드가 동시에 쓰라고 만들어진 물건이 아니다.
+def _collect_cells(con, kind, todo, workers):
+    """(저장한 행수, 중단했는가). 셀 하나가 실패해도 나머지는 계속한다."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    if not todo:
+        return 0, False
+
+    # 연달아 이만큼 실패하면 우리가 차단당한 것으로 본다. 하나둘 실패는
+    # 흔하지만 연속 실패는 다르다. 그대로 두면 남은 셀을 전부 '조회했으나
+    # 실패' 로 기록해버려서, 다음 실행이 이어받을 것을 없애버린다.
+    GIVE_UP = 40
+
+    total_rows = 0
+    streak = 0
+    n_err = 0
+    stopped = False
+
+    def work(cell):
+        code, ym = cell
+        try:
+            return cell, rtms.fetch_month(kind, code, ym), None
+        except Exception as exc:                      # noqa: BLE001
+            return cell, None, exc
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        # map 은 순서를 지키므로 진행률이 사람이 읽기 좋게 나온다.
+        for i, (cell, df, exc) in enumerate(pool.map(work, todo), 1):
+            code, ym = cell
+            if exc is not None:
+                db.log_cell(con, kind, code, ym, 0, "error", str(exc))
+                n_err += 1
+                streak += 1
+                if streak <= 3 or streak % 10 == 0:
+                    print(f"  실패 {code}/{ym}: {exc}")
+                if streak >= GIVE_UP:
+                    print(f"\n연달아 {streak}건 실패했습니다. 차단이나 장애로 보고 멈춥니다.")
+                    stopped = True
+                    break
+                continue
+            streak = 0
+            n = db.upsert(con, "trade", df)
+            db.log_cell(con, kind, code, ym, n, "ok" if n else "empty")
+            total_rows += n
+            if i % 100 == 0 or i == len(todo):
+                print(f"  {i:,}/{len(todo):,}  누적 {total_rows:,}건"
+                      + (f"  실패 {n_err:,}" if n_err else ""))
+
+    if n_err and not stopped:
+        print(f"  실패 {n_err:,}건 — 다음 실행에서 다시 시도합니다.")
+    return total_rows, stopped
+
+
 def cmd_trades(args):
     with db.connect() as con:
         targets = _target_sigungu(args, con)
@@ -233,25 +291,19 @@ def cmd_trades(args):
         print(f"수집 계획: {len(kinds)}종 × {len(targets)}개 시군구 × {len(months)}개월 "
               f"= {planned:,} 요청")
 
+        workers = max(1, int(args.workers))
+        print(f"동시 요청 {workers}개")
+
         total_rows = 0
         for kind in kinds:
             done = set() if args.refresh else db.done_cells(con, kind)
             todo = [(c, ym) for c in targets for ym in months if (c, ym) not in done]
             print(f"\n[{kind}] 남은 셀 {len(todo):,} (이미 완료 {len(done):,})")
-
-            for i, (code, ym) in enumerate(todo, 1):
-                try:
-                    df = rtms.fetch_month(kind, code, ym)
-                except Exception as exc:
-                    db.log_cell(con, kind, code, ym, 0, "error", str(exc))
-                    print(f"  실패 {code}/{ym}: {exc}")
-                    continue
-                n = db.upsert(con, "trade", df)
-                db.log_cell(con, kind, code, ym, n, "ok" if n else "empty")
-                total_rows += n
-                if i % 50 == 0 or i == len(todo):
-                    print(f"  {i:,}/{len(todo):,}  누적 {total_rows:,}건")
-                rtms.polite_sleep()
+            n_rows, stopped = _collect_cells(con, kind, todo, workers)
+            total_rows += n_rows
+            if stopped:
+                print("\n남은 셀은 다음 실행에서 이어받습니다.")
+                break
 
     print(f"\n실거래 {total_rows:,}건 신규 저장")
 
@@ -490,6 +542,10 @@ def main(argv=None):
     p.add_argument("--region", help="pilot_regions.yaml 의 권역명 (쉼표구분) 또는 all")
     p.add_argument("--sigungu", help="쉼표구분 5자리 코드 (--region 보다 우선)")
     p.add_argument("--refresh", action="store_true", help="이미 수집한 셀도 다시 조회")
+    # 6은 브라우저가 한 호스트에 여는 연결 수와 같은 수준이라 공공 API 에
+    # 무리가 아니면서 대기 시간을 여섯 배 가까이 줄인다. 차단당하면 낮추면 된다.
+    p.add_argument("--workers", type=int, default=6,
+                   help="동시 요청 수 (기본 6). 차단당하면 낮추세요")
     p.set_defaults(func=cmd_trades)
 
     p = sub.add_parser("regions", help="파일럿 권역 / 시군구 코드 확인")

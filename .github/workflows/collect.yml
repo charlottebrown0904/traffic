@@ -23,6 +23,9 @@ on:
       region:
         description: "권역 (pilot_regions.yaml 의 이름, 또는 all)"
         default: "gyeonggi_south"
+      workers:
+        description: "실거래가 동시 요청 수 (기본 6, 차단당하면 낮추세요)"
+        default: "6"
       geocode_limit:
         description: "이번 실행에서 지오코딩할 최대 건수 (일일 한도 대비)"
         default: "4000"
@@ -86,7 +89,8 @@ jobs:
             --kind "${{ inputs.kind }}" \
             --region "${{ inputs.region }}" \
             --start "${{ inputs.start }}" \
-            --end "${{ inputs.end }}"
+            --end "${{ inputs.end }}" \
+            --workers "${{ inputs.workers }}"
 
       - name: 지오코딩 (지번 → 좌표)
         run: python -m redt.cli geocode --limit "${{ inputs.geocode_limit }}"

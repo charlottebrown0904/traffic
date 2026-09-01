@@ -1,6 +1,7 @@
 """공공 API 호출 공통 유틸 — 재시도, 레이트리밋, XML/JSON 파싱."""
 from __future__ import annotations
 
+import threading
 import time
 import xml.etree.ElementTree as ET
 from urllib.parse import urlencode, urlsplit
@@ -11,8 +12,26 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 from ..config import VIA_RELAY, relay
 from ..scrub import scrub
 
-_session = requests.Session()
-_session.headers.update({"User-Agent": "redt-research/0.1"})
+# 세션은 스레드마다 따로 둔다.
+#
+# requests.Session 은 여러 스레드가 동시에 쓰는 것을 보장하지 않는다.
+# 연결 풀을 공유하다 응답이 뒤섞이면, 예외가 아니라 '다른 시군구의
+# 자료가 이 시군구 것으로 저장되는' 형태로 조용히 틀어진다. 그런 오류는
+# 로그에 아무 표시가 남지 않는다.
+_local = threading.local()
+
+
+def _sess() -> requests.Session:
+    s = getattr(_local, "session", None)
+    if s is None:
+        s = requests.Session()
+        s.headers.update({"User-Agent": "redt-research/0.1"})
+        # 동시 요청만큼 연결을 열어둔다. 기본값(10)이면 그 위로는 줄을 선다.
+        adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=4)
+        s.mount("https://", adapter)
+        s.mount("http://", adapter)
+        _local.session = s
+    return s
 
 
 class ApiError(RuntimeError):
@@ -53,7 +72,7 @@ def get(url: str, params: dict, timeout: int = 30) -> requests.Response:
     headers = None
     if _should_relay(url, params):
         url, params, headers = _via_relay(url, params)
-    resp = _session.get(url, params=params, timeout=timeout, headers=headers)
+    resp = _sess().get(url, params=params, timeout=timeout, headers=headers)
     if resp.status_code >= 500:
         raise ApiError(f"{resp.status_code} from {url}")
     try:
@@ -75,7 +94,7 @@ def get_once(url: str, params: dict, timeout: int = 15) -> requests.Response:
     headers = None
     if _should_relay(url, params):
         url, params, headers = _via_relay(url, params)
-    return _session.get(url, params=params, timeout=timeout, headers=headers)
+    return _sess().get(url, params=params, timeout=timeout, headers=headers)
 
 
 def get_xml(url: str, params: dict, timeout: int = 30) -> ET.Element:

@@ -43,6 +43,7 @@ check-traffic: tollgate-events
 ## 로직 검증 (API 키 불필요)
 test: test-server
 	$(PY) scripts/test_backfill.py
+	$(PY) scripts/test_trades_concurrent.py
 	$(PY) scripts/test_web.py
 	node scripts/test_board.js
 	node scripts/test_gate.js
