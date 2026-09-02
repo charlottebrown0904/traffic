@@ -897,6 +897,39 @@ check(len(_near(_edge, _tg, max_km=10.0)) == 1,
       "반경 바로 바깥(약 11.5km)도 여유 안에 들어 남는다")
 
 print()
+print("21. 한 시도만 다시 훑어도 나머지를 지우지 않는다")
+# 새 시도(전남광주통합 12)를 넣으려고 `--refresh --sido 12` 를 돌릴 참이었다.
+# 그대로였으면 이미 찾아둔 197개 코드가 통째로 지워졌다. 그리고 그 파일이
+# 커밋되면 다음 실행은 '이미 찾아뒀다' 며 건너뛴다 — 조용히 전국이
+# 시군구 6개로 줄어든다.
+_prev_cfg = _cli.ROOT_CFG
+with _tf.TemporaryDirectory() as _d:
+    _cli.ROOT_CFG = Path(_d)
+    _yaml_path = Path(_d) / "sigungu_codes.yaml"
+    _yaml_path.write_text(
+        yaml.safe_dump({"41": {"41110": 5, "41130": 3}, "11": {"11110": 7}},
+                       allow_unicode=True), encoding="utf-8")
+
+    _orig = _rtms.fetch_page
+    try:
+        # 12 만 자료가 있다고 답한다.
+        _rtms.fetch_page = lambda kind, code, ym, page=1, rows=1: (
+            ([], 9) if str(code).startswith("12") and str(code)[-3:] in
+            ("110", "130") else ([], 0))
+        _args2 = _types.SimpleNamespace(
+            sido="12", probe_ymd="202403", extra_ymd="", workers=8, refresh=True)
+        _cli.cmd_discover_sigungu(_args2)
+        _after = yaml.safe_load(_yaml_path.read_text(encoding="utf-8")) or {}
+        check("41" in _after and len(_after.get("41", {})) == 2,
+              f"안 훑은 경기(41) 코드가 남아 있다 ({_after.get('41')})")
+        check("11" in _after, f"안 훑은 서울(11) 코드가 남아 있다 ({_after.get('11')})")
+        check(set(_after.get("12", {})) == {"12110", "12130"},
+              f"새로 훑은 12 가 들어갔다 ({sorted(_after.get('12', {}))})")
+    finally:
+        _rtms.fetch_page = _orig
+        _cli.ROOT_CFG = _prev_cfg
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
