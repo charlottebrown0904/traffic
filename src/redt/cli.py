@@ -216,6 +216,27 @@ SIDO_PREFIX = ["11", "26", "27", "28", "29", "30", "31", "36",
                "41", "43", "44", "45", "46", "47", "48", "50", "51", "52"]
 
 
+def probe_sigungu(args_):
+    """시군구 코드 하나를 물어본다. (code, 건수) 또는 (code, None).
+
+    **None 은 '모른다' 는 뜻이다. 0 과 다르다.**
+
+    예전에는 예외를 전부 0 으로 바꿨다. 그러면 '호출이 막혔다' 가 '이 코드는
+    존재하지 않는다' 로 기록된다. run 13 에서 광주(29)와 전남(46)이 통째로
+    0개로 나온 것이 이것이다 — 27개 시군구가 전국에서 조용히 빠졌고, 화면이
+    비어도 '거래가 없구나' 로 읽혔을 것이다.
+
+    tollgate_fill.py 에서 CallFailed 로 이미 한 번 고친 실수인데, 여기로
+    옮기지 않았다.
+    """
+    code, ym, kind = args_
+    try:
+        _, total = rtms.fetch_page(kind, code, ym, page=1, rows=1)
+    except Exception:                                 # noqa: BLE001
+        return code, None
+    return code, total
+
+
 def cmd_discover_sigungu(args):
     """전국 시군구 코드를 **훑어서** 찾는다. 추측하지 않는다.
 
@@ -265,25 +286,35 @@ def cmd_discover_sigungu(args):
     # 그래도 0 이 나온 코드는 2차로 한 번 더 본다 — 다만 **찾은 코드
     # 근처만** 본다. 시군구 코드는 뭉쳐 있어서, 유효한 코드 옆이 아니면
     # 유효할 가능성이 거의 없다.
-    def probe(args_):
-        code, ym, kind = args_
-        try:
-            _, total = rtms.fetch_page(kind, code, ym, page=1, rows=1)
-        except Exception:                             # noqa: BLE001
-            return code, 0
-        return code, total
+    probe = probe_sigungu
 
     extra = [m for m in (args.extra_ymd or "").split(",") if m.strip()]
     found: dict[str, dict] = {}
+    shaky: list[str] = []        # 호출이 끝내 실패해 결론을 못 낸 시도
     calls = 0
     for prefix in prefixes:
         codes = [f"{prefix}{tail:03d}" for tail in range(1000)]
         hits: dict[str, int] = {}
+        failed: list[str] = []
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
             for code, total in pool.map(probe, [(c, ymd, "land") for c in codes]):
                 calls += 1
-                if total > 0:
+                if total is None:
+                    failed.append(code)
+                elif total > 0:
                     hits[code] = int(total)
+
+        # 실패한 것만 한 번 더 물어본다. 정상이면 몇 개 안 되므로 싸다.
+        if failed:
+            retry_pairs = [(c, ymd, "land") for c in failed]
+            failed = []
+            with ThreadPoolExecutor(max_workers=args.workers) as pool:
+                for code, total in pool.map(probe, retry_pairs):
+                    calls += 1
+                    if total is None:
+                        failed.append(code)
+                    elif total > 0:
+                        hits[code] = int(total)
 
         # 2차: 찾은 코드의 ±3 이웃 중 아직 0 인 것만, 다른 달로 한 번 더.
         if hits and extra:
@@ -301,10 +332,24 @@ def cmd_discover_sigungu(args):
                             hits[code] = int(total)
 
         found[prefix] = hits
+        note = ""
+        if failed:
+            shaky.append(prefix)
+            note = f"  ⚠ 호출 실패 {len(failed)}건 — 이 시도는 결론이 아닙니다"
         print(f"  {prefix}  {len(hits):>3}개  {sorted(hits)[:8]}"
-              f"{' …' if len(hits) > 8 else ''}  (누적 호출 {calls:,})")
+              f"{' …' if len(hits) > 8 else ''}  (누적 호출 {calls:,}){note}")
+        # 시도 하나가 통째로 비는 것은 자료가 아니라 사고다. 어느 시도든
+        # 토지 거래가 한 달에 0건일 수는 없다. 유일한 정상 사례는 코드
+        # 체계가 바뀐 경우다 (전북 45 → 52, 강원 42 → 51).
+        if not hits and not failed:
+            print(f"       ⚠ {prefix} 는 한 건도 없습니다. 그 시도에 토지 "
+                  f"거래가 정말 0건일 수는 없습니다 — 코드 체계가 바뀌었거나"
+                  f"(전북 45→52 처럼) 호출이 조용히 막힌 것입니다.")
 
     print(f"\n총 호출 {calls:,}회")
+    if shaky:
+        print(f"⚠ 호출이 끝내 실패한 시도: {', '.join(shaky)} — "
+              f"--sido {','.join(shaky)} 로 다시 돌리세요.")
 
     total_codes = sum(len(v) for v in found.values())
     print(f"\n전국 시군구 코드 {total_codes:,}개를 찾았습니다.")

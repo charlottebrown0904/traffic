@@ -53,6 +53,9 @@ jobs:
       REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 얕은 클론이면 rebase 가 add/add 충돌로 터진다 (collect.yml 참조).
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"

@@ -24,10 +24,11 @@ on:
         description: "물건 종류 (쉼표구분)"
         default: "land,factory"
       region:
-        # 쉼표로 여러 권역을 붙일 수 있다. 기본을 경기 전역·인천·충청으로 둔다 —
-        # 이미 이 범위로 받아 뒀으므로 새로 받는 것은 2018~2020년치뿐이다.
-        description: "권역 (pilot_regions.yaml 의 이름, 쉼표구분, 또는 all)"
-        default: "gyeonggi_all,incheon,chungcheong"
+        # 전국으로 방향을 정했으므로(2026-09-02 지시 3) 기본을 nationwide 로
+        # 둔다. 휴대폰에서 매번 손으로 고쳐 넣게 하면 언젠가 빠뜨리고,
+        # 그러면 표가 비어도 '거래가 없구나' 로 읽힌다.
+        description: "권역 (nationwide · pilot_regions.yaml 의 이름 쉼표구분 · all)"
+        default: "nationwide"
       workers:
         description: "실거래가 동시 요청 수 (기본 6, 차단당하면 낮추세요)"
         default: "6"
@@ -64,6 +65,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 얕은 클론(기본 depth 1)이면 브랜치와 원격의 공통 조상을 모른다.
+          # 그 상태로 rebase 하면 git 이 모든 파일을 '양쪽에서 새로 만든 파일'
+          # 로 보고 add/add 충돌을 낸다. run 13 이 그렇게 죽었다 — 2시간 33분
+          # 수집을 마치고 마지막 커밋 단계에서 40개 파일이 전부 충돌했다.
+          # 저장소 이력이 16MB 라 전부 받아도 몇 초다.
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -108,6 +116,11 @@ jobs:
 
       # 전국 코드를 아직 안 찾았으면 여기서 한 번 찾는다. 결과가
       # config/sigungu_codes.yaml 에 남아 다음부터는 건너뛴다.
+      #
+      # '남는다' 가 성립하려면 그 파일을 저장소에 되돌려 놔야 한다. run 13 은
+      # 이 단계에 1시간 35분과 호출 19,052회를 쓰고도 커밋 대상이
+      # public/app/data 뿐이라 결과를 통째로 잃었다 (캐시 경로에도 config 가
+      # 없다). 아래 '결과 커밋' 이 이 파일도 함께 담는다.
       - name: 전국 시군구 코드 확보
         if: contains(inputs.region, 'nationwide')
         run: python -m redt.cli discover-sigungu
@@ -197,14 +210,37 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 시군구 코드는 한 번 찾는 데 1시간 35분·호출 19,052회가 든다.
+          # 저장소에 남겨야 다음 실행이 건너뛴다.
           git add public/app/data
+          # 전국이 아닌 실행에서는 이 파일이 없다. 없는 경로에 git add 를
+          # 하면 set -e 라 단계가 통째로 죽는다. `[ -f ] && git add` 로 줄여
+          # 쓰지 않은 이유는, 그 형태가 스크립트 **마지막 줄**이 되는 순간
+          # 종료코드 1 로 죽기 때문이다(중간 줄이면 살아남는다). 줄 위치에
+          # 따라 동작이 갈리는 코드는 나중에 줄을 옮길 때 문다.
+          if [ -f config/sigungu_codes.yaml ]; then
+            git add config/sigungu_codes.yaml
+          fi
           if git diff --cached --quiet; then
             echo "바뀐 화면 데이터가 없습니다 — 커밋 생략"
             exit 0
           fi
-          git commit -m "data: refresh web export from collect run ${{ github.run_number }}"
+          git commit -m "data: 수집 run ${{ github.run_number }} 결과 (화면 데이터·시군구 코드)"
+          # 실행한 브랜치로 되돌려 놓는다. main 으로 고정하면 브랜치에서
+          # 돌렸을 때 그 브랜치의 코드 변경까지 통째로 main 에 올라간다.
+          BRANCH="${{ github.ref_name }}"
           for i in 1 2 3 4; do
-            git pull --rebase --autostash origin main && git push origin HEAD:main && exit 0
+            git pull --rebase --autostash origin "$BRANCH" \
+              && git push origin "HEAD:$BRANCH" && exit 0
             sleep $((2 ** i))
           done
           echo "푸시 실패"; exit 1
+
+      # 커밋이 막혀도 결과물은 손에 쥘 수 있게 올려 둔다. run 13 은 수집을
+      # 다 마치고도 화면 데이터를 받아볼 방법이 없었다.
+      - name: 화면용 JSON 올리기
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-data-${{ github.run_number }}
+          path: public/app/data

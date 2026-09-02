@@ -584,6 +584,30 @@ if len(_days):
               f"2010년 관측일수가 334일로 잡힌다 (365-31, 실제 {_y2010.median():.0f})")
 
 print()
+print("13. 시군구 훑기 — 호출 실패를 '코드 없음' 으로 적지 않는다")
+# run 13 에서 광주(29)·전남(46)이 통째로 0개로 나왔다. 그 시도에 토지
+# 거래가 한 달에 0건일 수는 없다. 예외를 0 으로 바꾸고 있었던 탓이다.
+from redt import cli as _cli
+from redt.collect import rtms as _rtms
+
+_orig_fetch = _rtms.fetch_page
+try:
+    _rtms.fetch_page = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("중계기 끊김"))
+    _code, _total = _cli.probe_sigungu(("29110", "202403", "land"))
+    check(_total is None, f"호출이 실패하면 None (모른다) 이다 — 받은 값 {_total!r}")
+    check(_total != 0, "호출 실패가 0건(코드 없음)으로 둔갑하지 않는다")
+
+    _rtms.fetch_page = lambda *a, **k: ([], 0)
+    _, _empty = _cli.probe_sigungu(("29999", "202403", "land"))
+    check(_empty == 0, "정말 자료가 없으면 0 이다")
+
+    _rtms.fetch_page = lambda *a, **k: ([], 7)
+    _, _hit = _cli.probe_sigungu(("29110", "202403", "land"))
+    check(_hit == 7, "자료가 있으면 건수를 그대로 준다")
+finally:
+    _rtms.fetch_page = _orig_fetch
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
