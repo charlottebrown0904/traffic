@@ -64,3 +64,40 @@ def link_trades_to_tollgates(trades: pd.DataFrame, tollgates: pd.DataFrame,
     linked = pd.concat(frames, ignore_index=True)
     linked["band"] = linked["distance_km"].map(band_label)
     return linked.dropna(subset=["band"])
+
+
+# 법정동 중심점은 ±1~2km 오차가 있습니다. 반경 경계에 걸친 법정동을
+# 자르면, 실제로는 안에 있는 거래를 통째로 버리게 됩니다. 넉넉히 둡니다 —
+# 지번 호출 몇 번 더 쓰는 값보다 표본을 잃는 값이 큽니다.
+UMD_CENTER_SLACK_KM = 3.0
+
+
+def umd_near_tollgates(umd_points: "pd.DataFrame", tollgates: "pd.DataFrame",
+                       max_km: float,
+                       slack_km: float = UMD_CENTER_SLACK_KM) -> "pd.DataFrame":
+    """영업소 반경 안에 드는 법정동만 골라낸다.
+
+    지번 단위 좌표는 비쌉니다(하루 4,000건). 전국에 다 붙일 필요가 없고,
+    **거리 밴드에 들어갈 수 있는 것에만** 쓰면 됩니다. 법정동 중심점으로
+    먼저 걸러 대상을 줄입니다.
+
+    umd_points: sigungu · umd · lat · lon
+    tollgates:  lat · lon
+    """
+    import pandas as pd
+
+    if umd_points.empty or tollgates.empty:
+        return umd_points.iloc[0:0].assign(km_nearest=[])
+
+    reach = float(max_km) + float(slack_km)
+    dist = haversine_matrix(
+        umd_points["lat"].to_numpy(), umd_points["lon"].to_numpy(),
+        tollgates["lat"].to_numpy(), tollgates["lon"].to_numpy())
+    nearest = dist.min(axis=1)
+    out = umd_points.copy()
+    out["km_nearest"] = nearest
+    kept = out[out["km_nearest"] <= reach].copy()
+    print(f"  법정동 {len(out):,}개 중 영업소 {reach:.0f}km 안 {len(kept):,}개 "
+          f"({len(kept) / max(len(out), 1):.1%}) — 나머지는 지번 좌표가 "
+          f"있어도 어느 밴드에도 못 들어갑니다")
+    return kept.sort_values("km_nearest")
