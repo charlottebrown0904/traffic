@@ -153,14 +153,64 @@ def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     return con
 
 
-def upsert(con: duckdb.DuckDBPyConnection, table: str, df) -> int:
-    """DataFrame 을 테이블에 병합. PK 충돌 시 기존 행을 대체한다."""
+def _primary_key(con: duckdb.DuckDBPyConnection, table: str) -> list[str]:
+    row = con.execute("""
+        SELECT constraint_column_names FROM duckdb_constraints()
+        WHERE constraint_type = 'PRIMARY KEY' AND table_name = ?
+    """, [table]).fetchone()
+    return list(row[0]) if row else []
+
+
+def upsert(con: duckdb.DuckDBPyConnection, table: str, df,
+           preserve: list[str] | None = None) -> int:
+    """DataFrame 을 테이블에 병합. PK 충돌 시 기존 행을 대체한다.
+
+    preserve 에 적은 칸은 **들어온 값이 비어 있으면 기존 값을 지키지
+    않는다** — 지운다. 그것이 기본 동작(INSERT OR REPLACE)이고, 다음
+    사고를 냈다.
+
+      1) 거래 T 를 수집한다            lat = NULL
+      2) 지오코딩으로 좌표를 붙인다     lat = 37.1   ← 하루 4,000건짜리 호출
+      3) 같은 거래를 다시 수집한다      lat = NULL   ← 방금 산 것이 날아간다
+
+    API 응답에 좌표 칸이 없는 것은 '좌표가 없어졌다' 가 아니라 '그 API 가
+    좌표를 모른다' 는 뜻이다. 그것을 지움으로 받아들이면, 이 프로젝트에서
+    가장 비싼 자원(지오코딩·영업소 좌표 보충)이 재수집할 때마다 사라진다.
+    예외도 경고도 없이 표만 얇아지므로 몇 주 뒤에나 알게 된다.
+
+    preserve 에 적은 칸은 들어온 값이 NULL 일 때 기존 값을 남긴다.
+    들어온 값이 있으면 그것으로 덮는다(갱신은 정상 동작이다).
+    """
     if df is None or len(df) == 0:
         return 0
-    cols = [r[0] for r in con.execute(f"DESCRIBE {table}").fetchall()]
+    described = con.execute(f"DESCRIBE {table}").fetchall()
+    cols = [r[0] for r in described]
+    types = {r[0]: r[1] for r in described}
     df = df.reindex(columns=cols)
     con.register("_incoming", df)
-    con.execute(f"INSERT OR REPLACE INTO {table} SELECT {', '.join(cols)} FROM _incoming")
+
+    keep = [c for c in (preserve or []) if c in cols]
+    pk = _primary_key(con, table) if keep else []
+    if keep and not pk:
+        # PK 를 모르면 어느 행과 합칠지 알 수 없다. 조용히 옛 동작으로
+        # 돌아가면 지키라고 적어둔 칸이 지워지므로, 말하고 멈춘다.
+        raise ValueError(
+            f"{table} 에 기본키가 없어 {keep} 를 지킬 수 없습니다")
+
+    if keep:
+        on = " AND ".join(f"i.{c} IS NOT DISTINCT FROM t.{c}" for c in pk)
+        # 값이 전부 비어 있는 칸을 pandas 는 DOUBLE(NaN) 으로 준다. 문자
+        # 칸과 coalesce 하면 타입이 안 맞아 터지므로, 테이블이 선언한
+        # 타입으로 맞춰 넣는다. 좌표가 다 빈 재수집이 바로 이 경우다.
+        sel = ", ".join(
+            f"coalesce(CAST(i.{c} AS {types[c]}), t.{c}) AS {c}"
+            if c in keep else f"i.{c} AS {c}"
+            for c in cols)
+        sql = (f"INSERT OR REPLACE INTO {table} SELECT {sel} "
+               f"FROM _incoming i LEFT JOIN {table} t ON {on}")
+    else:
+        sql = f"INSERT OR REPLACE INTO {table} SELECT {', '.join(cols)} FROM _incoming"
+    con.execute(sql)
     con.unregister("_incoming")
     return len(df)
 

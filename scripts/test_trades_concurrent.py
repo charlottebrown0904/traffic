@@ -33,6 +33,7 @@ class FakeCon:
 
     def __init__(self):
         self.rows = []
+        self.preserved = []
         self.logs = []
         self.threads = set()
 
@@ -42,7 +43,15 @@ class FakeCon:
 
 def patch(monkey_fetch, con):
     cli.rtms.fetch_month = monkey_fetch
-    cli.db.upsert = lambda c, t, df: (c.note(), c.rows.append(df), len(df))[-1]
+    # 진짜 upsert 와 같은 서명이어야 한다. **kw 로 뭉뚱그리면 호출
+    # 쪽이 preserve 를 빠뜨려도 이 검사는 통과한다 — 지오코딩이
+    # 지워지는 사고가 검사를 지나간 것이 바로 그 모양이었다.
+    def _stub(c, t, df, preserve=None):
+        c.note()
+        c.rows.append(df)
+        c.preserved.append(preserve)
+        return len(df)
+    cli.db.upsert = _stub
     cli.db.log_cell = lambda c, k, code, ym, n, st, msg=None: (
         c.note(), c.logs.append((code, ym, n, st)))[-1]
 
@@ -97,6 +106,19 @@ def main():
     patch(ok_fetch, con)
     n, stopped = cli._collect_cells(con, "land", [], workers=6)
     check("빈 목록은 조용히 넘어간다", (n, stopped) == (0, False))
+
+    # 5) 지오코딩 결과를 지키며 저장하는가
+    #
+    # run 16 에서 거래가 10배 늘었는데 지도에 찍히는 거래는 674 → 387 로
+    # 줄었다. 재수집이 좌표를 NULL 로 덮었기 때문이다. 하루 4,000건짜리
+    # 호출로 산 좌표가 예외도 경고도 없이 사라졌다.
+    con = FakeCon()
+    patch(ok_fetch, con)
+    cli._collect_cells(con, "land", todo[:3], workers=2)
+    check("거래 저장이 좌표를 지키라고 넘긴다",
+          bool(con.preserved) and all(
+              p and {"lat", "lon", "geocode_level"} <= set(p)
+              for p in con.preserved))
 
     print("\n실패 " + str(len(FAIL)) + "건" if FAIL else "\n동시 수집 검사 전부 통과")
     sys.exit(1 if FAIL else 0)
