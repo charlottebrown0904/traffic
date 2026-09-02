@@ -168,7 +168,23 @@ const rows = (page) => page.evaluate(() =>
     check('토지와 공장 색이 서로 다르다',
           kindVars[0] && kindVars[1] && kindVars[0] !== kindVars[1], kindVars.join(' / '));
 
-    // 9) 지도 범례가 밴드까지 설명한다
+    // 9) hidden 이 실제로 감추는가
+    //     .banner{display:flex} 가 hidden 을 이겨서, 실자료 화면에 '데모 데이터,
+    //     합성 데이터입니다' 배너가 계속 떠 있었다. 회원 가입까지 하고 들어온
+    //     사람에게 자기 제품을 가짜라고 말하는 셈이었다.
+    const hiddenLeaks = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[hidden]'))
+        .filter((e) => getComputedStyle(e).display !== 'none')
+        .map((e) => e.id || e.className));
+    check('hidden 인 요소는 실제로 안 보인다', hiddenLeaks.length === 0,
+          hiddenLeaks.join(', '));
+    const bannerShown = await page.evaluate(() => {
+      const b = document.getElementById('demo-banner');
+      return b && getComputedStyle(b).display !== 'none';
+    });
+    check('실자료에서는 데모 배너가 안 뜬다', !bannerShown);
+
+    // 10) 지도 범례가 밴드까지 설명한다
     const legendText = await page.$eval('#map-legend', (e) => e.textContent);
     check('지도 범례에 거리 밴드가 들어 있다', /km/.test(legendText));
     check('지도 범례에 실거래 종류가 들어 있다',

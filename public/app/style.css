@@ -64,6 +64,15 @@
 }
 
 *{box-sizing:border-box}
+
+/* hidden 속성은 브라우저 기본 규칙(display:none)으로 감춰지는데, 클래스에
+   display 를 주면 그쪽이 이긴다. 그래서 .banner{display:flex} 를 단
+   #demo-banner 가 hidden 인 채로 계속 보였고, **실자료 화면에 '데모 데이터,
+   합성 데이터입니다' 배너가 떠 있었다.** 회원 가입까지 하고 들어온 사람에게
+   자기 제품을 가짜라고 말하고 있었던 셈이다.
+   .form{display:grid} 를 단 회원가입 폼, .home-link 도 같은 처지였다.
+   한 줄로 전부 막는다. */
+[hidden]{display:none !important}
 html,body{height:100%}
 body{
   margin:0; background:var(--ground); color:var(--ink);

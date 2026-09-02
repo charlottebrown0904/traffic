@@ -320,7 +320,9 @@ function renderRank() {
     const value = rankValue(r, yearIdx, codes, typeIdx);
     if (value == null || value <= 0) return;
     const prev = prevIdx >= 0 ? rankValue(r, prevIdx, codes, typeIdx) : null;
-    const all = rankValue(r, yearIdx, data.types, typeIdx);
+    // '전체' 를 고르면 비중은 언제나 100% 라 칸만 차지한다.
+    const isAll = codes.length === data.types.length;
+    const all = isAll ? null : rankValue(r, yearIdx, data.types, typeIdx);
     rows.push({
       ...r,
       value,
