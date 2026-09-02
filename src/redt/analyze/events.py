@@ -69,6 +69,13 @@ def load_events() -> pd.DataFrame:
     # 이름까지 이어지는 것만 뺀다. 월 합계만 맞는 것은 진짜 개통과 코드
     # 승계가 같은 달에 겹쳤을 수 있어(동충주가 그랬다) 빼지 않는다 —
     # 진짜 개통을 잘못 빼면 표본만 줄어든다.
+    # 파일이 없으면 제외가 '안 일어난 채로' 지나간다. 조용히 넘어가면
+    # 오염된 처치군으로 계수를 내고도 로그에 아무 표시가 안 남는다 —
+    # run 13 이 그랬다(러너 체크아웃에 이 파일이 없었다).
+    if not SUCCESSION_CSV.exists():
+        print(f"  ⚠ {SUCCESSION_CSV.name} 이 없어 코드 승계 영업소를 "
+              f"처치군에서 빼지 못했습니다. scripts/tollgate_succession.py "
+              f"를 돌려 만드세요 — 없는 채로 낸 계수는 오염된 표본입니다.")
     if SUCCESSION_CSV.exists():
         suc = pd.read_csv(SUCCESSION_CSV, encoding="utf-8-sig")
         if len(suc) and "판정" in suc.columns:

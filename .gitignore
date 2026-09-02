@@ -17,6 +17,13 @@ data/processed/*
 !data/raw/tcs_annual_*.csv
 !data/raw/tcs_monthly_*.csv
 !data/raw/tollgate_events.csv
+# 승계 판정은 러너의 분석이 읽는다. 없으면 '이름일치' 영업소를 처치군에서
+# 빼지 못하는데, events.py 가 조용히 넘어가므로 로그에도 안 남는다.
+# run 13 이 실제로 그렇게 돌았다.
+!data/raw/tollgate_succession.csv
+# 연도별로 무엇을 확인하고 무엇을 왜 버렸는지의 기록. 컨테이너는 없어지므로
+# 저장소에 없으면 사라진다 — 12개 연도분이 사라질 뻔했다.
+!data/raw/PROVENANCE.md
 # 가설3 자료 — API 가 막혀 파일로 받는다 (docs/hypothesis-3-data.md)
 !data/raw/zones_*.csv
 !data/raw/region_*.csv

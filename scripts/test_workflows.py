@@ -56,6 +56,34 @@ check(re.search(r"upload-artifact[\s\S]{0,200}?path: public/app/data", collect)
       is not None, "collect.yml — 올리는 대상이 public/app/data")
 
 print()
+print("4. 분석이 읽는 파일은 저장소에 실제로 들어 있다")
+# 러너는 매번 새로 체크아웃한다. gitignore 에 걸린 파일은 거기에 없고,
+# 코드가 조용히 넘어가면 로그에도 안 남는다. run 13 이 그렇게 돌았다 —
+# tollgate_succession.csv 가 없어 코드 승계 영업소를 처치군에서 못 뺐다.
+import subprocess
+
+NEEDED = [
+    "data/raw/tollgate_events.csv",       # 개통 판정
+    "data/raw/tollgate_succession.csv",   # 승계 제외 (없으면 처치군 오염)
+    "data/raw/PROVENANCE.md",             # 연도별 검증 기록
+]
+tracked = set(subprocess.run(
+    ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split())
+for rel in NEEDED:
+    check(rel in tracked, f"{rel} 이 저장소에 추적되고 있다")
+
+# 교통량 연간 CSV 는 한 해라도 빠지면 그 해가 통째로 사라진다.
+import glob
+years = sorted(int(Path(f).stem.split("_")[-1])
+               for f in glob.glob(str(ROOT / "data/raw/tcs_annual_*.csv"))
+               if Path(f).stem.split("_")[-1].isdigit())
+for y in years:
+    for kind in ("annual", "monthly"):
+        rel = f"data/raw/tcs_{kind}_{y}.csv"
+        check(rel in tracked or not (ROOT / rel).exists(),
+              f"{rel} 이 추적되고 있다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
