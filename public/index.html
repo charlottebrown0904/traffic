@@ -352,7 +352,12 @@ var DEADLINE = new Date("2026-09-07T23:59:59+09:00");
   for (var i = 0; i < buttons.length; i++) {
     buttons[i].addEventListener("click", function () {
       if (!KAKAO_LINK) {
-        alert("오픈채팅방 링크가 아직 연결되지 않았습니다.\n\nindex.html 의 KAKAO_LINK 에 링크를 넣어주세요.");
+        /* 링크는 서비스가 확정된 뒤에 연결합니다. 그때까지도 이 페이지는
+           살아서 신청을 받고 있으므로, 방문자에게는 방문자의 말로 답해야
+           합니다. 개발 안내문("index.html 의 KAKAO_LINK 에 …")이 그대로
+           떠 있었습니다. */
+        alert("오픈채팅방을 준비하고 있습니다.\n\n곧 이 버튼으로 바로 연결됩니다. 조금만 기다려 주세요.");
+        console.warn("KAKAO_LINK 가 비어 있습니다 — public/index.html 상단에서 설정하세요.");
         return;
       }
       window.open(KAKAO_LINK, "_blank", "noopener");
