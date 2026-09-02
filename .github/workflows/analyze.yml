@@ -23,6 +23,10 @@ on:
         description: "공시지가 시계열 원천(odcloud) 확인"
         type: boolean
         default: false
+      probe_h3:
+        description: "가설3 원천 확인 (산업단지·인구·택지지구)"
+        type: boolean
+        default: false
 
 # 화면 데이터를 되돌려 넣을 때 필요합니다.
 permissions:
@@ -99,6 +103,13 @@ jobs:
         if: inputs.probe_landprice
         continue-on-error: true
         run: python scripts/odcloud_landprice.py
+
+      # 가설3 — 산단·인구·택지가 IC 효과의 교란이다. 통제를 넣으려면 먼저
+      # 무엇이 실제로 오는지 봐야 한다.
+      - name: 가설3 원천 확인
+        if: inputs.probe_h3
+        continue-on-error: true
+        run: python scripts/probe_h3.py
 
       - name: 분석 패널
         run: python -m redt.cli panel
