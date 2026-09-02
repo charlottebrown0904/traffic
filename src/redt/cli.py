@@ -16,6 +16,7 @@ import json
 import sys
 
 import pandas as pd
+import yaml
 
 from . import db, webexport
 from .analyze import correlation, scoring
@@ -23,7 +24,9 @@ from .collect import geocode as gc
 from .collect import backfill, ex_api, h3_files, rtms, tollgate, tollgate_fill, traffic as tr
 from .collect import traffic_files as tfiles
 from . import regions as rg
-from .config import PROCESSED, settings
+from .config import PROCESSED, ROOT, settings
+
+ROOT_CFG = ROOT / "config"
 from .transform import panel as pn
 from .transform import spatial
 
@@ -208,6 +211,79 @@ def cmd_sweep_codes(args):
     print(f"\n자료가 있는 코드 {len(found)}개: {[c for c, _ in found]}")
 
 
+# 시도 2자리 접두. 세종(36)은 시군구 분할이 없지만 코드 체계는 같다.
+SIDO_PREFIX = ["11", "26", "27", "28", "29", "30", "31", "36",
+               "41", "43", "44", "45", "46", "47", "48", "50", "51", "52"]
+
+
+def cmd_discover_sigungu(args):
+    """전국 시군구 코드를 **훑어서** 찾는다. 추측하지 않는다.
+
+    RTMS 는 잘못된 코드에 오류가 아니라 0건을 돌려줍니다. 그래서 코드를
+    손으로 적어 넣으면 그 시군구만 조용히 빕니다 — 표가 비어도 '거래가
+    없구나' 로 읽히고, 몇 달 뒤에야 알아챕니다. 실제로 그럴 뻔했습니다.
+
+    시도 18개 × 3자리 꼬리 1000 = 18,000번을 1행씩만 물어봅니다. 한 번만
+    하면 되고, 결과는 config/sigungu_codes.yaml 에 남아 다음부터는 안
+    물어봅니다. 운영계정 하루 한도(10만) 안에서 감당됩니다.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    out_path = ROOT_CFG / "sigungu_codes.yaml"
+    known: dict[str, dict] = {}
+    if out_path.exists() and not args.refresh:
+        known = yaml.safe_load(out_path.read_text(encoding="utf-8")) or {}
+        print(f"이미 찾아둔 코드 {sum(len(v) for v in known.values()):,}개"
+              f" — 다시 찾으려면 --refresh")
+        if not args.refresh:
+            for sido, codes in sorted(known.items()):
+                print(f"  {sido}  {len(codes):>3}개")
+            return
+
+    prefixes = args.sido.split(",") if args.sido else SIDO_PREFIX
+    ymd = args.probe_ymd
+    print(f"시도 {len(prefixes)}개 × 1000 코드를 {ymd} 기준으로 훑습니다 "
+          f"(동시 {args.workers}개)")
+    print("주의: 0건이 '코드가 없다' 는 뜻은 아닙니다 — 그 달 그 시군구에 "
+          "토지 거래가 없었을 수도 있습니다. 그래서 여러 달을 시도합니다.")
+
+    # 한 달만 보면 거래가 드문 군 단위가 통째로 빠진다. 서로 떨어진
+    # 세 달을 보고 한 번이라도 자료가 있으면 유효한 코드로 본다.
+    months = [ymd] + list(args.extra_ymd.split(",") if args.extra_ymd else [])
+
+    def probe(code):
+        for ym in months:
+            for kind in ("land", "factory"):
+                try:
+                    _, total = rtms.fetch_page(kind, code, ym, page=1, rows=1)
+                except Exception:                     # noqa: BLE001
+                    continue
+                if total > 0:
+                    return code, total
+        return code, 0
+
+    found: dict[str, dict] = {}
+    for prefix in prefixes:
+        codes = [f"{prefix}{tail:03d}" for tail in range(1000)]
+        hits = {}
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            for code, total in pool.map(probe, codes):
+                if total > 0:
+                    hits[code] = int(total)
+        found[prefix] = hits
+        print(f"  {prefix}  {len(hits):>3}개  {sorted(hits)[:8]}"
+              f"{' …' if len(hits) > 8 else ''}")
+
+    total_codes = sum(len(v) for v in found.values())
+    print(f"\n전국 시군구 코드 {total_codes:,}개를 찾았습니다.")
+    if total_codes < 200:
+        print("  ⚠ 230개 안팎이 정상입니다. 이보다 훨씬 적으면 조회한 달에 "
+              "거래가 드물었을 수 있습니다. --extra-ymd 로 달을 더 주세요.")
+    out_path.write_text(
+        yaml.safe_dump(found, allow_unicode=True, sort_keys=True), encoding="utf-8")
+    print(f"→ {out_path}")
+
+
 def cmd_regions(args):
     """권역 목록 확인. --verify 는 각 시군구 코드로 1개월 시험 조회를 한다."""
     for name, meta in rg.all_regions().items():
@@ -304,15 +380,34 @@ def cmd_trades(args):
         workers = max(1, int(args.workers))
         print(f"동시 요청 {workers}개")
 
+        # 전국 × 2006~2025 는 셀이 11만 개가 넘어 하루 한도(운영계정 10만)를
+        # 한 번에 못 넘깁니다. 이번 실행에서 몇 개까지 할지 정해 두고, 남은
+        # 것은 다음 실행이 이어받습니다. done_cells 가 이미 그렇게 되어 있어
+        # 여기서는 자를 지점만 정하면 됩니다.
+        budget = args.max_cells if args.max_cells and args.max_cells > 0 else None
+        if budget:
+            print(f"이번 실행 예산 {budget:,}셀 — 남는 것은 다음 실행이 이어받습니다")
+
         total_rows = 0
+        spent = 0
         for kind in kinds:
             done = set() if args.refresh else db.done_cells(con, kind)
             todo = [(c, ym) for c in targets for ym in months if (c, ym) not in done]
-            print(f"\n[{kind}] 남은 셀 {len(todo):,} (이미 완료 {len(done):,})")
+            remaining = len(todo)
+            if budget is not None:
+                todo = todo[: max(0, budget - spent)]
+            print(f"\n[{kind}] 남은 셀 {remaining:,} (이미 완료 {len(done):,})"
+                  + (f" · 이번에 {len(todo):,}개" if budget else ""))
+            if not todo:
+                continue
             n_rows, stopped = _collect_cells(con, kind, todo, workers)
             total_rows += n_rows
+            spent += len(todo)
             if stopped:
                 print("\n남은 셀은 다음 실행에서 이어받습니다.")
+                break
+            if budget is not None and spent >= budget:
+                print(f"\n예산 {budget:,}셀을 다 썼습니다. 남은 것은 다음 실행에서.")
                 break
 
     print(f"\n실거래 {total_rows:,}건 신규 저장")
@@ -616,6 +711,47 @@ def cmd_status(args):
             print(progress.to_string(index=False))
 
 
+def cmd_progress(args):
+    """전국 수집이 전체의 몇 %까지 왔는지. 며칠에 걸쳐 받으므로 이게 있어야
+    몇 번을 더 돌려야 하는지 알 수 있다."""
+    months = _months(args.start, args.end)
+    try:
+        targets = rg.sigungu_codes(args.region.split(",")) if args.region else {}
+    except KeyError as exc:
+        print(f"  {exc}")
+        return
+    kinds = args.kind.split(",") if args.kind else settings()["trade_kinds"]
+    planned = len(kinds) * len(targets) * len(months)
+
+    with db.connect(read_only=False) as con:
+        con.execute(db.COLLECT_LOG)
+        rows = con.execute("""
+            SELECT kind, count(*) AS 완료,
+                   count(*) FILTER (WHERE status = 'ok') AS 자료있음,
+                   sum(n_rows) AS 거래건수
+            FROM collect_log WHERE status <> 'error'
+            GROUP BY kind ORDER BY kind
+        """).fetchdf()
+        errs = con.execute(
+            "SELECT count(*) FROM collect_log WHERE status = 'error'").fetchone()[0]
+
+    print(f"\n=== 수집 진행률 ===")
+    print(f"  대상: {len(kinds)}종 × 시군구 {len(targets):,} × {len(months):,}개월"
+          f" = {planned:,} 셀")
+    if rows.empty:
+        print("  아직 받은 것이 없습니다.")
+        return
+    print(rows.to_string(index=False))
+    done = int(rows["완료"].sum())
+    pct = done / planned if planned else 0
+    print(f"  완료 {done:,} / {planned:,} ({pct:.1%})"
+          + (f" · 재시도 대기 {errs:,}" if errs else ""))
+    if planned > done:
+        left = planned - done
+        print(f"  남은 {left:,}셀 — 한 번에 {args.per_run:,}셀씩이면"
+              f" {-(-left // max(1, args.per_run))}번 더 돌리면 됩니다.")
+
+
 def cmd_doctor(args):
     from .doctor import run
     raise SystemExit(run())
@@ -627,6 +763,15 @@ def main(argv=None):
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("doctor", help="수집 전 점검 — 키·네트워크·저장경로").set_defaults(func=cmd_doctor)
+
+    p = sub.add_parser("progress", help="전국 수집이 전체의 몇 %까지 왔는지")
+    p.add_argument("--start", default="2006-01")
+    p.add_argument("--end", default="2025-12")
+    p.add_argument("--region", default="nationwide")
+    p.add_argument("--kind", default="land,factory")
+    p.add_argument("--per-run", type=int, default=35000,
+                   help="한 번 실행에서 처리하는 셀 수 (남은 횟수 계산용)")
+    p.set_defaults(func=cmd_progress)
 
     p = sub.add_parser("tollgates", help="영업소 마스터 수집")
     p.add_argument("--path", help="API 대신 사용할 CSV 경로")
@@ -684,9 +829,22 @@ def main(argv=None):
     p.add_argument("--refresh", action="store_true", help="이미 수집한 셀도 다시 조회")
     # 6은 브라우저가 한 호스트에 여는 연결 수와 같은 수준이라 공공 API 에
     # 무리가 아니면서 대기 시간을 여섯 배 가까이 줄인다. 차단당하면 낮추면 된다.
+    p.add_argument("--max-cells", type=int, default=0,
+                   help="이번 실행에서 처리할 최대 셀 수 (0=제한없음). "
+                        "하루 API 한도에 맞춰 나눠 돌 때 씁니다")
     p.add_argument("--workers", type=int, default=6,
                    help="동시 요청 수 (기본 6). 차단당하면 낮추세요")
     p.set_defaults(func=cmd_trades)
+
+    p = sub.add_parser("discover-sigungu",
+                       help="전국 시군구 코드를 훑어서 찾는다 (한 번만)")
+    p.add_argument("--sido", help="시도 접두 2자리, 쉼표구분 (기본: 전국 18개)")
+    p.add_argument("--probe-ymd", default="202403")
+    p.add_argument("--extra-ymd", default="202310,202206",
+                   help="거래가 드문 군을 놓치지 않으려고 더 보는 달")
+    p.add_argument("--workers", type=int, default=8)
+    p.add_argument("--refresh", action="store_true", help="이미 찾아둔 것을 무시하고 다시")
+    p.set_defaults(func=cmd_discover_sigungu)
 
     p = sub.add_parser("regions", help="파일럿 권역 / 시군구 코드 확인")
     p.add_argument("--verify", action="store_true", help="각 코드로 시험 조회 (API 키 필요)")

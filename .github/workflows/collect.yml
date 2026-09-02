@@ -9,14 +9,13 @@ on:
   workflow_dispatch:
     inputs:
       start:
-        # 교통량이 2018~2025 로 8년 있는데 거래를 2021년부터만 받아, 그 앞 3년을
-        # 통째로 버리고 있었다. 그 3년이 실제로 필요하다.
+        # 토지·공장 가격은 경제 순환을 탄다. 두세 해만 보면 순환의 한 국면을
+        # 효과로 착각한다. 그래서 받을 수 있는 만큼 길게 받는다.
         #
-        #   지시2(개통 전후 비교)에서 평택고덕(2018)·양감(2019)·중앙탑(2019)이
-        #   '개통 전' 자료가 없어 표본에서 빠졌다. 처치 영업소가 13개뿐이라
-        #   계수가 p=0.59 로 나왔는데, 표본이 모자란 것이 주된 이유다.
-        description: "수집 시작 (YYYY-MM)"
-        default: "2018-01"
+        # **2006-01 이 바닥이다.** 실거래 신고 의무가 그때 시작됐고, 그 이전
+        # 거래는 국가가 갖고 있지 않다. 2003년으로 내려도 빈 응답만 온다.
+        description: "수집 시작 (YYYY-MM) — 2006-01 이 실거래의 시작점"
+        default: "2006-01"
       end:
         # 2026년은 아직 진행 중이라 연 단위 비교에 쓸 수 없다.
         description: "수집 끝 (YYYY-MM)"
@@ -32,6 +31,11 @@ on:
       workers:
         description: "실거래가 동시 요청 수 (기본 6, 차단당하면 낮추세요)"
         default: "6"
+      max_cells:
+        # 전국 × 2006~2025 는 셀이 11만 개가 넘는다. 운영계정 하루 한도(10만)를
+        # 한 번에 못 넘기므로 나눠 돈다. 남은 셀은 다음 실행이 이어받는다.
+        description: "이번 실행에서 처리할 최대 셀 수 (0=제한없음)"
+        default: "35000"
       geocode_limit:
         description: "이번 실행에서 지오코딩할 최대 건수 (일일 한도 대비)"
         default: "4000"
@@ -102,6 +106,12 @@ jobs:
         continue-on-error: true
         run: python -m redt.cli fill-tollgates
 
+      # 전국 코드를 아직 안 찾았으면 여기서 한 번 찾는다. 결과가
+      # config/sigungu_codes.yaml 에 남아 다음부터는 건너뛴다.
+      - name: 전국 시군구 코드 확보
+        if: contains(inputs.region, 'nationwide')
+        run: python -m redt.cli discover-sigungu
+
       - name: 실거래가 수집
         run: |
           python -m redt.cli trades \
@@ -109,6 +119,7 @@ jobs:
             --region "${{ inputs.region }}" \
             --start "${{ inputs.start }}" \
             --end "${{ inputs.end }}" \
+            --max-cells "${{ inputs.max_cells }}" \
             --workers "${{ inputs.workers }}"
 
       - name: 지오코딩 (지번 → 좌표)
@@ -120,6 +131,11 @@ jobs:
 
       - name: 적재 현황
         run: python -m redt.cli status
+
+      # 며칠에 걸쳐 나눠 받으므로, 전체 중 어디까지 왔는지가 매 실행에서
+      # 보여야 한다. 안 보이면 몇 번을 더 돌려야 하는지 알 수 없다.
+      - name: 수집 진행률
+        run: python -m redt.cli progress
 
       # 여기부터는 실패해도 수집 결과는 지키도록 계속 진행합니다.
       - name: 영업소 누락 진단
