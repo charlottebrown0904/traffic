@@ -666,6 +666,22 @@ def cmd_trades(args):
     print(f"\n실거래 {total_rows:,}건 신규 저장")
 
 
+def cmd_geocode_repair(args):
+    """한도 초과로 오염됐을 수 있는 캐시 항목을 버린다."""
+    cache = gc.GeocodeCache()
+    before = len(cache)
+    dropped, kept = gc.purge_failures(cache)
+    print(f"캐시 {before:,}건 → 좌표 있는 {kept:,}건만 남기고 {dropped:,}건 버림")
+    if dropped:
+        print()
+        print("버린 항목은 다음 지오코딩에서 다시 물어봅니다.")
+        print("그중 진짜로 없는 주소는 또 실패하지만, 예전에 한도 때문에")
+        print("실패로 박힌 것들은 이번에 좌표를 얻습니다. 둘을 구분할 방법이")
+        print("캐시에 남아 있지 않아 통째로 다시 묻습니다.")
+    else:
+        print("버릴 것이 없습니다 — 오염된 항목이 없습니다.")
+
+
 def cmd_geocode_staged(args):
     """2단계 지오코딩 — 법정동을 먼저, 영업소 반경 안만 지번으로.
 
@@ -1379,6 +1395,11 @@ def main(argv=None):
     p.add_argument("--verify", action="store_true", help="각 코드로 시험 조회 (API 키 필요)")
     p.add_argument("--probe-ymd", default="202401", help="검증에 쓸 계약년월 YYYYMM")
     p.set_defaults(func=cmd_regions)
+
+    p = sub.add_parser(
+        "geocode-repair",
+        help="좌표 없이 캐시에 박힌 항목을 지워 다시 물어보게 한다")
+    p.set_defaults(func=cmd_geocode_repair)
 
     p = sub.add_parser("geocode-staged",
                        help="2단계 지오코딩 (법정동 먼저 → 영업소 반경 안만 지번)")

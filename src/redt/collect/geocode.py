@@ -42,13 +42,50 @@ class GeocodeCache:
         return len(self._data)
 
 
+def purge_failures(cache: GeocodeCache) -> tuple[int, int]:
+    """좌표 없이 기록된 캐시 항목을 지운다. (지운 수, 남은 수)
+
+    예전 코드는 한도 초과도 '좌표 없는 주소' 로 캐시에 적었다. 그렇게 박힌
+    항목은 한도가 풀려도 다시 물어보지 않는다. 지금은 구분하지만, **이미
+    적힌 것들은 이유를 모른다** — 진짜 없는 주소인지 그날 한도에 걸린
+    것인지 캐시에 남아 있지 않다.
+
+    그래서 좌표 없는 항목을 통째로 버리고 다시 물어본다. 진짜 없는 주소를
+    한 번 더 부르는 비용이 들지만, 붙을 수 있었던 주소를 영영 안 부르는
+    것보다 낫다.
+    """
+    keep = {k: v for k, v in cache._data.items() if v.get("lat") is not None}
+    dropped = len(cache._data) - len(keep)
+    ensure_dirs()
+    with open(cache.path, "w", encoding="utf-8") as fh:
+        for row in keep.values():
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    cache._data = keep
+    return dropped, len(keep)
+
+
 def build_address(sido: str, sigungu: str, umd: str, jibun: str) -> str:
     parts = [p.strip() for p in (sido, sigungu, umd, jibun) if p and str(p).strip()]
     return " ".join(parts)
 
 
-def geocode_one(address: str, kind: str = "PARCEL") -> tuple[float | None, float | None]:
-    """실패해도 예외를 던지지 않는다 — 실패는 캐시에 NULL로 기록해 재시도를 막는다."""
+class QuotaExhausted(RuntimeError):
+    """브이월드가 주소를 못 찾은 것이 아니라, 우리 쪽 문제로 못 준 경우."""
+
+
+def geocode_one(address: str, kind: str = "PARCEL"
+                ) -> tuple[float | None, float | None]:
+    """좌표를 찾는다. 못 찾으면 (None, None).
+
+    **'주소가 없다' 와 '우리가 못 물어봤다' 는 다르다.** 예전에는 둘 다
+    (None, None) 이었고, 그 실패가 캐시에 NULL 로 박혔다. 하루 한도에
+    걸리는 순간 남은 주소가 전부 '좌표 없는 주소' 로 영구 기록되고,
+    한도가 풀려도 다시 물어보지 않는다. 로그에는 '실패 N건' 이라고만
+    남아서 '시골 지번은 원래 잘 안 붙는구나' 로 읽힌다.
+
+    그래서 시스템 오류는 예외로 올려 보낸다. 부르는 쪽이 멈추고,
+    캐시에 아무것도 안 쓴다.
+    """
     resp = get(
         VWORLD_URL,
         {
@@ -64,12 +101,25 @@ def geocode_one(address: str, kind: str = "PARCEL") -> tuple[float | None, float
     )
     try:
         payload = resp.json()
-        if payload.get("response", {}).get("status") != "OK":
-            return None, None
-        point = payload["response"]["result"]["point"]
-        return float(point["y"]), float(point["x"])
-    except (ValueError, KeyError, TypeError):
-        return None, None
+    except ValueError:
+        raise QuotaExhausted(f"응답이 JSON 이 아닙니다 (HTTP {resp.status_code})")
+
+    body = payload.get("response", {})
+    status = body.get("status")
+    if status == "OK":
+        try:
+            point = body["result"]["point"]
+            return float(point["y"]), float(point["x"])
+        except (KeyError, TypeError, ValueError):
+            # OK 인데 좌표를 못 읽는 것은 응답 모양이 바뀐 것이다.
+            raise QuotaExhausted("OK 인데 좌표 칸을 못 읽었습니다 — 응답 모양 확인")
+    if status == "NOT_FOUND":
+        return None, None          # 진짜로 없는 주소. 캐시에 남겨도 된다.
+
+    # ERROR 그 밖의 무엇이든 — 한도 초과·인증 오류·장애. 우리 문제다.
+    err = body.get("error") or {}
+    raise QuotaExhausted(
+        f"status={status} code={err.get('code')} text={err.get('text')}")
 
 
 def geocode_with_fallback(sigungu: str, umd: str, jibun: str
@@ -93,6 +143,21 @@ def geocode_with_fallback(sigungu: str, umd: str, jibun: str
         return None, None, None
     lat, lon = geocode_one(coarse, "PARCEL")
     return (lat, lon, "umd") if lat is not None else (None, None, None)
+
+
+def _say_stopped(stopped: str | None, done: int, total: int) -> None:
+    """한도에 걸려 멈췄으면, 몇 건에서 걸렸는지를 크게 말한다.
+
+    이 숫자가 곧 '오늘 실제로 쓸 수 있는 호출 수' 다. 추측한 4,000 을
+    코드에 박아두는 대신 매 실행에서 측정한다.
+    """
+    if not stopped:
+        return
+    print()
+    print(f"  ⛔ {done:,}건째에서 멈췄습니다 — {stopped}")
+    print(f"     남은 {total - done:,}건은 캐시에 아무것도 쓰지 않았습니다.")
+    print(f"     다음 실행이 그대로 이어받습니다.")
+    print(f"     **{done:,} 이 오늘 쓸 수 있었던 실제 한도입니다.**")
 
 
 def geocode_many(rows: list[tuple[str, str, str]], cache: GeocodeCache | None = None,
@@ -120,8 +185,15 @@ def geocode_many(rows: list[tuple[str, str, str]], cache: GeocodeCache | None = 
 
     print(f"지오코딩: 캐시 적중 {len(result):,} / 신규 요청 {len(pending):,}")
     levels = {"parcel": 0, "umd": 0, "fail": 0}
+    stopped = None
     for i, row in enumerate(pending, 1):
-        lat, lon, level = geocode_with_fallback(*row)
+        try:
+            lat, lon, level = geocode_with_fallback(*row)
+        except QuotaExhausted as exc:
+            # 여기서 계속 돌면 남은 주소를 전부 '좌표 없음' 으로 캐시에
+            # 박아 영구 오염시킨다. 멈추는 것이 옳다.
+            stopped = str(exc)
+            break
         cache.put(build_address(None, *row), lat, lon, "vworld", level)
         result[row] = (lat, lon, level)
         levels[level or "fail"] += 1
@@ -131,8 +203,10 @@ def geocode_many(rows: list[tuple[str, str, str]], cache: GeocodeCache | None = 
                   f"umd={levels['umd']:,} fail={levels['fail']:,}")
 
     if pending:
+        done = levels["parcel"] + levels["umd"] + levels["fail"]
         print(f"  결과: 지번단위 {levels['parcel']:,} / 법정동단위 {levels['umd']:,} "
-              f"/ 실패 {levels['fail']:,}")
+              f"/ 주소 없음 {levels['fail']:,}")
+        _say_stopped(stopped, done, len(pending))
     return result
 
 
@@ -188,11 +262,16 @@ def geocode_umd(pairs: list[tuple[str, str]], cache: GeocodeCache | None = None,
 
     print(f"법정동 중심점: 캐시 적중 {len(result):,} / 신규 {len(pending):,} "
           f"(법정동 단위라 거래 건수와 무관합니다)")
-    ok = 0
+    ok, done, stopped = 0, 0, None
     for i, pair in enumerate(pending, 1):
         key = coarse_key(*pair)
-        lat, lon = geocode_one(key, "PARCEL")
+        try:
+            lat, lon = geocode_one(key, "PARCEL")
+        except QuotaExhausted as exc:
+            stopped = str(exc)
+            break
         cache.put(key, lat, lon, "vworld", "umd")
+        done += 1
         if lat is not None:
             result[pair] = (lat, lon, "umd")
             ok += 1
@@ -200,7 +279,8 @@ def geocode_umd(pairs: list[tuple[str, str]], cache: GeocodeCache | None = None,
         if i % 500 == 0:
             print(f"  {i:,}/{len(pending):,}  확보 {ok:,}")
     if pending:
-        print(f"  결과: 확보 {ok:,} / 실패 {len(pending) - ok:,}")
+        print(f"  결과: 확보 {ok:,} / 주소 없음 {done - ok:,}")
+        _say_stopped(stopped, done, len(pending))
     return result
 
 
@@ -234,11 +314,16 @@ def geocode_parcel(rows: list[tuple[str, str, str]],
         pending = pending[:limit]
 
     print(f"지번 단위: 캐시 적중 {len(result):,} / 신규 {len(pending):,}")
-    ok = 0
+    ok, done, stopped = 0, 0, None
     for i, row in enumerate(pending, 1):
-        lat, lon = geocode_one(build_address(None, *row), "PARCEL")
+        try:
+            lat, lon = geocode_one(build_address(None, *row), "PARCEL")
+        except QuotaExhausted as exc:
+            stopped = str(exc)
+            break
         cache.put(build_address(None, *row), lat, lon, "vworld",
                   "parcel" if lat is not None else None)
+        done += 1
         if lat is not None:
             result[row] = (lat, lon, "parcel")
             ok += 1
@@ -246,5 +331,6 @@ def geocode_parcel(rows: list[tuple[str, str, str]],
         if i % 500 == 0:
             print(f"  {i:,}/{len(pending):,}  확보 {ok:,}")
     if pending:
-        print(f"  결과: 지번단위 확보 {ok:,} / 실패 {len(pending) - ok:,}")
+        print(f"  결과: 지번단위 확보 {ok:,} / 주소 없음 {done - ok:,}")
+        _say_stopped(stopped, done, len(pending))
     return result
