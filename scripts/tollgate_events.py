@@ -90,10 +90,33 @@ def main() -> int:
                                   & (df["연월"].str[:4] == f[:4])]["연월"].nunique()
         first_full = y if months_in_first_year == 12 else y + 1
 
+        # 중간에 오래 쉰 영업소를 찾는다.
+        #
+        # 2016년을 붙이자 681(장안본선)이 드러났다. 2016-01~11 운영 → 51개월
+        # 휴지 → 2021-03 재개. 자료가 2017년부터였을 때는 '2021년 신규 개통'
+        # 으로 보여 H1 처치군에 들어가 있었다. 재개통은 신규 개통과 다른
+        # 사건이고, 그 '개통 전' 기간은 영업소가 있으면서 쉬고 있던 기간이다.
+        #
+        # 탄력성 회귀에도 해롭다. 휴지 전후를 이으면 교통량이 0 에서 튀어
+        # 오른 것처럼 보이는데, 그건 수요 변화가 아니라 영업 재개다.
+        own = sorted(df.loc[df["영업소코드"] == code, "연월"].unique())
+        span = pd.period_range(own[0], own[-1], freq="M").astype(str)
+        missing = [x for x in span if x not in set(own) and x not in holes]
+        longest, run = 0, 0
+        prev_m = None
+        for month in span:
+            if month in missing:
+                run = run + 1 if prev_m in missing or prev_m is None else 1
+                longest = max(longest, run)
+            else:
+                run = 0
+            prev_m = month
+
         rows.append({"영업소코드": code, "첫관측월": f, "마지막관측월": l,
                      "개통판정": status, "종료판정": end,
                      "첫해개월수": months_in_first_year,
-                     "첫온전연도": first_full})
+                     "첫온전연도": first_full,
+                     "최장휴지개월": longest})
 
     out = pd.DataFrame(rows)
     out.to_csv(OUT, index=False, encoding="utf-8-sig")
@@ -106,6 +129,15 @@ def main() -> int:
         print(opened.sort_values("첫관측월")
               [["영업소코드", "첫관측월", "첫해개월수", "첫온전연도"]]
               .head(30).to_string(index=False))
+    # 오래 쉬었다 돌아온 영업소. 신규 개통과 섞으면 안 된다.
+    paused = out[out["최장휴지개월"] >= 6].sort_values("최장휴지개월", ascending=False)
+    if not paused.empty:
+        print(f"\n중간에 6개월 이상 쉰 영업소 {len(paused)}개")
+        print("  재개통은 신규 개통과 다른 사건입니다. 탄력성 회귀에서도 휴지 전후를")
+        print("  이으면 '교통량 급증' 으로 보이는데 실은 영업 재개입니다.")
+        print(paused[["영업소코드", "첫관측월", "마지막관측월", "개통판정",
+                      "최장휴지개월"]].head(20).to_string(index=False))
+
     closed = out[out["종료판정"] == "폐쇄"]
     if not closed.empty:
         print(f"\n폐쇄가 확인된 {len(closed)}개")

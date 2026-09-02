@@ -51,6 +51,19 @@ def load_events() -> pd.DataFrame:
         return pd.DataFrame(columns=["tollgate_id", "open_year"])
     ev = pd.read_csv(EVENTS_CSV, encoding="utf-8-sig")
     ev = ev[ev["개통판정"] == "개통"].copy()
+
+    # 중간에 오래 쉬었다 돌아온 영업소는 처치군에서 뺀다. 재개통은 신규
+    # 개통과 다른 사건이고, 그 '개통 전' 기간은 영업소가 있으면서 쉬고
+    # 있던 기간이라 대조군과 비교가 성립하지 않는다.
+    #
+    # 2016년 자료를 붙이자 681(장안본선)이 51개월 휴지 뒤 재개였음이
+    # 드러났다. 그전에는 '2021년 신규 개통' 으로 보여 처치군에 있었다.
+    if "최장휴지개월" in ev.columns:
+        paused = ev["최장휴지개월"].fillna(0) >= 6
+        if paused.any():
+            print(f"  중간에 6개월 이상 쉰 영업소 {int(paused.sum())}개를 처치군에서 뺍니다"
+                  f" (재개통은 신규 개통과 다른 사건입니다)")
+            ev = ev[~paused]
     ev["tollgate_id"] = canon_series(ev["영업소코드"])
     ev["open_year"] = ev["첫관측월"].astype(str).str[:4].astype(int)
     # 첫 해는 몇 달치뿐이라 '개통 후' 로 온전히 세면 안 된다. 첫 온전연도부터
