@@ -20,7 +20,7 @@ import pandas as pd
 from . import db, webexport
 from .analyze import correlation, scoring
 from .collect import geocode as gc
-from .collect import backfill, ex_api, rtms, tollgate, tollgate_fill, traffic as tr
+from .collect import backfill, ex_api, h3_files, rtms, tollgate, tollgate_fill, traffic as tr
 from .collect import traffic_files as tfiles
 from . import regions as rg
 from .config import PROCESSED, settings
@@ -508,6 +508,36 @@ def cmd_events(args):
     events.report(priced, links, kind=args.kind)
 
 
+def cmd_load_h3(args):
+    """가설3 자료 적재 — 산업단지·택지지구 지정, 시군구 인구·사업체."""
+    zones = h3_files.load_zones(args.zones)
+    region = h3_files.load_region(args.region)
+    if zones.empty and region.empty:
+        sys.exit("실을 파일이 없습니다. data/raw/zones_*.csv 또는 region_*.csv 를 "
+                 "넣으세요 (docs/hypothesis-3-data.md 참고).")
+    with db.connect() as con:
+        nz = db.upsert(con, "zone_event", zones) if len(zones) else 0
+        nr = db.upsert(con, "region_year", region) if len(region) else 0
+        if nz:
+            # 좌표가 있는 개발사건만 거래와 이어 붙인다. 좌표 없는 건을
+            # 시군구 중심으로 대충 찍으면 반경 밴드가 통째로 거짓이 된다.
+            zz = con.execute(
+                "SELECT zone_id, lat, lon FROM zone_event WHERE lat IS NOT NULL"
+            ).fetchdf()
+            trades = con.execute(
+                "SELECT trade_id, lat, lon FROM trade WHERE lat IS NOT NULL").fetchdf()
+            if len(zz) and len(trades):
+                links = spatial.link_trades_to_tollgates(
+                    trades, zz.rename(columns={"zone_id": "tollgate_id"}))
+                links = links.rename(columns={"tollgate_id": "zone_id"})
+                con.execute("DELETE FROM trade_zone_link")
+                n = db.upsert(con, "trade_zone_link", links)
+                print(f"거래 ↔ 개발사건 {n:,}쌍 연결")
+            else:
+                print("좌표 있는 개발사건이 없어 공간 조인을 건너뜁니다.")
+    print(f"개발사건 {nz:,}건 · 지역지표 {nr:,}행 저장")
+
+
 def cmd_hypotheses(args):
     """세 가설을 한 자리에서 판정한다 (H1 개통 · H2 교통량 · H3 인구·산단)."""
     from .analyze import events, hypotheses
@@ -698,6 +728,11 @@ def main(argv=None):
     p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])
     p.set_defaults(func=cmd_events)
+
+    p = sub.add_parser("load-h3", help="가설3 자료 적재 (산업단지·택지·인구 CSV)")
+    p.add_argument("--zones", default="zones_*.csv")
+    p.add_argument("--region", default="region_*.csv")
+    p.set_defaults(func=cmd_load_h3)
 
     p = sub.add_parser("hypotheses",
                        help="세 가설 판정 (H1 개통 · H2 교통량 · H3 인구·산단)")
