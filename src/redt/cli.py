@@ -342,8 +342,10 @@ def cmd_discover_sigungu(args):
 
     out_path = ROOT_CFG / "sigungu_codes.yaml"
     known: dict[str, dict] = {}
-    if out_path.exists() and not args.refresh:
+    if out_path.exists():
+        # --refresh 여도 읽는다. 병합하려면 기존 내용을 알아야 한다.
         known = yaml.safe_load(out_path.read_text(encoding="utf-8")) or {}
+    if out_path.exists() and not args.refresh:
         print(f"이미 찾아둔 코드 {sum(len(v) for v in known.values()):,}개"
               f" — 다시 찾으려면 --refresh")
         if not args.refresh:
@@ -437,13 +439,26 @@ def cmd_discover_sigungu(args):
         print(f"⚠ 호출이 끝내 실패한 시도: {', '.join(shaky)} — "
               f"--sido {','.join(shaky)} 로 다시 돌리세요.")
 
-    total_codes = sum(len(v) for v in found.values())
-    print(f"\n전국 시군구 코드 {total_codes:,}개를 찾았습니다.")
+    # **이번에 훑지 않은 시도는 그대로 둔다.**
+    #
+    # found 만 그대로 쓰면, `--refresh --sido 12` 처럼 한 시도만 다시 훑을 때
+    # 나머지 197개 코드가 통째로 지워진다. 새 시도(전남광주통합 12)를
+    # 넣으려고 바로 그렇게 할 참이었다.
+    merged = dict(known)
+    for prefix, codes in found.items():
+        merged[prefix] = codes
+    kept = [k for k in merged if k not in found]
+    if kept and known:
+        print(f"\n이번에 안 훑은 시도 {len(kept)}개는 그대로 둡니다: {sorted(kept)}")
+
+    total_codes = sum(len(v) for v in merged.values())
+    print(f"\n전국 시군구 코드 {total_codes:,}개 "
+          f"(이번에 찾은 것 {sum(len(v) for v in found.values()):,}개)")
     if total_codes < 200:
         print("  ⚠ 230개 안팎이 정상입니다. 이보다 훨씬 적으면 조회한 달에 "
               "거래가 드물었을 수 있습니다. --extra-ymd 로 달을 더 주세요.")
     out_path.write_text(
-        yaml.safe_dump(found, allow_unicode=True, sort_keys=True), encoding="utf-8")
+        yaml.safe_dump(merged, allow_unicode=True, sort_keys=True), encoding="utf-8")
     print(f"→ {out_path}")
 
 
