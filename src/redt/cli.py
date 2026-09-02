@@ -682,6 +682,35 @@ def cmd_events(args):
     events.report(priced, links, kind=args.kind)
 
 
+def cmd_fetch_urban_dev(args):
+    """전국도시개발사업정보 표준데이터를 받아 zones_housing.csv 로 저장한다.
+
+    받은 칸을 그대로 저장한다. 우리 이름으로 접는 일은 load-h3 가 한다 —
+    두 군데서 하면 어긋났을 때 어느 쪽이 틀렸는지 알 수 없다.
+    """
+    from .collect import urban_dev
+
+    df = urban_dev.fetch_all(max_pages=args.max_pages)
+    if df.empty:
+        sys.exit("받은 자료가 없습니다. 위 로그의 응답 모양을 확인하세요.")
+    out = ROOT / "data" / "raw" / args.out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out, index=False, encoding="utf-8-sig")
+    print(f"\n{out}  {len(df):,}행 · {len(df.columns)}칸")
+    # 지정일로 쓸 만한 칸이 실제로 왔는지 여기서 바로 말한다. 없으면
+    # 이벤트로 못 쓰므로, 파일을 받아놓고 몇 주 뒤에 알게 되면 안 된다.
+    from .collect.h3_files import ZONE_COLS, _pick
+
+    got = _pick(df, ZONE_COLS["designated_date"])
+    if got:
+        print(f"  ✅ 지정일로 쓸 칸: {got}")
+    else:
+        print(f"  ⚠ 지정일로 쓸 칸을 못 찾았습니다.")
+        print(f"     찾는 이름: {ZONE_COLS['designated_date']}")
+        print(f"     받은 칸:   {list(df.columns)}")
+        print(f"     날짜처럼 보이는 칸이 있으면 그 이름을 후보에 넣으면 됩니다.")
+
+
 def cmd_load_h3(args):
     """가설3 자료 적재 — 산업단지·택지지구 지정, 시군구 인구·사업체."""
     zones = h3_files.load_zones(args.zones)
@@ -966,9 +995,15 @@ def main(argv=None):
     p.add_argument("--kind", default="land", choices=["land", "factory"])
     p.set_defaults(func=cmd_events)
 
+    p = sub.add_parser("fetch-urban-dev",
+                       help="전국도시개발사업정보 표준데이터 받기 (→ zones_housing.csv)")
+    p.add_argument("--out", default="zones_housing.csv")
+    p.add_argument("--max-pages", type=int, default=60)
+    p.set_defaults(func=cmd_fetch_urban_dev)
+
     p = sub.add_parser("load-h3", help="가설3 자료 적재 (산업단지·택지·인구 CSV)")
-    p.add_argument("--zones", default="zones_*.csv")
-    p.add_argument("--region", default="region_*.csv")
+    p.add_argument("--zones", default="zones_*.*")
+    p.add_argument("--region", default="region_*.*")
     p.set_defaults(func=cmd_load_h3)
 
     p = sub.add_parser("hypotheses",

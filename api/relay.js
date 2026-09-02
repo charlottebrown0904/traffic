@@ -16,6 +16,8 @@ const { timingSafeEqual } = require("node:crypto");
 // 통과 전용 호스트는 공개 페이지·파일을 읽기 위한 것으로, 키가 붙지 않는다.
 const ALLOW = {
   "apis.data.go.kr": { param: "serviceKey", env: "DATA_GO_KR_KEY" },
+  // 표준데이터(tn_pubr_public_*)는 s 가 없는 호스트다 — 위와 다른 곳이다.
+  "api.data.go.kr":  { param: "serviceKey", env: "DATA_GO_KR_KEY" },
   "api.odcloud.kr":  { param: "serviceKey", env: "DATA_GO_KR_KEY" },
   // 브이월드 키는 '웹사이트' 유형으로 서비스URL 이 등록돼 있다. WMS/WFS 는
   // 요청이 그 도메인에서 왔는지를 Referer 로 본다. 중계기는 서버라 브라우저

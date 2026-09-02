@@ -65,6 +65,8 @@ def _should_relay(url: str, params: dict) -> bool:
 # api.odcloud.kr 과 www.data.go.kr 에서 실제로 그럴 뻔했다.
 RELAYED_HOSTS = {
     "apis.data.go.kr",
+    # 표준데이터(tn_pubr_public_*)는 s 가 없는 쪽에 산다. 다른 호스트다.
+    "api.data.go.kr",
     "api.odcloud.kr",
     "www.data.go.kr",
     "api.vworld.kr",
