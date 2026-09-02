@@ -121,8 +121,12 @@ jobs:
             exit 0
           fi
           git commit -m "data: 영업소 보강 후 화면 데이터 갱신 (boost run ${{ github.run_number }})"
+          # 실행한 브랜치로 되돌려 놓는다. main 으로 고정하면 브랜치에서 돌렸을 때
+          # 그 브랜치의 코드 변경까지 통째로 main 에 올라간다.
+          BRANCH="${{ github.ref_name }}"
           for i in 1 2 3 4; do
-            git pull --rebase --autostash origin main && git push origin HEAD:main && exit 0
+            git pull --rebase --autostash origin "$BRANCH" \
+              && git push origin "HEAD:$BRANCH" && exit 0
             sleep $((2 ** i))
           done
           echo "푸시 실패"; exit 1
