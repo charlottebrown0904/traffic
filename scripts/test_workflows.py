@@ -84,6 +84,29 @@ for y in years:
               f"{rel} 이 추적되고 있다")
 
 print()
+print("5. 지오코딩이 반경 안을 먼저 붙인다")
+
+# 브이월드 하루 한도는 4,000건인데 좌표 없는 거래는 329만 건이다. 앞에서부터
+# 눈감고 붙이면 822번을 돌려야 하고, 그중 대부분은 영업소에서 멀어 어느
+# 밴드에도 못 들어간다. 근거리 밴드는 지번 좌표만 받으므로
+# (settings.spatial.require_parcel_bands) 반경 밖에 쓴 호출은 표에 한 건도
+# 보태지 못한다. 눈감은 geocode 로 되돌아가면 이 손실이 조용히 돌아온다.
+collect = (WF / "collect.yml").read_text()
+steps = [ln.strip() for ln in collect.splitlines()
+         if "redt.cli geocode" in ln]
+check(bool(steps), "수집에 지오코딩 단계가 있다")
+check(all("geocode-staged" in ln for ln in steps),
+      "수집이 눈감은 geocode 가 아니라 geocode-staged 를 쓴다")
+
+# 2단계가 성립하려면 영업소 반경이 설정에 있어야 한다.
+import yaml as _yaml
+_cfg = _yaml.safe_load((ROOT / "config" / "settings.yaml").read_text())
+check(_cfg.get("spatial", {}).get("max_link_km") is not None,
+      "반경을 가릴 max_link_km 이 설정에 있다")
+check(bool(_cfg.get("spatial", {}).get("require_parcel_bands")),
+      "근거리 밴드가 지번 좌표만 받도록 돼 있다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

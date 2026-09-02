@@ -135,8 +135,18 @@ jobs:
             --max-cells "${{ inputs.max_cells }}" \
             --workers "${{ inputs.workers }}"
 
-      - name: 지오코딩 (지번 → 좌표)
-        run: python -m redt.cli geocode --limit "${{ inputs.geocode_limit }}"
+      # 눈감고 앞에서부터 4,000건씩 붙이면 좌표 없는 329만 건을 다 붙이는 데
+      # 822번을 돌려야 한다. **전국에 좌표를 붙일 필요가 없다** — 거리 밴드에
+      # 들어갈 수 있는 거래에만 지번 좌표가 필요하다.
+      #
+      # 그래서 법정동 중심점을 먼저 붙이고(법정동 하나당 한 번, 캐시되므로
+      # 거래 건수와 무관하다), 영업소 반경 안에 드는 법정동의 거래만 지번으로
+      # 올린다. 근거리 밴드는 지번 좌표만 받으므로(require_parcel_bands)
+      # 반경 밖에 쓰는 호출은 밴드에 한 건도 보태지 못한다.
+      - name: 지오코딩 (법정동 먼저 → 반경 안만 지번)
+        run: |
+          python -m redt.cli geocode-staged \
+            --limit "${{ inputs.geocode_limit }}"
 
       - name: 거래 ↔ 영업소 공간 조인
         continue-on-error: true

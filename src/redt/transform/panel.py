@@ -205,6 +205,25 @@ def build_panel(trades: pd.DataFrame, links: pd.DataFrame,
                   f"(대상 밴드: {strict})")
             joined = joined[~bad]
 
+        # 걸러내고 나면 **밴드마다 좌표 정밀도가 달라진다.** 근거리는 지번
+        # 100%, 대조 밴드에는 법정동 중심점이 섞인다. 법정동 중심점은 ±1~2km
+        # 라, 참 거리 4km 인 거래가 대조로 새어 들어오고 10km 밖 거래가
+        # 대조에 끌려 들어온다. 앞은 위약 계수를 올리고 뒤는 0 으로 희석해
+        # 방향이 정해지지 않는다.
+        #
+        # 위약 밴드는 이 시스템에서 인과를 주장할 수 있는 유일한 근거다.
+        # 그것이 무엇으로 만들어졌는지 모르는 채 통과를 읽으면 안 되므로,
+        # 섞인 비율을 매번 찍는다. 조용히 다르면 그 차이는 결론으로 굳는다.
+        mix = (joined.assign(_p=joined["geocode_level"].eq("parcel"))
+               .groupby("band")["_p"].agg(["size", "mean"]))
+        coarse = mix[mix["mean"] < 1.0]
+        if not coarse.empty:
+            print("  밴드별 좌표 정밀도 (지번 비율):")
+            for band, row in mix.iterrows():
+                note = "" if row["mean"] == 1.0 else "  ← 법정동 중심점 섞임"
+                print(f"    {band:<6} {int(row['size']):>7,}건  "
+                      f"지번 {row['mean']:.0%}{note}")
+
     # 차트가 쓸 거래 단위 자료를 내보낸다. 헤도닉 보정은 무겁고 결과가 하나뿐이라
     # 여기서 한 번만 만들고, 익스포트는 그것을 읽는다. 두 번 계산하면 화면과
     # 분석이 다른 값을 보게 될 여지가 생긴다.
