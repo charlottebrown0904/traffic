@@ -237,6 +237,56 @@ def probe_sigungu(args_):
     return code, total
 
 
+# 시군구 코드의 첫 자리는 대개 이런 꼬리를 씁니다 — 구가 있는 시는 110·140,
+# 군은 710·720 대. 접두사 하나가 살아 있는지 보는 데는 이 몇 개면 됩니다.
+PROBE_TAILS = ("110", "111", "130", "170", "200", "710", "720", "730", "800")
+
+
+def cmd_find_new_sido(args):
+    """행정구역 개편으로 새로 난 시도 접두사를 찾는다.
+
+    광주(29)·전남(46)이 RTMS 에서 1000개 코드 모두 0건입니다. KOSIS 시도
+    목록에 '전남광주통합특별시' 가 있고 시도가 17개에서 16개로 줄었으니,
+    통합되면서 새 코드를 받은 것으로 보입니다. 전북 45→52 와 같습니다.
+
+    **새 코드가 무엇인지는 추측하지 않습니다.** 다만 접두사마다 1000개를
+    다 훑으면 너무 비쌉니다(40개 접두사 × 1000 = 4만 회). 접두사 하나에
+    대표 꼬리 9개만 찔러 보고, 하나라도 걸리는 접두사만 전면 훑습니다.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    known = set(SIDO_PREFIX)
+    cands = [f"{n:02d}" for n in range(int(args.lo), int(args.hi) + 1)
+             if f"{n:02d}" not in known]
+    print(f"후보 접두사 {len(cands)}개 × 꼬리 {len(PROBE_TAILS)}개 = "
+          f"{len(cands) * len(PROBE_TAILS):,}회 (전면 훑기의 1/111)")
+    print(f"  건너뛴 접두사(이미 아는 것): {sorted(known)}")
+
+    pairs = [(f"{p}{t}", args.probe_ymd, "land")
+             for p in cands for t in PROBE_TAILS]
+    hits: dict[str, list[str]] = {}
+    fails = 0
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        for code, total in pool.map(probe_sigungu, pairs):
+            if total is None:
+                fails += 1
+            elif total > 0:
+                hits.setdefault(code[:2], []).append(code)
+
+    print(f"\n호출 {len(pairs):,}회 · 실패 {fails:,}회")
+    if not hits:
+        print("걸린 접두사가 없습니다.")
+        print("  대표 꼬리에 없는 번호만 쓰는 시도일 수 있습니다. --lo/--hi 를")
+        print("  넓히거나, 걸리는 것이 없으면 통합 시도가 아직 RTMS 에")
+        print("  반영되지 않은 것입니다.")
+        return
+    print(f"\n걸린 접두사 {len(hits)}개 — 이것만 전면 훑으면 됩니다:")
+    for prefix, codes in sorted(hits.items()):
+        print(f"  {prefix}  {sorted(codes)}")
+    print(f"\n다음: python -m redt.cli discover-sigungu --refresh "
+          f"--sido {','.join(sorted(hits))}")
+
+
 def cmd_discover_sigungu(args):
     """전국 시군구 코드를 **훑어서** 찾는다. 추측하지 않는다.
 
@@ -786,23 +836,66 @@ def cmd_events(args):
     events.report(priced, links, kind=args.kind)
 
 
+def cmd_kosis_fetch(args):
+    """확인된 통계표를 받아 region_*.csv 로 저장한다."""
+    from .collect import kosis
+
+    spec = kosis.TABLES.get(args.table)
+    if spec is None:
+        sys.exit(f"모르는 표 이름: {args.table} (가능: {list(kosis.TABLES)})")
+    print(f"{spec['name']}  orgId={spec['orgId']} tblId={spec['tblId']}")
+    print(f"  기간 {args.start}~{args.end}")
+    rows = kosis.fetch_table(spec["orgId"], spec["tblId"], args.start, args.end)
+    if not rows:
+        sys.exit("받은 행이 없습니다. 위 응답 앞부분을 보고 파라미터를 맞추세요.")
+
+    df = pd.DataFrame(rows)
+    print(f"\n  {len(df):,}행 · 칸 {len(df.columns)}개")
+    for c in df.columns:
+        print(f"    - {c}")
+    out = ROOT / "data" / "raw" / args.out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out, index=False, encoding="utf-8-sig")
+    print(f"\n{out}")
+
+    # 시군구코드·연도가 실제로 읽히는지 여기서 바로 본다. 안 읽히면
+    # 파일만 받아놓고 나중에 알게 된다.
+    from .collect.h3_files import REGION_COLS, _pick
+    for want in ("sigungu_cd", "year", "population"):
+        got = _pick(df, REGION_COLS[want])
+        mark = "✅" if got else "⚠"
+        print(f"  {mark} {want} ← {got or '못 찾음'}")
+
+
 def cmd_kosis_find(args):
     """통계표를 이름으로 찾고, 현재 시도 코드를 확인한다."""
     from .collect import kosis
 
     print("=" * 70)
-    print("현재 시도 코드 (KOSIS e-지방지표 지역별의 최상위 = 시도 코드)")
+    print("KOSIS 의 시도 목록")
     print("=" * 70)
+    # **KOSIS 코드와 법정동 코드는 다른 체계입니다.** 나란히 놓고 다르다고
+    # 표시하면 의미 없는 경고가 됩니다 — 실제로 한 번 그렇게 찍었습니다.
+    #
+    #   부산  KOSIS 21 · 법정동 26
+    #   경기  KOSIS 31 · 법정동 41
+    #
+    # 코드는 못 맞춥니다. 대신 **개수와 이름**을 봅니다. 시도가 하나 줄고
+    # 통합 이름이 보이면 행정구역 개편이 있었다는 뜻이고, 그러면 우리
+    # 법정동 접두사 목록이 낡았다는 신호입니다.
     try:
-        for code, name in kosis.sido_codes():
-            mark = "" if code in SIDO_PREFIX else "   ← 우리 목록에 없음"
-            print(f"  {code}  {name}{mark}")
-        known = {c for c, _ in kosis.sido_codes()}
-        gone = [c for c in SIDO_PREFIX if c not in known]
-        if gone:
-            print(f"\n  우리 목록에만 있고 KOSIS 에는 없는 코드: {gone}")
-            print("  → 행정구역 개편으로 없어졌을 수 있습니다. RTMS 가 0건을")
-            print("     주는 시도가 여기 있으면 그것이 이유입니다.")
+        rows = kosis.sido_codes()
+        for code, name in rows:
+            print(f"  {code:8s} {name}")
+        print(f"\n  KOSIS 시도 {len(rows)}개 · 우리 법정동 접두사 {len(SIDO_PREFIX)}개")
+        merged = [n for _, n in rows if "통합" in n]
+        if merged:
+            print(f"  ⚠ 통합으로 보이는 시도: {merged}")
+            print("     법정동 코드도 새로 났을 가능성이 큽니다. KOSIS 코드는")
+            print("     체계가 달라 그대로 못 씁니다 — discover-sigungu 의")
+            print("     --find-new-sido 로 실제 코드를 찾아야 합니다.")
+        elif len(rows) != len(SIDO_PREFIX):
+            print(f"  ⚠ 개수가 다릅니다. 개편 여부를 확인하세요.")
     except Exception as exc:                          # noqa: BLE001
         print(f"  실패: {exc}")
 
@@ -1123,6 +1216,14 @@ def main(argv=None):
                    help="동시 요청 수 (기본 6). 차단당하면 낮추세요")
     p.set_defaults(func=cmd_trades)
 
+    p = sub.add_parser("find-new-sido",
+                       help="개편으로 새로 난 시도 접두사 찾기 (싼 탐침)")
+    p.add_argument("--lo", default="10")
+    p.add_argument("--hi", default="69")
+    p.add_argument("--probe-ymd", default="202403")
+    p.add_argument("--workers", type=int, default=8)
+    p.set_defaults(func=cmd_find_new_sido)
+
     p = sub.add_parser("discover-sigungu",
                        help="전국 시군구 코드를 훑어서 찾는다 (한 번만)")
     p.add_argument("--sido", help="시도 접두 2자리, 쉼표구분 (기본: 전국 18개)")
@@ -1183,6 +1284,14 @@ def main(argv=None):
     p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])
     p.set_defaults(func=cmd_events)
+
+    p = sub.add_parser("kosis-fetch", help="확인된 KOSIS 표 받기 (→ region_*.csv)")
+    p.add_argument("--table", default="population",
+                   help="population · households")
+    p.add_argument("--start", default="2006")
+    p.add_argument("--end", default="2025")
+    p.add_argument("--out", default="region_population.csv")
+    p.set_defaults(func=cmd_kosis_fetch)
 
     p = sub.add_parser("kosis-find",
                        help="이름으로 통계표 찾기 + 현재 시도 코드 확인")
