@@ -69,7 +69,10 @@ def build(trades: pd.DataFrame, links: pd.DataFrame,
     if ev.empty:
         return pd.DataFrame()
 
-    near = links[links["is_nearest"] & links["band"].isin(TREAT_BANDS)]
+    # is_nearest 는 DB 에서 오면 결측이 섞일 수 있다. NaN 을 그대로 & 하면
+    # 전부 걸러져 '표본 없음' 이 되는데, 그건 자료가 없는 것과 구분되지 않는다.
+    nearest = links["is_nearest"].fillna(False).astype(bool)
+    near = links[nearest & links["band"].isin(TREAT_BANDS)]
     df = trades[trades["kind"] == kind].merge(
         near[["trade_id", "tollgate_id", "distance_km"]], on="trade_id", how="inner")
     if df.empty:
