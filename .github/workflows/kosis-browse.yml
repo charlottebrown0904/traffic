@@ -47,7 +47,13 @@ jobs:
           mkdir -p data/raw
           python -m redt.cli kosis-diagnose 2>&1 | tee data/raw/kosis_diagnose.txt
 
-      - name: 훑기
+      # 진단에서 확인한 사실: statisticsList.do 는 parentId 를 무시하지만
+      # statisticsSearch.do 는 ORG_ID·TBL_ID 를 바로 준다. 트리를 안 탄다.
+      - name: 표 찾기 + 현재 시도 코드
+        run: |
+          python -m redt.cli kosis-find 2>&1 | tee data/raw/kosis_find.txt
+
+      - name: 훑기 (참고용 — parentId 가 안 먹어 최상위만 나옵니다)
         continue-on-error: true
         run: |
           python -m redt.cli kosis-browse \
@@ -63,5 +69,6 @@ jobs:
           name: kosis-browse-${{ github.run_number }}
           path: |
             data/raw/kosis_diagnose.txt
+            data/raw/kosis_find.txt
             data/raw/kosis_browse.txt
           if-no-files-found: warn

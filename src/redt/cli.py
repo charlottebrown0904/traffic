@@ -786,6 +786,50 @@ def cmd_events(args):
     events.report(priced, links, kind=args.kind)
 
 
+def cmd_kosis_find(args):
+    """통계표를 이름으로 찾고, 현재 시도 코드를 확인한다."""
+    from .collect import kosis
+
+    print("=" * 70)
+    print("현재 시도 코드 (KOSIS e-지방지표 지역별의 최상위 = 시도 코드)")
+    print("=" * 70)
+    try:
+        for code, name in kosis.sido_codes():
+            mark = "" if code in SIDO_PREFIX else "   ← 우리 목록에 없음"
+            print(f"  {code}  {name}{mark}")
+        known = {c for c, _ in kosis.sido_codes()}
+        gone = [c for c in SIDO_PREFIX if c not in known]
+        if gone:
+            print(f"\n  우리 목록에만 있고 KOSIS 에는 없는 코드: {gone}")
+            print("  → 행정구역 개편으로 없어졌을 수 있습니다. RTMS 가 0건을")
+            print("     주는 시도가 여기 있으면 그것이 이유입니다.")
+    except Exception as exc:                          # noqa: BLE001
+        print(f"  실패: {exc}")
+
+    for term in args.terms.split(","):
+        term = term.strip()
+        if not term:
+            continue
+        print()
+        print("=" * 70)
+        print(f"'{term}' 검색")
+        print("=" * 70)
+        try:
+            rows = kosis.search(term)
+        except Exception as exc:                      # noqa: BLE001
+            print(f"  실패: {exc}")
+            continue
+        print(f"  {len(rows)}건")
+        for r in rows[:args.top]:
+            org = r.get("ORG_ID", "")
+            tbl = r.get("TBL_ID", "")
+            nm = str(r.get("TBL_NM", ""))[:60]
+            span = f"{r.get('STRT_PRD_DE','')}~{r.get('END_PRD_DE','')}"
+            path = str(r.get("MT_ATITLE", ""))[:40]
+            print(f"    orgId={org:5s} tblId={tbl:20s} {span:12s} {nm}")
+            print(f"        {path}")
+
+
 def cmd_kosis_diagnose(args):
     """KOSIS 가 실제로 어떻게 답하는지 사실만 확인한다 (추측 금지)."""
     from .collect import kosis
@@ -1139,6 +1183,12 @@ def main(argv=None):
     p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])
     p.set_defaults(func=cmd_events)
+
+    p = sub.add_parser("kosis-find",
+                       help="이름으로 통계표 찾기 + 현재 시도 코드 확인")
+    p.add_argument("--terms", default="주민등록인구,전국사업체조사")
+    p.add_argument("--top", type=int, default=15)
+    p.set_defaults(func=cmd_kosis_find)
 
     p = sub.add_parser("kosis-diagnose",
                        help="KOSIS 응답 진단 (parentId 가 먹히는지·검색이 되는지)")

@@ -278,3 +278,36 @@ def diagnose() -> None:
             print(f"    {text[:400]}")
         except Exception as exc:                       # noqa: BLE001
             print(f"  '{term}'  실패: {exc}")
+
+
+def search(term: str, rows: int = 100) -> list[dict]:
+    """이름으로 통계표를 찾는다. **트리를 안 타도 됩니다.**
+
+    statisticsList.do 는 parentId 를 무시하고 늘 최상위만 돌려줬습니다.
+    statisticsSearch.do 는 ORG_ID·TBL_ID 를 바로 줍니다 — 우리에게 필요한
+    것이 정확히 그 둘입니다. 게다가 응답이 정식 JSON 입니다.
+    """
+    code, text = raw(SEARCH_URL, {
+        "method": "getList", "apiKey": "", "searchNm": term,
+        "format": "json", "jsonVD": "Y"})
+    if code != 200:
+        raise RuntimeError(f"검색 실패 HTTP {code}: {text[:200]}")
+    return _rows(loads_lenient(text))
+
+
+def sido_codes() -> list[tuple[str, str]]:
+    """현재 시도 코드를 KOSIS 에서 가져온다.
+
+    e-지방지표(지역별)의 최상위 LIST_ID 가 시도 코드입니다. 손으로 적어둔
+    목록은 행정구역이 개편되면 조용히 낡습니다 — 전북 45→52 를 이미
+    그렇게 놓칠 뻔했고, 광주(29)·전남(46)이 0건인 것도 같은 이유일 수
+    있습니다.
+    """
+    rows = browse("A", "MT_GTITLE02")
+    out = []
+    for r in rows:
+        code = r.get("LIST_ID") or r.get("listId")
+        name = _label(r)
+        if code and name:
+            out.append((str(code), name))
+    return out
