@@ -682,6 +682,12 @@ def cmd_events(args):
     events.report(priced, links, kind=args.kind)
 
 
+def cmd_kosis_diagnose(args):
+    """KOSIS 가 실제로 어떻게 답하는지 사실만 확인한다 (추측 금지)."""
+    from .collect import kosis
+    kosis.diagnose()
+
+
 def cmd_kosis_browse(args):
     """KOSIS 목록을 훑어 시군구 인구·사업체 통계표를 찾는다.
 
@@ -1019,6 +1025,10 @@ def main(argv=None):
     p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])
     p.set_defaults(func=cmd_events)
+
+    p = sub.add_parser("kosis-diagnose",
+                       help="KOSIS 응답 진단 (parentId 가 먹히는지·검색이 되는지)")
+    p.set_defaults(func=cmd_kosis_diagnose)
 
     p = sub.add_parser("kosis-browse",
                        help="KOSIS 목록 훑기 (인구·사업체 통계표 ID 찾기)")
