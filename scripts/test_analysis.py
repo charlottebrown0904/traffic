@@ -269,6 +269,81 @@ check(not tf._accept("서시흥", {"lat": 37.3801, "lon": 126.7901, "title": "�
 check(tf._core("장안본선") == "장안" and tf._core("기장서JC") == "기장서",
       "본선·JC 접미사를 떼어 어간을 만든다")
 
+# ────────────────────────────────────────────────────────────────
+print("\n5. 중계기 허용목록과 클라이언트 목록이 어긋나지 않는가")
+
+import re as _re                                  # noqa: E402
+
+_relay = (ROOT / "api" / "relay.js").read_text(encoding="utf-8")
+_allow = set(_re.findall(r'"([a-z0-9.\-]+\.(?:kr|com|go\.kr))":\s*\{', _relay))
+_http = (ROOT / "src" / "redt" / "collect" / "http.py").read_text(encoding="utf-8")
+_block = _http.split("RELAYED_HOSTS = {")[1].split("}")[0]
+_client = set(_re.findall(r'"([^"]+)"', _block))
+
+# 한쪽에만 있으면 호출이 미국 러너에서 직접 나가 지오블록에 막힌다.
+# 그러면 '중계기가 그 호스트를 막고 있다' 로 오해하게 된다. 실제로
+# api.odcloud.kr 이 중계기에는 있는데 클라이언트에 없었다.
+check(not (_allow - _client),
+      f"중계기에만 있는 호스트가 없다 ({sorted(_allow - _client)})")
+check(not (_client - _allow),
+      f"클라이언트에만 있는 호스트가 없다 ({sorted(_client - _allow)})")
+
+# ────────────────────────────────────────────────────────────────
+print("\n6. 거리 밴드 설정 — 영향범위 5km, 대조 밴드 존재")
+
+import yaml as _yaml                              # noqa: E402
+
+_cfg = _yaml.safe_load((ROOT / "config" / "settings.yaml").read_text(encoding="utf-8"))
+_bands = [tuple(b) for b in _cfg["spatial"]["bands"]]
+_far = max(hi for _, hi in _bands)
+_influence = [b for b in _bands if b[1] <= 5]
+check(max(hi for _, hi in _influence) == 5,
+      f"영향범위 최대가 5km 다 ({_influence})")
+check(len(_bands) > len(_influence),
+      "영향범위 바깥에 대조 밴드가 하나 이상 남아 있다"
+      " — 없으면 계수를 IC 효과라고 부를 근거가 사라진다")
+check(_cfg["spatial"]["max_link_km"] == _far,
+      f"max_link_km({_cfg['spatial']['max_link_km']}) 가 가장 먼 밴드({_far})와 같다"
+      " — 크면 어느 밴드에도 안 들어가는 연결을 만들어 버린다")
+check(_cfg["spatial"]["primary_band"] in [f"{lo:g}-{hi:g}" for lo, hi in _bands],
+      f"primary_band({_cfg['spatial']['primary_band']}) 가 실제 밴드 목록에 있다")
+
+# ────────────────────────────────────────────────────────────────
+print("\n7. 추이 비교가 읽을 chart.json")
+
+_chart = ROOT / "public" / "app" / "data" / "chart.json"
+if not _chart.is_file():
+    print("  건너뜀 — chart.json 이 아직 없습니다 (export-web 실행 전)")
+else:
+    _c = json.loads(_chart.read_text(encoding="utf-8"))
+    check(isinstance(_c.get("rows"), dict) and len(_c["rows"]) > 0,
+          f"영업소 {len(_c.get('rows', {}))}개")
+    _inf = _c.get("influence_bands", [])
+    check(_inf and all(float(b.split("-")[1]) <= 5 for b in _inf),
+          f"영향범위 밴드가 5km 이하다 ({_inf})")
+
+    # 계열마다 관측 연도가 최소 기준을 넘어야 한다. 점 두 개를 선으로 이으면
+    # 잡음이 추세처럼 보인다.
+    _minyr = _c.get("min_years", 3)
+    _thin = []
+    for tid, row in _c["rows"].items():
+        for group, series in row.items():
+            for name, pts in series.items():
+                if len(pts) < _minyr:
+                    _thin.append(f"{tid}/{group}/{name}({len(pts)}년)")
+    check(not _thin, f"관측 {_minyr}년 미만인 계열이 없다 ({_thin[:3]})")
+
+    _neg = [f"{t}/{g}/{n}" for t, row in _c["rows"].items()
+            for g, ser in row.items() for n, pts in ser.items()
+            for v in pts.values() if v is not None and v <= 0]
+    check(not _neg, f"0 이하 단가가 없다 ({_neg[:3]})")
+
+    _lp = _c.get("landprice", {})
+    check("available" in _lp, "공시지가 칸이 있다/없다를 명시한다")
+    if not _lp.get("available"):
+        check(bool(_lp.get("reason")),
+              "공시지가가 없으면 왜 없는지 적는다 — 선이 안 보이는 것과 다른 말이다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

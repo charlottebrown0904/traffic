@@ -59,7 +59,19 @@ def _should_relay(url: str, params: dict) -> bool:
     return urlsplit(url).netloc in RELAYED_HOSTS
 
 
-RELAYED_HOSTS = {"apis.data.go.kr", "api.vworld.kr", "data.ex.co.kr"}
+# 중계기가 허용하는 목적지와 **같아야 한다** (api/relay.js 의 ALLOW).
+# 중계기 쪽에만 넣고 이쪽에 안 넣으면, 호출이 미국 러너에서 직접 나가
+# 지오블록에 막힌다. 그러면 '중계기에 없다' 로 오해하게 된다 —
+# api.odcloud.kr 과 www.data.go.kr 에서 실제로 그럴 뻔했다.
+RELAYED_HOSTS = {
+    "apis.data.go.kr",
+    "api.odcloud.kr",
+    "www.data.go.kr",
+    "api.vworld.kr",
+    "www.vworld.kr",
+    "data.ex.co.kr",
+    "kosis.kr",
+}
 
 
 @retry(

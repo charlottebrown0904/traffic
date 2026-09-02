@@ -19,6 +19,10 @@ on:
         description: "화면용 JSON 을 이 브랜치에 커밋"
         type: boolean
         default: false
+      probe_landprice:
+        description: "공시지가 시계열 원천(odcloud) 확인"
+        type: boolean
+        default: false
 
 # 화면 데이터를 되돌려 넣을 때 필요합니다.
 permissions:
@@ -88,6 +92,13 @@ jobs:
       - name: 보충 후 진단
         if: inputs.fill_tollgates
         run: python -m redt.cli gaps
+
+      # 공시지가는 시계열 원천이 없어 차트에 빈칸으로 둔다. 남은 후보가
+      # 하나뿐이라(odcloud 15029071) 되는지 확인하고 넘어간다.
+      - name: 공시지가 원천 확인
+        if: inputs.probe_landprice
+        continue-on-error: true
+        run: python scripts/odcloud_landprice.py
 
       - name: 분석 패널
         run: python -m redt.cli panel

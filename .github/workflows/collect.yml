@@ -9,10 +9,14 @@ on:
   workflow_dispatch:
     inputs:
       start:
-        # 교통량이 2021~2025 이고 1년 시차로 보므로 짝이 되는 거래는 2022~2025 다.
-        # 헤도닉 지수의 기준선을 잡을 여유로 한 해 앞부터 받는다.
+        # 교통량이 2018~2025 로 8년 있는데 거래를 2021년부터만 받아, 그 앞 3년을
+        # 통째로 버리고 있었다. 그 3년이 실제로 필요하다.
+        #
+        #   지시2(개통 전후 비교)에서 평택고덕(2018)·양감(2019)·중앙탑(2019)이
+        #   '개통 전' 자료가 없어 표본에서 빠졌다. 처치 영업소가 13개뿐이라
+        #   계수가 p=0.59 로 나왔는데, 표본이 모자란 것이 주된 이유다.
         description: "수집 시작 (YYYY-MM)"
-        default: "2021-01"
+        default: "2018-01"
       end:
         # 2026년은 아직 진행 중이라 연 단위 비교에 쓸 수 없다.
         description: "수집 끝 (YYYY-MM)"
@@ -21,8 +25,10 @@ on:
         description: "물건 종류 (쉼표구분)"
         default: "land,factory"
       region:
-        description: "권역 (pilot_regions.yaml 의 이름, 또는 all)"
-        default: "gyeonggi_south"
+        # 쉼표로 여러 권역을 붙일 수 있다. 기본을 경기 전역·인천·충청으로 둔다 —
+        # 이미 이 범위로 받아 뒀으므로 새로 받는 것은 2018~2020년치뿐이다.
+        description: "권역 (pilot_regions.yaml 의 이름, 쉼표구분, 또는 all)"
+        default: "gyeonggi_all,incheon,chungcheong"
       workers:
         description: "실거래가 동시 요청 수 (기본 6, 차단당하면 낮추세요)"
         default: "6"

@@ -404,6 +404,14 @@ def cmd_panel(args):
     print(f"패널 {len(panel):,}행 → {out}")
     print(panel.groupby("band")["price_index"].count().to_string())
 
+    # 추이 비교 차트가 용도지역별로 갈라 보려면 거래 단위 자료가 필요하다.
+    # 패널은 이미 밴드×연도로 접어버린 뒤라 되돌릴 수 없다.
+    priced = getattr(pn.build_panel, "last_priced", None)
+    if priced is not None and len(priced):
+        pp = PROCESSED / "trades_priced.parquet"
+        priced.to_parquet(pp, index=False)
+        print(f"보정 거래 {len(priced):,}행 → {pp}")
+
 
 def cmd_analyze(args):
     path = PROCESSED / "panel.parquet"

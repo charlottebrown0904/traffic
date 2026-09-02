@@ -30,6 +30,15 @@
   /* ── 구분색: 물건 종류 ── */
   --kind-land:#2E7D32; --kind-factory:#5E35B1;
 
+  /* ── 구분색: 교통량 계열 (추이 비교) ──
+     밴드색(적·주황·청록·청·보라)과 겹치지 않는 색만 골랐다. 교통량 전체를
+     --q-under 로 쓰다가 지가 5-10km(--band-4)와 똑같은 파랑이 나와, 한 그래프
+     안에서 두 선을 구별할 수 없었다. */
+  --traffic-1:#1C1611;   /* 전체 — 기준선 역할이라 가장 진하게 */
+  --traffic-2:#B0107A;   /* 화물 */
+  --traffic-3:#6B6000;   /* 승용 */
+  --traffic-4:#8A6547;   /* 중형 */
+
   --danger:#B3261E;
   --shadow:0 1px 2px rgba(28,22,17,.06), 0 8px 24px -18px rgba(28,22,17,.35);
   --rail-w:16rem; --detail-w:23rem; --top-h:3.75rem;
@@ -45,6 +54,7 @@
     --band-4:#6BA8F5; --band-5:#B98CF0;
     --q-under:#6BAEF0; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#9A8C7E;
     --kind-land:#6FCF7A; --kind-factory:#B99BF0;
+    --traffic-1:#F0EAE3; --traffic-2:#FF7ABF; --traffic-3:#D6C43A; --traffic-4:#D8B18C;
     --danger:#F0837A;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
   }
@@ -59,6 +69,7 @@
   --band-4:#6BA8F5; --band-5:#B98CF0;
   --q-under:#6BAEF0; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#9A8C7E;
   --kind-land:#6FCF7A; --kind-factory:#B99BF0;
+  --traffic-1:#F0EAE3; --traffic-2:#FF7ABF; --traffic-3:#D6C43A; --traffic-4:#D8B18C;
   --danger:#F0837A;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
 }
@@ -285,6 +296,58 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 .vt-swatch{
   display:inline-block; width:.6rem; height:.6rem; border-radius:.15rem;
   margin-right:.4rem; background:var(--c);
+}
+
+/* ── 추이 비교 ── */
+#view-trend.is-active{display:block; overflow:auto}
+.trend-wrap{
+  max-width:76rem; margin:0 auto; padding:1.5rem 1.1rem 3rem;
+  display:grid; gap:1.1rem; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);
+}
+@media (max-width:64rem){.trend-wrap{grid-template-columns:1fr}}
+.trend-controls{display:flex; flex-wrap:wrap; gap:.8rem 1.2rem; align-items:flex-end; margin:.6rem 0 .3rem}
+.trend-controls .seg{margin-bottom:0}
+.chart-box{position:relative; margin:.6rem 0 .3rem}
+#trend-chart{width:100%; height:20rem; display:block; overflow:visible}
+#trend-chart .grid{stroke:var(--border)}
+#trend-chart .axis{font-size:.68rem; fill:var(--faint)}
+#trend-chart .baseline{stroke:var(--border-strong); stroke-dasharray:3 3}
+#trend-chart .lead{stroke:var(--ink); stroke-width:1; opacity:.35}
+#trend-chart path.series{fill:none; stroke-width:2; stroke-linejoin:round; stroke-linecap:round}
+#trend-chart path.series.thick{stroke-width:3}
+#trend-chart path.series.dashed{stroke-dasharray:5 4}
+#trend-chart circle.dot{stroke:var(--surface); stroke-width:1.5}
+.chart-readout{
+  position:absolute; top:.4rem; right:.4rem; z-index:2; pointer-events:none;
+  background:var(--surface); border:1px solid var(--border-strong); border-radius:.45rem;
+  padding:.5rem .65rem; font-size:.76rem; box-shadow:var(--shadow); min-width:11rem;
+}
+.chart-readout .yr{font-weight:700; margin-bottom:.25rem}
+.chart-readout .row{display:flex; align-items:center; gap:.4rem; justify-content:space-between}
+.chart-readout .row b{font-variant-numeric:tabular-nums; font-weight:600}
+.chart-readout .sw{width:.55rem; height:.55rem; border-radius:50%; flex:0 0 auto; background:var(--c)}
+.chart-readout .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.trend-legend{display:flex; flex-wrap:wrap; gap:.35rem .9rem; font-size:.78rem; margin-top:.3rem}
+.trend-legend .item{display:flex; align-items:center; gap:.35rem; color:var(--muted)}
+.trend-legend .sw{width:1.1rem; height:0; border-top:2px solid var(--c); flex:0 0 auto}
+.trend-legend .sw.thick{border-top-width:3px}
+.trend-legend .sw.dashed{border-top-style:dashed}
+.series-groups{display:grid; gap:.9rem}
+.series-groups h3{
+  font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--faint); margin-bottom:.35rem;
+}
+.series-groups .opts{display:grid; gap:.25rem}
+.series-opt{display:flex; gap:.5rem; align-items:center; font-size:.83rem; cursor:pointer}
+.series-opt input{margin:0}
+.series-opt .sw{width:.9rem; height:0; border-top:2px solid var(--c); flex:0 0 auto}
+.series-opt .sw.thick{border-top-width:3px}
+.series-opt .sw.dashed{border-top-style:dashed}
+.series-opt.is-off{opacity:.5}
+.series-opt .why{margin-left:auto; font-size:.7rem; color:var(--faint)}
+.chart-empty{
+  display:grid; place-content:center; min-height:12rem; text-align:center;
+  color:var(--muted); font-size:.86rem; gap:.3rem; padding:1rem;
 }
 
 /* ── 매물 ── */

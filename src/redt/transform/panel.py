@@ -205,6 +205,16 @@ def build_panel(trades: pd.DataFrame, links: pd.DataFrame,
                   f"(대상 밴드: {strict})")
             joined = joined[~bad]
 
+    # 차트가 쓸 거래 단위 자료를 내보낸다. 헤도닉 보정은 무겁고 결과가 하나뿐이라
+    # 여기서 한 번만 만들고, 익스포트는 그것을 읽는다. 두 번 계산하면 화면과
+    # 분석이 다른 값을 보게 될 여지가 생긴다.
+    build_panel.last_priced = joined[[
+        c for c in ("trade_id", "tollgate_id", "year", "band", "kind",
+                    "land_use", "jimok", "adj_ln_price", "sigungu_cd",
+                    "geocode_level")
+        if c in joined.columns
+    ]].copy()
+
     cells = (
         joined.groupby(["tollgate_id", "year", "band", "kind"], as_index=False)
         .agg(

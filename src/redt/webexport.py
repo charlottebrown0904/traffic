@@ -160,6 +160,102 @@ def _traffic_ranking() -> dict:
     }
 
 
+# 추이 비교 차트에서 한 계열이 되려면 이만큼은 있어야 한다. 거래 두세 건의
+# 중앙값을 선으로 이으면, 잡음이 추세처럼 보인다.
+CHART_MIN_TRADES = 5
+CHART_MIN_YEARS = 3
+
+
+def _chart_series() -> dict:
+    """지시(2026-09-02) — 교통량·지가·공시지가·반경을 한 그래프에 겹쳐 보기 위한 자료.
+
+    단위가 제각각이라(대/일 vs 원/㎡) 그대로 겹치면 한 계열이 나머지를
+    납작하게 눌러 버린다. 주식 비교차트가 하는 것과 같은 방법을 쓴다 —
+    **각 계열의 첫 해를 100 으로 두고 지수로 그린다.** 화면에서 원값도
+    볼 수 있도록 원값을 함께 보낸다.
+
+    교통량은 traffic.json 에 이미 있으므로 여기서 다시 담지 않는다.
+    화면이 두 파일을 합쳐 쓴다. 같은 숫자를 두 번 커밋할 이유가 없다.
+    """
+    path = PROCESSED / "trades_priced.parquet"
+    if not path.exists():
+        return {"rows": {}, "note": "trades_priced.parquet 이 없습니다. panel 을 먼저 실행하세요."}
+
+    priced = pd.read_parquet(path)
+    if priced.empty:
+        return {"rows": {}, "note": "보정된 거래가 없습니다."}
+
+    bands = sorted(priced["band"].dropna().unique().tolist())
+    influence = [b for b in bands if float(b.split("-")[1]) <= 5]
+
+    def _fold(df: pd.DataFrame, key: str) -> dict:
+        """tollgate × year × <key> → 중앙값 ㎡단가. 얇은 칸은 버린다."""
+        agg = (df.groupby(["tollgate_id", "year", key], as_index=False)
+               .agg(n=("adj_ln_price", "size"), v=("adj_ln_price", "median")))
+        agg = agg[agg["n"] >= CHART_MIN_TRADES]
+        out: dict = {}
+        for (tid, name), grp in agg.groupby(["tollgate_id", key]):
+            if grp["year"].nunique() < CHART_MIN_YEARS:
+                continue          # 점 두 개를 선으로 이으면 추세처럼 보인다
+            out.setdefault(str(tid), {})[str(name)] = {
+                int(r.year): round(float(np.exp(r.v))) for r in grp.itertuples()
+            }
+        return out
+
+    by_band = _fold(priced, "band")
+    # 용도지역은 영향범위(0~5km) 안에서만 본다. 대조 밴드까지 섞으면
+    # '그 IC 주변 계획관리 땅값' 이 아니라 그냥 '그 동네 땅값' 이 된다.
+    near = priced[priced["band"].isin(influence)]
+    by_use = _fold(near, "land_use") if "land_use" in near.columns else {}
+    by_kind = _fold(near, "kind")
+
+    tids = set(by_band) | set(by_use) | set(by_kind)
+    rows = {t: {"band": by_band.get(t, {}),
+                "land_use": by_use.get(t, {}),
+                "kind": by_kind.get(t, {})} for t in sorted(tids)}
+
+    return {
+        "rows": rows,
+        "bands": bands,
+        "influence_bands": influence,
+        "unit": "원/㎡ (헤도닉 보정 중앙값)",
+        "min_trades": CHART_MIN_TRADES,
+        "min_years": CHART_MIN_YEARS,
+        "landprice": _landprice_series(),
+        "note": (f"셀당 거래 {CHART_MIN_TRADES}건 미만, 관측 {CHART_MIN_YEARS}년 미만인"
+                 " 계열은 그리지 않습니다. 점 몇 개를 선으로 이으면 잡음이 추세처럼"
+                 " 보이기 때문입니다."),
+    }
+
+
+def _landprice_series() -> dict:
+    """공시지가 계열. 아직 원천이 없으면 **비었다는 사실을 명시해** 돌려준다.
+
+    화면에서 선이 안 보이는 것과 '자료가 없다' 는 다른 말이다. 앞엣것은
+    사용자가 자기 조작을 의심하게 만든다.
+    """
+    with db.connect(read_only=True) as con:
+        tables = {r[0] for r in con.execute("SHOW TABLES").fetchall()}
+        if "land_price" not in tables:
+            return {"rows": {}, "available": False,
+                    "reason": ("공시지가 시계열 원천을 아직 확보하지 못했습니다. "
+                               "브이월드 WFS 는 연도를 무시하고, 속성 API 는 두세 해만 "
+                               "줍니다 (docs/land-price-fallback.md).")}
+        df = con.execute("""
+            SELECT tollgate_id, year, round(median(price_per_m2)) AS v, count(*) AS n
+            FROM land_price WHERE tollgate_id IS NOT NULL
+            GROUP BY 1, 2
+        """).fetchdf()
+    if df.empty:
+        return {"rows": {}, "available": False, "reason": "적재된 공시지가가 없습니다."}
+    rows: dict = {}
+    for tid, grp in df.groupby("tollgate_id"):
+        if len(grp) < CHART_MIN_YEARS:
+            continue
+        rows[str(tid)] = {int(r.year): int(r.v) for r in grp.itertuples()}
+    return {"rows": rows, "available": bool(rows)}
+
+
 def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     band = band or primary_band()
     panel_path = PROCESSED / "panel.parquet"
@@ -230,6 +326,7 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
 
     _write("meta.json", meta)
     _write("traffic.json", _traffic_ranking())
+    _write("chart.json", _chart_series())
     _write("tollgates.json", _records(merged))
     _write("trades.json", _records(trades))
     _write("series.json", grouped)

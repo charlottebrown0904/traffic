@@ -1,4 +1,4 @@
-/* 교통량 순위 탭(지시4)과 색 구분(지시5) 검사.
+/* 교통량 순위 탭 · 추이 비교 탭 · 색 구분 검사.
 
    순위표는 숫자를 보여주는 화면이라, 필터가 조용히 안 먹으면 틀린 순위를
    맞는 것처럼 보여준다. 그게 가장 나쁜 실패라 여기서 막는다.
@@ -130,12 +130,20 @@ const rows = (page) => page.evaluate(() =>
     await page.waitForTimeout(200);
 
     // 6) 검색
+    const before = (await rows(page)).length;
     const target = (await rows(page))[0].name;
     await page.fill('#rank-search', target);
     await page.waitForTimeout(250);
     list = await rows(page);
-    check('검색이 결과를 좁힌다', list.length > 0 && list.every((r) => r.name.includes(target)),
-          `${list.length}행`);
+    // 검색은 이름과 지역을 함께 봅니다 (placeholder 가 '영업소·시군구 검색').
+    // 이름만으로 걸러진다고 가정하면, 지역으로 걸린 행을 오탐으로 셉니다 —
+    // '서울' 로 검색하면 서울특별시 영업소들이 이름과 무관하게 걸립니다.
+    check('검색이 결과를 좁힌다', list.length > 0 && list.length < before,
+          `${before} → ${list.length}행`);
+    check('걸린 행은 이름이나 지역에 검색어가 있다',
+          list.every((r) => (r.name + ' ' + r.region).includes(target)),
+          list.filter((r) => !(r.name + ' ' + r.region).includes(target))
+              .map((r) => `${r.name}/${r.region}`).join(', '));
     await page.fill('#rank-search', '');
     await page.waitForTimeout(250);
 
@@ -150,9 +158,17 @@ const rows = (page) => page.evaluate(() =>
     // 8) 지시5 — 밴드 색이 서로 달라야 한다
     const ringColors = await page.$$eval('#band-legend .row .ring',
       (els) => els.map((e) => getComputedStyle(e).borderTopColor));
-    check('거리 밴드가 다섯 개 그려진다', ringColors.length === 5, `${ringColors.length}개`);
+    // 밴드 개수는 설정에서 온다. 숫자를 박아 두면 밴드를 조정할 때마다 검사가
+    // '깨진 것' 처럼 빨개진다 — 실제로 5개에서 4개로 줄이자 그랬다.
+    const bandCount = await page.evaluate(() => (window.__bands || []).length);
+    check('거리 밴드가 설정만큼 그려진다', ringColors.length === bandCount,
+          `범례 ${ringColors.length}개 vs 설정 ${bandCount}개`);
     check('밴드 색이 모두 다르다', new Set(ringColors).size === ringColors.length,
           ringColors.join(' / '));
+    // 영향범위 바깥의 대조 밴드가 하나는 있어야 위약 검정을 할 수 있다.
+    const hasControl = await page.evaluate(
+      () => (window.__bands || []).some((b) => b[1] > 5));
+    check('영향범위(5km) 바깥 대조 밴드가 있다', hasControl);
 
     const bandVars = await page.evaluate(() => {
       const cs = getComputedStyle(document.documentElement);
@@ -189,6 +205,84 @@ const rows = (page) => page.evaluate(() =>
     check('지도 범례에 거리 밴드가 들어 있다', /km/.test(legendText));
     check('지도 범례에 실거래 종류가 들어 있다',
           /토지/.test(legendText) && /공장/.test(legendText));
+
+    // ── 추이 비교 탭 ──────────────────────────────────────────────
+    // chart.json 은 파이프라인이 만든다. 아직 없으면 탭이 스스로 숨는데,
+    // 그건 정상 동작이므로 실패로 세지 않고 건너뛴다.
+    const trendTab = await page.$('.tab[data-view="trend"]:not([hidden])');
+    if (!trendTab) {
+      console.log('  건너뜀  추이 비교 — chart.json 이 아직 없습니다 (export-web 전)');
+    } else {
+    await page.click('.tab[data-view="trend"]');
+    await page.waitForSelector('#trend-chart path.series', { timeout: 15000 });
+
+    const lines = () => page.$$eval('#trend-chart path.series', (p) => p.map((e) => ({
+      d: e.getAttribute('d') || '',
+      stroke: getComputedStyle(e).stroke,
+      dashed: e.classList.contains('dashed'),
+    })));
+
+    let ls = await lines();
+    check('추이 차트에 선이 그려진다', ls.length > 0, `${ls.length}개`);
+    check('선마다 좌표가 들어 있다', ls.every((l) => l.d.length > 4));
+    check('선 색이 실제 색으로 풀린다',
+          ls.every((l) => l.stroke && l.stroke !== 'none'), ls.map((l) => l.stroke).join(','));
+
+    // 켜져 있는 선끼리 같은 색이면 안 된다. 교통량 전체를 --q-under 로 쓰다가
+    // 지가 5-10km(--band-4)와 똑같은 파랑이 나와, 한 그래프 안에서 두 선을
+    // 구별할 수 없었다. 색이 이 화면에서 사실상 유일한 구분 수단이다.
+    const strokes = ls.map((l) => l.stroke);
+    check('켜진 선끼리 색이 겹치지 않는다',
+          new Set(strokes).size === strokes.length, strokes.join(' / '));
+
+    // 계열을 하나 더 켜면 선이 늘어야 한다
+    const boxes = await page.$$('#trend-series input[type=checkbox]');
+    const off = [];
+    for (const b of boxes) if (!(await b.isChecked())) off.push(b);
+    if (off.length) {
+      const before = (await lines()).length;
+      await off[0].check();
+      await page.waitForTimeout(200);
+      const after = (await lines()).length;
+      check('계열을 켜면 선이 늘어난다', after === before + 1, `${before} → ${after}`);
+      await off[0].uncheck();
+      await page.waitForTimeout(200);
+    }
+
+    // 지수 모드에서는 기준연도 값이 100 이어야 한다
+    const baseYear = await page.$eval('#trend-base', (e) => e.value);
+    const readout = async (x) => {
+      const box = await page.$('#trend-chart');
+      const bb = await box.boundingBox();
+      await page.mouse.move(bb.x + bb.width * x, bb.y + bb.height / 2);
+      await page.waitForTimeout(120);
+      return page.$eval('#trend-readout', (e) => e.textContent);
+    };
+    const baseYears = await page.$$eval('#trend-base option', (o) => o.map((x) => x.value));
+    const idx = baseYears.indexOf(baseYear);
+    const frac = baseYears.length > 1 ? idx / (baseYears.length - 1) : 0;
+    const txt = await readout(Math.min(0.97, Math.max(0.03, frac)));
+    check('기준연도에서 지수가 100 이다', /100\.0/.test(txt), txt.slice(0, 120));
+
+    // 원값으로 바꾸면 안내 문구가 달라진다
+    await page.click('#trend-scale .seg-btn[data-scale="raw"]');
+    await page.waitForTimeout(200);
+    const rawNote = await page.$eval('#trend-note', (e) => e.textContent);
+    check('원값 모드는 축이 하나라는 것을 알린다', /축이 하나/.test(rawNote), rawNote.slice(0, 80));
+    await page.click('#trend-scale .seg-btn[data-scale="index"]');
+    await page.waitForTimeout(200);
+
+    // 계열을 전부 끄면 빈 화면 대신 안내가 나와야 한다
+    const allBoxes = await page.$$('#trend-series input[type=checkbox]:checked');
+    for (const b of allBoxes) await b.uncheck();
+    await page.waitForTimeout(250);
+    const emptyNote = await page.$eval('#trend-note', (e) => e.textContent);
+    check('계열이 없으면 이유를 말한다', /고르세요/.test(emptyNote), emptyNote.slice(0, 60));
+
+    // 공시지가가 없으면 '없다' 고 적혀 있어야 한다 — 선이 안 보이는 것과 다른 말이다
+    const lpText = await page.$eval('#trend-series', (e) => e.textContent);
+    check('공시지가 칸에 설명이 있다', /공시지가/.test(lpText), lpText.slice(0, 60));
+    }
 
     await page.close();
   } finally {

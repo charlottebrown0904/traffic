@@ -15,8 +15,9 @@ const CONFIG = window.REDT_CONFIG || {};
 const API = CONFIG.apiBase || '';
 
 const state = {
-  meta: null, tollgates: [], trades: [], series: {}, traffic: null,
+  meta: null, tollgates: [], trades: [], series: {}, traffic: null, chart: null,
   rank: { year: null, vehicle: 'total', sort: 'volume', q: '', coordsOnly: false },
+  trend: { id: null, scale: 'index', base: null, on: new Set() },
   activeQuadrants: new Set(Object.keys(QUADRANTS)),
   activeKinds: new Set(),
   minYear: 0, parcelOnly: false, selected: null,
@@ -101,9 +102,20 @@ async function boot() {
   } catch (err) {
     state.traffic = null;
   }
+  try {
+    const r = await fetch('/app/data/chart.json');
+    if (r.ok) state.chart = await r.json();
+  } catch (err) {
+    state.chart = null;
+  }
+
+  // 검사가 설정값을 읽을 수 있게 열어 둔다. 밴드 개수를 검사에 박아 두면
+  // 밴드를 조정할 때마다 멀쩡한 검사가 빨개진다.
+  window.__bands = state.meta.bands_km || [];
 
   buildFilters();
   buildRank();
+  buildTrend();
   buildMap();
   buildLegend();
   buildMatrix();
@@ -374,6 +386,373 @@ function renderVehicleTables() {
     `<tr><th>${escapeHtml(t.label)}</th><td>${escapeHtml(t.desc)}</td></tr>`).join('');
   $('#vg-table tbody').innerHTML = (data.vehicle_groups || []).map((g) =>
     `<tr><th>${escapeHtml(g.label)}</th><td>${escapeHtml(g.desc)}</td></tr>`).join('');
+}
+
+/* ─────────── 추이 비교 (교통량 × 지가 × 공시지가 × 반경) ───────────
+
+   단위가 제각각이다. 교통량은 대/일(십만 단위), 지가는 원/㎡(백만 단위).
+   그대로 한 축에 겹치면 지가 선이 화면 꼭대기에 붙고 교통량은 바닥에
+   깔린 직선이 된다. 그래서 기본은 **지수**다 — 각 계열의 기준연도를
+   100으로 두고 그린다. 주식 비교차트가 하는 것과 같다.
+
+   '원값' 을 고르면 축이 하나뿐이라 비교가 깨진다는 것을 화면에 적어 둔다.
+   숨기지 않고 고를 수 있게 두되, 무슨 일이 벌어지는지는 말해 준다.       */
+
+const TREND_KIND_LABEL = { land: '토지', factory: '공장·창고' };
+
+function trendDisabled(message) {
+  const tab = document.querySelector('.tab[data-view="trend"]');
+  if (tab) tab.hidden = true;
+  const note = $('#trend-note');
+  if (note) note.textContent = message;
+}
+
+/* 그릴 수 있는 계열을 모두 모은다. 각 계열은 {key,label,group,color,dash,points}.
+   points 는 {연도: 값}. 값이 없는 해는 아예 넣지 않는다 — 0 으로 채우면
+   '거래가 없던 해' 가 '값이 0 인 해' 로 둔갑한다. */
+function trendSeriesFor(id) {
+  const out = [];
+  const chart = state.chart || {};
+  const row = (chart.rows || {})[id] || {};
+
+  // 1) 교통량 — traffic.json 을 그대로 쓴다 (같은 숫자를 두 번 담지 않는다)
+  const tr = state.traffic;
+  if (tr) {
+    const t = (tr.rows || []).find((r) => r.id === id);
+    if (t) {
+      const typeIdx = new Map(tr.types.map((c, i) => [c, i]));
+      (tr.vehicle_groups || []).forEach((g, gi) => {
+        const pts = {};
+        tr.years.forEach((y, yi) => {
+          const v = rankValue(t, yi, g.types, typeIdx);
+          if (v != null && v > 0) pts[y] = v;
+        });
+        if (Object.keys(pts).length >= 2) {
+          out.push({
+            key: `traffic:${g.key}`, label: `교통량 · ${g.label}`, group: '교통량',
+            color: TRAFFIC_COLORS[gi % TRAFFIC_COLORS.length], dash: false, thick: true,
+            unit: '대/일', points: pts,
+          });
+        }
+      });
+    }
+  }
+
+  // 2) 지가 — 반경(밴드)별
+  const bands = chart.bands || [];
+  Object.entries(row.band || {}).forEach(([band, pts]) => {
+    const i = Math.max(0, bands.indexOf(band));
+    out.push({
+      key: `band:${band}`, label: `지가 · ${band} km`, group: '지가 (반경별)',
+      color: bandColor(i), dash: false, unit: '원/㎡', points: pts,
+    });
+  });
+
+  // 3) 지가 — 용도지역별 (영향범위 안에서만)
+  Object.entries(row.land_use || {}).forEach(([use, pts], i) => {
+    out.push({
+      key: `use:${use}`, label: `지가 · ${use}`, group: '지가 (용도지역별)',
+      color: USE_COLORS[i % USE_COLORS.length], dash: true, unit: '원/㎡', points: pts,
+    });
+  });
+
+  // 4) 지가 — 물건 종류별
+  Object.entries(row.kind || {}).forEach(([kind, pts]) => {
+    out.push({
+      key: `kind:${kind}`, label: `지가 · ${TREND_KIND_LABEL[kind] || kind}`,
+      group: '지가 (물건 종류)',
+      color: `var(--kind-${kind === 'factory' ? 'factory' : 'land'})`,
+      dash: true, unit: '원/㎡', points: pts,
+    });
+  });
+
+  // 5) 공시지가
+  const lp = (chart.landprice || {});
+  const lpPts = (lp.rows || {})[id];
+  if (lpPts) {
+    out.push({
+      key: 'landprice', label: '공시지가', group: '공시지가',
+      color: 'var(--accent)', dash: false, unit: '원/㎡', points: lpPts,
+    });
+  }
+  return out;
+}
+
+// 밴드색과 겹치지 않는 색만 쓴다. --q-under 를 쓰다가 지가 5-10km(--band-4)와
+// 똑같은 파랑이 나와 한 그래프에서 두 선을 구별할 수 없었다.
+const TRAFFIC_COLORS = ['var(--traffic-1)', 'var(--traffic-2)',
+                        'var(--traffic-3)', 'var(--traffic-4)'];
+const USE_COLORS = ['var(--band-3)', 'var(--band-5)', 'var(--q-over)', 'var(--band-2)'];
+
+function trendCandidates() {
+  const chart = state.chart;
+  if (!chart || !chart.rows) return [];
+  const named = new Map(state.tollgates.map((t) => [t.tollgate_id, t]));
+  const fromTraffic = new Map(((state.traffic || {}).rows || []).map((r) => [r.id, r]));
+  return Object.keys(chart.rows).map((id) => {
+    const t = named.get(id) || fromTraffic.get(id) || {};
+    return {
+      id,
+      name: t.name || `영업소 ${id}`,
+      region: [t.sido, t.sigungu].filter(Boolean).join(' '),
+    };
+  }).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+}
+
+function buildTrend() {
+  const chart = state.chart;
+  if (!chart || !chart.rows || !Object.keys(chart.rows).length) {
+    trendDisabled((chart && chart.note) || '추이 자료가 없습니다.');
+    return;
+  }
+  const list = trendCandidates();
+  if (!list.length) { trendDisabled('그릴 영업소가 없습니다.'); return; }
+
+  $('#trend-list').innerHTML = list
+    .map((c) => `<option value="${escapeHtml(c.name)}${c.region ? ' · ' + escapeHtml(c.region) : ''}">`)
+    .join('');
+
+  document.querySelectorAll('#trend-scale .seg-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#trend-scale .seg-btn')
+        .forEach((b) => b.classList.toggle('is-on', b === btn));
+      state.trend.scale = btn.dataset.scale;
+      renderTrend();
+    });
+  });
+  $('#trend-base').addEventListener('change', () => {
+    state.trend.base = Number($('#trend-base').value);
+    renderTrend();
+  });
+  $('#trend-search').addEventListener('input', () => {
+    const q = $('#trend-search').value.trim().split(' · ')[0].toLowerCase();
+    const hit = list.find((c) => c.name.toLowerCase() === q)
+             || list.find((c) => c.name.toLowerCase().includes(q) && q.length >= 2);
+    if (hit && hit.id !== state.trend.id) selectTrend(hit.id);
+  });
+
+  selectTrend(list[0].id);
+}
+
+/* 영업소를 바꾸면 계열 구성이 달라진다. 켜둔 계열 중 남아 있는 것은 유지하고,
+   처음 고른 영업소에서는 기본 조합(교통량 전체 + 영향범위 대표 지가)을 켠다. */
+function selectTrend(id) {
+  const first = state.trend.id == null;
+  state.trend.id = id;
+  const all = trendSeriesFor(id);
+  const keys = new Set(all.map((s) => s.key));
+
+  if (first) {
+    const band = state.meta.band;
+    ['traffic:total', 'traffic:freight', `band:${band}`]
+      .forEach((k) => { if (keys.has(k)) state.trend.on.add(k); });
+    if (![...state.trend.on].some((k) => k.startsWith('band:'))) {
+      const anyBand = all.find((s) => s.key.startsWith('band:'));
+      if (anyBand) state.trend.on.add(anyBand.key);
+    }
+  }
+  // 이 영업소에 없는 계열은 켜둔 채로 두어도 무해하다 (다시 고르면 살아난다)
+
+  const years = trendYears(all);
+  const base = $('#trend-base');
+  base.innerHTML = years.map((y) => `<option value="${y}">${y}년</option>`).join('');
+  if (!years.includes(state.trend.base)) state.trend.base = years[0];
+  base.value = String(state.trend.base);
+
+  const info = trendCandidates().find((c) => c.id === id) || {};
+  $('#trend-sub').textContent =
+    `${info.name || id}${info.region ? ' · ' + info.region : ''}` +
+    ` — 영업소 코드 ${id}`;
+  if ($('#trend-search') !== document.activeElement) {
+    $('#trend-search').value = info.name || '';
+  }
+
+  renderTrendPicker(all);
+  renderTrend();
+}
+
+function trendYears(all) {
+  const set = new Set();
+  all.forEach((s) => Object.keys(s.points).forEach((y) => set.add(Number(y))));
+  return [...set].sort((a, b) => a - b);
+}
+
+function renderTrendPicker(all) {
+  const box = $('#trend-series');
+  const groups = [];
+  all.forEach((s) => {
+    let g = groups.find((x) => x.name === s.group);
+    if (!g) { g = { name: s.group, items: [] }; groups.push(g); }
+    g.items.push(s);
+  });
+
+  const lp = (state.chart || {}).landprice || {};
+  let html = groups.map((g) => `
+    <div>
+      <h3>${escapeHtml(g.name)}</h3>
+      <div class="opts">${g.items.map((s) => `
+        <label class="series-opt${state.trend.on.has(s.key) ? '' : ' is-off'}">
+          <input type="checkbox" data-key="${escapeHtml(s.key)}"
+                 ${state.trend.on.has(s.key) ? 'checked' : ''}>
+          <span class="sw${s.dash ? ' dashed' : ''}${s.thick ? ' thick' : ''}" style="--c:${s.color}"></span>
+          <span>${escapeHtml(s.label)}</span>
+          <span class="why">${Object.keys(s.points).length}년</span>
+        </label>`).join('')}</div>
+    </div>`).join('');
+
+  // 공시지가가 없으면 '선이 안 보이는 것' 과 '자료가 없는 것' 을 구분해 준다.
+  if (!lp.available) {
+    html += `<div><h3>공시지가</h3><p class="hint">${
+      escapeHtml(lp.reason || '아직 확보하지 못했습니다.')}</p></div>`;
+  }
+  box.innerHTML = html;
+
+  box.querySelectorAll('input[type=checkbox]').forEach((el) => {
+    el.addEventListener('change', () => {
+      el.checked ? state.trend.on.add(el.dataset.key) : state.trend.on.delete(el.dataset.key);
+      el.closest('.series-opt').classList.toggle('is-off', !el.checked);
+      renderTrend();
+    });
+  });
+}
+
+function renderTrend() {
+  const svg = $('#trend-chart');
+  const all = trendSeriesFor(state.trend.id);
+  const picked = all.filter((s) => state.trend.on.has(s.key));
+  const legend = $('#trend-legend');
+
+  if (!picked.length) {
+    svg.innerHTML = '';
+    legend.innerHTML = '';
+    $('#trend-note').textContent = '오른쪽에서 계열을 하나 이상 고르세요.';
+    return;
+  }
+
+  const years = trendYears(picked);
+  if (years.length < 2) {
+    svg.innerHTML = '';
+    legend.innerHTML = '';
+    $('#trend-note').textContent = '고른 계열에 그릴 만한 연도가 부족합니다.';
+    return;
+  }
+
+  const indexed = state.trend.scale === 'index';
+  const base = years.includes(state.trend.base) ? state.trend.base : years[0];
+
+  // 지수화: 기준연도 값이 없는 계열은 **그 계열이 가진 가장 이른 해**를 쓰고,
+  // 그 사실을 범례에 적는다. 조용히 다른 기준을 쓰면 비교가 거짓말이 된다.
+  const prepared = picked.map((s) => {
+    const has = Object.keys(s.points).map(Number).sort((a, b) => a - b);
+    const anchor = s.points[base] != null ? base : has[0];
+    const div = s.points[anchor];
+    const vals = years.map((y) => {
+      const raw = s.points[y];
+      if (raw == null) return null;
+      return indexed ? (div ? (raw / div) * 100 : null) : raw;
+    });
+    return { ...s, vals, anchor, rebased: anchor !== base };
+  });
+
+  const flat = prepared.flatMap((s) => s.vals).filter((v) => v != null);
+  let lo = Math.min(...flat), hi = Math.max(...flat);
+  if (lo === hi) { lo -= 1; hi += 1; }
+  const pad = (hi - lo) * 0.12;
+  lo -= pad; hi += pad;
+  if (indexed) { lo = Math.min(lo, 95); hi = Math.max(hi, 105); }
+
+  const W = 720, H = 300, L = 52, R = 14, T = 14, B = 30;
+  const sx = (y) => L + ((y - years[0]) / Math.max(1, years[years.length - 1] - years[0]))
+                        * (W - L - R);
+  const sy = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+
+  const ticks = 5;
+  let grid = '';
+  for (let i = 0; i <= ticks; i++) {
+    const v = lo + ((hi - lo) * i) / ticks;
+    const y = sy(v);
+    grid += `<line class="grid" x1="${L}" y1="${y.toFixed(1)}" x2="${W - R}" y2="${y.toFixed(1)}"/>`;
+    grid += `<text class="axis" x="${L - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end">${
+      indexed ? Math.round(v) : compact(v)}</text>`;
+  }
+  if (indexed && lo < 100 && hi > 100) {
+    grid += `<line class="baseline" x1="${L}" y1="${sy(100).toFixed(1)}" x2="${W - R}" y2="${sy(100).toFixed(1)}"/>`;
+  }
+  years.forEach((y) => {
+    grid += `<text class="axis" x="${sx(y).toFixed(1)}" y="${H - B + 16}" text-anchor="middle">${y}</text>`;
+  });
+
+  // 결측 해는 선을 끊는다. 이어 버리면 없는 관측을 있는 것처럼 그리게 된다.
+  const paths = prepared.map((s) => {
+    let d = '', open = false, dots = '';
+    s.vals.forEach((v, i) => {
+      if (v == null) { open = false; return; }
+      const x = sx(years[i]).toFixed(1), y = sy(v).toFixed(1);
+      d += `${open ? 'L' : 'M'}${x} ${y}`;
+      open = true;
+      dots += `<circle class="dot" cx="${x}" cy="${y}" r="2.6" fill="${s.color}"/>`;
+    });
+    const cls = `series${s.dash ? ' dashed' : ''}${s.thick ? ' thick' : ''}`;
+    return `<path class="${cls}" d="${d}" stroke="${s.color}"/>${dots}`;
+  }).join('');
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = grid + paths +
+    `<line class="lead" id="trend-lead" x1="0" y1="${T}" x2="0" y2="${H - B}" style="display:none"/>`;
+
+  legend.innerHTML = prepared.map((s) =>
+    `<span class="item"><span class="sw${s.dash ? ' dashed' : ''}${s.thick ? ' thick' : ''}" style="--c:${s.color}"></span>${
+      escapeHtml(s.label)}${s.rebased ? ` <em>(기준 ${s.anchor})</em>` : ''}</span>`).join('');
+
+  $('#trend-note').innerHTML = indexed
+    ? `<strong>${base}년 = 100</strong> 인 지수입니다. 단위가 다른 계열을 겹쳐 보려면` +
+      ' 이 방법뿐입니다. 선이 위로 벌어질수록 그 계열이 기준연도보다 많이 오른 것입니다.' +
+      (prepared.some((s) => s.rebased)
+        ? ' 일부 계열은 기준연도 값이 없어 <strong>자기 첫 해</strong>를 기준으로 삼았습니다(범례 표시).'
+        : '')
+    : '<strong>원값</strong>입니다. 축이 하나뿐이라 단위가 큰 계열이 화면을 차지합니다 —' +
+      ' 값을 확인할 때만 쓰고, 비교는 지수로 하세요.';
+
+  wireTrendHover(svg, prepared, years, sx, indexed);
+}
+
+const compact = (v) => {
+  const a = Math.abs(v);
+  if (a >= 1e8) return (v / 1e8).toFixed(1) + '억';
+  if (a >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만';
+  return Math.round(v).toLocaleString('ko-KR');
+};
+
+function wireTrendHover(svg, prepared, years, sx, indexed) {
+  const readout = $('#trend-readout');
+  const lead = svg.querySelector('#trend-lead');
+  const move = (ev) => {
+    const box = svg.getBoundingClientRect();
+    const vb = svg.viewBox.baseVal;
+    const x = ((ev.clientX - box.left) / box.width) * vb.width;
+    let best = years[0], bd = Infinity;
+    years.forEach((y) => { const d = Math.abs(sx(y) - x); if (d < bd) { bd = d; best = y; } });
+    const i = years.indexOf(best);
+    lead.setAttribute('x1', sx(best).toFixed(1));
+    lead.setAttribute('x2', sx(best).toFixed(1));
+    lead.style.display = '';
+    readout.hidden = false;
+    readout.innerHTML = `<div class="yr">${best}년</div>` + prepared.map((s) => {
+      const v = s.vals[i];
+      const raw = s.points[best];
+      const shown = v == null ? '—'
+        : indexed ? `${v.toFixed(1)} <span class="hint">(${compact(raw)})</span>`
+                  : compact(raw);
+      return `<div class="row"><span class="sw" style="--c:${s.color}"></span>` +
+             `<span class="nm">${escapeHtml(s.label)}</span><b>${shown}</b></div>`;
+    }).join('');
+  };
+  svg.addEventListener('mousemove', move);
+  svg.addEventListener('touchmove', (e) => { move(e.touches[0]); }, { passive: true });
+  svg.addEventListener('mouseleave', () => {
+    readout.hidden = true;
+    if (lead) lead.style.display = 'none';
+  });
 }
 
 /* ─────────── 지도 ─────────── */

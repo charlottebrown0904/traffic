@@ -36,6 +36,7 @@
   <nav class="tabs" role="tablist">
     <button class="tab is-active" role="tab" data-view="explore" aria-selected="true">탐색</button>
     <button class="tab" role="tab" data-view="rank" aria-selected="false">교통량 순위</button>
+    <button class="tab" role="tab" data-view="trend" aria-selected="false">추이 비교</button>
     <button class="tab" role="tab" data-view="board" aria-selected="false">스코어보드</button>
     <button class="tab" role="tab" data-view="listings" aria-selected="false">매물</button>
   </nav>
@@ -128,6 +129,45 @@
       <table class="vt-table" id="vt-table"><tbody></tbody></table>
       <h3 style="margin-top:1.1rem; font-size:.9rem">묶어 보는 방법</h3>
       <table class="vt-table" id="vg-table"><tbody></tbody></table>
+    </section>
+  </div>
+</main>
+
+<!-- ══ 추이 비교 (교통량 × 지가 × 공시지가) ══ -->
+<main class="view" id="view-trend">
+  <div class="trend-wrap">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>추이 비교</h2>
+        <input type="search" id="trend-search" placeholder="영업소 검색" aria-label="영업소 검색"
+               list="trend-list" autocomplete="off">
+        <datalist id="trend-list"></datalist>
+      </div>
+      <p class="hint" id="trend-sub"></p>
+
+      <div class="trend-controls">
+        <div class="seg" id="trend-scale" role="group" aria-label="표시 방식">
+          <button type="button" class="seg-btn is-on" data-scale="index">지수 (기준=100)</button>
+          <button type="button" class="seg-btn" data-scale="raw">원값</button>
+        </div>
+        <label class="field"><span>기준연도</span>
+          <select id="trend-base"></select></label>
+      </div>
+
+      <div class="chart-box">
+        <svg id="trend-chart" role="img" aria-label="연도별 추이"></svg>
+        <div class="chart-readout" id="trend-readout" hidden></div>
+      </div>
+
+      <div class="trend-legend" id="trend-legend"></div>
+      <p class="rank-note" id="trend-note"></p>
+    </section>
+
+    <section class="panel">
+      <h2>계열 고르기</h2>
+      <p class="hint">단위가 제각각이라(대/일 vs 원/㎡) 기본은 지수입니다.
+         각 계열의 기준연도를 100으로 두고 그립니다 — 주식 비교차트와 같은 방식입니다.</p>
+      <div class="series-groups" id="trend-series"></div>
     </section>
   </div>
 </main>
