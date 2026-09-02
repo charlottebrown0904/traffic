@@ -828,6 +828,75 @@ for _want, _expect in (("name", "bizNm"), ("designated_date", "bizBgngYm"),
           f"{_want} ← {_expect} (읽은 것 {_pk(_frame, _ZC[_want])})")
 
 print()
+print("20. 2단계 지오코딩 — 법정동 먼저, 반경 안만 지번")
+# 좌표 없는 거래 329만 건 / 하루 4,000건 = 822번 실행. 전국을 다 붙일
+# 필요가 없다는 것이 답이다.
+from redt.collect import geocode as _gc
+from redt.transform.spatial import umd_near_tollgates as _near
+
+_orig_one = _gc.geocode_one
+_orig_sleep = _gc.polite_sleep
+_calls = []
+
+class _Cache(_gc.GeocodeCache):
+    def __init__(self):
+        self._data = {}
+        self.path = Path("/dev/null")
+    def put(self, addr, lat, lon, source, level=None):
+        self._data[addr] = {"addr_key": addr, "lat": lat, "lon": lon,
+                            "source": source, "level": level}
+
+try:
+    _gc.polite_sleep = lambda *a, **k: None
+    _gc.geocode_one = lambda addr, kind="PARCEL": (_calls.append(addr),
+                                                   (37.0, 127.0))[1]
+    # 같은 법정동의 거래 100건 → 법정동 호출은 한 번이어야 한다.
+    _calls.clear()
+    _c = _Cache()
+    _pairs = [("화성시", "장안면")] * 100
+    _got = _gc.geocode_umd(_pairs, cache=_c)
+    check(len(_calls) == 1,
+          f"같은 법정동 100건에 호출 한 번 (실제 {len(_calls)}번)")
+    check(len(_got) == 1 and _got[("화성시", "장안면")][2] == "umd",
+          "법정동 좌표를 umd 수준으로 돌려준다")
+
+    # 거친 결과가 **지번 키**를 오염시키면 안 된다. 오염되면 나중에
+    # 지번으로 올리려 해도 캐시가 막는다.
+    _key_parcel = _gc.build_address(None, "화성시", "장안면", "123-4")
+    check(_c.get(_key_parcel) is None,
+          "법정동 호출이 지번 키를 채우지 않는다 (나중에 올릴 수 있어야 한다)")
+
+    _calls.clear()
+    _p = _gc.geocode_parcel([("화성시", "장안면", "123-4")], cache=_c)
+    check(len(_calls) == 1 and _p[("화성시", "장안면", "123-4")][2] == "parcel",
+          "지번 좌표를 parcel 수준으로 올린다")
+
+    # 지번이 없는 행은 지번 단계에서 호출을 낭비하지 않는다.
+    _calls.clear()
+    _gc.geocode_parcel([("화성시", "장안면", "")], cache=_Cache())
+    check(len(_calls) == 0, "지번이 없으면 부르지 않는다")
+finally:
+    _gc.geocode_one = _orig_one
+    _gc.polite_sleep = _orig_sleep
+
+# 반경 밖 법정동은 지번 대상에서 빠진다 — 지번 좌표가 있어도 어느 밴드에도
+# 못 들어가므로 부르는 만큼 손해다.
+_umd = pd.DataFrame({
+    "sigungu": ["가까운", "먼곳"], "umd": ["a", "b"],
+    "lat": [37.00, 35.00], "lon": [127.00, 129.00]})
+_tg = pd.DataFrame({"lat": [37.01], "lon": [127.01]})
+_kept = _near(_umd, _tg, max_km=10.0)
+check(list(_kept["sigungu"]) == ["가까운"],
+      f"영업소 반경 안 법정동만 남는다 (남은 것 {list(_kept['sigungu'])})")
+
+# 경계에 걸친 법정동을 자르지 않는다 — 중심점 오차가 ±1~2km 이므로
+# 여유를 두지 않으면 실제로는 안에 있는 거래를 통째로 버린다.
+_edge = pd.DataFrame({"sigungu": ["경계"], "umd": ["c"],
+                      "lat": [37.0 + 11.5 / 111.0], "lon": [127.0]})
+check(len(_near(_edge, _tg, max_km=10.0)) == 1,
+      "반경 바로 바깥(약 11.5km)도 여유 안에 들어 남는다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

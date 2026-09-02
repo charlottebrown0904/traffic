@@ -98,7 +98,12 @@ def geocode_with_fallback(sigungu: str, umd: str, jibun: str
 def geocode_many(rows: list[tuple[str, str, str]], cache: GeocodeCache | None = None,
                  limit: int | None = None) -> dict[tuple, tuple]:
     """rows: (시군구, 법정동, 지번) 튜플 목록 → {튜플: (lat, lon, level)}"""
-    cache = cache or GeocodeCache()
+    # `cache or GeocodeCache()` 로 쓰면 안 된다. __len__ 이 0 인 **빈 캐시는
+    # falsy** 라, 호출자가 건넨 캐시가 조용히 버려지고 기본 경로의 캐시가
+    # 새로 만들어진다. 실제 운영에서는 캐시가 대개 비어 있지 않아 안 드러나고,
+    # 검사에서 처음 드러났다 — 검사용 캐시를 건넸는데 진짜 파일에 썼다.
+    if cache is None:
+        cache = GeocodeCache()
     result: dict[tuple, tuple] = {}
     pending = []
 
@@ -128,4 +133,118 @@ def geocode_many(rows: list[tuple[str, str, str]], cache: GeocodeCache | None = 
     if pending:
         print(f"  결과: 지번단위 {levels['parcel']:,} / 법정동단위 {levels['umd']:,} "
               f"/ 실패 {levels['fail']:,}")
+    return result
+
+
+# ── 2단계 지오코딩 ────────────────────────────────────────────────────
+#
+# 좌표 없는 거래가 329만 건인데 브이월드 하루 한도는 4,000건입니다. 그대로면
+# 822번 실행해야 합니다. **전국을 다 붙일 필요가 없다는 것이 답입니다.**
+#
+#   1단계  법정동 중심점을 붙인다. 법정동 하나에 한 번만 부르므로 전국
+#          2만 번이면 끝나고, 그 뒤로는 모든 거래가 공짜로 대략 위치를
+#          갖는다. 거리 밴드에는 못 쓰지만 '어느 영업소 근처인가' 를
+#          가리는 데는 충분하다.
+#   2단계  영업소 반경 안에 드는 법정동의 거래만 지번 단위로 올린다.
+#
+# 예전 구조로는 이것이 불가능했습니다. geocode_with_fallback 이 **법정동
+# 중심점 결과를 지번까지 붙은 주소로 캐싱**했기 때문입니다.
+#
+#   "화성시 장안면 사랑리 123-4" → (동 중심점, level=umd)
+#
+# 같은 법정동의 거래 100건이면 같은 점을 100번 새로 부르고, 게다가 한 번
+# umd 로 굳으면 나중에 지번으로 올리려 해도 캐시가 막습니다. 그래서
+# 거친 결과는 **거친 키**에, 지번 결과는 지번 키에 따로 둡니다.
+
+
+def coarse_key(sigungu: str, umd: str) -> str:
+    """법정동까지의 주소. 이 단위로 캐싱해야 한 번만 부른다."""
+    return build_address(None, sigungu, umd, None)
+
+
+def geocode_umd(pairs: list[tuple[str, str]], cache: GeocodeCache | None = None,
+                limit: int | None = None) -> dict[tuple, tuple]:
+    """법정동 중심점을 붙인다. (시군구, 법정동) 하나당 한 번만 부른다."""
+    # `cache or GeocodeCache()` 로 쓰면 안 된다. __len__ 이 0 인 **빈 캐시는
+    # falsy** 라, 호출자가 건넨 캐시가 조용히 버려지고 기본 경로의 캐시가
+    # 새로 만들어진다. 실제 운영에서는 캐시가 대개 비어 있지 않아 안 드러나고,
+    # 검사에서 처음 드러났다 — 검사용 캐시를 건넸는데 진짜 파일에 썼다.
+    if cache is None:
+        cache = GeocodeCache()
+    result: dict[tuple, tuple] = {}
+    pending = []
+    for pair in dict.fromkeys(pairs):          # 순서를 지키며 중복 제거
+        key = coarse_key(*pair)
+        if not key:
+            continue
+        hit = cache.get(key)
+        if hit is not None:
+            if hit["lat"] is not None:
+                result[pair] = (hit["lat"], hit["lon"], "umd")
+        else:
+            pending.append(pair)
+    if limit is not None:
+        pending = pending[:limit]
+
+    print(f"법정동 중심점: 캐시 적중 {len(result):,} / 신규 {len(pending):,} "
+          f"(법정동 단위라 거래 건수와 무관합니다)")
+    ok = 0
+    for i, pair in enumerate(pending, 1):
+        key = coarse_key(*pair)
+        lat, lon = geocode_one(key, "PARCEL")
+        cache.put(key, lat, lon, "vworld", "umd")
+        if lat is not None:
+            result[pair] = (lat, lon, "umd")
+            ok += 1
+        polite_sleep(0.05)
+        if i % 500 == 0:
+            print(f"  {i:,}/{len(pending):,}  확보 {ok:,}")
+    if pending:
+        print(f"  결과: 확보 {ok:,} / 실패 {len(pending) - ok:,}")
+    return result
+
+
+def geocode_parcel(rows: list[tuple[str, str, str]],
+                   cache: GeocodeCache | None = None,
+                   limit: int | None = None) -> dict[tuple, tuple]:
+    """지번 단위로 올린다. **법정동 중심점으로 되돌아가지 않는다.**
+
+    되돌아가면 거친 좌표가 지번 키에 굳어, 다음에 다시 시도할 수 없게
+    된다. 실패는 실패로 남겨 두면 나중에 다시 해볼 수 있다.
+    """
+    # `cache or GeocodeCache()` 로 쓰면 안 된다. __len__ 이 0 인 **빈 캐시는
+    # falsy** 라, 호출자가 건넨 캐시가 조용히 버려지고 기본 경로의 캐시가
+    # 새로 만들어진다. 실제 운영에서는 캐시가 대개 비어 있지 않아 안 드러나고,
+    # 검사에서 처음 드러났다 — 검사용 캐시를 건넸는데 진짜 파일에 썼다.
+    if cache is None:
+        cache = GeocodeCache()
+    result: dict[tuple, tuple] = {}
+    pending = []
+    for row in dict.fromkeys(rows):
+        if not (row[2] and str(row[2]).strip()):
+            continue                            # 지번이 없으면 올릴 수 없다
+        key = build_address(None, *row)
+        hit = cache.get(key)
+        if hit is not None:
+            if hit["lat"] is not None:
+                result[row] = (hit["lat"], hit["lon"], hit.get("level") or "parcel")
+        else:
+            pending.append(row)
+    if limit is not None:
+        pending = pending[:limit]
+
+    print(f"지번 단위: 캐시 적중 {len(result):,} / 신규 {len(pending):,}")
+    ok = 0
+    for i, row in enumerate(pending, 1):
+        lat, lon = geocode_one(build_address(None, *row), "PARCEL")
+        cache.put(build_address(None, *row), lat, lon, "vworld",
+                  "parcel" if lat is not None else None)
+        if lat is not None:
+            result[row] = (lat, lon, "parcel")
+            ok += 1
+        polite_sleep(0.05)
+        if i % 500 == 0:
+            print(f"  {i:,}/{len(pending):,}  확보 {ok:,}")
+    if pending:
+        print(f"  결과: 지번단위 확보 {ok:,} / 실패 {len(pending) - ok:,}")
     return result

@@ -492,6 +492,110 @@ def cmd_trades(args):
     print(f"\n실거래 {total_rows:,}건 신규 저장")
 
 
+def cmd_geocode_staged(args):
+    """2단계 지오코딩 — 법정동을 먼저, 영업소 반경 안만 지번으로.
+
+    좌표 없는 거래가 329만 건인데 브이월드 하루 한도는 4,000건입니다.
+    그대로면 822번 돌려야 합니다. **전국을 다 붙일 필요가 없습니다** —
+    거리 밴드에 들어갈 수 있는 것에만 지번 좌표가 필요합니다.
+    """
+    from .transform.spatial import umd_near_tollgates
+
+    wanted = [] if args.all else (settings().get("land_use_filter") or [])
+    where = "1=1"
+    if wanted:
+        where += " AND (" + " OR ".join(
+            f"land_use LIKE '%{w}%'" for w in wanted) + ")"
+
+    with db.connect() as con:
+        pairs_df = con.execute(
+            f"SELECT DISTINCT sigungu, umd FROM trade WHERE {where} "
+            f"AND umd IS NOT NULL"
+        ).fetchdf()
+        tgs = con.execute(
+            "SELECT lat, lon FROM tollgate WHERE lat IS NOT NULL"
+        ).fetchdf()
+
+    if pairs_df.empty:
+        print("대상 거래가 없습니다.")
+        return
+    print(f"1단계 — 법정동 {len(pairs_df):,}개 (거래 건수와 무관합니다)")
+    pairs = [(r.sigungu, r.umd) for r in pairs_df.itertuples()]
+    cache = gc.GeocodeCache()
+    umd_coords = gc.geocode_umd(pairs, cache=cache, limit=args.umd_limit)
+
+    if not umd_coords:
+        print("법정동 좌표를 하나도 얻지 못했습니다. 여기서 멈춥니다.")
+        return
+
+    umd_points = pd.DataFrame(
+        [{"sigungu": k[0], "umd": k[1], "lat": v[0], "lon": v[1]}
+         for k, v in umd_coords.items()])
+
+    print(f"\n2단계 — 영업소 반경 안 법정동만 지번으로 올립니다")
+    if tgs.empty:
+        print("  영업소 좌표가 없어 반경을 못 가립니다. 1단계까지만 반영합니다.")
+        near = umd_points.iloc[0:0]
+    else:
+        max_km = float(settings()["spatial"]["max_link_km"])
+        near = umd_near_tollgates(umd_points, tgs, max_km=max_km)
+
+    parcel_coords = {}
+    if not near.empty:
+        keys = set(zip(near["sigungu"], near["umd"]))
+        with db.connect() as con:
+            todo = con.execute(
+                f"SELECT DISTINCT sigungu, umd, jibun FROM trade "
+                f"WHERE {where} AND lat IS NULL AND jibun IS NOT NULL"
+            ).fetchdf()
+        rows = [(r.sigungu, r.umd, r.jibun) for r in todo.itertuples()
+                if (r.sigungu, r.umd) in keys]
+        print(f"  반경 안 거래 주소 {len(rows):,}개 "
+              f"(전체 {len(todo):,} 중 {len(rows) / max(len(todo), 1):.1%})")
+        parcel_coords = gc.geocode_parcel(rows, cache=cache, limit=args.limit)
+
+    # 지번이 있으면 지번을, 없으면 법정동 중심점을 쓴다.
+    with db.connect() as con:
+        if parcel_coords:
+            fine = pd.DataFrame(
+                [{"sigungu": k[0], "umd": k[1], "jibun": k[2],
+                  "lat": v[0], "lon": v[1], "geocode_level": "parcel"}
+                 for k, v in parcel_coords.items() if v[0] is not None])
+            con.register("_fine", fine)
+            con.execute("""
+                UPDATE trade SET lat = g.lat, lon = g.lon,
+                                 geocode_level = g.geocode_level
+                FROM _fine g
+                WHERE trade.sigungu IS NOT DISTINCT FROM g.sigungu
+                  AND trade.umd IS NOT DISTINCT FROM g.umd
+                  AND trade.jibun IS NOT DISTINCT FROM g.jibun
+            """)
+            con.unregister("_fine")
+            print(f"  지번단위 {len(fine):,}개 주소를 반영했습니다")
+
+        coarse = umd_points.assign(geocode_level="umd")
+        con.register("_coarse", coarse)
+        # **이미 지번 좌표가 있는 행은 건드리지 않는다.** 거친 좌표로
+        # 덮으면 정밀도가 조용히 내려간다.
+        con.execute("""
+            UPDATE trade SET lat = g.lat, lon = g.lon, geocode_level = 'umd'
+            FROM _coarse g
+            WHERE trade.lat IS NULL
+              AND trade.sigungu IS NOT DISTINCT FROM g.sigungu
+              AND trade.umd IS NOT DISTINCT FROM g.umd
+        """)
+        con.unregister("_coarse")
+
+        breakdown = con.execute("""
+            SELECT coalesce(geocode_level, '미해결') AS level, count(*) AS n
+            FROM trade GROUP BY 1 ORDER BY n DESC
+        """).fetchdf()
+    print("\n거래 기준 좌표 정밀도")
+    print(breakdown.to_string(index=False))
+    print("\n※ umd 는 법정동 중심점이라 오차 ±1~2km 입니다. 근거리 밴드에서는")
+    print("   settings.yaml 의 require_parcel_bands 로 걸러집니다.")
+
+
 def cmd_geocode(args):
     # 분석에 쓰지 않을 용도지역까지 좌표를 찍으면 일일 한도만 태운다.
     # 권역을 넓히면 대기열이 백만 건 단위가 되므로 여기서 걸러야 한다.
@@ -989,6 +1093,16 @@ def main(argv=None):
     p.add_argument("--verify", action="store_true", help="각 코드로 시험 조회 (API 키 필요)")
     p.add_argument("--probe-ymd", default="202401", help="검증에 쓸 계약년월 YYYYMM")
     p.set_defaults(func=cmd_regions)
+
+    p = sub.add_parser("geocode-staged",
+                       help="2단계 지오코딩 (법정동 먼저 → 영업소 반경 안만 지번)")
+    p.add_argument("--umd-limit", type=int, default=None,
+                   help="이번 실행에서 법정동 중심점을 몇 개까지 부를지")
+    p.add_argument("--limit", type=int, default=4000,
+                   help="이번 실행에서 지번 단위를 몇 건까지 부를지 (일일 한도)")
+    p.add_argument("--all", action="store_true",
+                   help="용도지역 필터 없이 전부")
+    p.set_defaults(func=cmd_geocode_staged)
 
     p = sub.add_parser("geocode", help="지번 → 좌표")
     p.add_argument("--limit", type=int, help="이번 실행에서 신규 호출 상한")
