@@ -4,8 +4,10 @@
 어긋나도 파일은 멀쩡히 읽히고, 회귀에서는 계수 크기만 달라져 눈에 안 띈다.
 그래서 **붙이기 전에** 세 가지를 본다.
 
-  1. 전국 합의 연간 비   0.8~1.25 밖이면 의심. 교통량이 한 해에 그렇게
-                         변하지 않는다.
+  1. 전국 **월평균**의 연간 비  0.8~1.25 밖이면 의심.
+                         연 합계로 견주면 안 된다 — 2010년은 10월 원본이 없어
+                         11개월뿐이라, 연 합계로는 이듬해가 12.9% 늘어난 것처럼
+                         보인다. 월평균으로는 2.9% 다.
   2. 영업소별 비 중앙값  1.0 근처여야 한다. 전국 합만 맞고 중앙값이 어긋나면
                          일부 영업소만 이상한 것이다.
   3. 차종 구성           1종이 80% 안팎. 여기가 틀어지면 열이 밀린 것이다.
@@ -35,6 +37,15 @@ def load(year: int) -> pd.DataFrame:
     return pd.read_csv(p, encoding="utf-8-sig")
 
 
+def observed(year: int) -> int:
+    """그 해에 실제로 자료가 있는 달 수. 12가 아닐 수 있다."""
+    p = RAW / f"tcs_monthly_{year}.csv"
+    if not p.exists():
+        return 12
+    m = pd.read_csv(p, encoding="utf-8-sig", usecols=["연월"])
+    return int(m["연월"].nunique())
+
+
 def months(year: int) -> pd.Series:
     p = RAW / f"tcs_monthly_{year}.csv"
     if not p.exists():
@@ -57,11 +68,22 @@ def main() -> int:
 
     print(f"=== {new_y} 를 {ref_y} 와 대조 ===")
 
-    tn = new.groupby("영업소코드")["교통량"].sum()
-    tr = ref.groupby("영업소코드")["교통량"].sum()
+    # 달 수가 다르면 연 합계끼리 비교하면 안 된다. 2010년은 10월 원본이
+    # 없어 11개월뿐인데, 연 합계로 보면 이듬해가 12.9% 늘어난 것처럼 보인다.
+    # 실제로는 2.9% 다. **관측한 달 수로 나눠 월평균끼리 비교한다.**
+    #
+    # 파이프라인 자체는 이미 일평균(avg_daily)을 쓰므로 영향이 없다.
+    # 틀린 것은 이 대조 절차였다.
+    mn_new, mn_ref = observed(new_y), observed(ref_y)
+    if mn_new != 12 or mn_ref != 12:
+        print(f"  관측 달 수: {new_y} {mn_new}개월 · {ref_y} {mn_ref}개월"
+              f" — 월평균으로 견줍니다")
+
+    tn = new.groupby("영업소코드")["교통량"].sum() / mn_new
+    tr = ref.groupby("영업소코드")["교통량"].sum() / mn_ref
     ratio = tr.sum() / tn.sum()
     check(LO <= ratio <= HI,
-          f"전국 합 {tn.sum():,.0f} → {tr.sum():,.0f} (비 {ratio:.3f})")
+          f"전국 월평균 {tn.sum():,.0f} → {tr.sum():,.0f} (비 {ratio:.3f})")
 
     j = pd.concat([tn.rename("new"), tr.rename("ref")], axis=1).dropna()
     med = (j["ref"] / j["new"]).median()
@@ -79,19 +101,19 @@ def main() -> int:
           + " ".join(f"{k}:{sn[k]:.3f}→{sr.get(k, float('nan')):.3f}" for k in sn.index))
 
     mn = months(new_y)
-    check(int((mn == 12).sum()) > 0,
-          f"12개월 다 있는 영업소 {int((mn == 12).sum())}개 / "
-          f"12개월 미만 {int((mn < 12).sum())}개")
+    check(int((mn == mn_new).sum()) > 0,
+          f"그 해 모든 달({mn_new}개월)이 있는 영업소 {int((mn == mn_new).sum())}개 / "
+          f"덜 있는 영업소 {int((mn < mn_new).sum())}개")
 
-    # 연중 개통을 걸러내고, 12개월 다 있으면서 크게 변한 곳만 본다
+    # 연중 개통을 걸러내고, 그 해 내내 있으면서 크게 변한 곳만 본다
     j["비"] = j["ref"] / j["new"]
     odd = j[(j["비"] < ODD_LO) | (j["비"] > ODD_HI)]
-    partial = set(mn[mn < 12].index)
+    partial = set(mn[mn < mn_new].index)
     real = odd[~odd.index.isin(partial)]
     print(f"\n비가 {ODD_LO}~{ODD_HI} 밖인 영업소 {len(odd)}개 "
-          f"— 그중 {len(odd) - len(real)}개는 연중 개통(관측 12개월 미만)")
+          f"— 그중 {len(odd) - len(real)}개는 연중 개통(관측 {mn_new}개월 미만)")
     if len(real):
-        print("  ⚠ 12개월 다 있으면서 크게 변한 곳 — 확인이 필요합니다")
+        print(f"  ⚠ 그 해 내내({mn_new}개월) 있으면서 크게 변한 곳 — 확인이 필요합니다")
         print(real.assign(관측월수=mn.reindex(real.index)).round(2).to_string())
     else:
         print("  12개월 다 있으면서 크게 변한 곳은 없습니다.")

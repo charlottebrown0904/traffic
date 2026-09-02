@@ -561,6 +561,28 @@ _worst_second = _SIDO * 30 * 7
 check(_first_pass + _worst_second < 100_000,
       f"최악의 경우에도 하루 한도 안 ({_first_pass + _worst_second:,}회 < 100,000)")
 
+# ────────────────────────────────────────────────────────────────
+print("\n12. 달 수가 다른 해를 어떻게 견주는가")
+
+# 2010년은 10월 원본이 없어 11개월뿐이다. 연 합계로 견주면 이듬해가
+# 12.9% 늘어난 것처럼 보이지만, 월평균으로는 2.9% 다. 파이프라인은
+# 이미 일평균(avg_daily)을 쓰므로 영향이 없었고, 틀린 것은 대조 절차였다.
+_vf = (ROOT / "scripts" / "verify_tcs_year.py").read_text(encoding="utf-8")
+check("def observed(" in _vf, "그 해 관측 달 수를 세는 함수가 있다")
+check("/ mn_new" in _vf and "/ mn_ref" in _vf,
+      "전국 합을 관측 달 수로 나눠 월평균끼리 견준다")
+check("mn < mn_new" in _vf,
+      "'연중 개통' 판정도 12가 아니라 그 해 달 수를 기준으로 한다")
+
+# 파이프라인 쪽은 관측일수로 나누는지 — 이게 진짜 방어선이다
+from redt.collect import traffic_files as _tfl        # noqa: E402
+_days = _tfl.observed_days()
+if len(_days):
+    _y2010 = _days[_days["year"] == 2010]["days"]
+    if len(_y2010):
+        check(abs(_y2010.median() - 334) < 2,
+              f"2010년 관측일수가 334일로 잡힌다 (365-31, 실제 {_y2010.median():.0f})")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
