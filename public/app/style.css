@@ -8,15 +8,18 @@
  * 화면에서 0-1km 와 10-20km 를 눈으로 가릴 수 없었다.
  */
 :root{
-  /* ── 지면 (브라운) ── */
+  /* ── 지면 (브라운) ──
+     밝은 바탕(#FAF7F3) 대비 명암비: ink 16.8 · muted 5.9 · faint 4.8 · accent 4.9.
+     faint 는 힌트와 표 머리글에 쓰는 '진짜 글자' 라 4.5 아래로 내리지 않는다.
+     구분색도 전부 4.0 이상으로 잡아 색맹이 아니어도 읽히게 했다. */
   --ground:#FAF7F3; --surface:#FFFFFF; --surface-2:#F3EDE5;
-  --ink:#1C1611; --muted:#6B5E52; --faint:#9A8B7C;
+  --ink:#1C1611; --muted:#6B5E52; --faint:#7A6B5C;
   --border:#E7DDD1; --border-strong:#CDBDAB;
   --accent:#8A6547; --accent-soft:#F4E9DD; --on-accent:#FFFFFF;
 
   /* ── 구분색: 거리 밴드 (가까움 → 멂) ── */
   --band-1:#C62828;   /* 0-1   적  */
-  --band-2:#E06C00;   /* 1-3   주황 */
+  --band-2:#C25E00;   /* 1-3   주황 */
   --band-3:#00796B;   /* 3-5   청록 */
   --band-4:#1565C0;   /* 5-10  청  */
   --band-5:#6A3FA0;   /* 10-20 보라 (위약 밴드) */
