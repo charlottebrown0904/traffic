@@ -206,3 +206,75 @@ def walk(parent_id: str, vw_cd: str = "MT_ZTITLE", depth: int = 2,
             if child:
                 found += walk(str(child), vw_cd, depth, _level + 1, _seen)
     return found
+
+
+SEARCH_URL = "https://kosis.kr/openapi/statisticsSearch.do"
+
+
+def raw(url: str, params: dict) -> tuple[int, str]:
+    """응답을 그대로 돌려준다. 진단용."""
+    from .http import get_once
+    resp = get_once(url, params)
+    return resp.status_code, resp.text
+
+
+def diagnose() -> None:
+    """parentId 가 실제로 먹히는지, 어느 뷰가 답하는지 사실만 확인한다.
+
+    두 번 헛돌았습니다. 한 번은 응답이 JSON 이 아니어서, 한 번은 트리가
+    안 내려가서. 추측으로 한 번씩 더 돌리는 대신, 한 실행에서 필요한
+    사실을 모두 확인합니다.
+
+      1. parentId 를 바꾸면 응답이 달라지는가 (안 달라지면 무시되는 것)
+      2. 어느 서비스뷰가 답하는가
+      3. 검색 엔드포인트가 있는가 — 있으면 트리를 안 타도 된다
+    """
+    print("=" * 60)
+    print("1. parentId 가 먹히는가 — 두 값의 응답을 비교합니다")
+    print("=" * 60)
+    bodies = {}
+    for pid in ("A", "B", "F"):
+        try:
+            code, text = raw(LIST_URL, {
+                "method": "getList", "apiKey": "", "vwCd": "MT_ZTITLE",
+                "parentId": pid, "format": "json", "content": "json"})
+        except Exception as exc:                       # noqa: BLE001
+            print(f"  parentId={pid}  호출 실패: {exc}")
+            continue
+        bodies[pid] = text
+        print(f"  parentId={pid}  HTTP {code} · {len(text):,}자 · 앞부분: {text[:120]}")
+    uniq = len(set(bodies.values()))
+    if len(bodies) > 1:
+        print(f"\n  → 서로 다른 응답 {uniq}종 / 시도 {len(bodies)}개")
+        if uniq == 1:
+            print("     **parentId 가 무시되고 있습니다.** 트리를 이 방법으로는 못 내려갑니다.")
+        else:
+            print("     parentId 가 먹힙니다. 트리 탐색을 이어가면 됩니다.")
+
+    print()
+    print("=" * 60)
+    print("2. 어느 서비스뷰가 답하는가")
+    print("=" * 60)
+    for name, code_ in VIEWS.items():
+        try:
+            code, text = raw(LIST_URL, {
+                "method": "getList", "apiKey": "", "vwCd": code_,
+                "parentId": "A", "format": "json", "content": "json"})
+            n = len(_rows(loads_lenient(text))) if text.strip() else 0
+            print(f"  {name:14s} {code_:14s} HTTP {code} · 항목 {n}개 · {text[:90]}")
+        except Exception as exc:                       # noqa: BLE001
+            print(f"  {name:14s} {code_:14s} 실패: {exc}")
+
+    print()
+    print("=" * 60)
+    print("3. 검색 엔드포인트 — 있으면 트리를 안 타도 됩니다")
+    print("=" * 60)
+    for term in ("주민등록인구", "사업체"):
+        try:
+            code, text = raw(SEARCH_URL, {
+                "method": "getList", "apiKey": "", "searchNm": term,
+                "format": "json", "jsonVD": "Y"})
+            print(f"  '{term}'  HTTP {code} · {len(text):,}자")
+            print(f"    {text[:400]}")
+        except Exception as exc:                       # noqa: BLE001
+            print(f"  '{term}'  실패: {exc}")
