@@ -201,8 +201,9 @@ with tempfile.TemporaryDirectory() as tmp:
                 {"title": "서시흥나들목", "point": {"x": "126.80", "y": "37.39"}},
             ]}}}
 
-    real_get = tf.get
-    tf.get = lambda *a, **k: _Resp()
+    # 이름 검색은 재시도 없는 get_once 를 쓴다 (없는 이름은 다시 물어도 없다).
+    real_get = tf.get_once
+    tf.get_once = lambda *a, **k: _Resp()
     try:
         row = tf.search_place("서시흥영업소", cache)
         check(row is not None and abs(row["lat"] - 37.38) < 1e-6,
@@ -211,19 +212,19 @@ with tempfile.TemporaryDirectory() as tmp:
         check(len(lines) == 1, "캐시에 한 줄이 적힌다")
         check(_json.loads(lines[0])["title"] == "서시흥영업소", "캐시가 다시 읽힌다")
         # 두 번째 호출은 그물을 다시 던지지 않아야 한다
-        tf.get = lambda *a, **k: (_ for _ in ()).throw(AssertionError("캐시를 안 썼습니다"))
+        tf.get_once = lambda *a, **k: (_ for _ in ()).throw(AssertionError("캐시를 안 썼습니다"))
         again = tf.search_place("서시흥영업소", cache)
         check(again is not None, "두 번째 호출은 캐시로 답한다")
 
         # 호출이 실패한 것은 캐시하지 않아야 한다. 키가 없거나 중계기가 잠깐
         # 죽은 것을 '그런 곳은 없다' 로 굳히면 고친 뒤에도 영원히 못 찾는다.
         before = len((_Path(tmp) / "c.jsonl").read_text(encoding="utf-8").strip().splitlines())
-        tf.get = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("중계기 죽음"))
+        tf.get_once = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("중계기 죽음"))
         check(tf.search_place("없는영업소", cache) is None, "호출 실패는 None 을 준다")
         after = len((_Path(tmp) / "c.jsonl").read_text(encoding="utf-8").strip().splitlines())
         check(before == after, f"호출 실패는 캐시에 남기지 않는다 ({before} → {after})")
     finally:
-        tf.get = real_get
+        tf.get_once = real_get
 
 # 판정: 억지로 채우지 않는다
 known = [(37.3800, 126.7900)]

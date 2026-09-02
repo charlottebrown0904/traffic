@@ -42,12 +42,16 @@ import pandas as pd
 
 from ..config import RAW, INTERIM, ensure_dirs, keys
 from ..ids import canon_series
-from .http import get, polite_sleep
+from .http import get, get_once, polite_sleep
 
 SEARCH_URL = "https://api.vworld.kr/req/search"
 ADDRESS_URL = "https://api.vworld.kr/req/address"
 CACHE = INTERIM / "tollgate_poi_cache.jsonl"
 REGION_CACHE = INTERIM / "tollgate_region_cache.jsonl"
+
+# 연달아 이만큼 실패하면 이름이 아니라 창구가 잘못된 것으로 보고 멈춘다.
+# 400번을 다 두드리며 시간 제한에 걸리는 것보다, 빨리 서서 이유를 말하는 게 낫다.
+GIVE_UP_STREAK = 15
 
 KOREA_LAT = (33.0, 39.0)
 KOREA_LON = (124.0, 132.0)
@@ -110,7 +114,10 @@ def search_place(query: str, cache: _Cache) -> dict | None:
         return hit if hit.get("lat") is not None else None
 
     try:
-        resp = get(SEARCH_URL, {
+        # 재시도하지 않는다. 없는 이름은 네 번 물어도 없다. 영업소 80개 ×
+        # 접미사 다섯 개면 400번인데, 실패마다 2·4·8초를 기다리면 그 헛기다림만
+        # 으로 작업 시간 제한에 걸린다 (탐침에서 이미 한 번 당했다).
+        resp = get_once(SEARCH_URL, {
             "service": "search", "request": "search", "version": "2.0",
             "crs": "EPSG:4326", "size": 10, "page": 1,
             "query": query, "type": "place", "format": "json",
@@ -194,11 +201,16 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
     todo = sorted(traffic_ids - have, key=lambda t: int(t) if t.isdigit() else 0)
     if limit:
         todo = todo[:limit]
-    print(f"  마스터에 없는 영업소 {len(todo)}개 — 이름으로 좌표를 찾습니다")
+    print(f"  마스터에 없는 영업소 {len(todo)}개 — 이름으로 좌표를 찾습니다",
+          flush=True)
 
     cache = _Cache()
     filled, failed = [], []
-    for tid in todo:
+    err_streak = 0
+    stopped = False
+    for done, tid in enumerate(todo, 1):
+        if done % 10 == 0:
+            print(f"    …{done}/{len(todo)} (확보 {len(filled)})", flush=True)
         name = names.get(tid)
         if not name:
             failed.append((tid, "", "교통량 파일에 이름이 없음"))
@@ -224,7 +236,14 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
 
         if picked is None:
             failed.append((tid, name, why))
+            err_streak += 1
+            if err_streak >= GIVE_UP_STREAK:
+                print(f"  ⚠ {GIVE_UP_STREAK}개 연속 실패 — 이름 문제가 아니라 검색 창구가"
+                      " 막힌 것으로 보고 멈춥니다. 마지막 사유: " + why, flush=True)
+                stopped = True
+                break
             continue
+        err_streak = 0
 
         filled.append({
             "tollgate_id": tid, "name": name, "route_no": None,
@@ -234,6 +253,8 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
         })
         known.append((picked["lat"], picked["lon"]))
 
+    if stopped:
+        print(f"  ⚠ 중간에 멈췄습니다 — {len(todo)}개 중 {len(filled) + len(failed)}개만 시도했습니다.")
     print(f"  좌표 확보 {len(filled)}개 · 실패 {len(failed)}개")
     if failed:
         print("  --- 못 찾은 영업소 (상위 20) ---")
@@ -289,13 +310,22 @@ def fill_regions(con, limit: int | None = None) -> int:
         print("  시도·시군구가 빈 영업소가 없습니다.")
         return 0
 
-    print(f"  시도·시군구가 빈 영업소 {len(rows)}개 — 좌표로 되짚습니다")
+    print(f"  시도·시군구가 빈 영업소 {len(rows)}개 — 좌표로 되짚습니다", flush=True)
     cache = _Cache(REGION_CACHE)
     filled = 0
-    for tid, lat, lon in rows:
+    err_streak = 0
+    for done, (tid, lat, lon) in enumerate(rows, 1):
+        if done % 50 == 0:
+            print(f"    …{done}/{len(rows)} (채움 {filled})", flush=True)
         region = reverse_region(float(lat), float(lon), cache)
         if region is None:
+            err_streak += 1
+            if err_streak >= GIVE_UP_STREAK:
+                print(f"  ⚠ {GIVE_UP_STREAK}개 연속 실패 — 역지오코딩 창구가 막힌 것으로"
+                      " 보고 멈춥니다.", flush=True)
+                break
             continue
+        err_streak = 0
         con.execute("UPDATE tollgate SET sido = ?, sigungu = ? WHERE tollgate_id = ?",
                     [region[0], region[1], tid])
         filled += 1
