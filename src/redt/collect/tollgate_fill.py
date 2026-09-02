@@ -49,9 +49,16 @@ ADDRESS_URL = "https://api.vworld.kr/req/address"
 CACHE = INTERIM / "tollgate_poi_cache.jsonl"
 REGION_CACHE = INTERIM / "tollgate_region_cache.jsonl"
 
-# 연달아 이만큼 실패하면 이름이 아니라 창구가 잘못된 것으로 보고 멈춘다.
-# 400번을 다 두드리며 시간 제한에 걸리는 것보다, 빨리 서서 이유를 말하는 게 낫다.
+# 연달아 이만큼 **호출이** 실패하면 창구가 막힌 것으로 보고 멈춘다.
+#
+# '찾았는데 없더라' 는 여기 세지 않는다. 둘은 다른 일이다. 민자 영업소
+# 이름이 장소 색인에 없는 것은 정상이고, 그걸로 멈추면 뒤쪽 80개를 아예
+# 시도조차 못 한다. 실제로 그렇게 2초 만에 서 버렸다.
 GIVE_UP_STREAK = 15
+
+class CallFailed(RuntimeError):
+    """창구가 막힌 것. '찾았는데 없더라' 와 구분하려고 따로 둔다."""
+
 
 KOREA_LAT = (33.0, 39.0)
 KOREA_LON = (124.0, 132.0)
@@ -128,8 +135,7 @@ def search_place(query: str, cache: _Cache) -> dict | None:
         # 호출 자체가 실패한 것은 캐시하지 않는다. 키가 없거나 중계기가 잠깐
         # 죽은 것을 '그런 곳은 없다' 로 굳혀 두면, 고친 뒤에 다시 돌려도
         # 영원히 안 찾는다. '답을 받았는데 없더라' 만 캐시한다.
-        print(f"    {query}: 호출 실패 — {str(exc)[:120]}")
-        return None
+        raise CallFailed(str(exc)[:200]) from exc
 
     result = (payload.get("response") or {}).get("result") or {}
     items = result.get("items") or []
@@ -218,12 +224,12 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
 
         core = _core(name)
         picked, why = None, "검색 결과 없음"
+        call_failed = False
         for suffix in SUFFIXES:
-            # 한 영업소에서 터진다고 나머지 79개까지 못 채우면 안 된다.
             try:
                 row = search_place(f"{core}{suffix}", cache)
-            except Exception as exc:               # noqa: BLE001
-                why = f"검색 중 오류: {exc}"[:120]
+            except CallFailed as exc:
+                why, call_failed = f"호출 실패 — {exc}"[:160], True
                 continue
             if row is None:
                 continue
@@ -234,16 +240,19 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
             why = detail
             polite_sleep()
 
+        # 창구가 막힌 것만 연속으로 센다. '없더라' 로는 멈추지 않는다.
+        err_streak = err_streak + 1 if call_failed else 0
+        if err_streak >= GIVE_UP_STREAK:
+            failed.append((tid, name, why))
+            print(f"  ⚠ 호출이 {GIVE_UP_STREAK}번 연속 실패했습니다 — 이름 문제가 아니라"
+                  " 검색 창구가 막힌 것으로 보고 멈춥니다.", flush=True)
+            print(f"    마지막 사유: {why}", flush=True)
+            stopped = True
+            break
+
         if picked is None:
             failed.append((tid, name, why))
-            err_streak += 1
-            if err_streak >= GIVE_UP_STREAK:
-                print(f"  ⚠ {GIVE_UP_STREAK}개 연속 실패 — 이름 문제가 아니라 검색 창구가"
-                      " 막힌 것으로 보고 멈춥니다. 마지막 사유: " + why, flush=True)
-                stopped = True
-                break
             continue
-        err_streak = 0
 
         filled.append({
             "tollgate_id": tid, "name": name, "route_no": None,
@@ -257,6 +266,12 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
         print(f"  ⚠ 중간에 멈췄습니다 — {len(todo)}개 중 {len(filled) + len(failed)}개만 시도했습니다.")
     print(f"  좌표 확보 {len(filled)}개 · 실패 {len(failed)}개")
     if failed:
+        kinds: dict[str, int] = {}
+        for _, _, why in failed:
+            head = why.split("(")[0].split("—")[0].strip()[:24]
+            kinds[head] = kinds.get(head, 0) + 1
+        print("  실패 사유별: " + " · ".join(
+            f"{k} {v}건" for k, v in sorted(kinds.items(), key=lambda x: -x[1])))
         print("  --- 못 찾은 영업소 (상위 20) ---")
         for tid, name, why in failed[:20]:
             print(f"    {tid:>5}  {name or '(이름없음)':<10}  {why}")
@@ -282,8 +297,9 @@ def reverse_region(lat: float, lon: float, cache: _Cache) -> tuple[str, str] | N
             "format": "json", "key": keys().require("vworld"),
         })
         payload = resp.json()
-    except Exception:                              # noqa: BLE001
-        return None            # 호출 실패는 캐시하지 않는다 (search_place 와 같은 이유)
+    except Exception as exc:                       # noqa: BLE001
+        # 호출 실패는 캐시하지 않는다 (search_place 와 같은 이유)
+        raise CallFailed(str(exc)[:200]) from exc
 
     items = (payload.get("response") or {}).get("result") or []
     for item in items:
@@ -317,15 +333,18 @@ def fill_regions(con, limit: int | None = None) -> int:
     for done, (tid, lat, lon) in enumerate(rows, 1):
         if done % 50 == 0:
             print(f"    …{done}/{len(rows)} (채움 {filled})", flush=True)
-        region = reverse_region(float(lat), float(lon), cache)
-        if region is None:
+        try:
+            region = reverse_region(float(lat), float(lon), cache)
+        except CallFailed as exc:
             err_streak += 1
             if err_streak >= GIVE_UP_STREAK:
-                print(f"  ⚠ {GIVE_UP_STREAK}개 연속 실패 — 역지오코딩 창구가 막힌 것으로"
-                      " 보고 멈춥니다.", flush=True)
+                print(f"  ⚠ 호출이 {GIVE_UP_STREAK}번 연속 실패했습니다 — 역지오코딩"
+                      f" 창구가 막힌 것으로 보고 멈춥니다. 마지막 사유: {exc}", flush=True)
                 break
             continue
         err_streak = 0
+        if region is None:
+            continue
         con.execute("UPDATE tollgate SET sido = ?, sigungu = ? WHERE tollgate_id = ?",
                     [region[0], region[1], tid])
         filled += 1

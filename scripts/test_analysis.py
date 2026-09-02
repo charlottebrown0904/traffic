@@ -71,6 +71,19 @@ raw = fits.loc[fits["모형"] == "raw", "beta"].iloc[0]
 check(abs(raw - TRUE_BETA) < 0.02, f"심어둔 β={TRUE_BETA} 를 되찾는다 (얻은 값 {raw:.4f})")
 check((fits["모형"] == "+서울거리").any(), "서울거리 통제 모형이 함께 보고된다")
 
+# 통제를 넣었을 때 계수가 어떻게 변했는지를 말로 옮기는 부분.
+# '줄었습니다' 하나로 처리했다가 계수가 커진 경우에 '-40% 줄었다',
+# 부호가 뒤집힌 경우에 '143% 줄었다' 로 찍혔다. 둘 다 헛소리였다.
+_say = cross._explain_control
+check("28%" in _say(0.333, 0.239) and "줄었" in _say(0.333, 0.239),
+      "계수가 줄면 줄었다고 말한다")
+check("커졌" in _say(0.071, 0.100) and "억제" in _say(0.071, 0.100),
+      "계수가 커지면 '커졌다' 로 말한다 (억제 효과)")
+check("뒤집" in _say(-0.405, 0.174), "부호가 뒤집히면 그렇게 말한다")
+check("절반" in _say(0.40, 0.05), "절반 넘게 줄면 입지 탓임을 밝힌다")
+check("줄었" not in _say(0.071, 0.100) and "줄었" not in _say(-0.405, 0.174),
+      "커지거나 뒤집힌 경우에 '줄었다' 고 말하지 않는다")
+
 # 거래건수가 적은 IC 는 순위에 넣지 않는다 — 중앙값이 우연이 되기 때문
 thin = panel.copy()
 thin.loc[thin["tollgate_id"] == "T000", "n_trades"] = 1
@@ -220,9 +233,25 @@ with tempfile.TemporaryDirectory() as tmp:
         # 죽은 것을 '그런 곳은 없다' 로 굳히면 고친 뒤에도 영원히 못 찾는다.
         before = len((_Path(tmp) / "c.jsonl").read_text(encoding="utf-8").strip().splitlines())
         tf.get_once = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("중계기 죽음"))
-        check(tf.search_place("없는영업소", cache) is None, "호출 실패는 None 을 준다")
+        raised = False
+        try:
+            tf.search_place("없는영업소", cache)
+        except tf.CallFailed:
+            raised = True
+        check(raised, "호출 실패는 CallFailed 로 알린다 ('없더라' 와 구분)")
         after = len((_Path(tmp) / "c.jsonl").read_text(encoding="utf-8").strip().splitlines())
         check(before == after, f"호출 실패는 캐시에 남기지 않는다 ({before} → {after})")
+
+        # 답은 왔는데 결과가 없는 경우는 예외가 아니라 None 이어야 한다.
+        # 이 둘을 뭉뚱그린 탓에, 민자 이름이 장소 색인에 없다는 정상적인
+        # 결과로 회로가 끊겨 2초 만에 멈춘 적이 있다.
+        class _Empty:
+            @staticmethod
+            def json():
+                return {"response": {"status": "NOT_FOUND", "result": {}}}
+        tf.get_once = lambda *a, **k: _Empty()
+        check(tf.search_place("있을리없는영업소", cache) is None,
+              "'답은 왔는데 없더라' 는 None 이지 예외가 아니다")
     finally:
         tf.get_once = real_get
 

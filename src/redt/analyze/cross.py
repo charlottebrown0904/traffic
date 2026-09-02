@@ -131,6 +131,32 @@ def fit(table: pd.DataFrame, volume_col: str = "volume_total") -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _explain_control(raw: float, ctl: float) -> str:
+    """통제를 넣었을 때 계수가 어떻게 변했는지를 말로 옮긴다.
+
+    네 가지가 전부 다른 이야기라 하나로 뭉뚱그리면 거짓말이 된다.
+    실제로 '줄었습니다' 하나로 처리했다가, 계수가 커진 경우에 '-40% 줄었다',
+    부호가 뒤집힌 경우에 '143% 줄었다' 로 찍혔다. 둘 다 헛소리다.
+    """
+    if raw == 0:
+        return "통제 전 계수가 0 이라 비교할 수 없습니다."
+    if (raw > 0) != (ctl > 0):
+        return ("**부호가 뒤집혔습니다.** 통제 전 관계는 IC 가 아니라 입지가 만든"
+                " 것이며, 방향까지 반대로 보이게 하고 있었습니다. 통제 전 순위표를"
+                " 그대로 믿으면 안 됩니다.")
+    if abs(ctl) > abs(raw) * 1.05:
+        grow = abs(ctl) / abs(raw) - 1
+        return (f"줄어든 게 아니라 **{grow:.0%} 커졌습니다**. 거리를 빼주기 전에는"
+                " 두 효과가 서로를 가리고 있었다는 뜻입니다(억제 효과). 서울에서"
+                " 멀수록 화물 비중이 높은 것이 대표적입니다.")
+    shrink = 1 - (abs(ctl) / abs(raw))
+    if shrink > 0.5:
+        return (f"{shrink:.0%} 줄었습니다. 절반 넘게 줄었으므로 이 상관의 큰 몫은"
+                " IC 효과가 아니라 수도권 접근성입니다. 교통량 순위만으로 저평가를"
+                " 판정하면 안 됩니다.")
+    return f"{shrink:.0%} 줄었습니다. 거리로 설명되지 않는 몫이 남았습니다."
+
+
 def report(panel: pd.DataFrame, tollgates: pd.DataFrame,
            year: int | None = None, kind: str = "land",
            volume_col: str = "volume_total", top: int = 25) -> None:
@@ -167,13 +193,21 @@ def report(panel: pd.DataFrame, tollgates: pd.DataFrame,
         raw = fits.loc[fits["모형"] == "raw", "beta"]
         ctl = fits.loc[fits["모형"] == "+서울거리", "beta"]
         if len(raw) and len(ctl) and pd.notna(raw.iloc[0]) and pd.notna(ctl.iloc[0]):
-            shrink = 1 - (ctl.iloc[0] / raw.iloc[0]) if raw.iloc[0] else np.nan
-            print(f"\n  해석: 서울거리를 넣자 교통량 계수가 "
-                  f"{raw.iloc[0]:+.3f} → {ctl.iloc[0]:+.3f} "
-                  f"({shrink:.0%} 줄었습니다).")
-            if shrink > 0.5:
-                print("  절반 넘게 줄었습니다. 이 상관의 큰 몫은 IC 효과가 아니라"
-                      " 수도권 접근성입니다. 교통량 순위만으로 저평가를 판정하면 안 됩니다.")
-            else:
-                print("  거리로 설명되지 않는 몫이 남았습니다. 다만 횡단 비교라"
-                      " 인과로 읽을 수는 없습니다 — 지시 2 의 개통 전후 비교가 그 몫입니다.")
+            r, c = float(raw.iloc[0]), float(ctl.iloc[0])
+            print(f"\n  해석: 서울거리를 넣자 교통량 계수가 {r:+.3f} → {c:+.3f}")
+            print("  " + _explain_control(r, c))
+
+            # 통제 전후로 유의성이 뒤집히는지가 실은 계수 크기보다 중요하다.
+            p_raw = fits.loc[fits["모형"] == "raw", "p"]
+            p_ctl = fits.loc[fits["모형"] == "+서울거리", "p"]
+            if len(p_raw) and len(p_ctl) and pd.notna(p_raw.iloc[0]) and pd.notna(p_ctl.iloc[0]):
+                if p_raw.iloc[0] >= 0.05 and p_ctl.iloc[0] < 0.05:
+                    print(f"  통제 전에는 유의하지 않다가(p={p_raw.iloc[0]:.3f}) 통제 후에"
+                          f" 유의해졌습니다(p={p_ctl.iloc[0]:.3f}). 통제 없이 본 순위표는"
+                          " 이 관계를 놓칩니다.")
+                elif p_raw.iloc[0] < 0.05 and p_ctl.iloc[0] >= 0.05:
+                    print(f"  통제하자 유의성이 사라졌습니다(p={p_raw.iloc[0]:.3f} →"
+                          f" {p_ctl.iloc[0]:.3f}). 원래 상관은 입지가 만든 것입니다.")
+
+            print("  어느 쪽이든 횡단 비교라 인과로 읽을 수는 없습니다 —"
+                  " 지시 2 의 개통 전후 비교가 그 몫입니다.")
