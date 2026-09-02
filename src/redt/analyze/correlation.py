@@ -170,20 +170,46 @@ def interpret(elasticity: pd.DataFrame) -> str:
                 f"{thin_note}")
             continue
 
-        peak = sig.loc[sig["beta"].abs().idxmax()]
-        verdict = (
-            "✅ 거리 감쇠 확인 — IC 효과로 해석 가능"
-            if abs(peak["beta"]) > abs(far["beta"]) * 1.5
-            else "⚠️ 위약 밴드에서도 계수가 큼 — 지역 효과일 가능성. 통제변수 보강 필요"
-        )
+        # 부호를 먼저 본다. 절댓값으로 '정점' 을 고르면 **음수 계수에 초록
+        # 체크가 붙는다.** 실제로 붙었다 — 화물 0-1km β=-0.78(p=0.045)에
+        # "✅ 거리 감쇠 확인 — IC 효과로 해석 가능" 이라고 찍혔다. 그 값의
+        # 뜻은 '화물이 늘수록 그 땅값이 내려간다' 로, 가설과 정반대다.
+        pos = sig[sig["beta"] > 0]
+        neg = sig[sig["beta"] < 0]
+
+        if pos.empty:
+            worst = neg.loc[neg["beta"].idxmin()]
+            lines.append(
+                f"[{kind}] ⚠️ 유의한 계수가 **음수**입니다 — 가설과 반대 방향입니다."
+                f"\n        {worst['band']}km β={worst['beta']:+.3f}(p={worst['p']:.3f})"
+                f" → 교통량이 늘수록 그 구간 땅값이 내려갔다는 뜻입니다."
+                f"\n        위약 {far['band']}km β={far['beta']:+.3f}(p={far['p']:.3f})"
+                f"\n        밴드별: {shape}{thin_note}")
+            continue
+
+        peak = pos.loc[pos["beta"].idxmax()]
+        # 위약이 유의하면 크기 비교는 의미가 없다. 멀리서도 같은 일이
+        # 벌어지고 있다는 뜻이라, IC 주변만의 효과가 아니다.
+        if far["p"] < 0.05 and far["beta"] > 0:
+            verdict = "⚠️ 위약 밴드도 유의한 양수 — IC 효과가 아니라 지역 효과입니다"
+        elif peak["beta"] > abs(far["beta"]) * 1.5:
+            verdict = "✅ 거리 감쇠 확인 — IC 효과로 해석 가능"
+        else:
+            verdict = "⚠️ 위약 밴드와 크기가 비슷함 — 지역 효과일 가능성. 통제변수 보강 필요"
+
         near = inner.iloc[0]
         note = ""
-        if peak["band"] != near["band"]:
+        if peak["band"] != near["band"] and near["beta"] > 0:
             note = (f"\n        └ 정점이 최근접({near['band']}km, β={near['beta']:+.2f})이"
                     f" 아니라 {peak['band']}km 입니다 — 역U자. 선행연구와 같은 모양입니다.")
+        neg_note = ""
+        if len(neg):
+            names = " · ".join(f"{r['band']} {r['beta']:+.2f}" for _, r in neg.iterrows())
+            neg_note = (f"\n        ⚠ 같은 종류에서 음수로 유의한 밴드도 있습니다: {names}."
+                        " 부호가 밴드마다 뒤집히면 하나의 효과로 보기 어렵습니다.")
         lines.append(
-            f"[{kind}] 정점 {peak['band']}km β={peak['beta']:.3f}(p={peak['p']:.3f}) / "
-            f"위약 {far['band']}km β={far['beta']:.3f}(p={far['p']:.3f}) → {verdict}"
-            f"\n        밴드별: {shape}{note}{thin_note}")
+            f"[{kind}] 정점 {peak['band']}km β={peak['beta']:+.3f}(p={peak['p']:.3f}) / "
+            f"위약 {far['band']}km β={far['beta']:+.3f}(p={far['p']:.3f}) → {verdict}"
+            f"\n        밴드별: {shape}{note}{neg_note}{thin_note}")
 
     return "\n".join(lines) if lines else "추정 가능한 계수가 없습니다 (표본 부족)."

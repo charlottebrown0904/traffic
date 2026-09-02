@@ -398,6 +398,42 @@ v4, why4 = H.judge_h2(H.h2(noplacebo, "volume_total", []))
 check(v4 == H.Verdict.UNKNOWN, f"위약 밴드가 없으면 보류 ({v4})")
 check("위약" in why4, "보류 이유가 위약임을 밝힌다")
 
+# (마) 유의한 음수는 '아직 모름' 이 아니라 '기각' 이다.
+#      실제 실행에서 화물 0-1km β=-0.78(p=0.045)이 나왔는데, 옛 코드가
+#      절댓값으로 정점을 골라 "✅ IC 효과로 해석 가능" 이라고 찍었다.
+#      그 값의 뜻은 '화물이 늘수록 그 땅값이 내려간다' 로 정반대다.
+negp = _panel({"0-1": -0.6, "1-3": -0.2, "3-5": -0.1, "5-10": 0.0})
+v9, why9 = H.judge_h2(H.h2(negp, "volume_total", []))
+check(v9 == H.Verdict.REJECT, f"유의한 음수는 기각으로 판정 ({v9} — {why9[:50]})")
+check("음수" in why9 and "반대" in why9, "반대 방향임을 말로 밝힌다")
+
+# correlation.interpret 도 같은 함정을 밟지 않아야 한다
+from redt.analyze import correlation as C          # noqa: E402
+_el = pd.DataFrame([
+    {"band": "0-1", "kind": "land", "n": 100, "beta": -0.78, "se": 0.39, "p": 0.045},
+    {"band": "1-3", "kind": "land", "n": 100, "beta": -0.40, "se": 0.42, "p": 0.34},
+    {"band": "5-10", "kind": "land", "n": 100, "beta": 0.11, "se": 0.15, "p": 0.48},
+])
+_txt = C.interpret(_el)
+check("✅" not in _txt, f"음수 정점에 초록 체크를 붙이지 않는다 ({_txt[:70]})")
+check("반대 방향" in _txt, "가설과 반대 방향임을 밝힌다")
+
+# 위약이 유의한 양수면 크기 비교로 통과시키지 않는다
+_el2 = pd.DataFrame([
+    {"band": "0-1", "kind": "land", "n": 100, "beta": 0.90, "se": 0.20, "p": 0.001},
+    {"band": "5-10", "kind": "land", "n": 100, "beta": 0.50, "se": 0.15, "p": 0.001},
+])
+_txt2 = C.interpret(_el2)
+check("✅" not in _txt2 and "지역 효과" in _txt2,
+      f"위약이 유의하면 크기가 커도 통과시키지 않는다 ({_txt2[:70]})")
+
+# 정상적인 경우에는 여전히 통과해야 한다 (검사가 전부를 막아버리면 안 된다)
+_el3 = pd.DataFrame([
+    {"band": "0-1", "kind": "land", "n": 100, "beta": 0.90, "se": 0.20, "p": 0.001},
+    {"band": "5-10", "kind": "land", "n": 100, "beta": 0.05, "se": 0.15, "p": 0.70},
+])
+check("✅" in C.interpret(_el3), "영향범위만 유의한 양수면 통과시킨다")
+
 # H1 — 평행추세가 깨지면 계수가 커도 교란
 t1 = pd.DataFrame([{"모형": "통제 전", "n": 500, "영업소": 20, "beta": 0.20,
                     "se": 0.05, "p": 0.0001, "비고": ""}])

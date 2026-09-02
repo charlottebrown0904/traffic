@@ -219,12 +219,20 @@ def judge_h2(table: pd.DataFrame, influence_max_km: float = 5.0) -> tuple[str, s
                 f"위약 밴드({pl['밴드']}km)에서도 β={pl['beta']:+.2f}(p={pl['p']:.3f})로"
                 " 유의합니다. IC 주변만의 효과가 아니라 지역 전체의 움직임입니다.")
 
-    sig = inner.dropna(subset=["beta"])
-    sig = sig[(sig["p"] < ALPHA) & (sig["beta"] > 0)]
+    est = inner.dropna(subset=["beta"])
+    if est.empty:
+        return Verdict.UNKNOWN, "영향범위 밴드를 추정하지 못했습니다."
+    sig = est[(est["p"] < ALPHA) & (est["beta"] > 0)]
     if sig.empty:
-        est = inner.dropna(subset=["beta"])
-        if est.empty:
-            return Verdict.UNKNOWN, "영향범위 밴드를 추정하지 못했습니다."
+        # 유의한 **음수** 는 '아직 모름' 이 아니다. 가설과 반대 방향이라는
+        # 정보가 있는 결과다. 둘을 섞으면 반대 증거를 못 본 척하게 된다.
+        neg = est[(est["p"] < ALPHA) & (est["beta"] < 0)]
+        if len(neg):
+            r = neg.sort_values("beta").iloc[0]
+            return (Verdict.REJECT,
+                    f"{r['밴드']}km 에서 β={r['beta']:+.2f}(p={r['p']:.3f})로 유의하지만"
+                    " **음수**입니다. 교통량이 늘수록 그 구간 땅값이 내려갔다는 뜻으로,"
+                    " 가설과 반대 방향입니다.")
         return (Verdict.UNKNOWN,
                 f"위약은 깨끗하지만({pl['밴드']}km p={pl['p']:.2f}) 영향범위에서"
                 " 유의한 양수 계수가 없습니다. 효과가 없다는 뜻이 아니라"
