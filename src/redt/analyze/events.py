@@ -40,6 +40,7 @@ from ..config import RAW
 from ..ids import canon_series
 
 EVENTS_CSV = RAW / "tollgate_events.csv"
+SUCCESSION_CSV = RAW / "tollgate_succession.csv"
 TREAT_BANDS = ("0-1", "1-3")      # 3km 안
 PRE_YEARS, POST_YEARS = 2, 2
 MIN_TREATED = 60                  # 이보다 적으면 계수를 내지 않는다
@@ -58,6 +59,29 @@ def load_events() -> pd.DataFrame:
     #
     # 2016년 자료를 붙이자 681(장안본선)이 51개월 휴지 뒤 재개였음이
     # 드러났다. 그전에는 '2021년 신규 개통' 으로 보여 처치군에 있었다.
+    # 코드가 쪼개져 새로 생긴 것은 신규 개통이 아니다.
+    #
+    # 2014-10 가락(246)이 -1,004k 떨어지면서 29(가락(개))·596(가락2)이
+    # 나타났다. 합이 993k 로 거의 일치한다. 그 자리에 원래 IC 가 있었으므로
+    # '새로 뚫린 IC' 가 아니다. 처치군에 넣으면 개통 효과를 재는 표본 자체가
+    # 오염된다.
+    #
+    # 이름까지 이어지는 것만 뺀다. 월 합계만 맞는 것은 진짜 개통과 코드
+    # 승계가 같은 달에 겹쳤을 수 있어(동충주가 그랬다) 빼지 않는다 —
+    # 진짜 개통을 잘못 빼면 표본만 줄어든다.
+    if SUCCESSION_CSV.exists():
+        suc = pd.read_csv(SUCCESSION_CSV, encoding="utf-8-sig")
+        if len(suc) and "판정" in suc.columns:
+            sure = set(pd.to_numeric(
+                suc.loc[suc["판정"] == "이름일치", "신규코드"], errors="coerce").dropna())
+            hit = pd.to_numeric(ev["영업소코드"], errors="coerce").isin(sure)
+            if hit.any():
+                names = ", ".join(
+                    f"{r.신규코드} {r.신규명}(←{r.선행명})"
+                    for r in suc[suc["판정"] == "이름일치"].itertuples())
+                print(f"  코드 승계로 생긴 영업소 {int(hit.sum())}개를 처치군에서 뺍니다: {names}")
+                ev = ev[~hit]
+
     if "최장휴지개월" in ev.columns:
         paused = ev["최장휴지개월"].fillna(0) >= 6
         if paused.any():

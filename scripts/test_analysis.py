@@ -504,6 +504,39 @@ for i in range(1, 7):
 check(len(_cnv.drop_spikes(_holiday, "명절")) == len(_holiday) - 1,
       "평소의 3배(명절 수준)는 버리지 않는다")
 
+# ────────────────────────────────────────────────────────────────
+print("\n10. 코드 승계를 신규 개통과 구분하는가")
+
+_spec2 = _ilu.spec_from_file_location("suc", ROOT / "scripts" / "tollgate_succession.py")
+_suc = _ilu.module_from_spec(_spec2)
+_spec2.loader.exec_module(_suc)
+
+# 2014-10 에 실제로 있던 일: 가락(246) 이 쪼개져 가락(개)(29)·가락2(596) 이
+# 되고, 같은 달에 동충주(297)가 진짜로 개통했다.
+check(_suc._verdict("가락(개)", "가락") == "이름일치", "가락 → 가락(개) 는 이름일치")
+check(_suc._verdict("가락2", "가락") == "이름일치", "가락 → 가락2 는 이름일치")
+check(_suc._verdict("동충주", "가락") == "월합만일치",
+      "동충주는 이름이 안 이어지므로 승계로 단정하지 않는다")
+check(_suc._verdict("", "가락") == "월합만일치", "이름이 없으면 단정하지 않는다")
+
+# 처치군에서 실제로 빠지는지. 진짜 개통(동충주)은 남아야 한다 —
+# 진짜 개통을 잘못 빼면 표본만 줄어든다.
+_suc_csv = ROOT / "data" / "raw" / "tollgate_succession.csv"
+if _suc_csv.is_file():
+    _sc = pd.read_csv(_suc_csv, encoding="utf-8-sig")
+    if len(_sc):
+        from redt.analyze import events as _ev                   # noqa: E402
+        _kept = _ev.load_events()
+        _codes = set(pd.to_numeric(_kept["tollgate_id"], errors="coerce").dropna())
+        _sure = set(pd.to_numeric(
+            _sc.loc[_sc["판정"] == "이름일치", "신규코드"], errors="coerce").dropna())
+        check(not (_codes & _sure),
+              f"이름일치 승계코드가 처치군에 없다 (남은 것 {sorted(_codes & _sure)})")
+        _maybe = set(pd.to_numeric(
+            _sc.loc[_sc["판정"] != "이름일치", "신규코드"], errors="coerce").dropna())
+        # 월합만일치는 빼지 않는다 (진짜 개통일 수 있다)
+        check(True, f"월합만일치 {len(_maybe)}개는 판단 보류로 남긴다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
