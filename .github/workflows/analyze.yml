@@ -128,6 +128,14 @@ jobs:
         continue-on-error: true
         run: python -m redt.cli events
 
+      # 세 가설을 한 자리에서. H3 통제를 넣기 전과 후를 나란히 보여준다 —
+      # 통제를 넣자 계수가 사라지면 그건 IC 효과가 아니었다는 뜻이다.
+      - name: 세 가설 판정
+        continue-on-error: true
+        run: |
+          python -m redt.cli hypotheses --volume total
+          python -m redt.cli hypotheses --volume freight
+
       # 지시3 — 같은 지역 안이 아니라 IC 끼리 한 줄로 세워 비교한다.
       - name: IC 교통량 순위 대비 주변 지가
         continue-on-error: true

@@ -508,6 +508,53 @@ def cmd_events(args):
     events.report(priced, links, kind=args.kind)
 
 
+def cmd_hypotheses(args):
+    """세 가설을 한 자리에서 판정한다 (H1 개통 · H2 교통량 · H3 인구·산단)."""
+    from .analyze import events, hypotheses
+    path = PROCESSED / "panel.parquet"
+    if not path.exists():
+        sys.exit("panel.parquet 이 없습니다. 먼저 `panel` 을 실행하세요.")
+    panel = pd.read_parquet(path)
+
+    with db.connect(read_only=True) as con:
+        trades = con.execute("SELECT * FROM trade WHERE lat IS NOT NULL").fetchdf()
+        links = con.execute("SELECT * FROM trade_tollgate_link").fetchdf()
+        region = con.execute("SELECT * FROM region_year").fetchdf()
+        zones = con.execute("SELECT * FROM zone_event").fetchdf()
+        zlinks = con.execute("""
+            SELECT l.tollgate_id, z.zone_id
+            FROM trade_zone_link z
+            JOIN trade_tollgate_link l USING (trade_id)
+            WHERE l.is_nearest
+            GROUP BY 1, 2
+        """).fetchdf()
+
+    # 개통 이벤트 표본은 events 가 만든 것을 그대로 쓴다. 두 곳에서 따로
+    # 만들면 같은 가설에 다른 표본을 쓰게 된다.
+    event_df, pre_ok = None, None
+    if not trades.empty and not links.empty:
+        kept = trades[~trades["is_share_deal"].fillna(False)
+                      & ~trades["is_cancelled"].fillna(False)]
+        priced = pn.hedonic_adjust(pn.filter_land_use(kept))
+        event_df = events.build(priced, links, kind=args.kind)
+        if len(event_df) and event_df["treated"].nunique() > 1:
+            try:
+                es = events.event_study(event_df)
+                pre = [(es.pvalues[n]) for n in es.params.index
+                       if n.startswith("treated:C(rel") and "T.-" in n]
+                pre_ok = None if not pre else not any(p < 0.1 for p in pre)
+            except Exception as exc:               # noqa: BLE001
+                print(f"  사전추세 검정 실패: {exc}")
+
+    years = sorted(int(y) for y in panel["year"].dropna().unique())
+    pressure = hypotheses.zone_pressure(zones, zlinks, years)
+
+    verdicts = hypotheses.report(
+        panel, event_df, region, pressure,
+        volume_col=f"volume_{args.volume}", kind=args.kind, pre_trend_ok=pre_ok)
+    verdicts.to_csv(PROCESSED / "verdicts.csv", index=False)
+
+
 def cmd_gaps(args):
     """영업소가 어느 단계에서 새는지 — 패널이 얇을 때 원인을 가른다."""
     from .analyze import gaps
@@ -651,6 +698,13 @@ def main(argv=None):
     p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])
     p.set_defaults(func=cmd_events)
+
+    p = sub.add_parser("hypotheses",
+                       help="세 가설 판정 (H1 개통 · H2 교통량 · H3 인구·산단)")
+    p.add_argument("--kind", default="land", choices=["land", "factory"])
+    p.add_argument("--volume", default="total",
+                   choices=["total", "freight", "passenger", "mid"])
+    p.set_defaults(func=cmd_hypotheses)
 
     p = sub.add_parser("score", help="영업소별 투자 스크리닝 스코어")
     p.add_argument("--band", default=None,

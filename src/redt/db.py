@@ -80,14 +80,46 @@ CREATE TABLE IF NOT EXISTS trade (
     geocode_level VARCHAR           -- parcel(지번) / umd(법정동 중심) / NULL
 );
 
+-- 가설3 이벤트형: 산업단지·택지지구처럼 '언제 어디서' 가 있는 개발 사건.
+--
+-- IC 개통과 같은 방식으로 전후를 가르는 데 쓰고, 동시에 IC 효과의 **교란**
+-- 으로도 쓴다. IC 가 뚫린 그 해에 옆에 산단이 지정됐다면, 산단이 만든 상승을
+-- IC 공으로 돌리게 된다.
 CREATE TABLE IF NOT EXISTS zone_event (
     zone_id          VARCHAR PRIMARY KEY,
     name             VARCHAR,
-    type             VARCHAR,
+    type             VARCHAR,          -- 산업단지 / 택지지구 / 도시개발
     lat              DOUBLE,
     lon              DOUBLE,
     area_m2          DOUBLE,
-    designated_date  DATE
+    designated_date  DATE,
+    sigungu_cd       VARCHAR,
+    source           VARCHAR,          -- 어느 데이터셋에서 왔는지
+    geocode_level    VARCHAR           -- parcel / umd / sigungu(시군구 중심)
+);
+
+-- 가설3 패널형: 시군구 × 연도 규모 지표.
+--
+-- 인구가 늘어서 오른 것을 교통량이 늘어서 오른 것으로 읽지 않으려면, 같은
+-- 회귀에 넣어야 한다. 값 종류를 행으로 두어 새 지표가 생겨도 스키마를
+-- 안 바꾼다.
+CREATE TABLE IF NOT EXISTS region_year (
+    sigungu_cd  VARCHAR,
+    year        INTEGER,
+    metric      VARCHAR,              -- population / households / businesses / employees
+    value       DOUBLE,
+    source      VARCHAR,
+    PRIMARY KEY (sigungu_cd, year, metric)
+);
+
+-- 거래 ↔ 개발사건 공간 조인. trade_tollgate_link 와 같은 모양이다.
+CREATE TABLE IF NOT EXISTS trade_zone_link (
+    trade_id    VARCHAR,
+    zone_id     VARCHAR,
+    distance_km DOUBLE,
+    band        VARCHAR,
+    is_nearest  BOOLEAN,
+    PRIMARY KEY (trade_id, zone_id)
 );
 
 CREATE TABLE IF NOT EXISTS trade_tollgate_link (
@@ -105,6 +137,9 @@ CREATE TABLE IF NOT EXISTS trade_tollgate_link (
 # 캐시로 되살린 DB 에 새 컬럼을 붙일 때 필요하다.
 MIGRATIONS = [
     "ALTER TABLE tollgate ADD COLUMN IF NOT EXISTS src VARCHAR",
+    "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS sigungu_cd VARCHAR",
+    "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS source VARCHAR",
+    "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS geocode_level VARCHAR",
 ]
 
 

@@ -344,6 +344,87 @@ else:
         check(bool(_lp.get("reason")),
               "공시지가가 없으면 왜 없는지 적는다 — 선이 안 보이는 것과 다른 말이다")
 
+# ────────────────────────────────────────────────────────────────
+print("\n8. 세 가설 판정 — 답을 아는 자료로 판정이 제대로 갈리는가")
+
+from redt.analyze import hypotheses as H       # noqa: E402
+
+rng2 = np.random.default_rng(11)
+
+
+def _panel(effect_by_band, n_tg=40, years=(2019, 2020, 2021, 2022, 2023)):
+    """밴드별로 심어둔 탄력성을 갖는 패널을 만든다."""
+    rows = []
+    for i in range(n_tg):
+        tg = f"T{i:03d}"
+        sig = f"S{i % 6:02d}"
+        for band, beta in effect_by_band.items():
+            lnp = 12.0
+            for y in years:
+                dv = rng2.normal(0.05, 0.10)          # 교통량 변화
+                lnp += beta * dv + rng2.normal(0, 0.004)
+                rows.append({"tollgate_id": tg, "year": y, "band": band,
+                             "kind": "land", "sigungu_cd": sig,
+                             "price_index": lnp, "n_trades": 20,
+                             "d_ln_volume_total_lag1": dv})
+    df = pd.DataFrame(rows).sort_values(["tollgate_id", "band", "year"])
+    df["d_ln_price"] = df.groupby(["tollgate_id", "band", "kind"])["price_index"].diff()
+    return df.dropna(subset=["d_ln_price"])
+
+
+# (가) 영향범위에만 효과, 위약은 0 → 지지
+good = _panel({"0-1": 0.6, "1-3": 0.5, "3-5": 0.3, "5-10": 0.0})
+t = H.h2(good, "volume_total", [])
+v, why = H.judge_h2(t)
+check(v == H.Verdict.SUPPORT, f"영향범위만 효과가 있으면 지지 ({v} — {why[:60]})")
+
+# (나) 위약에서도 똑같이 크면 → 교란. 이게 이 검사의 핵심이다.
+#      위약을 안 보면 (가)와 (나)가 똑같아 보인다.
+bad = _panel({"0-1": 0.6, "1-3": 0.5, "3-5": 0.5, "5-10": 0.6})
+v2, why2 = H.judge_h2(H.h2(bad, "volume_total", []))
+check(v2 == H.Verdict.CONFOUNDED,
+      f"위약 밴드에서도 유의하면 교란으로 판정 ({v2} — {why2[:60]})")
+
+# (다) 아무 효과도 없으면 '기각' 이 아니라 '아직 모름'
+flat = _panel({"0-1": 0.0, "1-3": 0.0, "3-5": 0.0, "5-10": 0.0})
+v3, why3 = H.judge_h2(H.h2(flat, "volume_total", []))
+check(v3 == H.Verdict.UNKNOWN, f"효과가 없으면 '아직 모름' ({v3})")
+check("효과가 없다는 뜻이 아니라" in why3,
+      "'효과 없음' 과 '판정 못함' 을 구분해 말한다")
+
+# (라) 위약을 추정 못 하면 판정 자체를 보류한다
+noplacebo = _panel({"0-1": 0.6, "1-3": 0.5, "3-5": 0.3})
+v4, why4 = H.judge_h2(H.h2(noplacebo, "volume_total", []))
+check(v4 == H.Verdict.UNKNOWN, f"위약 밴드가 없으면 보류 ({v4})")
+check("위약" in why4, "보류 이유가 위약임을 밝힌다")
+
+# H1 — 평행추세가 깨지면 계수가 커도 교란
+t1 = pd.DataFrame([{"모형": "통제 전", "n": 500, "영업소": 20, "beta": 0.20,
+                    "se": 0.05, "p": 0.0001, "비고": ""}])
+v5, _ = H.judge_h1(t1, pre_trend_ok=False)
+check(v5 == H.Verdict.CONFOUNDED, f"사전추세가 깨지면 교란 ({v5})")
+v6, why6 = H.judge_h1(t1, pre_trend_ok=True)
+check(v6 == H.Verdict.SUPPORT, f"사전추세가 버티고 유의하면 지지 ({v6})")
+check("%" in why6, "지지 근거에 실제 상승률을 적는다")
+t1b = t1.assign(p=0.6, se=0.3)
+v7, why7 = H.judge_h1(t1b, pre_trend_ok=True)
+check(v7 == H.Verdict.UNKNOWN, f"유의하지 않으면 '아직 모름' ({v7})")
+check("0 을 품고" in why7, "구간이 0 을 품는다는 것을 밝힌다")
+
+# H3 — 자료가 없으면, 그것이 H1·H2 해석의 한계임을 말해야 한다
+v8, why8 = H.judge_h3(pd.DataFrame(columns=["변수", "n", "영업소", "beta", "se", "p"]))
+check(v8 == H.Verdict.UNKNOWN, "H3 자료가 없으면 '아직 모름'")
+check("교란" in why8 or "IC 효과" in why8,
+      "H3 가 없으면 H1·H2 도 IC 효과로 못 부른다는 것을 밝힌다")
+
+# 통제 붙이기 — 결측이 많은 통제는 스스로 빼야 한다
+_reg = pd.DataFrame([{"sigungu_cd": "S00", "year": y, "metric": "population",
+                      "value": 100000 * (1.02 ** i)}
+                     for i, y in enumerate((2019, 2020, 2021, 2022, 2023))])
+_with, _usable = H.attach_controls(good, _reg, None)
+check("d_ln_population" not in _usable,
+      "한 시군구만 있는 통제는 결측이 많아 스스로 빠진다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
