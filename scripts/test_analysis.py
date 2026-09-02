@@ -7,8 +7,13 @@
   실행: python scripts/test_analysis.py   (make test 에 포함)
 """
 import json
+import os
 import sys
 from pathlib import Path
+
+# 키를 읽는 시점이 첫 호출이라 redt 를 들이기 전에 넣는다. 가짜 값이면 충분하다
+# — 아래 검사는 그물을 던지지 않고 응답을 흉내 낸다.
+os.environ.setdefault("VWORLD_KEY", "test-key")
 
 import numpy as np
 import pandas as pd
@@ -172,6 +177,67 @@ else:
 
     check(data.get("unit", "").find("일평균") >= 0,
           f"단위가 일평균임을 밝힌다 ('{data.get('unit')}')")
+
+# ────────────────────────────────────────────────────────────────
+print("\n4. 지시1 — 영업소 좌표 보충의 판정과 캐시")
+
+import json as _json                              # noqa: E402
+import tempfile                                   # noqa: E402
+from pathlib import Path as _Path                 # noqa: E402
+
+from redt.collect import tollgate_fill as tf      # noqa: E402
+
+# 검색 결과를 캐시에 적을 수 있어야 한다. 고른 후보를 candidates 에 그대로
+# 담았다가 json.dumps 가 'Circular reference detected' 로 죽은 적이 있다.
+# 실행 8초 만에 80개를 통째로 놓쳤고, 로그에는 파이썬 스택만 남았다.
+with tempfile.TemporaryDirectory() as tmp:
+    cache = tf._Cache(_Path(tmp) / "c.jsonl")
+
+    class _Resp:
+        @staticmethod
+        def json():
+            return {"response": {"result": {"items": [
+                {"title": "서시흥영업소", "point": {"x": "126.79", "y": "37.38"}},
+                {"title": "서시흥나들목", "point": {"x": "126.80", "y": "37.39"}},
+            ]}}}
+
+    real_get = tf.get
+    tf.get = lambda *a, **k: _Resp()
+    try:
+        row = tf.search_place("서시흥영업소", cache)
+        check(row is not None and abs(row["lat"] - 37.38) < 1e-6,
+              f"검색 결과에서 좌표를 읽는다 ({row})")
+        lines = (_Path(tmp) / "c.jsonl").read_text(encoding="utf-8").strip().splitlines()
+        check(len(lines) == 1, "캐시에 한 줄이 적힌다")
+        check(_json.loads(lines[0])["title"] == "서시흥영업소", "캐시가 다시 읽힌다")
+        # 두 번째 호출은 그물을 다시 던지지 않아야 한다
+        tf.get = lambda *a, **k: (_ for _ in ()).throw(AssertionError("캐시를 안 썼습니다"))
+        again = tf.search_place("서시흥영업소", cache)
+        check(again is not None, "두 번째 호출은 캐시로 답한다")
+
+        # 호출이 실패한 것은 캐시하지 않아야 한다. 키가 없거나 중계기가 잠깐
+        # 죽은 것을 '그런 곳은 없다' 로 굳히면 고친 뒤에도 영원히 못 찾는다.
+        before = len((_Path(tmp) / "c.jsonl").read_text(encoding="utf-8").strip().splitlines())
+        tf.get = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("중계기 죽음"))
+        check(tf.search_place("없는영업소", cache) is None, "호출 실패는 None 을 준다")
+        after = len((_Path(tmp) / "c.jsonl").read_text(encoding="utf-8").strip().splitlines())
+        check(before == after, f"호출 실패는 캐시에 남기지 않는다 ({before} → {after})")
+    finally:
+        tf.get = real_get
+
+# 판정: 억지로 채우지 않는다
+known = [(37.3800, 126.7900)]
+good = {"lat": 37.5, "lon": 127.0, "title": "서시흥영업소"}
+check(tf._accept("서시흥", good, [])[0], "이름이 맞고 범위 안이면 받는다")
+check(not tf._accept("서시흥", {"lat": 51.5, "lon": -0.1, "title": "서시흥영업소"}, [])[0],
+      "한반도 밖 좌표는 버린다")
+check(not tf._accept("서시흥", {"lat": 37.5, "lon": 127.0, "title": "행복한주유소"}, [])[0],
+      "이름이 다르면 버린다")
+check(not tf._accept("서시흥", {"lat": 37.3801, "lon": 126.7901, "title": "서시흥영업소"},
+                     known)[0],
+      "기존 영업소와 200m 안이면 같은 곳으로 보고 버린다")
+check(tf._core("장안본선") == "장안" and tf._core("기장서JC") == "기장서",
+      "본선·JC 접미사를 떼어 어간을 만든다")
 
 print()
 if fail:

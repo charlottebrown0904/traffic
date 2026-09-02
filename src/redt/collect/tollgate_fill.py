@@ -76,7 +76,12 @@ def names_from_traffic() -> dict[str, str]:
 
 
 class _Cache:
-    """이름 → 검색 결과. 실패도 적어 둔다 — 안 그러면 매번 같은 걸 또 물어본다."""
+    """질의 → 결과. **API 가 답한 것만** 적는다.
+
+    '답을 받았는데 해당 없음' 은 적어 둔다 — 안 그러면 매번 같은 걸 또 묻는다.
+    반대로 '호출이 실패함' 은 적지 않는다. 키가 없거나 중계기가 잠깐 죽은 것을
+    '그런 곳은 없다' 로 굳혀 두면, 원인을 고친 뒤 다시 돌려도 영원히 못 찾는다.
+    """
 
     def __init__(self, path: Path | None = None):
         self.path = path or CACHE
@@ -112,8 +117,11 @@ def search_place(query: str, cache: _Cache) -> dict | None:
             "key": keys().require("vworld"),
         })
         payload = resp.json()
-    except Exception as exc:                       # noqa: BLE001 — 실패는 기록만
-        cache.put(query, {"lat": None, "lon": None, "title": None, "err": str(exc)[:200]})
+    except Exception as exc:                       # noqa: BLE001
+        # 호출 자체가 실패한 것은 캐시하지 않는다. 키가 없거나 중계기가 잠깐
+        # 죽은 것을 '그런 곳은 없다' 로 굳혀 두면, 고친 뒤에 다시 돌려도
+        # 영원히 안 찾는다. '답을 받았는데 없더라' 만 캐시한다.
+        print(f"    {query}: 호출 실패 — {str(exc)[:120]}")
         return None
 
     result = (payload.get("response") or {}).get("result") or {}
@@ -127,10 +135,13 @@ def search_place(query: str, cache: _Cache) -> dict | None:
             continue
         rows.append({"lat": lat, "lon": lon, "title": item.get("title") or ""})
 
-    row = rows[0] if rows else {"lat": None, "lon": None, "title": None}
-    row["candidates"] = rows[:5]
-    cache.put(query, row)
-    return row if row.get("lat") is not None else None
+    # 고른 것을 그대로 두고 candidates 에 rows 를 넣으면 자기 자신을 담게 되어
+    # json.dumps 가 'Circular reference detected' 로 죽는다. 실제로 죽었다.
+    # 사본을 만들고, 후보에는 고르지 않은 것만 남긴다.
+    picked = dict(rows[0]) if rows else {"lat": None, "lon": None, "title": None}
+    picked["candidates"] = [dict(r) for r in rows[1:5]]
+    cache.put(query, picked)
+    return picked if picked.get("lat") is not None else None
 
 
 def _haversine_m(lat1, lon1, lat2, lon2) -> float:
@@ -196,7 +207,12 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
         core = _core(name)
         picked, why = None, "검색 결과 없음"
         for suffix in SUFFIXES:
-            row = search_place(f"{core}{suffix}", cache)
+            # 한 영업소에서 터진다고 나머지 79개까지 못 채우면 안 된다.
+            try:
+                row = search_place(f"{core}{suffix}", cache)
+            except Exception as exc:               # noqa: BLE001
+                why = f"검색 중 오류: {exc}"[:120]
+                continue
             if row is None:
                 continue
             ok, detail = _accept(name, row, known)
@@ -245,9 +261,8 @@ def reverse_region(lat: float, lon: float, cache: _Cache) -> tuple[str, str] | N
             "format": "json", "key": keys().require("vworld"),
         })
         payload = resp.json()
-    except Exception as exc:                       # noqa: BLE001
-        cache.put(key, {"sido": None, "sigungu": None, "err": str(exc)[:200]})
-        return None
+    except Exception:                              # noqa: BLE001
+        return None            # 호출 실패는 캐시하지 않는다 (search_place 와 같은 이유)
 
     items = (payload.get("response") or {}).get("result") or []
     for item in items:

@@ -1,19 +1,22 @@
 /* 토지·건축 가이드 — 앱(/app)과 같은 토큰 체계를 쓴다. 참조 문서형 편집. */
 :root{
-  --ground:#FBFCFD; --surface:#FFFFFF; --surface-2:#F2F5F8;
-  --ink:#0F1720; --muted:#5B6875; --faint:#8A96A3;
-  --border:#DEE5EC; --border-strong:#C4D0DB;
+  /* 중립색을 앱(app/style.css)과 같은 브라운 계열로 맞춘다. 가이드만 청색
+     계열이라 같은 제품의 다른 페이지처럼 안 보였다. faint 는 힌트와 표
+     머리글에 쓰는 진짜 글자라 명암비 4.5 아래로 내리지 않는다. */
+  --ground:#FAF7F3; --surface:#FFFFFF; --surface-2:#F3EDE5;
+  --ink:#1C1611; --muted:#6B5E52; --faint:#7A6B5C;
+  --border:#E7DDD1; --border-strong:#CDBDAB;
   --accent:#8A6547; --accent-soft:#F4E9DD; --on-accent:#FFFFFF;
-  --warn:#9A6206; --warn-soft:#FBF0DC;
-  --block:#A32820; --block-soft:#FBEAE8;
-  --ok:#14713F; --ok-soft:#E4F3EA;
+  --warn:#B45309; --warn-soft:#FDF5E6;
+  --block:#B3261E; --block-soft:#FBEAE8;
+  --ok:#0B7A43; --ok-soft:#E4F3EA;
   --shadow:0 1px 2px rgba(15,23,32,.05), 0 8px 24px -18px rgba(15,23,32,.3);
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --ground:#0C1116; --surface:#141C25; --surface-2:#1B242E;
-    --ink:#E7EEF4; --muted:#8C9AA8; --faint:#6D7B89;
-    --border:#232E3A; --border-strong:#33414F;
+    --ground:#12100D; --surface:#1C1915; --surface-2:#26221D;
+    --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
+    --border:#332D26; --border-strong:#4A4239;
     --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
     --warn:#DDA23C; --warn-soft:#2A2011;
     --block:#E8796C; --block-soft:#2B1614;
@@ -22,9 +25,9 @@
   }
 }
 :root[data-theme="dark"]{
-  --ground:#0C1116; --surface:#141C25; --surface-2:#1B242E;
-  --ink:#E7EEF4; --muted:#8C9AA8; --faint:#6D7B89;
-  --border:#232E3A; --border-strong:#33414F;
+  --ground:#12100D; --surface:#1C1915; --surface-2:#26221D;
+  --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
+  --border:#332D26; --border-strong:#4A4239;
   --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
   --warn:#DDA23C; --warn-soft:#2A2011;
   --block:#E8796C; --block-soft:#2B1614;
