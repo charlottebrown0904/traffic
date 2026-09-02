@@ -46,6 +46,11 @@ jobs:
       - name: 교통량 적재
         run: python -m redt.cli load-traffic
 
+      # 패널이 얇을 때 원인이 명단인지 좌표인지 거래인지 가른다.
+      # 뭉뚱그리면 엉뚱한 곳을 고치게 된다.
+      - name: 영업소 누락 진단
+        run: python -m redt.cli gaps
+
       - name: 분석 패널
         run: python -m redt.cli panel
 

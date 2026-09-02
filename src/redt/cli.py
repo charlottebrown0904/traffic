@@ -459,6 +459,13 @@ def cmd_serve_api(args):
     uvicorn.run("redt.server.app:app", host=args.host, port=args.port, reload=args.reload)
 
 
+def cmd_gaps(args):
+    """영업소가 어느 단계에서 새는지 — 패널이 얇을 때 원인을 가른다."""
+    from .analyze import gaps
+    with db.connect(read_only=True) as con:
+        gaps.report(con)
+
+
 def cmd_status(args):
     with db.connect(read_only=False) as con:
         for table in ("tollgate", "traffic", "trade", "trade_tollgate_link", "zone_event"):
@@ -597,6 +604,9 @@ def main(argv=None):
     p.add_argument("--reload", action="store_true")
     p.set_defaults(func=cmd_serve_api)
 
+    sub.add_parser("gaps",
+                   help="영업소 누락 진단 — 명단·좌표·거래 중 어디서 새는지"
+                   ).set_defaults(func=cmd_gaps)
     sub.add_parser("status", help="적재 현황").set_defaults(func=cmd_status)
 
     args = parser.parse_args(argv)
