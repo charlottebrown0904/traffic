@@ -461,6 +461,49 @@ _with, _usable = H.attach_controls(good, _reg, None)
 check("d_ln_population" not in _usable,
       "한 시군구만 있는 통제는 결측이 많아 스스로 빠진다")
 
+# ────────────────────────────────────────────────────────────────
+print("\n9. 교통량 원본의 손상된 행을 걸러내는가")
+
+import importlib.util as _ilu                      # noqa: E402
+
+_spec = _ilu.spec_from_file_location("cnv", ROOT / "scripts" / "convert_tcs_daily.py")
+_cnv = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_cnv)
+
+# 남고창(567) 2015-11-06 에 실제로 있던 모양. 같은 날 정상 행은 1종이 571·1414·610
+# 인데 한 행만 562,715 였다. 4종 하루 80만 대는 전국 총량보다 많다.
+_days = pd.date_range("2015-11-01", periods=30)
+_rows = []
+for d in _days:
+    for lane in range(3):                          # 정상 행: 하루 총 ~4,100
+        _rows.append({"집계일자": d, "영업소코드": 567,
+                      **{f"{i}종교통량": v for i, v in
+                         zip(range(1, 7), [1200, 60, 40, 30, 20, 20])}})
+_rows.append({"집계일자": pd.Timestamp("2015-11-06"), "영업소코드": 567,
+              **{f"{i}종교통량": v for i, v in
+                 zip(range(1, 7), [562715, 56339, 130749, 804480, 578379, 216358])}})
+# 규모가 다른 영업소도 함께 둔다 — 절대값으로 자르면 큰 영업소가 통째로 날아간다
+for d in _days:
+    _rows.append({"집계일자": d, "영업소코드": 1,
+                  **{f"{i}종교통량": v for i, v in
+                     zip(range(1, 7), [200000, 8000, 6000, 4000, 3000, 9000])}})
+_raw = pd.DataFrame(_rows)
+_clean = _cnv.drop_spikes(_raw, "테스트")
+
+check(len(_clean) == len(_raw) - 1, f"손상된 행 하나만 버린다 ({len(_raw)} → {len(_clean)})")
+check(int(_clean[_clean["영업소코드"] == 1].shape[0]) == 30,
+      "규모가 큰 영업소는 절대값이 커도 안 버린다")
+_kept = _clean[(_clean["영업소코드"] == 567)]
+check(_kept["1종교통량"].max() == 1200, "남은 값에 이상치가 없다")
+
+# 명절 수준(평소의 3배)은 실제 교통이므로 버리면 안 된다
+_holiday = _raw.copy()
+_mask = (_holiday["영업소코드"] == 1) & (_holiday["집계일자"] == _days[10])
+for i in range(1, 7):
+    _holiday.loc[_mask, f"{i}종교통량"] *= 3
+check(len(_cnv.drop_spikes(_holiday, "명절")) == len(_holiday) - 1,
+      "평소의 3배(명절 수준)는 버리지 않는다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

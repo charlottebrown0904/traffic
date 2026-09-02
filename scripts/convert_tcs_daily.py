@@ -27,6 +27,20 @@ from pathlib import Path
 import pandas as pd
 
 CLASSES = [f"{i}종교통량" for i in range(1, 7)]
+
+# 원본에 이따금 말이 안 되는 행이 섞인다.
+#
+#   2015-11-06 남고창(567)  1종 562,715 · 4종 804,480 · 5종 578,379
+#   같은 날 다른 행은 1종이 571·1,414·610, 그 달 일평균 총합은 4,121.
+#
+# 4종(10~20톤 대형화물) 하루 80만 대는 전국 총량보다 많다. 실제 교통이 아니라
+# 손상된 행이다. 그대로 두면 그 해 연 합계가 2.5배가 되고, 이듬해와 비교했을 때
+# '교통량이 반토막' 으로 보인다. 실제로 118·567·577 이 그렇게 보였다.
+#
+# 영업소마다 규모가 100배 넘게 차이 나므로 절대값으로 못 자른다. **그 영업소
+# 자신의 일별 중앙값**과 견준다. 명절에도 2~3배지 20배가 되지는 않는다.
+SPIKE_RATIO = 10.0      # 자기 중앙값의 몇 배부터 의심하는가
+SPIKE_FLOOR = 20_000    # 작은 영업소에서 배수만으로 과잉 검출되지 않도록
 # 영업소명은 일별 원본에 없다. 대표님이 직접 합치신 2025 엑셀에만 이름이
 # 들어 있어 그것만 이름 대조에 쓴다. 교통량 값은 쓰지 않는다 —
 # 다른 해와 집계가 어긋나 있다 (data/raw/PROVENANCE.md).
@@ -76,6 +90,38 @@ def read_one(path: Path) -> pd.DataFrame:
                      f"({len(COLUMNS)}개를 기대). 형식이 또 다릅니다.")
         df.columns = COLUMNS
     return df.loc[:, ~df.columns.astype(str).str.startswith("Unnamed")]
+
+
+def drop_spikes(df: pd.DataFrame, label: str) -> pd.DataFrame:
+    """말이 안 되는 행을 버린다. 버린 것은 반드시 찍는다.
+
+    조용히 버리면 '자료가 원래 그랬는지' 와 '우리가 지웠는지' 를 구분할 수
+    없다. 몇 행을, 어느 영업소에서, 얼마짜리를 버렸는지 남긴다.
+    """
+    if df.empty:
+        return df
+    row_total = df[CLASSES].sum(axis=1)
+    daily = (df.assign(_t=row_total)
+             .groupby(["영업소코드", "집계일자"], as_index=False)["_t"].sum())
+    med = daily.groupby("영업소코드")["_t"].median().rename("_med")
+    joined = df.assign(_t=row_total).merge(med, on="영업소코드", how="left")
+
+    bad = (joined["_t"] > joined["_med"] * SPIKE_RATIO) & (joined["_t"] > SPIKE_FLOOR)
+    if not bad.any():
+        return df
+
+    # itertuples 는 밑줄로 시작하는 이름을 _3 같은 위치 이름으로 바꾼다.
+    # 미리 이름을 바꿔 둔다.
+    shown = (joined[bad].assign(배수=lambda d: (d["_t"] / d["_med"]).round(1))
+             .sort_values("_t", ascending=False)
+             .head(5)[["집계일자", "영업소코드", "_t", "_med", "배수"]]
+             .rename(columns={"_t": "값", "_med": "중앙값"}))
+    print(f"  ⚠ {label}: 말이 안 되는 행 {int(bad.sum())}개를 버립니다 "
+          f"(자기 일별 중앙값의 {SPIKE_RATIO:g}배 초과)")
+    for r in shown.itertuples():
+        print(f"      {r.집계일자.date()} 영업소{int(r.영업소코드)} "
+              f"{int(r.값):,} (중앙값 {int(r.중앙값):,} · {r.배수}배)")
+    return df[~bad.to_numpy()]
 
 
 def parse_dates(col: pd.Series) -> pd.Series:
@@ -132,6 +178,7 @@ def main() -> int:
         df = df.dropna(subset=["영업소코드"])
         for c in CLASSES:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+        df = drop_spikes(df, p.name)
         df["연월"] = df["집계일자"].dt.strftime("%Y-%m")
         frames.append(df[["연도", "연월", "영업소코드", *CLASSES]])
         print(f"  {p.name}  {len(df):,}행")
