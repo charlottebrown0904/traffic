@@ -37,6 +37,29 @@ def load(year: int) -> pd.DataFrame:
     return pd.read_csv(p, encoding="utf-8-sig")
 
 
+def ramping(year: int, frac: float = 0.35) -> set:
+    """그 해에 **월 중 개통**해서 올라가는 중인 영업소.
+
+    달 수만 세면 놓친다. 1월 20일에 문을 열면 12개월이 다 있지만 1월 값은
+    한 달치가 아니다. 기흥동탄(528)이 그랬다 — 2008-01 이 15k, 10월에
+    838k, 이듬해 900k 로 안정됐다. 달 수로는 12개월이라 '연중 개통' 에
+    안 걸리고, 이듬해와 견주면 2.08배로 뛴 것처럼 보인다.
+
+    첫 달이 그 해 중앙값의 이 비율보다 작으면 올라가는 중으로 본다.
+    """
+    p = RAW / f"tcs_monthly_{year}.csv"
+    if not p.exists():
+        return set()
+    m = pd.read_csv(p, encoding="utf-8-sig")
+    g = m.groupby(["영업소코드", "연월"], as_index=False)["교통량"].sum()
+    first_m = g.groupby("영업소코드")["연월"].min()
+    med = g.groupby("영업소코드")["교통량"].median()
+    first_v = (g.merge(first_m.rename("첫달"), on="영업소코드")
+               .query("연월 == 첫달").set_index("영업소코드")["교통량"])
+    ratio = (first_v / med.reindex(first_v.index)).dropna()
+    return set(ratio[ratio < frac].index)
+
+
 def observed(year: int) -> int:
     """그 해에 실제로 자료가 있는 달 수. 12가 아닐 수 있다."""
     p = RAW / f"tcs_monthly_{year}.csv"
@@ -108,10 +131,11 @@ def main() -> int:
     # 연중 개통을 걸러내고, 그 해 내내 있으면서 크게 변한 곳만 본다
     j["비"] = j["ref"] / j["new"]
     odd = j[(j["비"] < ODD_LO) | (j["비"] > ODD_HI)]
-    partial = set(mn[mn < mn_new].index)
+    partial = set(mn[mn < mn_new].index) | ramping(new_y)
     real = odd[~odd.index.isin(partial)]
     print(f"\n비가 {ODD_LO}~{ODD_HI} 밖인 영업소 {len(odd)}개 "
-          f"— 그중 {len(odd) - len(real)}개는 연중 개통(관측 {mn_new}개월 미만)")
+          f"— 그중 {len(odd) - len(real)}개는 연중 개통 (달 수가 모자라거나 "
+          f"첫 달이 크게 작아 올라가는 중)")
     if len(real):
         print(f"  ⚠ 그 해 내내({mn_new}개월) 있으면서 크게 변한 곳 — 확인이 필요합니다")
         print(real.assign(관측월수=mn.reindex(real.index)).round(2).to_string())
