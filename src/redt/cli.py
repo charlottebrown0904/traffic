@@ -212,7 +212,17 @@ def cmd_sweep_codes(args):
 
 
 # 시도 2자리 접두. 세종(36)은 시군구 분할이 없지만 코드 체계는 같다.
-SIDO_PREFIX = ["11", "26", "27", "28", "29", "30", "31", "36",
+# 손으로 적은 목록은 행정구역이 개편되면 조용히 낡습니다. 그래서 실호출로
+# 확인한 것만 넣습니다.
+#
+#   12  전남광주통합특별시. 광주(29)와 전남(46)이 통합되면서 난 새 코드입니다.
+#       find-new-sido 가 12110·12130·12170·12710·12730·12800 에서 실제
+#       거래를 받아 확인했습니다. 그전까지 29·46 이 1000개 코드 모두 0건이라
+#       '자료가 없다' 로 읽힐 뻔했습니다.
+#   45  전북(구). 2024년에 52 로 바뀌었습니다.
+#   29·46  통합 전 광주·전남. 과거 거래가 이 코드로 남아 있을 수 있어
+#       지우지 않습니다 — 지우면 2006~2025 중 통합 이전 구간을 잃습니다.
+SIDO_PREFIX = ["11", "12", "26", "27", "28", "29", "30", "31", "36",
                "41", "43", "44", "45", "46", "47", "48", "50", "51", "52"]
 
 
@@ -265,15 +275,39 @@ def cmd_find_new_sido(args):
     pairs = [(f"{p}{t}", args.probe_ymd, "land")
              for p in cands for t in PROBE_TAILS]
     hits: dict[str, list[str]] = {}
-    fails = 0
+    failed: list[tuple] = []
+    calls = 0
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        for code, total in pool.map(probe_sigungu, pairs):
+        for (code, total), pair in zip(pool.map(probe_sigungu, pairs), pairs):
+            calls += 1
             if total is None:
-                fails += 1
+                failed.append(pair)
             elif total > 0:
                 hits.setdefault(code[:2], []).append(code)
 
-    print(f"\n호출 {len(pairs):,}회 · 실패 {fails:,}회")
+    # 첫 실행에서 378번 중 272번이 실패했습니다(72%). 그 상태로는 '걸린 것이
+    # 없다' 와 '못 물어봤다' 를 구분할 수 없습니다. 실패한 것만 천천히 다시
+    # 물어봅니다 — 동시 수를 줄이고 사이를 띄웁니다.
+    if failed:
+        print(f"  실패 {len(failed):,}회 — 천천히 다시 물어봅니다")
+        from .collect.rtms import polite_sleep
+        still = []
+        with ThreadPoolExecutor(max_workers=max(2, args.workers // 4)) as pool:
+            for (code, total), pair in zip(pool.map(probe_sigungu, failed), failed):
+                calls += 1
+                if total is None:
+                    still.append(pair)
+                elif total > 0:
+                    hits.setdefault(code[:2], []).append(code)
+                polite_sleep(0.05)
+        failed = still
+
+    print(f"\n호출 {calls:,}회 · 끝내 실패 {len(failed):,}회")
+    if failed:
+        rate = len(failed) / max(calls, 1)
+        print(f"  ⚠ 실패율 {rate:.0%} — 이 결과는 결론이 아닙니다.")
+        print("     못 물어본 접두사에 코드가 있어도 안 걸립니다. 실패율이")
+        print("     낮아질 때까지 --workers 를 줄여 다시 돌리세요.")
     if not hits:
         print("걸린 접두사가 없습니다.")
         print("  대표 꼬리에 없는 번호만 쓰는 시도일 수 있습니다. --lo/--hi 를")
@@ -861,10 +895,27 @@ def cmd_kosis_fetch(args):
     # 시군구코드·연도가 실제로 읽히는지 여기서 바로 본다. 안 읽히면
     # 파일만 받아놓고 나중에 알게 된다.
     from .collect.h3_files import REGION_COLS, _pick
-    for want in ("sigungu_cd", "year", "population"):
+    for want in ("sigungu_cd", "sigungu_nm", "year", "population", "item_nm"):
         got = _pick(df, REGION_COLS[want])
         mark = "✅" if got else "⚠"
         print(f"  {mark} {want} ← {got or '못 찾음'}")
+
+    # **C1 이 법정동 코드인지 KOSIS 자체 코드인지 확인합니다.**
+    # KOSIS 시도 코드는 법정동과 달랐습니다(부산 21 vs 26). 확인 없이
+    # 조인하면 절반이 조용히 안 붙습니다.
+    code_col = _pick(df, REGION_COLS["sigungu_cd"])
+    name_col = _pick(df, REGION_COLS["sigungu_nm"])
+    if code_col is not None:
+        vals = df[code_col].astype(str).str.strip()
+        print(f"\n  지역코드({code_col}) 정체 확인")
+        print(f"    고유값 {vals.nunique():,}개 · 자릿수 분포 "
+              f"{vals.str.len().value_counts().head(5).to_dict()}")
+        sample = df[[code_col] + ([name_col] if name_col else [])].drop_duplicates()
+        print(f"    표본 12개:")
+        for r in sample.head(12).itertuples(index=False):
+            print(f"      {r}")
+        print("    → 5자리이고 41xxx(경기)·11xxx(서울) 모양이면 법정동 코드입니다.")
+        print("       2자리나 다른 모양이면 KOSIS 자체 코드라 이름으로 맞춰야 합니다.")
 
 
 def cmd_kosis_find(args):
