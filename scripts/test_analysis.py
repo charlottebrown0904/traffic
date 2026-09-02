@@ -960,6 +960,54 @@ check("--refresh --sido" in _out, "고치는 방법을 알려준다")
 check("지워지지 않습니다" in _out, "병합된다는 것을 알린다 (덮어쓸까 봐 안 돌리는 일이 없게)")
 
 print()
+print("23. 시군구 코드 체계가 다르면 '자료 없음' 이 아니라 그렇게 말한다")
+
+# KOSIS 지역코드는 법정동 코드와 다른 체계다(부산 KOSIS 21 vs 법정동 26).
+# 다른 체계끼리 조인하면 예외가 안 나고 전부 결측이 된다. 그때 "결측 100%"
+# 라고만 말하면 '인구 자료를 더 모아야겠다' 로 읽힌다. 아무리 모아도 안
+# 붙는다 — 열쇠가 틀렸기 때문이다. 진단이 틀리면 며칠을 엉뚱한 데 쓴다.
+from redt.analyze.hypotheses import attach_controls          # noqa: E402
+import io                                                     # noqa: E402
+import contextlib                                             # noqa: E402
+
+_panel = pd.DataFrame({
+    "sigungu_cd": ["41111", "41111", "41113", "41113"],
+    "year": [2020, 2021, 2020, 2021],
+    "tollgate_id": ["1"] * 4, "band": ["0-1"] * 4, "kind": ["land"] * 4,
+})
+
+
+def _region(codes):
+    return pd.DataFrame([
+        {"sigungu_cd": c, "year": y, "metric": "population", "value": 10000 + y}
+        for c in codes for y in (2019, 2020, 2021)])
+
+
+def _say(region):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        _, usable = attach_controls(_panel, region, None)
+    return buf.getvalue(), usable
+
+# 가) 완전히 다른 체계
+msg, usable = _say(_region(["31011", "31012"]))
+check("코드 체계가 다릅니다" in msg,
+      "겹침 0% 면 '자료 없음' 이 아니라 코드 체계를 지목한다")
+check("31011" in msg and "41111" in msg,
+      "양쪽 코드를 실제로 보여준다 (무엇이 다른지 눈으로 확인 가능)")
+check(not usable, "안 맞는 통제는 쓰지 않는다")
+
+# 나) 같은 체계 — 잔소리하면 안 된다
+msg, usable = _say(_region(["41111", "41113"]))
+check("⚠" not in msg, "제대로 맞으면 아무 경고도 안 한다")
+check(usable == ["d_ln_population"], "맞으면 통제로 쓴다")
+
+# 다) 일부만 — 행정구역 개편(화성 41590 → 41591…) 같은 경우
+msg, _ = _say(_region(["41111", "31012"]))
+check("만 맞습니다" in msg, "일부만 맞으면 비율을 말한다")
+check("41113" in msg, "안 맞는 코드를 이름으로 짚어준다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

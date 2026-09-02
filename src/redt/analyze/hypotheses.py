@@ -125,6 +125,34 @@ def attach_controls(panel: pd.DataFrame, region: pd.DataFrame | None,
     ctrl = region_controls(region) if region is not None else pd.DataFrame()
     if not ctrl.empty:
         keep = ["sigungu_cd", "year"] + [c for c in ctrl.columns if c.startswith("d_ln_")]
+
+        # **붙기 전에 열쇠가 맞는지 본다.** KOSIS 의 지역코드는 법정동
+        # 코드와 다른 체계다(부산 KOSIS 21 vs 법정동 26). 다른 체계끼리
+        # 조인하면 예외가 아니라 전부 결측이 되고, 아래 결측률 검사가
+        # "결측 100%" 라고만 말한다. 그것은 '자료가 드물다' 로 읽히지만
+        # 사실은 '열쇠가 틀렸다' 이고, 고치는 방법이 전혀 다르다.
+        # 자료를 더 모아도 영원히 안 붙는다.
+        hit = out["sigungu_cd"].astype(str).isin(
+            set(ctrl["sigungu_cd"].astype(str)))
+        share = float(hit.mean()) if len(out) else 0.0
+        if share < 0.05:
+            pv = sorted(set(out["sigungu_cd"].astype(str)))[:3]
+            cv = sorted(set(ctrl["sigungu_cd"].astype(str)))[:3]
+            print(f"  ⚠ 시군구 코드가 서로 안 맞습니다 (겹침 {share:.1%}) — "
+                  f"자료가 없는 게 아니라 **코드 체계가 다릅니다**")
+            print(f"      패널 쪽 예: {pv}")
+            print(f"      지역 쪽 예: {cv}")
+            print(f"      KOSIS 코드라면 지역명(C1_NM)으로 맞춰야 합니다.")
+        elif share < 0.9:
+            # 같은 체계면 거의 다 맞아야 한다. 90% 는 '조금 빠졌다' 가
+            # 아니라 구조적으로 어긋났다는 뜻이다 — 행정구역 개편으로
+            # 코드가 바뀐 시군구(화성 41590 → 41591·41593…)가 통제 없이
+            # 남는다.
+            missing = sorted(set(out.loc[~hit, "sigungu_cd"].astype(str)))
+            print(f"  ⚠ 시군구 코드가 {share:.0%} 만 맞습니다 — "
+                  f"안 맞는 {len(missing)}개는 통제 없이 남습니다")
+            print(f"      예: {missing[:5]}")
+
         out = out.merge(ctrl[keep], on=["sigungu_cd", "year"], how="left")
         for col in [c for c in keep if c.startswith("d_ln_")]:
             miss = out[col].isna().mean()
