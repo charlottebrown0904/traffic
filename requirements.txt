@@ -1,5 +1,7 @@
 requests>=2.31
 pandas>=2.1
+# 공공기관 자료는 대개 엑셀로 온다 (가설3 파일). 러너에도 있어야 한다.
+openpyxl>=3.1
 numpy>=1.26
 duckdb>=0.10
 pyarrow>=14.0

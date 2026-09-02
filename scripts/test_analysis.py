@@ -703,6 +703,41 @@ check(max(_syn.TRUE_BETA.values()) > 0,
       "영향범위 밴드에는 0 이 아닌 참값이 심겨 있다")
 
 print()
+print("16. 가설3 자료를 받은 그대로 읽는다 (엑셀·cp949)")
+# 예전에는 utf-8 CSV 만 읽었다. data.go.kr·KOSIS·팩토리온이 주는 것은
+# 대개 엑셀이거나 cp949 CSV 다. '엑셀에서 UTF-8 로 다시 저장하세요' 를
+# 시키면 그 과정에서 날짜가 숫자로 바뀌거나 시군구코드 앞의 0 이 떨어진다.
+from redt.collect.h3_files import read_table as _read_table
+import tempfile as _tf, os as _os
+
+_rows = {"단지명": ["가상산단"], "지정일": ["2015-03-02"],
+         "시군구코드": ["41590"], "지정면적": [123456]}
+_df = pd.DataFrame(_rows)
+
+with _tf.TemporaryDirectory() as _d:
+    _csv_utf = _os.path.join(_d, "zones_a.csv")
+    _csv_949 = _os.path.join(_d, "zones_b.csv")
+    _xlsx = _os.path.join(_d, "zones_c.xlsx")
+    _df.to_csv(_csv_utf, index=False, encoding="utf-8-sig")
+    _df.to_csv(_csv_949, index=False, encoding="cp949")
+    _df.to_excel(_xlsx, index=False)
+
+    for _label, _path in (("utf-8 CSV", _csv_utf), ("cp949 CSV", _csv_949),
+                          ("엑셀 xlsx", _xlsx)):
+        try:
+            _got = _read_table(Path(_path))
+            _ok = ("단지명" in _got.columns and len(_got) == 1
+                   and str(_got["시군구코드"].iat[0]).strip() in ("41590", "41590.0"))
+        except Exception as _exc:                        # noqa: BLE001
+            _ok = False
+            print(f"      {_exc}")
+        check(_ok, f"{_label} 를 읽는다")
+
+# 엑셀 판독기가 러너에도 있어야 한다 — 여기서만 설치돼 있으면 소용없다.
+_req = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+check("openpyxl" in _req, "openpyxl 이 requirements.txt 에 있다 (러너용)")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

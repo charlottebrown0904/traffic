@@ -96,11 +96,39 @@ def _to_area_m2(series: pd.Series, header: str) -> pd.Series:
     return nums * factor
 
 
-def load_zones(pattern: str = "zones_*.csv") -> pd.DataFrame:
+TABLE_SUFFIXES = (".csv", ".xlsx", ".xls", ".tsv", ".txt")
+
+
+def read_table(path: Path) -> pd.DataFrame:
+    """공공기관이 주는 모양 그대로 읽는다 — 엑셀이든 cp949 든.
+
+    예전에는 utf-8 CSV 만 읽었다. 그런데 data.go.kr·KOSIS·팩토리온이 주는
+    것은 대개 **엑셀(xlsx)이거나 cp949 로 저장된 CSV** 다. 받는 사람에게
+    '엑셀에서 열어 UTF-8 CSV 로 다시 저장하세요' 를 시키면, 그 과정에서
+    날짜 칸이 숫자로 바뀌거나 시군구코드 앞의 0 이 떨어진다. 그러면 자료가
+    조용히 틀어진다.
+
+    교통량 파일에서 이미 같은 벽에 부딪혔다(cp949, 확장자는 zip 인데 실제는
+    gzip). 받은 그대로 읽는 쪽이 맞다.
+    """
+    if path.suffix.lower() in (".xlsx", ".xls"):
+        return pd.read_excel(path)
+    last = None
+    for enc in ("utf-8-sig", "cp949", "euc-kr", "utf-8"):
+        try:
+            return pd.read_csv(path, encoding=enc)
+        except UnicodeDecodeError as exc:
+            last = exc
+    raise RuntimeError(f"{path.name}: 인코딩을 알 수 없습니다 ({last})")
+
+
+def load_zones(pattern: str = "zones_*.*") -> pd.DataFrame:
     """산업단지·택지지구 지정 현황 CSV → zone_event 모양."""
     frames = []
     for path in sorted(Path(RAW).glob(pattern)):
-        df = pd.read_csv(path, encoding="utf-8-sig")
+        if path.suffix.lower() not in TABLE_SUFFIXES:
+            continue
+        df = read_table(path)
         print(f"  {path.name}  {len(df):,}행")
         cols = _map_columns(df, ZONE_COLS, path.name)
         if "designated_date" not in cols:
@@ -159,11 +187,13 @@ def load_zones(pattern: str = "zones_*.csv") -> pd.DataFrame:
     return allz
 
 
-def load_region(pattern: str = "region_*.csv") -> pd.DataFrame:
+def load_region(pattern: str = "region_*.*") -> pd.DataFrame:
     """시군구×연도 인구·사업체 CSV → region_year 모양 (long)."""
     frames = []
     for path in sorted(Path(RAW).glob(pattern)):
-        df = pd.read_csv(path, encoding="utf-8-sig")
+        if path.suffix.lower() not in TABLE_SUFFIXES:
+            continue
+        df = read_table(path)
         print(f"  {path.name}  {len(df):,}행")
         cols = _map_columns(df, REGION_COLS, path.name)
         if "year" not in cols or "sigungu_cd" not in cols:
