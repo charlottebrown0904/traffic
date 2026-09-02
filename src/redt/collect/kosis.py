@@ -311,3 +311,43 @@ def sido_codes() -> list[tuple[str, str]]:
         if code and name:
             out.append((str(code), name))
     return out
+
+
+# 검색으로 확인한 표. **추측이 아니라 관측입니다** (kosis-find 로 확인).
+#
+#   DT_1B040A3  1992~2026  행정구역(시군구)별, 성별 인구수
+#               우리 창(2006~2025)을 완전히 덮고 시군구 단위입니다.
+#   DT_1B040B3  1992~2026  행정구역(시군구)별 주민등록세대수
+#
+# 사업체는 시군구 단위로 여러 해를 주는 표를 아직 못 찾았습니다. 검색에
+# 나온 것은 시도 단위(DT_1K52F01, 2020~2024)뿐입니다. 찾으면 여기 적습니다.
+TABLES = {
+    "population": {"orgId": "101", "tblId": "DT_1B040A3",
+                   "name": "행정구역(시군구)별 성별 인구수"},
+    "households": {"orgId": "101", "tblId": "DT_1B040B3",
+                   "name": "행정구역(시군구)별 주민등록세대수"},
+}
+
+DATA_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
+
+
+def fetch_table(org_id: str, tbl_id: str, start: str, end: str,
+                prd_se: str = "Y", obj_l1: str = "ALL",
+                itm_id: str = "ALL") -> list[dict]:
+    """통계표 하나를 연 단위로 받는다.
+
+    **이 엔드포인트는 아직 확인되지 않았습니다.** 목록·검색과 달리 실호출로
+    검증한 적이 없으므로, 응답을 그대로 찍어 무엇이 오는지 먼저 봅니다.
+    안 되면 오는 것을 보고 고칩니다 — 추측으로 파서를 먼저 쓰지 않습니다.
+    """
+    code, text = raw(DATA_URL, {
+        "method": "getList", "apiKey": "", "format": "json", "jsonVD": "Y",
+        "orgId": org_id, "tblId": tbl_id,
+        "prdSe": prd_se, "startPrdDe": start, "endPrdDe": end,
+        "objL1": obj_l1, "itmId": itm_id,
+    })
+    print(f"  HTTP {code} · {len(text):,}자")
+    print(f"  앞부분: {text[:400]}")
+    if code != 200:
+        raise RuntimeError(f"자료 조회 실패 HTTP {code}")
+    return _rows(loads_lenient(text))
