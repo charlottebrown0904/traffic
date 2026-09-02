@@ -98,7 +98,12 @@ def geocode_with_fallback(sigungu: str, umd: str, jibun: str
 def geocode_many(rows: list[tuple[str, str, str]], cache: GeocodeCache | None = None,
                  limit: int | None = None) -> dict[tuple, tuple]:
     """rows: (시군구, 법정동, 지번) 튜플 목록 → {튜플: (lat, lon, level)}"""
-    cache = cache or GeocodeCache()
+    # `cache or GeocodeCache()` 로 쓰면 안 된다. __len__ 이 0 인 **빈 캐시는
+    # falsy** 라, 호출자가 건넨 캐시가 조용히 버려지고 기본 경로의 캐시가
+    # 새로 만들어진다. 실제 운영에서는 캐시가 대개 비어 있지 않아 안 드러나고,
+    # 검사에서 처음 드러났다 — 검사용 캐시를 건넸는데 진짜 파일에 썼다.
+    if cache is None:
+        cache = GeocodeCache()
     result: dict[tuple, tuple] = {}
     pending = []
 
@@ -160,7 +165,12 @@ def coarse_key(sigungu: str, umd: str) -> str:
 def geocode_umd(pairs: list[tuple[str, str]], cache: GeocodeCache | None = None,
                 limit: int | None = None) -> dict[tuple, tuple]:
     """법정동 중심점을 붙인다. (시군구, 법정동) 하나당 한 번만 부른다."""
-    cache = cache or GeocodeCache()
+    # `cache or GeocodeCache()` 로 쓰면 안 된다. __len__ 이 0 인 **빈 캐시는
+    # falsy** 라, 호출자가 건넨 캐시가 조용히 버려지고 기본 경로의 캐시가
+    # 새로 만들어진다. 실제 운영에서는 캐시가 대개 비어 있지 않아 안 드러나고,
+    # 검사에서 처음 드러났다 — 검사용 캐시를 건넸는데 진짜 파일에 썼다.
+    if cache is None:
+        cache = GeocodeCache()
     result: dict[tuple, tuple] = {}
     pending = []
     for pair in dict.fromkeys(pairs):          # 순서를 지키며 중복 제거
@@ -202,7 +212,12 @@ def geocode_parcel(rows: list[tuple[str, str, str]],
     되돌아가면 거친 좌표가 지번 키에 굳어, 다음에 다시 시도할 수 없게
     된다. 실패는 실패로 남겨 두면 나중에 다시 해볼 수 있다.
     """
-    cache = cache or GeocodeCache()
+    # `cache or GeocodeCache()` 로 쓰면 안 된다. __len__ 이 0 인 **빈 캐시는
+    # falsy** 라, 호출자가 건넨 캐시가 조용히 버려지고 기본 경로의 캐시가
+    # 새로 만들어진다. 실제 운영에서는 캐시가 대개 비어 있지 않아 안 드러나고,
+    # 검사에서 처음 드러났다 — 검사용 캐시를 건넸는데 진짜 파일에 썼다.
+    if cache is None:
+        cache = GeocodeCache()
     result: dict[tuple, tuple] = {}
     pending = []
     for row in dict.fromkeys(rows):
