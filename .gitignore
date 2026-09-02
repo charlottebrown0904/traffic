@@ -17,6 +17,9 @@ data/processed/*
 !data/raw/tcs_annual_*.csv
 !data/raw/tcs_monthly_*.csv
 !data/raw/tollgate_events.csv
+# 가설3 자료 — API 가 막혀 파일로 받는다 (docs/hypothesis-3-data.md)
+!data/raw/zones_*.csv
+!data/raw/region_*.csv
 # 도로공사 포털에서 받은 원본 파일을 올릴 자리 (러너가 새로 체크아웃해도 잡히게)
 !data/raw/ex/
 !data/raw/ex/**
