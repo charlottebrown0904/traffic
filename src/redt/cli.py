@@ -223,9 +223,15 @@ def cmd_discover_sigungu(args):
     손으로 적어 넣으면 그 시군구만 조용히 빕니다 — 표가 비어도 '거래가
     없구나' 로 읽히고, 몇 달 뒤에야 알아챕니다. 실제로 그럴 뻔했습니다.
 
-    시도 18개 × 3자리 꼬리 1000 = 18,000번을 1행씩만 물어봅니다. 한 번만
-    하면 되고, 결과는 config/sigungu_codes.yaml 에 남아 다음부터는 안
-    물어봅니다. 운영계정 하루 한도(10만) 안에서 감당됩니다.
+    시도 18개 × 3자리 꼬리 1000 = 18,000개를 **한 번씩** 물어봅니다.
+    한 번만 하면 되고, 결과는 config/sigungu_codes.yaml 에 남아 다음부터는
+    안 물어봅니다.
+
+    처음에는 '거래가 드문 군을 놓치지 않으려고' 세 달 × 두 종류를 시도해
+    코드당 최대 6회를 불렀습니다. 108,000회로 하루 한도(10만)를 넘겨
+    1시간 25분 만에 취소했습니다. 비용의 거의 전부가 **없는 코드를 확인하는
+    데** 들어갑니다 — 유효한 코드는 250개 안팎이고 나머지 17,750개가 6회씩
+    불렸습니다.
     """
     from concurrent.futures import ThreadPoolExecutor
 
@@ -247,32 +253,58 @@ def cmd_discover_sigungu(args):
     print("주의: 0건이 '코드가 없다' 는 뜻은 아닙니다 — 그 달 그 시군구에 "
           "토지 거래가 없었을 수도 있습니다. 그래서 여러 달을 시도합니다.")
 
-    # 한 달만 보면 거래가 드문 군 단위가 통째로 빠진다. 서로 떨어진
-    # 세 달을 보고 한 번이라도 자료가 있으면 유효한 코드로 본다.
-    months = [ymd] + list(args.extra_ymd.split(",") if args.extra_ymd else [])
+    # **코드 하나에 한 번만 묻는다.**
+    #
+    # 처음에는 '거래가 드문 군을 놓치지 않으려고' 세 달 × 두 종류를 시도했다.
+    # 코드 하나에 최대 6회다. 18,000개 × 6 = 108,000회로 하루 한도(10만)를
+    # 넘긴다. 실제로 그렇게 돌려 1시간 25분 만에 취소했다. 유효한 코드는
+    # 250개 안팎이고 나머지 17,750개가 6회씩 부르는 구조였다 — 비용의
+    # 거의 전부가 '없는 코드' 를 확인하는 데 들어간다.
+    #
+    # 토지 거래는 전국 어느 시군구든 매달 있다. 한 번으로 충분하다.
+    # 그래도 0 이 나온 코드는 2차로 한 번 더 본다 — 다만 **찾은 코드
+    # 근처만** 본다. 시군구 코드는 뭉쳐 있어서, 유효한 코드 옆이 아니면
+    # 유효할 가능성이 거의 없다.
+    def probe(args_):
+        code, ym, kind = args_
+        try:
+            _, total = rtms.fetch_page(kind, code, ym, page=1, rows=1)
+        except Exception:                             # noqa: BLE001
+            return code, 0
+        return code, total
 
-    def probe(code):
-        for ym in months:
-            for kind in ("land", "factory"):
-                try:
-                    _, total = rtms.fetch_page(kind, code, ym, page=1, rows=1)
-                except Exception:                     # noqa: BLE001
-                    continue
-                if total > 0:
-                    return code, total
-        return code, 0
-
+    extra = [m for m in (args.extra_ymd or "").split(",") if m.strip()]
     found: dict[str, dict] = {}
+    calls = 0
     for prefix in prefixes:
         codes = [f"{prefix}{tail:03d}" for tail in range(1000)]
-        hits = {}
+        hits: dict[str, int] = {}
         with ThreadPoolExecutor(max_workers=args.workers) as pool:
-            for code, total in pool.map(probe, codes):
+            for code, total in pool.map(probe, [(c, ymd, "land") for c in codes]):
+                calls += 1
                 if total > 0:
                     hits[code] = int(total)
+
+        # 2차: 찾은 코드의 ±3 이웃 중 아직 0 인 것만, 다른 달로 한 번 더.
+        if hits and extra:
+            near = set()
+            for code in hits:
+                tail = int(code[-3:])
+                near |= {f"{prefix}{t:03d}" for t in range(max(0, tail - 3), tail + 4)}
+            retry = [c for c in sorted(near) if c not in hits]
+            if retry:
+                pairs = [(c, extra[0], "land") for c in retry]
+                with ThreadPoolExecutor(max_workers=args.workers) as pool:
+                    for code, total in pool.map(probe, pairs):
+                        calls += 1
+                        if total > 0:
+                            hits[code] = int(total)
+
         found[prefix] = hits
         print(f"  {prefix}  {len(hits):>3}개  {sorted(hits)[:8]}"
-              f"{' …' if len(hits) > 8 else ''}")
+              f"{' …' if len(hits) > 8 else ''}  (누적 호출 {calls:,})")
+
+    print(f"\n총 호출 {calls:,}회")
 
     total_codes = sum(len(v) for v in found.values())
     print(f"\n전국 시군구 코드 {total_codes:,}개를 찾았습니다.")

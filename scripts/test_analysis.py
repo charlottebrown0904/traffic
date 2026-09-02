@@ -537,6 +537,30 @@ if _suc_csv.is_file():
         # 월합만일치는 빼지 않는다 (진짜 개통일 수 있다)
         check(True, f"월합만일치 {len(_maybe)}개는 판단 보류로 남긴다")
 
+# ────────────────────────────────────────────────────────────────
+print("\n11. 전국 코드 훑기가 하루 한도를 넘지 않는가")
+
+# 코드당 몇 번을 부르는지가 곧 비용이다. 처음에 세 달 × 두 종류로 짜서
+# 코드당 6회, 전체 108,000회가 됐고 하루 한도(10만)를 넘겨 취소했다.
+# 비용의 거의 전부가 '없는 코드' 를 확인하는 데 들어간다 — 유효한 코드는
+# 250개 안팎이고 나머지 17,750개가 6회씩 불렸다.
+_cli = (ROOT / "src" / "redt" / "cli.py").read_text(encoding="utf-8")
+_block = _cli.split("def cmd_discover_sigungu")[1].split("def cmd_regions")[0]
+
+check("for ym in months:" not in _block,
+      "코드마다 여러 달을 도는 반복문이 없다")
+check('for kind in ("land", "factory")' not in _block,
+      "코드마다 두 종류를 도는 반복문이 없다")
+check("총 호출" in _block, "총 호출 횟수를 찍는다 — 비용이 안 보이면 또 넘긴다")
+
+# 시도 18개 × 1000 = 18,000 이 1차 비용. 2차는 찾은 코드 ±3 이웃만.
+_SIDO = 18
+_first_pass = _SIDO * 1000
+# 최악의 경우 2차: 시도마다 유효코드 30개 × 이웃 7 = 210, 전부 재시도
+_worst_second = _SIDO * 30 * 7
+check(_first_pass + _worst_second < 100_000,
+      f"최악의 경우에도 하루 한도 안 ({_first_pass + _worst_second:,}회 < 100,000)")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
