@@ -225,6 +225,17 @@ def cmd_sweep_codes(args):
 # 실패가 코드 수의 이 비율을 넘으면 재시도하지 않는다.
 RETRY_MAX_SHARE = 0.2
 
+# 코드 체계가 바뀌어 **없어진 것이 정상인** 접두사.
+#   29 광주 · 46 전남  → 12 전남광주통합 으로 합쳐짐 (27개 확인)
+#   45 전북           → 52 전북특별자치도 로 바뀜
+# 과거 거래가 옛 코드로 남아 있을 수 있어 목록에서 지우지는 않지만,
+# 비어 있다고 경고하면 안 된다 — 거짓 경보가 잦으면 진짜 경보도 무시된다.
+RETIRED_PREFIX = {"29", "45", "46"}
+
+# 시군구가 원래 적은 시도. 세종은 단일 시라 1개, 제주는 2개가 정상이다.
+SMALL_SIDO = {"36": 1, "50": 2}
+
+
 SIDO_PREFIX = ["11", "12", "26", "27", "28", "29", "30", "31", "36",
                "41", "43", "44", "45", "46", "47", "48", "50", "51", "52"]
 
@@ -358,14 +369,25 @@ def cmd_discover_sigungu(args):
         # 영원히 빕니다. 오류도 경고도 없이 표만 비어 보입니다.
         #
         # 그래서 건너뛸 때마다 파일 자체를 훑어 수상한 것을 말합니다.
-        empty = [k for k, v in known.items() if not v]
-        thin = [k for k, v in known.items() if 0 < len(v) < 3]
-        for sido, codes in sorted(known.items()):
-            mark = ""
+        def _suspicious(sido: str, codes) -> str:
+            """비어 있거나 적은 것이 **이상한** 경우만 고른다."""
+            if sido in RETIRED_PREFIX:
+                return ""          # 없어진 것이 정상이다
+            floor = SMALL_SIDO.get(sido, 3)
             if not codes:
-                mark = "   ⚠ 비어 있습니다 — 훑기가 막혔을 수 있습니다"
-            elif len(codes) < 3:
-                mark = "   ⚠ 너무 적습니다"
+                return "   ⚠ 비어 있습니다 — 훑기가 막혔을 수 있습니다"
+            if len(codes) < floor:
+                return f"   ⚠ 너무 적습니다 ({floor}개 이상이 정상)"
+            return ""
+
+        empty = [k for k, v in known.items()
+                 if not v and k not in RETIRED_PREFIX]
+        thin = [k for k, v in known.items()
+                if v and _suspicious(k, v)]
+        for sido, codes in sorted(known.items()):
+            mark = _suspicious(sido, codes)
+            if sido in RETIRED_PREFIX and not codes:
+                mark = "   (코드 체계가 바뀌어 없어진 접두사 — 정상)"
             print(f"  {sido}  {len(codes):>3}개{mark}")
         if empty or thin or total < 200:
             print()
