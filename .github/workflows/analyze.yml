@@ -14,7 +14,7 @@ on:
 jobs:
   analyze:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       PYTHONPATH: src
     steps:
@@ -62,3 +62,15 @@ jobs:
       - name: 밴드별 탄력성 (화물)
         if: inputs.volume == 'total'
         run: python -m redt.cli analyze --volume freight
+
+      # 지시2 — 개통 전후 비교. 셋 중 인과에 가장 가까운 설계라 매번 같이 본다.
+      - name: 신규 개통 전후 지가 (이중차분)
+        continue-on-error: true
+        run: python -m redt.cli events
+
+      # 지시3 — 같은 지역 안이 아니라 IC 끼리 한 줄로 세워 비교한다.
+      - name: IC 교통량 순위 대비 주변 지가
+        continue-on-error: true
+        run: |
+          python -m redt.cli rank --volume total
+          python -m redt.cli rank --volume freight

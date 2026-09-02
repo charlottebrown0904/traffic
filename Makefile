@@ -45,8 +45,10 @@ test: test-server
 	$(PY) scripts/test_backfill.py
 	$(PY) scripts/test_trades_concurrent.py
 	$(PY) scripts/test_web.py
+	$(PY) scripts/test_analysis.py
 	node scripts/test_board.js
 	node scripts/test_gate.js
+	node scripts/test_rank.js
 
 ## 매물 API 인증·권한 검증
 test-server:

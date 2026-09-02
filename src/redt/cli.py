@@ -20,7 +20,7 @@ import pandas as pd
 from . import db, webexport
 from .analyze import correlation, scoring
 from .collect import geocode as gc
-from .collect import backfill, ex_api, rtms, tollgate, traffic as tr
+from .collect import backfill, ex_api, rtms, tollgate, tollgate_fill, traffic as tr
 from .collect import traffic_files as tfiles
 from . import regions as rg
 from .config import PROCESSED, settings
@@ -38,6 +38,16 @@ def cmd_tollgates(args):
     with db.connect() as con:
         n = db.upsert(con, "tollgate", df)
     print(f"영업소 {n}건 저장")
+
+
+def cmd_fill_tollgates(args):
+    """교통량에만 있고 마스터에 없는 영업소(대부분 민자고속도로)를 이름으로 채운다."""
+    with db.connect() as con:
+        df = tollgate_fill.fill_missing(con, limit=args.limit)
+        n = db.upsert(con, "tollgate", df) if len(df) else 0
+        # 좌표를 채운 뒤에 지역을 되짚는다. 방금 넣은 영업소도 함께 채워진다.
+        regions = 0 if args.skip_regions else tollgate_fill.fill_regions(con)
+    print(f"영업소 {n}건 추가 (출처: 이름검색) · 지역 {regions}건 보완")
 
 
 def cmd_load_traffic(args):
@@ -444,7 +454,9 @@ def cmd_score(args):
 
 def cmd_export_web(args):
     meta = webexport.export(band=args.band, volume_col=f"volume_{args.volume}")
-    print("public/app/data/ 에 4개 파일 생성")
+    from .webexport import WEB_DATA
+    made = sorted(f.name for f in WEB_DATA.glob("*.json"))
+    print(f"public/app/data/ 에 {len(made)}개 파일 생성: {', '.join(made)}")
     print(f"  영업소 {meta['counts']['tollgates']} (스코어 {meta['counts']['scored']})")
     print(f"  거래 {meta['counts']['trades_total']:,} 중 지도 표시 "
           f"{meta['counts']['trades_plotted']:,}")
@@ -457,6 +469,35 @@ def cmd_serve_api(args):
     import uvicorn
     print(f"http://{args.host}:{args.port} — 화면과 매물 API 가 같은 포트에서 뜹니다")
     uvicorn.run("redt.server.app:app", host=args.host, port=args.port, reload=args.reload)
+
+
+def cmd_rank(args):
+    """지시3 — IC 를 교통량 순으로 세우고 주변 지가를 같은 기준으로 비교."""
+    from .analyze import cross
+    panel_path = PROCESSED / "panel.parquet"
+    if not panel_path.exists():
+        sys.exit("panel.parquet 이 없습니다. `panel` 을 먼저 실행하세요.")
+    panel = pd.read_parquet(panel_path)
+    with db.connect(read_only=True) as con:
+        tgs = con.execute(
+            "SELECT tollgate_id, name, sido, sigungu, lat, lon "
+            "FROM tollgate WHERE lat IS NOT NULL").fetchdf()
+    cross.report(panel, tgs, year=args.year, kind=args.kind,
+                 volume_col=f"volume_{args.volume}", top=args.top)
+
+
+def cmd_events(args):
+    """지시2 — 신규 개통 영업소 주변 지가를 개통 전후로 비교 (이중차분)."""
+    from .analyze import events
+    with db.connect(read_only=True) as con:
+        trades = con.execute("SELECT * FROM trade WHERE lat IS NOT NULL").fetchdf()
+        links = con.execute("SELECT * FROM trade_tollgate_link").fetchdf()
+    if trades.empty or links.empty:
+        sys.exit("거래 또는 공간조인이 비어 있습니다. status 로 확인하세요.")
+    kept = trades[~trades["is_share_deal"].fillna(False)
+                  & ~trades["is_cancelled"].fillna(False)]
+    priced = pn.hedonic_adjust(pn.filter_land_use(kept))
+    events.report(priced, links, kind=args.kind)
 
 
 def cmd_gaps(args):
@@ -505,6 +546,13 @@ def main(argv=None):
     p = sub.add_parser("tollgates", help="영업소 마스터 수집")
     p.add_argument("--path", help="API 대신 사용할 CSV 경로")
     p.set_defaults(func=cmd_tollgates)
+
+    p = sub.add_parser("fill-tollgates",
+                       help="마스터에 없는 영업소(민자 등) 좌표를 이름으로 보충")
+    p.add_argument("--limit", type=int, help="앞에서 N개만 (시험용)")
+    p.add_argument("--skip-regions", action="store_true",
+                   help="시도·시군구 역지오코딩을 건너뜁니다")
+    p.set_defaults(func=cmd_fill_tollgates)
 
     p = sub.add_parser("traffic", help="교통량 파일 정규화·적재")
     p.add_argument("--path", required=True)
@@ -583,6 +631,18 @@ def main(argv=None):
     p.add_argument("--pattern", default="tcs_annual_*.csv",
                    help="data/raw 안에서 찾을 파일 패턴")
     p.set_defaults(func=cmd_load_traffic)
+
+    p = sub.add_parser("rank", help="지시3 — IC 교통량 순위 대비 주변 지가 (횡단 비교)")
+    p.add_argument("--year", type=int, help="기준연도 (기본: 자료가 있는 최신 연도)")
+    p.add_argument("--kind", default="land", choices=["land", "factory"])
+    p.add_argument("--volume", default="total",
+                   choices=["total", "freight", "passenger", "mid"])
+    p.add_argument("--top", type=int, default=25, help="표에 찍을 상위 개수")
+    p.set_defaults(func=cmd_rank)
+
+    p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
+    p.add_argument("--kind", default="land", choices=["land", "factory"])
+    p.set_defaults(func=cmd_events)
 
     p = sub.add_parser("score", help="영업소별 투자 스크리닝 스코어")
     p.add_argument("--band", default=None,

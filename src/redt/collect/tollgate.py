@@ -132,6 +132,7 @@ def normalize(raw: pd.DataFrame) -> pd.DataFrame:
     out["tollgate_id"] = canon_series(out["tollgate_id"]).fillna("")
     out["name"] = out["name"].fillna("").astype(str).str.strip()
     out["sigungu_cd"] = None
+    out["src"] = "ex"
     out["is_open_type"] = None
 
     # 같은 영업소가 노선·방향별로 여러 줄 올 수 있어 코드 기준으로 합친다.

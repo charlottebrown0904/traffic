@@ -1,33 +1,62 @@
-/* 고속도로 표지판 계열의 청색을 축으로 삼는다. 중립색은 청색 쪽으로 살짝 기울여 잡았다. */
+/* 색을 두 종류로 나눠 쓴다.
+ *
+ *   지면색  브라운 계열. 배경·테두리·강조. 제품의 얼굴이라 그대로 둔다.
+ *   구분색  뜻이 있는 색. 거리 밴드, 분면, 물건 종류. 서로 **구별되는 것**이
+ *           유일한 임무라 브라운에서 떼어내 색상환을 넓게 쓴다.
+ *
+ * 둘을 섞어 쓰다가 밴드 다섯 개가 전부 같은 브라운 링으로 그려져 있었다.
+ * 화면에서 0-1km 와 10-20km 를 눈으로 가릴 수 없었다.
+ */
 :root{
-  --ground:#FBFCFD; --surface:#FFFFFF; --surface-2:#F2F5F8;
-  --ink:#0F1720; --muted:#5B6875; --faint:#8A96A3;
-  --border:#DEE5EC; --border-strong:#C4D0DB;
+  /* ── 지면 (브라운) ── */
+  --ground:#FAF7F3; --surface:#FFFFFF; --surface-2:#F3EDE5;
+  --ink:#1C1611; --muted:#6B5E52; --faint:#9A8B7C;
+  --border:#E7DDD1; --border-strong:#CDBDAB;
   --accent:#8A6547; --accent-soft:#F4E9DD; --on-accent:#FFFFFF;
-  /* 분면 색: 의미 색이지 강조색이 아니다 */
-  --q-under:#0F5AA8; --q-rising:#14713F; --q-over:#9A6206; --q-quiet:#7A8794;
-  --danger:#A32820;
-  --shadow:0 1px 2px rgba(15,23,32,.05), 0 8px 24px -18px rgba(15,23,32,.3);
+
+  /* ── 구분색: 거리 밴드 (가까움 → 멂) ── */
+  --band-1:#C62828;   /* 0-1   적  */
+  --band-2:#E06C00;   /* 1-3   주황 */
+  --band-3:#00796B;   /* 3-5   청록 */
+  --band-4:#1565C0;   /* 5-10  청  */
+  --band-5:#6A3FA0;   /* 10-20 보라 (위약 밴드) */
+
+  /* ── 구분색: 분면 ── */
+  --q-under:#0B57A4; --q-rising:#0B7A43; --q-over:#B45309; --q-quiet:#6E6259;
+
+  /* ── 구분색: 물건 종류 ── */
+  --kind-land:#2E7D32; --kind-factory:#5E35B1;
+
+  --danger:#B3261E;
+  --shadow:0 1px 2px rgba(28,22,17,.06), 0 8px 24px -18px rgba(28,22,17,.35);
   --rail-w:16rem; --detail-w:23rem; --top-h:3.75rem;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --ground:#0C1116; --surface:#141C25; --surface-2:#1B242E;
-    --ink:#E7EEF4; --muted:#8C9AA8; --faint:#6D7B89;
-    --border:#232E3A; --border-strong:#33414F;
+    --ground:#12100D; --surface:#1C1915; --surface-2:#26221D;
+    --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
+    --border:#332D26; --border-strong:#4A4239;
     --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
-    --q-under:#56A0E8; --q-rising:#4FC084; --q-over:#DDA23C; --q-quiet:#7E8C99;
-    --danger:#E8796C;
+    /* 어두운 바탕에서는 같은 색이 가라앉는다. 채도·명도를 올려 다시 벌린다. */
+    --band-1:#FF6B5E; --band-2:#FFA23D; --band-3:#38C8B4;
+    --band-4:#6BA8F5; --band-5:#B98CF0;
+    --q-under:#6BAEF0; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#9A8C7E;
+    --kind-land:#6FCF7A; --kind-factory:#B99BF0;
+    --danger:#F0837A;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
   }
 }
 :root[data-theme="dark"]{
-  --ground:#0C1116; --surface:#141C25; --surface-2:#1B242E;
-  --ink:#E7EEF4; --muted:#8C9AA8; --faint:#6D7B89;
-  --border:#232E3A; --border-strong:#33414F;
+  --ground:#12100D; --surface:#1C1915; --surface-2:#26221D;
+  --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
+  --border:#332D26; --border-strong:#4A4239;
   --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
-  --q-under:#56A0E8; --q-rising:#4FC084; --q-over:#DDA23C; --q-quiet:#7E8C99;
-  --danger:#E8796C;
+  /* 어두운 바탕에서는 같은 색이 가라앉는다. 채도·명도를 올려 다시 벌린다. */
+  --band-1:#FF6B5E; --band-2:#FFA23D; --band-3:#38C8B4;
+  --band-4:#6BA8F5; --band-5:#B98CF0;
+  --q-under:#6BAEF0; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#9A8C7E;
+  --kind-land:#6FCF7A; --kind-factory:#B99BF0;
+  --danger:#F0837A;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
 }
 
@@ -124,7 +153,17 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 .field output{font-variant-numeric:tabular-nums; font-weight:600; color:var(--ink)}
 .legend{display:grid; gap:.3rem; font-size:.78rem; color:var(--muted)}
 .legend .row{display:flex; align-items:center; gap:.5rem}
-.legend .ring{width:.85rem; height:.85rem; border-radius:50%; border:2px solid var(--accent)}
+/* 밴드마다 다른 색. 전에는 다섯 개가 전부 같은 브라운이라 범례가 범례 구실을
+   못 했다. --c 는 JS 가 밴드 순서에 맞춰 넣는다. */
+.legend .ring{
+  width:.85rem; height:.85rem; border-radius:50%; flex:0 0 auto;
+  border:2px solid var(--c, var(--accent));
+}
+.legend .row.is-placebo{color:var(--ink)}
+.legend .row .tagline{
+  margin-left:auto; font-size:.68rem; font-weight:600;
+  color:var(--band-5); white-space:nowrap;
+}
 
 /* ── 지도 ── */
 .map-wrap{flex:1; position:relative; min-width:0}
@@ -136,7 +175,10 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
   padding:.55rem .7rem; font-size:.75rem; box-shadow:var(--shadow); display:grid; gap:.25rem;
 }
 .map-legend .row{display:flex; align-items:center; gap:.45rem; color:var(--muted)}
-.map-legend .sw{width:.7rem; height:.7rem; border-radius:50%}
+.map-legend .sw{width:.7rem; height:.7rem; border-radius:50%; flex:0 0 auto}
+.map-legend .sw.ring{background:none; border:2px solid var(--c)}
+.map-legend .grp{margin-top:.15rem; font-size:.68rem; color:var(--faint);
+  letter-spacing:.08em; text-transform:uppercase}
 .tg-marker{border-radius:50%; border:2px solid var(--surface); box-shadow:0 0 0 1px rgba(0,0,0,.25)}
 .tg-marker.is-selected{outline:3px solid var(--ink); outline-offset:1px}
 
@@ -194,6 +236,44 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 #board-table tbody tr{cursor:pointer}
 #board-table tbody tr:hover{background:var(--surface-2)}
 .q-tag{font-size:.72rem; font-weight:600; color:var(--c); white-space:nowrap}
+
+/* ── 교통량 순위 (지시4) ── */
+#view-rank.is-active{display:block; overflow:auto}
+.rank-wrap{max-width:76rem; margin:0 auto; padding:1.5rem 1.1rem 3rem; display:grid; gap:1.1rem}
+.rank-controls{display:flex; flex-wrap:wrap; gap:.9rem 1.4rem; align-items:flex-end}
+.rank-controls .field{min-width:9rem}
+.rank-controls .field select,.rank-controls .field input{min-width:9rem}
+.rank-note{
+  font-size:.8rem; line-height:1.55; color:var(--muted);
+  padding:.6rem .8rem; border-radius:.45rem;
+  background:var(--surface-2); border-left:3px solid var(--accent);
+}
+#rank-table{width:100%; border-collapse:collapse; font-size:.85rem}
+#rank-table th,#rank-table td{padding:.42rem .55rem; border-bottom:1px solid var(--border); text-align:left}
+#rank-table thead th{
+  position:sticky; top:0; z-index:1; background:var(--surface);
+  font-size:.68rem; color:var(--faint); text-transform:uppercase; letter-spacing:.06em;
+}
+#rank-table td.rank{font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent)}
+#rank-table tbody tr:hover{background:var(--surface-2)}
+/* 막대는 값 크기를 눈으로 읽게 한다. 숫자만으로는 1위와 40위 차이가 안 보인다. */
+.bar{position:relative; min-width:7rem}
+.bar span{
+  position:absolute; inset:.18rem auto .18rem 0; border-radius:.15rem;
+  background:var(--band-4); opacity:.28;
+}
+.bar b{position:relative; font-weight:500; font-variant-numeric:tabular-nums}
+.delta.up{color:var(--q-rising); font-weight:600}
+.delta.down{color:var(--danger); font-weight:600}
+.rank-scroll{max-height:32rem; overflow:auto}
+.vt-table{width:100%; border-collapse:collapse; font-size:.82rem; margin-top:.4rem}
+.vt-table th,.vt-table td{padding:.35rem .5rem; border-bottom:1px solid var(--border); vertical-align:top}
+.vt-table th{white-space:nowrap; color:var(--ink); font-weight:600; text-align:left}
+.vt-table td{color:var(--muted)}
+.vt-swatch{
+  display:inline-block; width:.6rem; height:.6rem; border-radius:.15rem;
+  margin-right:.4rem; background:var(--c);
+}
 
 /* ── 매물 ── */
 .listings{grid-template-columns:minmax(0,1.15fr) minmax(0,1fr)}

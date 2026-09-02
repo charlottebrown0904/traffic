@@ -83,6 +83,19 @@ jobs:
         continue-on-error: true
         run: python -m redt.cli tollgates
 
+      # 교통량을 먼저 싣는다. 어떤 영업소가 마스터에 없는지 알아야 보충할 수
+      # 있고, 보충한 뒤에 공간 조인을 해야 새 영업소에도 거래가 붙는다.
+      # 순서가 어긋나면 민자 영업소가 지도에는 뜨는데 거래는 0 으로 보인다.
+      - name: 교통량 적재 (저장소의 연간 CSV)
+        continue-on-error: true
+        run: python -m redt.cli load-traffic
+
+      # 영업소 마스터(도로공사 API)에는 민자고속도로가 없다. 교통량 파일에는
+      # 있으므로, 이름으로 좌표를 찾아 채운다 (docs/tollgate-coverage.md).
+      - name: 영업소 보충 (민자 등)
+        continue-on-error: true
+        run: python -m redt.cli fill-tollgates
+
       - name: 실거래가 수집
         run: |
           python -m redt.cli trades \
@@ -103,12 +116,9 @@ jobs:
         run: python -m redt.cli status
 
       # 여기부터는 실패해도 수집 결과는 지키도록 계속 진행합니다.
-      # 포털에서 받아 저장소에 넣어둔 연간 교통량을 DB 에 싣습니다.
-      # 이 단계가 없어서 traffic 테이블이 빈 채로 패널이 만들어지지
-      # 않은 적이 있습니다 (run 6).
-      - name: 교통량 적재 (저장소의 연간 CSV)
+      - name: 영업소 누락 진단
         continue-on-error: true
-        run: python -m redt.cli load-traffic
+        run: python -m redt.cli gaps
 
       - name: 분석 패널
         continue-on-error: true
@@ -120,6 +130,17 @@ jobs:
         run: |
           python -m redt.cli analyze --volume total
           python -m redt.cli analyze --volume freight
+
+      # 지시2·3 — 개통 전후(인과에 가장 가까운 비교)와 교통량 순위 횡단 비교.
+      - name: 신규 개통 전후 지가 (이중차분)
+        continue-on-error: true
+        run: python -m redt.cli events
+
+      - name: IC 교통량 순위 대비 주변 지가
+        continue-on-error: true
+        run: |
+          python -m redt.cli rank --volume total
+          python -m redt.cli rank --volume freight
 
       - name: 스코어 산출
         continue-on-error: true

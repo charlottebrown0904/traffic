@@ -35,6 +35,7 @@
   </div>
   <nav class="tabs" role="tablist">
     <button class="tab is-active" role="tab" data-view="explore" aria-selected="true">탐색</button>
+    <button class="tab" role="tab" data-view="rank" aria-selected="false">교통량 순위</button>
     <button class="tab" role="tab" data-view="board" aria-selected="false">스코어보드</button>
     <button class="tab" role="tab" data-view="listings" aria-selected="false">매물</button>
   </nav>
@@ -79,6 +80,56 @@
       <p class="hint">반경별 실거래와 연도별 추이가 여기 표시됩니다.</p>
     </div>
   </aside>
+</main>
+
+<!-- ══ 교통량 순위 (지시4) ══ -->
+<main class="view" id="view-rank">
+  <div class="rank-wrap">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>IC 교통량 순위</h2>
+        <input type="search" id="rank-search" placeholder="영업소·시군구 검색"
+               aria-label="영업소 검색">
+      </div>
+      <div class="rank-controls">
+        <label class="field"><span>연도</span>
+          <select id="rank-year"></select></label>
+        <label class="field"><span>차종</span>
+          <select id="rank-vehicle"></select></label>
+        <label class="field"><span>정렬</span>
+          <select id="rank-sort">
+            <option value="volume">교통량 많은 순</option>
+            <option value="growth">증가율 높은 순</option>
+            <option value="share">해당 차종 비중 높은 순</option>
+          </select></label>
+        <label class="check" style="padding-bottom:.4rem">
+          <input type="checkbox" id="rank-coords-only">
+          <span>좌표 있는 곳만 <em>지도에 올릴 수 있는 영업소</em></span>
+        </label>
+      </div>
+      <p class="rank-note" id="rank-note"></p>
+      <div class="rank-scroll">
+        <table id="rank-table">
+          <thead><tr>
+            <th>순위</th><th>영업소</th><th>지역</th>
+            <th class="num">일평균 통행량</th>
+            <th class="num">전년 대비</th>
+            <th class="num">차종 비중</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>차종 분류 기준</h2>
+      <p class="hint">한국도로공사 통행료 차종 구분(유료도로법 시행령 별표1)을 그대로 씁니다.
+         축 수와 바퀴 폭으로 나누므로, 같은 '트럭'이라도 무게에 따라 종이 갈립니다.</p>
+      <table class="vt-table" id="vt-table"><tbody></tbody></table>
+      <h3 style="margin-top:1.1rem; font-size:.9rem">묶어 보는 방법</h3>
+      <table class="vt-table" id="vg-table"><tbody></tbody></table>
+    </section>
+  </div>
 </main>
 
 <!-- ══ 스코어보드 ══ -->

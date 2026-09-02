@@ -13,7 +13,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / "public"
 REF = re.compile(r'(?:href|src)="([^"]+)"')
-REQUIRED_DATA = ["meta.json", "series.json", "tollgates.json", "trades.json"]
+REQUIRED_DATA = ["meta.json", "series.json", "tollgates.json", "trades.json",
+                 "traffic.json"]
 
 fail = []
 

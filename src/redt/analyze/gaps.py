@@ -66,15 +66,45 @@ def tollgate_gaps(con) -> dict[str, pd.DataFrame]:
         ORDER BY 교통량행 DESC
     """).fetchdf()
 
-    # 밴드별로 몇 개나 살아남았는지 — 위약 밴드가 얇은 이유가 여기서 보인다
+    # 밴드별로 몇 개나 살아남았는지 — 위약 밴드가 얇은 이유가 여기서 보인다.
+    #
+    # 두 줄로 나눠 세는 데 이유가 있다. 연결 테이블은 한 거래를 반경 안의 모든
+    # 영업소에 이어 두지만, 패널은 **가장 가까운 영업소 하나**만 쓴다
+    # (transform/panel.py 의 nearest_only). 그래서 '전체' 열이 커도 패널에
+    # 들어가는 것은 '최근접' 열뿐이다. 이 차이를 안 보면 위약 밴드가 얇은 이유를
+    # 좌표나 명단 탓으로 오해하게 된다.
     out["밴드별_영업소"] = con.execute("""
         SELECT band,
-               count(DISTINCT tollgate_id) AS 영업소,
-               count(*)                    AS 거래연결
+               count(DISTINCT tollgate_id)                                  AS 영업소_전체,
+               count(*)                                                     AS 거래연결_전체,
+               count(DISTINCT CASE WHEN is_nearest THEN tollgate_id END)    AS 영업소_최근접,
+               count(*) FILTER (WHERE is_nearest)                           AS 거래연결_최근접
         FROM trade_tollgate_link
         GROUP BY band ORDER BY band
     """).fetchdf()
 
+    out["좌표_출처"] = con.execute("""
+        SELECT coalesce(src, '(미상)') AS 출처, count(*) AS 영업소
+        FROM tollgate WHERE lat IS NOT NULL
+        GROUP BY 1 ORDER BY 2 DESC
+    """).fetchdf()
+
+    return out
+
+
+def _attach_names(df: pd.DataFrame) -> pd.DataFrame:
+    """교통량 CSV 의 영업소명을 붙인다. 코드만 보고는 어디인지 알 수 없다."""
+    if df.empty or "tollgate_id" not in df:
+        return df
+    try:
+        from ..collect.tollgate_fill import names_from_traffic
+        names = names_from_traffic()
+    except Exception:                              # noqa: BLE001 — 이름은 부가정보
+        return df
+    if not names:
+        return df
+    out = df.copy()
+    out.insert(1, "name", out["tollgate_id"].map(names).fillna(""))
     return out
 
 
@@ -97,6 +127,8 @@ def report(con) -> None:
         ("좌표있고_거래없음", "그 주변에 우리가 받은 거래가 없습니다. 권역을 넓히거나 지오코딩을 더 하세요."),
     ):
         df = tables[title]
+        if title == "교통량만있고_마스터없음":
+            df = _attach_names(df)
         print(f"\n--- {title.replace('_', ' ')} : {len(df)}개 ---")
         if df.empty:
             print("  없음")
@@ -108,3 +140,22 @@ def report(con) -> None:
 
     print("\n--- 밴드별 영업소 ---")
     print(tables["밴드별_영업소"].to_string(index=False))
+    print("  전체 = 반경 안에 든 모든 연결 · 최근접 = 가장 가까운 영업소로만 센 것.")
+    print("  패널은 최근접만 씁니다. 두 열이 크게 벌어진 밴드는 좌표나 명단이 아니라")
+    print("  '그 IC 가 가장 가까운 땅' 이 드물다는 뜻입니다.")
+
+    bands = tables["밴드별_영업소"]
+    if {"거래연결_전체", "거래연결_최근접"} <= set(bands.columns) and len(bands):
+        worst = bands.assign(
+            _ratio=bands["거래연결_최근접"] / bands["거래연결_전체"].replace(0, pd.NA)
+        ).sort_values("_ratio")
+        row = worst.iloc[0]
+        if pd.notna(row["_ratio"]) and row["_ratio"] < 0.2:
+            print(f"  가장 많이 걸러지는 밴드: {row['band']} "
+                  f"— 연결 {int(row['거래연결_전체']):,}건 중 "
+                  f"{int(row['거래연결_최근접']):,}건({row['_ratio']:.1%})만 패널에 들어갑니다.")
+
+    src = tables.get("좌표_출처")
+    if src is not None and not src.empty:
+        print("\n--- 좌표 출처 ---")
+        print(src.to_string(index=False))

@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS tollgate (
     sido        VARCHAR,
     sigungu     VARCHAR,
     sigungu_cd  VARCHAR,
-    is_open_type BOOLEAN
+    is_open_type BOOLEAN,
+    src         VARCHAR          -- ex(도로공사 API) / poi(이름검색) / csv
 );
 
 -- 교통량은 출처가 여러 개이고 성격이 다르다. source 를 키에 포함해 섞이지 않게 한다.
@@ -100,11 +101,20 @@ CREATE TABLE IF NOT EXISTS trade_tollgate_link (
 """
 
 
+# 이미 만들어진 DB 는 CREATE TABLE IF NOT EXISTS 로는 컬럼이 늘지 않는다.
+# 캐시로 되살린 DB 에 새 컬럼을 붙일 때 필요하다.
+MIGRATIONS = [
+    "ALTER TABLE tollgate ADD COLUMN IF NOT EXISTS src VARCHAR",
+]
+
+
 def connect(read_only: bool = False) -> duckdb.DuckDBPyConnection:
     ensure_dirs()
     con = duckdb.connect(str(DB_PATH), read_only=read_only)
     if not read_only:
         con.execute(SCHEMA)
+        for stmt in MIGRATIONS:
+            con.execute(stmt)
     return con
 
 
