@@ -31,7 +31,10 @@ const ALLOW = {
   // 레이어 이름으로 열려 있는지는 목록 페이지에만 적혀 있다. 읽기만 하므로
   // 키를 붙이지 않는다.
   "www.vworld.kr":   {},
-  "kosis.kr":        {},
+  // KOSIS 는 apiKey 를 쿼리로 받는다. 예전에는 {} 로 두어 키를 안 붙였는데,
+  // 그러면 호출 측이 키를 들고 있어야 한다 — 키는 중계기에만 둔다는 원칙과
+  // 어긋난다. env 를 지정하면 STRIP 이 들어온 키를 지우고 우리 것으로 덮는다.
+  "kosis.kr":        { param: "apiKey",     env: "KOSIS_KEY" },
 };
 
 const STRIP = ["serviceKey", "key", "apiKey", "authKey", "accessKey"];

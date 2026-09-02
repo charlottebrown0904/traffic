@@ -1,0 +1,57 @@
+# KOSIS 통계목록을 훑어 시군구 인구·사업체 표의 ID 를 찾는다.
+#
+# KOSIS 에서 자료를 받으려면 orgId(기관)·tblId(표) 를 알아야 하는데, 그 값은
+# 목록을 훑어야 나온다. 추측해서 적어 넣으면 틀린 표의 숫자를 받아놓고도
+# 맞는 줄 안다 — RTMS 시군구 코드에서 이미 같은 일을 겪었다.
+#
+# 이 실행은 자료 수집이 아니라 **탐색**이다. 로그를 읽고 표를 고른 뒤,
+# 그 ID 로 자료를 받는 단계를 만든다.
+name: KOSIS 목록 훑기 (가설3 · 인구/사업체 표 찾기)
+
+on:
+  workflow_dispatch:
+    inputs:
+      parent:
+        description: "시작 목록 ID (모르면 A)"
+        default: "A"
+      view:
+        description: "서비스뷰 — 주제별 · 기관별 · 지방지표_주제 · 지방지표_지역"
+        default: "주제별"
+      depth:
+        description: "몇 단계까지 내려갈지 (넓으면 호출이 늘어납니다)"
+        default: "2"
+
+jobs:
+  browse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: 훑기
+        run: |
+          mkdir -p data/raw
+          python -m redt.cli kosis-browse \
+            --parent "${{ inputs.parent }}" \
+            --view "${{ inputs.view }}" \
+            --depth "${{ inputs.depth }}" 2>&1 | tee data/raw/kosis_browse.txt
+
+      # 로그를 실행 화면에서 스크롤해 읽는 것보다 파일로 받는 편이 낫다.
+      - name: 결과 올리기
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kosis-browse-${{ github.run_number }}
+          path: data/raw/kosis_browse.txt
+          if-no-files-found: warn

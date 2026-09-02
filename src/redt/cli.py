@@ -682,6 +682,31 @@ def cmd_events(args):
     events.report(priced, links, kind=args.kind)
 
 
+def cmd_kosis_browse(args):
+    """KOSIS 목록을 훑어 시군구 인구·사업체 통계표를 찾는다.
+
+    orgId·tblId 를 추측해서 적어 넣으면 틀린 표의 숫자를 받아놓고도 맞는 줄
+    압니다. 목록에서 찾아 눈으로 확인한 뒤에 씁니다.
+    """
+    from .collect import kosis
+
+    vw = kosis.VIEWS.get(args.view, args.view)
+    print(f"KOSIS 목록 훑기 — 뷰 {args.view}({vw}) · 시작 {args.parent} · 깊이 {args.depth}")
+    print(f"  ★ 표시는 이름에 {kosis.WANTED} 가 들어간 것입니다\n")
+    tables = kosis.walk(str(args.parent), vw, depth=args.depth)
+    print(f"\n찾은 표 {len(tables)}개")
+    hits = [t for t in tables
+            if any(w in kosis._label(t) for w in kosis.WANTED)]
+    if hits:
+        print(f"\n이름이 맞는 것 {len(hits)}개 — 여기서 고르시면 됩니다:")
+        for t in hits:
+            print(f"  {kosis._label(t)}")
+            print(f"      {kosis._ident(t)}")
+    else:
+        print("\n이름이 맞는 표가 없습니다. --parent 를 바꾸거나 --view 를 "
+              "지방지표_지역(MT_GTITLE02) 로 해보세요.")
+
+
 def cmd_fetch_urban_dev(args):
     """전국도시개발사업정보 표준데이터를 받아 zones_housing.csv 로 저장한다.
 
@@ -994,6 +1019,15 @@ def main(argv=None):
     p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])
     p.set_defaults(func=cmd_events)
+
+    p = sub.add_parser("kosis-browse",
+                       help="KOSIS 목록 훑기 (인구·사업체 통계표 ID 찾기)")
+    p.add_argument("--parent", default="A",
+                   help="시작 목록 ID. 모르면 A 부터 시작해 보세요.")
+    p.add_argument("--view", default="주제별",
+                   help="주제별 · 기관별 · 지방지표_주제 · 지방지표_지역, 또는 코드 직접")
+    p.add_argument("--depth", type=int, default=2)
+    p.set_defaults(func=cmd_kosis_browse)
 
     p = sub.add_parser("fetch-urban-dev",
                        help="전국도시개발사업정보 표준데이터 받기 (→ zones_housing.csv)")
