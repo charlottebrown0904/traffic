@@ -101,16 +101,25 @@ def main() -> int:
         # 오른 것처럼 보이는데, 그건 수요 변화가 아니라 영업 재개다.
         own = sorted(df.loc[df["영업소코드"] == code, "연월"].unique())
         span = pd.period_range(own[0], own[-1], freq="M").astype(str)
-        missing = [x for x in span if x not in set(own) and x not in holes]
+        # 전국 공백이 낀 휴지는 **한 번의 휴지**다.
+        #
+        # 예전에는 전국 공백 달을 '빠진 달' 목록에서만 빼고, 세는 동안에는
+        # 관측된 달처럼 취급해 run 을 0 으로 되돌렸다. 그래서 공백을 사이에
+        # 둔 휴지가 둘로 쪼개졌다. 동김천(130)은 2006-02~2012-08 을 79개월
+        # 내내 쉬었는데, 그 안에 든 2010-10 때문에 56개월로 보고됐다.
+        #
+        # 56 도 6 이상이라 130 은 어차피 제외됐지만, 공백 양쪽에 4개월씩
+        # 쉰 영업소는 4 로 보고돼 기준(6)을 통과해 버린다.
+        own_set, hole_set = set(own), set(holes)
         longest, run = 0, 0
-        prev_m = None
         for month in span:
-            if month in missing:
-                run = run + 1 if prev_m in missing or prev_m is None else 1
-                longest = max(longest, run)
-            else:
+            if month in hole_set:
+                continue                  # 그 영업소가 쉰 것이 아니다. 이어서 센다.
+            if month in own_set:
                 run = 0
-            prev_m = month
+            else:
+                run += 1
+                longest = max(longest, run)
 
         rows.append({"영업소코드": code, "첫관측월": f, "마지막관측월": l,
                      "개통판정": status, "종료판정": end,
