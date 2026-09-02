@@ -17,6 +17,7 @@ os.environ.setdefault("VWORLD_KEY", "test-key")
 
 import numpy as np
 import pandas as pd
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -736,6 +737,55 @@ with _tf.TemporaryDirectory() as _d:
 # 엑셀 판독기가 러너에도 있어야 한다 — 여기서만 설치돼 있으면 소용없다.
 _req = (ROOT / "requirements.txt").read_text(encoding="utf-8")
 check("openpyxl" in _req, "openpyxl 이 requirements.txt 에 있다 (러너용)")
+
+print()
+print("17. 시군구 훑기가 호출 실패를 만나도 끝까지 돈다")
+# run 14 가 여기서 터졌다. probe 가 실패를 None 으로 돌려주게 바꾸면서
+# 1차 루프와 재시도 루프는 고쳤는데 **2차 이웃 탐색 루프 하나를
+# 빠뜨렸다.** `if total > 0` 이 None 을 만나 TypeError 로 죽었고, 9분 46초
+# 뒤 수집 전체가 멈췄다.
+#
+# 눈으로 세 군데를 다 고쳤는지 세는 대신, 명령을 실제로 돌린다.
+import types as _types
+from concurrent.futures import ThreadPoolExecutor as _TPE
+
+_real_cfg = _cli.ROOT_CFG
+_calls = {"n": 0}
+
+def _fake_fetch(kind, code, ym, page=1, rows=1):
+    _calls["n"] += 1
+    tail = int(str(code)[-3:])
+    if tail % 7 == 0:                      # 일부 호출은 실패한다 → None
+        raise RuntimeError("중계기 끊김")
+    if tail in (110, 113, 117):            # 실제로 자료가 있는 코드
+        return [], 5
+    return [], 0
+
+with _tf.TemporaryDirectory() as _d:
+    _cli.ROOT_CFG = Path(_d)
+    _orig = _rtms.fetch_page
+    try:
+        _rtms.fetch_page = _fake_fetch
+        _args = _types.SimpleNamespace(
+            sido="41", probe_ymd="202403", extra_ymd="202409",
+            workers=8, refresh=True)
+        _crashed = None
+        try:
+            _cli.cmd_discover_sigungu(_args)
+        except Exception as _exc:          # noqa: BLE001
+            _crashed = _exc
+        check(_crashed is None, f"실패가 섞여도 끝까지 돈다 ({_crashed!r})")
+
+        _out = Path(_d) / "sigungu_codes.yaml"
+        check(_out.exists(), "결과 파일을 남긴다")
+        if _out.exists():
+            _found = yaml.safe_load(_out.read_text(encoding="utf-8")) or {}
+            _codes = set(_found.get("41", {}))
+            check({"41110", "41113", "41117"} <= _codes,
+                  f"자료가 있는 코드를 모두 찾는다 (찾은 것 {sorted(_codes)})")
+    finally:
+        _rtms.fetch_page = _orig
+        _cli.ROOT_CFG = _real_cfg
 
 print()
 if fail:

@@ -328,7 +328,9 @@ def cmd_discover_sigungu(args):
                 with ThreadPoolExecutor(max_workers=args.workers) as pool:
                     for code, total in pool.map(probe, pairs):
                         calls += 1
-                        if total > 0:
+                        # total 은 None(모름)일 수 있다. 여기서 그것을 빠뜨려
+                        # run 14 가 터졌다 — 세 군데 중 두 군데만 고쳤었다.
+                        if total is not None and total > 0:
                             hits[code] = int(total)
 
         found[prefix] = hits

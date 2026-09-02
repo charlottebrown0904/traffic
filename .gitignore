@@ -27,6 +27,10 @@ data/processed/*
 # 가설3 자료 — API 가 막혀 파일로 받는다 (docs/hypothesis-3-data.md)
 !data/raw/zones_*.csv
 !data/raw/region_*.csv
+# 산업단지 '현황' 스냅샷 — 지정일이 없어 이벤트로는 못 쓰지만
+# 횡단 비교(지시3)의 통제로는 쓸 수 있다. zones_ 로 시작하지
+# 않게 둔 것은 로더가 이벤트 파일로 오해하지 않게 하려는 것이다.
+!data/raw/industrial_status_*.csv
 # 도로공사 포털에서 받은 원본 파일을 올릴 자리 (러너가 새로 체크아웃해도 잡히게)
 !data/raw/ex/
 !data/raw/ex/**
