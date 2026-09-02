@@ -12,7 +12,7 @@
 | [START-HERE.md](docs/START-HERE.md) | 단계별 실행 순서와 통과 기준 |
 | [hypothesis.md](docs/hypothesis.md) | **분석 설계와 가설** — 먼저 읽어주세요 |
 | [api-keys.md](docs/api-keys.md) | API 키 신청 (어느 데이터셋을 신청하나) |
-| [traffic-history.md](docs/traffic-history.md) | 교통량 과거 시계열 확보 ← **현재 병목** |
+| [traffic-history.md](docs/traffic-history.md) | 교통량 과거 시계열 ✅ **2003~2025 확보 완료** |
 | [product-format.md](docs/product-format.md) | 제품 화면 형식 |
 | [listings-api.md](docs/listings-api.md) | 매물 API (인증·권한·결제 자리) |
 | [deploy-vercel.md](docs/deploy-vercel.md) | **Vercel 배포** 구조와 절차 |
@@ -20,7 +20,22 @@
 | [data-sources.md](docs/data-sources.md) | 데이터 소스와 응답 필드 |
 | [data-model.md](docs/data-model.md) | 스키마 |
 | [legal-notes.md](docs/legal-notes.md) | 법적 체크리스트 |
+| [results-run13.md](docs/results-run13.md) | **최근 실측 결과** — 무엇이 나왔고 무엇이 아직 안 되는가 |
 | [ROADMAP.md](ROADMAP.md) | 전체 계획 |
+
+## 지금 어디까지 왔나 (2026-09-02)
+
+| | |
+|---|---|
+| 교통량 | 2003-01 ~ 2025-12 · **274개월 23년** ✅ (결측 2004-06 · 2010-10) |
+| 거래 | 2006-01 ~ 2025-12 · 전국 197시군구 · **466만 건** (수집 38.4%) |
+| └ 좌표 보유 | 138만 건 (29.5%) ← **현재 병목** |
+| 영업소 | 개통 확인 252 · 좌측절단 231 · 폐쇄 확인 9 |
+| 판정 | 아직 없음. 위약 밴드가 0 근처지만 근거리 부호가 뒤집혀 IC 효과로 못 읽습니다 |
+
+거래를 3.9배로 넓혔는데 분석 표본은 거의 안 늘었습니다. 좌표 없는 거래는
+거리 밴드에 못 들어가기 때문입니다. **전국 자료를 받는 것과 전국을
+분석하는 것은 다른 일이고, 지금은 앞의 것만 됐습니다.**
 
 ## 누가 무엇을 하나
 

@@ -653,6 +653,56 @@ with tempfile.TemporaryDirectory() as _td:
         check(False, "월별 출력이 만들어진다")
 
 print()
+print("15. 합성 자료가 설정 필터를 통과할 만큼 남는다 (Gate 0 이 죽지 않게)")
+# `make test` 는 통과하는데 `make demo` 가 죽어 있었다.
+#
+# 설정의 land_use_filter 가 계획관리·생산관리·자연녹지로 정해졌는데 합성
+# 생성기는 ["계획관리","생산녹지","공업"] 을 박아 쓰고 있었다. 셋 중 하나만
+# 통과해 셀당 12건이 4건이 되고, min_trades_per_cell(5) 을 못 넘어 모든
+# 셀의 가격지수가 결측이 됐다. Gate 0 이 계수를 하나도 못 내는 채로 있었다.
+#
+# 설정이 또 바뀌면 여기서 걸린다.
+import importlib.util as _ilu
+
+_spec = _ilu.spec_from_file_location("_syn", ROOT / "scripts/make_synthetic.py")
+_syn = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_syn)
+
+_cfg = _syn.settings()
+_zones = _cfg.get("land_use_filter") or []
+_min = _cfg["panel"]["min_trades_per_cell"]
+
+# 셀은 (영업소 × 밴드 × 종류 × 연도) 다. 생성기는 셀 하나에 per_cell 건을
+# 만들고, k 로 용도지역과 좌표수준을 정한다. 그 k 루프를 그대로 되짚어
+# **셀 하나에 몇 건이 살아남는지**를 센다 — 시군구 단위로 뭉쳐 세면 수백
+# 건이 나와 아무것도 잡지 못한다.
+import inspect as _inspect
+
+_per_cell_n = _inspect.signature(_syn.make_trades).parameters["per_cell"].default
+_pool = _syn.ZONE_POOL
+_near = set(bands_cfg if (bands_cfg := _cfg["spatial"].get("require_parcel_bands")) else [])
+
+_survive = 0
+for _k in range(_per_cell_n):
+    _zone = _pool[_k % len(_pool)]
+    if _zones and not any(z in _zone for z in _zones):
+        continue                      # 용도지역 필터에서 빠진다
+    if _near and not (_k % 6):
+        continue                      # 법정동단위 좌표라 근거리 밴드에서 빠진다
+    _survive += 1
+
+check(_survive >= _min,
+      f"근거리 밴드 셀 하나에 {_survive}건이 남는다 "
+      f"(셀당 생성 {_per_cell_n}건 · 최소 필요 {_min}건)")
+
+# 위약 밴드에는 참값 0 을 심어야 위약 검정이 작동하는지 볼 수 있다.
+_control = list(_syn.BAND_RANGE)[-1]
+check(_syn.TRUE_BETA[_control] == 0.0,
+      f"가장 바깥 밴드({_control})의 참값이 0 이다 — 위약 검정용")
+check(max(_syn.TRUE_BETA.values()) > 0,
+      "영향범위 밴드에는 0 이 아닌 참값이 심겨 있다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

@@ -16,7 +16,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from redt import db  # noqa: E402
-from redt.config import PROCESSED, bands  # noqa: E402
+from redt.config import PROCESSED, bands, settings  # noqa: E402
 
 RNG = np.random.default_rng(20260827)
 
@@ -31,8 +31,19 @@ for _lo, _hi in bands():
 # 선행연구(docs/literature.md 1번)가 말하는 역U자를 일부러 심는다.
 # 가장 가까운 구간이 정점이 아니라 그 다음 구간이 정점이다. 회복 검정이
 # 단조 감소만 잡아낸다면, 정작 현실에서 중요한 모양을 놓치게 된다.
-_SHAPE = {"0-1": 0.30, "1-3": 0.50, "3-5": 0.30, "5-10": 0.10, "10-20": 0.00}
-TRUE_BETA = {k: _SHAPE.get(k, 0.0) for k in BAND_RANGE}
+#
+# **가장 바깥 밴드는 위약(대조)이므로 참값을 0 으로 심는다.** 위약 검정이
+# 실제로 작동하는지 보려면 거기에 아무것도 없어야 한다.
+#
+# 예전에는 5-10 에 0.10 을 심어뒀다. 그때는 10-20 이 위약이었기 때문이다.
+# 위약을 5-10 으로 옮긴 뒤에도 이 값이 남아, 합성 자료에서 '위약 밴드도
+# 유의한 양수 — IC 효과가 아니라 지역 효과입니다' 경고가 떴다. 심어둔 값이
+# 0.1 이니 경고 자체는 옳지만, Gate 0 에서 매번 그 경고를 보면 정작 실자료
+# 에서 같은 경고가 떴을 때 무시하게 된다.
+_SHAPE = {"0-1": 0.30, "1-3": 0.50, "3-5": 0.30}
+_CONTROL = list(BAND_RANGE)[-1]
+TRUE_BETA = {k: (0.0 if k == _CONTROL else _SHAPE.get(k, 0.0)) for k in BAND_RANGE}
+_SHAPE[_CONTROL] = 0.0
 _unknown = [k for k in BAND_RANGE if k not in _SHAPE]
 if _unknown:
     print(f"  ⚠ 참값을 정해두지 않은 밴드 {_unknown} → β=0 으로 둡니다")
@@ -40,6 +51,19 @@ if _unknown:
 YEARS = list(range(2015, 2025))
 KINDS = ["land", "factory"]
 LAND_USES = ["전", "답", "대", "임야", "공장용지"]
+
+# 용도지역은 **설정에서 읽는다.**
+#
+# 예전에는 ["계획관리", "생산녹지", "공업"] 로 박아뒀다. 그 뒤 설정의
+# land_use_filter 가 계획관리·생산관리·자연녹지로 정해지자 셋 중 하나만
+# 통과하게 됐고, 셀당 12건이 4건으로 줄어 min_trades_per_cell(5) 을 못
+# 넘겼다. 모든 셀의 가격지수가 결측이 되면서 `make demo` 가 계수를 하나도
+# 못 냈다 — Gate 0 이 죽은 채로 있었는데 make test 는 통과했다.
+#
+# 필터에 든 것들 + 통과 못 하는 것 하나. 필터가 실제로 걸러내는지도 함께
+# 보면서, 남는 표본은 최소 건수를 넘게 한다.
+_PASS_ZONES = list(settings().get("land_use_filter") or ["계획관리"])
+ZONE_POOL = _PASS_ZONES + ["공업"]
 
 
 def make_tollgates(n_rows=6, n_cols=10) -> pd.DataFrame:
@@ -134,7 +158,7 @@ def make_trades(tollgates: pd.DataFrame, truth: pd.DataFrame,
                             "price_krw": int(pm2 * area),
                             "price_per_m2": pm2,
                             "jimok": land_use,
-                            "land_use": ["계획관리", "생산녹지", "공업"][k % 3],
+                            "land_use": ZONE_POOL[k % len(ZONE_POOL)],
                             "building_area_m2": None,
                             "building_use": "",
                             "build_year": None,
