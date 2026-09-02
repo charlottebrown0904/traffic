@@ -349,12 +349,38 @@ def cmd_discover_sigungu(args):
         # --refresh 여도 읽는다. 병합하려면 기존 내용을 알아야 한다.
         known = yaml.safe_load(out_path.read_text(encoding="utf-8")) or {}
     if out_path.exists() and not args.refresh:
-        print(f"이미 찾아둔 코드 {sum(len(v) for v in known.values()):,}개"
-              f" — 다시 찾으려면 --refresh")
-        if not args.refresh:
-            for sido, codes in sorted(known.items()):
-                print(f"  {sido}  {len(codes):>3}개")
-            return
+        total = sum(len(v) for v in known.values())
+        print(f"이미 찾아둔 코드 {total:,}개 — 다시 찾으려면 --refresh")
+        # **부실한 목록이 조용히 재사용되는 것을 막습니다.**
+        #
+        # 훑기는 상대가 막으면 코드를 놓칩니다. 그렇게 만들어진 목록이
+        # 파일에 남으면, 다음부터는 '이미 찾아뒀다' 며 건너뛰고 그 시군구는
+        # 영원히 빕니다. 오류도 경고도 없이 표만 비어 보입니다.
+        #
+        # 그래서 건너뛸 때마다 파일 자체를 훑어 수상한 것을 말합니다.
+        empty = [k for k, v in known.items() if not v]
+        thin = [k for k, v in known.items() if 0 < len(v) < 3]
+        for sido, codes in sorted(known.items()):
+            mark = ""
+            if not codes:
+                mark = "   ⚠ 비어 있습니다 — 훑기가 막혔을 수 있습니다"
+            elif len(codes) < 3:
+                mark = "   ⚠ 너무 적습니다"
+            print(f"  {sido}  {len(codes):>3}개{mark}")
+        if empty or thin or total < 200:
+            print()
+            print("  ⚠ 이 목록은 온전하지 않아 보입니다.")
+            if empty:
+                print(f"     빈 시도: {sorted(empty)}")
+            if thin:
+                print(f"     너무 적은 시도: {sorted(thin)}")
+            if total < 200:
+                print(f"     전체 {total}개 — 230개 안팎이 정상입니다")
+            print("     그 시군구의 거래는 계속 0건으로 보입니다. 고치려면:")
+            print(f"     discover-sigungu --refresh --sido "
+                  f"{','.join(sorted(set(empty + thin))) or '<해당 시도>'}")
+            print("     (이제 병합되므로 다른 시도는 지워지지 않습니다)")
+        return
 
     prefixes = args.sido.split(",") if args.sido else SIDO_PREFIX
     ymd = args.probe_ymd

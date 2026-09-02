@@ -930,6 +930,36 @@ with _tf.TemporaryDirectory() as _d:
         _cli.ROOT_CFG = _prev_cfg
 
 print()
+print("22. 부실한 시군구 목록이 조용히 재사용되지 않는다")
+# 훑기는 상대가 막으면 코드를 놓칩니다. 그렇게 만들어진 목록이 파일에
+# 남으면 다음부터는 '이미 찾아뒀다' 며 건너뛰고, 그 시군구는 영원히
+# 빕니다 — 오류도 경고도 없이 표만 비어 보입니다.
+import io as _io
+from contextlib import redirect_stdout as _redir
+
+_prev = _cli.ROOT_CFG
+with _tf.TemporaryDirectory() as _d:
+    _cli.ROOT_CFG = Path(_d)
+    (Path(_d) / "sigungu_codes.yaml").write_text(
+        yaml.safe_dump({"41": {"41110": 5, "41130": 3, "41150": 2},
+                        "29": {},                 # 막혀서 빈 시도
+                        "46": {"46110": 1}},      # 너무 적은 시도
+                       allow_unicode=True), encoding="utf-8")
+    _args3 = _types.SimpleNamespace(
+        sido="", probe_ymd="202403", extra_ymd="", workers=8, refresh=False)
+    _buf = _io.StringIO()
+    with _redir(_buf):
+        _cli.cmd_discover_sigungu(_args3)
+    _out = _buf.getvalue()
+_cli.ROOT_CFG = _prev
+
+check("온전하지 않아 보입니다" in _out, "부실하면 경고한다")
+check("'29'" in _out or "29" in _out.split("빈 시도:")[-1][:40],
+      "빈 시도를 지목한다")
+check("--refresh --sido" in _out, "고치는 방법을 알려준다")
+check("지워지지 않습니다" in _out, "병합된다는 것을 알린다 (덮어쓸까 봐 안 돌리는 일이 없게)")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
