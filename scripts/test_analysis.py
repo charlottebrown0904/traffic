@@ -608,6 +608,51 @@ finally:
     _rtms.fetch_page = _orig_fetch
 
 print()
+print("14. 같은 달을 두 파일이 들고 오면 배로 세지 않는다")
+# 포털에서 받은 2004-06 파일 안에 든 것이 2004-07 이었다. 7월 파일과
+# 행 단위로 완전히 같아서, 그대로 더하면 7월이 292,008,930 — 다른 달
+# (약 148,000,000)의 정확히 두 배가 된다. 파일 이름만 보면 12개가 다
+# 있으므로 로그에는 아무 표시도 안 남는다.
+import subprocess, tempfile, gzip, os
+
+_hdr = ("집계일자,영업소코드,입출구구분코드,TCS하이패스구분코드,"
+        "고속도로운영기관구분코드,영업형태구분코드,"
+        "1종교통량,2종교통량,3종교통량,4종교통량,5종교통량,6종교통량,총교통량")
+def _mkfile(path, ymd_list):
+    body = [_hdr]
+    for ymd in ymd_list:
+        body.append(f"{ymd},101,0,1,0,1,100,10,5,3,2,1,121")
+    with gzip.open(path, "wb") as fh:
+        fh.write(("\n".join(body) + "\n").encode("cp949"))
+
+with tempfile.TemporaryDirectory() as _td:
+    _may = os.path.join(_td, "tcs_daily_200405.zip")
+    _jun = os.path.join(_td, "tcs_daily_200406.zip")   # 이름은 6월
+    _jul = os.path.join(_td, "tcs_daily_200407.zip")
+    _mkfile(_may, ["20040501", "20040502"])
+    _mkfile(_jun, ["20040701", "20040702"])            # 내용은 7월 (포털의 그 사고)
+    _mkfile(_jul, ["20040701", "20040702"])
+    _out = os.path.join(_td, "annual.csv")
+    _mout = os.path.join(_td, "monthly.csv")
+    _r = subprocess.run(
+        [sys.executable, str(ROOT / "scripts/convert_tcs_daily.py"),
+         _may, _jun, _jul, "-o", _out, "--monthly-out", _mout],
+        capture_output=True, text=True)
+    _log = _r.stdout + _r.stderr
+    check("파일 2개가 들고 있습니다" in _log, "중복을 발견하면 말한다")
+    if os.path.exists(_mout):
+        _m = pd.read_csv(_mout, encoding="utf-8-sig")
+        _tot = _m.groupby("연월")["교통량"].sum()
+        _jul_v = _tot.get("2004-07", 0)
+        _may_v = _tot.get("2004-05", 0)
+        check(_jul_v == _may_v,
+              f"중복된 달이 배로 세어지지 않는다 (7월 {_jul_v} vs 5월 {_may_v})")
+        check("2004-06" not in _tot.index,
+              "이름만 6월인 파일이 6월을 만들어내지 않는다")
+    else:
+        check(False, "월별 출력이 만들어진다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

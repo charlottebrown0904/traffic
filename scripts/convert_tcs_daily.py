@@ -157,6 +157,8 @@ def main() -> int:
     args = ap.parse_args()
 
     frames, months = [], defaultdict(set)
+    claimed: dict[str, set] = {}
+    named: list[tuple[str, pd.DataFrame]] = []
     for p in sorted(Path(f) for f in args.files):
         df = read_one(p)
         df["집계일자"] = parse_dates(df["집계일자"])
@@ -180,12 +182,41 @@ def main() -> int:
             df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
         df = drop_spikes(df, p.name)
         df["연월"] = df["집계일자"].dt.strftime("%Y-%m")
-        frames.append(df[["연도", "연월", "영업소코드", *CLASSES]])
+        slim = df[["연도", "연월", "영업소코드", *CLASSES]]
+        frames.append(slim)
+        named.append((p.name, slim))
+        claimed[p.name] = set(df["연월"].unique())
         print(f"  {p.name}  {len(df):,}행")
 
     if not frames:
         print("읽은 파일이 없습니다.")
         return 1
+
+    # **같은 달을 두 파일이 들고 있으면 그대로 더해진다.**
+    #
+    # 포털에서 2004-06 을 받았더니 안에 든 것은 2004-07 이었다. 이름만
+    # 6월이고 내용은 7월이며, 7월 파일과 행 단위로 완전히 같았다. 그대로
+    # 두면 7월이 292,008,930 — 다른 달(약 148,000,000)의 정확히 두 배가
+    # 된다. 파일 이름을 믿고 12개를 넘기면 로그에는 '12개 파일 읽음' 만
+    # 남는다.
+    #
+    # 파일 이름이 아니라 **파일 안의 날짜**로 판단한다.
+    overlap = defaultdict(list)
+    for fname, ms in claimed.items():
+        for m in ms:
+            overlap[m].append(fname)
+    dupes = {m: fs for m, fs in overlap.items() if len(fs) > 1}
+    if dupes:
+        print()
+        drop_files = set()
+        for m, fs in sorted(dupes.items()):
+            keep, rest = fs[0], fs[1:]
+            print(f"  ⚠ {m} 을 파일 {len(fs)}개가 들고 있습니다: {', '.join(fs)}")
+            print(f"      {keep} 만 쓰고 나머지는 버립니다 — 안 그러면 그 달이 배로 셉니다.")
+            drop_files |= set(rest)
+        frames = [df for name, df in named if name not in drop_files]
+        print("  파일 이름과 내용이 어긋난 것입니다. 버린 파일의 **이름에 해당하는**")
+        print("  달은 실제로 받지 못한 것이니, 아래 개월 수를 확인하고 다시 받으세요.")
 
     allrows = pd.concat(frames)
     name_map = names()
