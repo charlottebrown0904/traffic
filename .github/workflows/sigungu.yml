@@ -1,0 +1,91 @@
+# 전국 시군구 코드만 찾아 저장소에 넣는다.
+#
+# 왜 따로 떼어냈나 — 이 결과는 **한 번 찾으면 끝**이고 20분어치 가치인데,
+# 수집 워크플로 안에 있으면 5시간짜리 파이프라인이 끝까지 가야 저장됩니다.
+# 중간에 멈추면 통째로 잃습니다. 실제로 두 번 그랬습니다.
+#
+#   run 13  2시간 33분 수집 후 커밋 단계에서 죽어 19,052회 호출분을 잃음
+#   run 15  훑기가 3시간 넘게 걸려 거래를 한 건도 못 받을 상황
+#
+# 찾자마자 커밋합니다. 그러면 다음부터 수집은 이 파일을 읽고 건너뜁니다.
+name: 시군구 코드 찾기 (한 번만 · 찾는 즉시 커밋)
+
+on:
+  workflow_dispatch:
+    inputs:
+      sido:
+        description: "훑을 시도 접두사 (쉼표구분, 비우면 전체). 예: 12"
+        default: ""
+      refresh:
+        description: "이미 있어도 다시 훑을지 (true/false)"
+        default: "true"
+      workers:
+        # 실패율이 높으면 낮추세요. 실패 하나가 15초 대기를 씁니다.
+        description: "동시 요청 수"
+        default: "6"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sigungu
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      - name: 훑기
+        run: |
+          python -m redt.cli discover-sigungu \
+            ${{ inputs.sido && format('--sido {0}', inputs.sido) || '' }} \
+            ${{ inputs.refresh == 'true' && '--refresh' || '' }} \
+            --workers "${{ inputs.workers }}"
+
+      # 찾자마자 커밋한다. 이것이 이 워크플로의 존재 이유다.
+      - name: 결과 커밋
+        if: always()
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f config/sigungu_codes.yaml ]; then
+            echo "찾은 코드가 없습니다 — 커밋할 것이 없습니다"
+            exit 0
+          fi
+          git add config/sigungu_codes.yaml
+          if git diff --cached --quiet; then
+            echo "바뀐 것이 없습니다 — 커밋 생략"
+            exit 0
+          fi
+          git commit -m "config: 시군구 코드 갱신 (run ${{ github.run_number }})"
+          BRANCH="${{ github.ref_name }}"
+          for i in 1 2 3 4; do
+            git pull --rebase --autostash origin "$BRANCH" \
+              && git push origin "HEAD:$BRANCH" && exit 0
+            sleep $((2 ** i))
+          done
+          echo "푸시 실패"; exit 1
+
+      - name: 파일 올리기
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigungu-codes-${{ github.run_number }}
+          path: config/sigungu_codes.yaml
+          if-no-files-found: warn
