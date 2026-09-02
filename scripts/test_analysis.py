@@ -788,6 +788,46 @@ with _tf.TemporaryDirectory() as _d:
         _cli.ROOT_CFG = _real_cfg
 
 print()
+print("18. KOSIS 응답은 엄격한 JSON 이 아니다")
+# format=json 을 줘도 키에 따옴표가 없이 옵니다.
+#   [{LIST_NM:"인구",LIST_ID:"A"}]
+# 자바스크립트 객체 표기라 json.loads 가 거부합니다. 첫 실행에서 자료는
+# 멀쩡히 왔는데 '조회 실패' 로 찍혔습니다.
+from redt.collect.kosis import loads_lenient as _ll
+
+_REAL = '[{LIST_NM:"인구",LIST_ID:"A",VW_NM:"국내통계 주제별",VW_CD:"MT_ZTITLE"}]'
+_got = _ll(_REAL)
+check(isinstance(_got, list) and _got[0].get("LIST_ID") == "A",
+      f"실제 KOSIS 응답 모양을 읽는다 ({_got[:1]})")
+check(_ll('[{"a":1}]') == [{"a": 1}], "엄격한 JSON 도 그대로 읽는다")
+
+# 정규식 한 줄로 고치려다 값을 깨뜨렸다. 값 안의 ', y:' 를 키로 보고
+# 문자열을 갈라놓는다. 따옴표 안팎을 세어야 한다.
+check(_ll('[{A:"10:30",B:"x, y:z"}]') == [{"A": "10:30", "B": "x, y:z"}],
+      "값 속의 쉼표와 콜론을 키로 착각하지 않는다")
+check(_ll('[{A:"{B:1}",C:"끝"}]') == [{"A": "{B:1}", "C": "끝"}],
+      "값 속의 중괄호를 건드리지 않는다")
+check(_ll(r'[{A:"그는 \"안녕\" 이라 했다"}]')[0]["A"] == '그는 "안녕" 이라 했다',
+      "이스케이프된 따옴표를 넘긴다")
+
+print()
+print("19. 도시개발 표준데이터의 실제 칸 이름을 읽는다")
+# 표준데이터는 한글이 아니라 축약 영문 키로 옵니다. 특히 **경도가 lot**
+# 입니다 — lon 만 찾으면 위도만 붙고 경도는 결측이 되어, 좌표가 반쪽만
+# 있는 채로 반경 밴드에 들어갑니다.
+from redt.collect.h3_files import ZONE_COLS as _ZC, _pick as _pk
+
+_OBSERVED = ["bizNm", "ctpvNm", "sggNm", "lctnRoadNmAddr", "lctnLotnoAddr",
+             "lat", "lot", "bizBgngYm", "bizEndYm", "telno", "bizDvlrNm",
+             "actcHhCnt", "bzar", "bizMthSeNm", "dataCrtrYmd"]
+_frame = pd.DataFrame({c: ["x"] for c in _OBSERVED})
+for _want, _expect in (("name", "bizNm"), ("designated_date", "bizBgngYm"),
+                       ("lat", "lat"), ("lon", "lot"), ("area_m2", "bzar"),
+                       ("address", "lctnLotnoAddr")):
+    check(_pk(_frame, _ZC[_want]) == _expect,
+          f"{_want} ← {_expect} (읽은 것 {_pk(_frame, _ZC[_want])})")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
