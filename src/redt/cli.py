@@ -968,6 +968,40 @@ PANEL_TRADE_COLS = [
 ]
 
 
+def _analysis_inputs(con):
+    """거래·연결을 **분석에 필요한 만큼만** 읽는다.
+
+    run 20 이 '신규 개통 전후 지가(이중차분)' 에서 러너째 죽었습니다.
+    패널에서 고친 것과 **똑같은 코드가 두 곳 더 있었고 제가 한 곳만
+    고쳤습니다.**
+
+        SELECT * FROM trade WHERE lat IS NOT NULL      789만 행 × 전 컬럼
+        SELECT * FROM trade_tollgate_link            1,961만 행
+
+    events 와 rank 는 둘 다 최근접 연결만 씁니다(events.build 가 안에서
+    is_nearest 로 다시 거릅니다). 그런데 읽을 때는 전부 읽고 있었습니다.
+
+    한 곳을 고치고 같은 모양을 안 찾은 것이 이 사고의 원인입니다. 그래서
+    이제 세 곳이 같은 함수를 부릅니다 — 다음에 또 늘어나도 여기만 고치면
+    됩니다.
+    """
+    cols = ", ".join(f"t.{c}" for c in PANEL_TRADE_COLS)
+    trades = con.execute(f"""
+        SELECT {cols} FROM trade t
+        WHERE t.lat IS NOT NULL
+          AND t.trade_id IN (SELECT trade_id FROM trade_tollgate_link
+                             WHERE is_nearest)
+    """).fetchdf()
+    # distance_km 은 events 가 씁니다. is_nearest 는 events.build 가 다시
+    # 거르므로 칸을 남겨 둡니다 — 없애면 그쪽이 KeyError 로 죽습니다.
+    links = con.execute(
+        "SELECT trade_id, tollgate_id, band, distance_km, is_nearest "
+        "FROM trade_tollgate_link WHERE is_nearest").fetchdf()
+    print(f"  읽음: 거래 {len(trades):,}행 × {len(trades.columns)}칸 · "
+          f"최근접 연결 {len(links):,}쌍")
+    return trades, links
+
+
 def cmd_panel(args):
     """분석 패널.
 
@@ -980,23 +1014,10 @@ def cmd_panel(args):
     2) 그 앞에 진짜 범인이 있다 — 헤도닉 회귀(transform/panel.py).
     """
     with db.connect() as con:
-        # 패널은 최근접 연결만 쓴다(nearest_only). 나머지 1,300만 쌍은
-        # 지도·상세용이라 여기서 읽을 이유가 없다.
-        links = con.execute(
-            "SELECT trade_id, tollgate_id, band, is_nearest "
-            "FROM trade_tollgate_link WHERE is_nearest").fetchdf()
-        # 연결이 없는 거래는 패널에 못 들어간다. 미리 걸러 오면 789만 →
-        # 662만 이고, 무엇보다 뒤의 헤도닉이 그만큼 가벼워진다.
-        cols = ", ".join(f"t.{c}" for c in PANEL_TRADE_COLS)
-        trades = con.execute(f"""
-            SELECT {cols} FROM trade t
-            WHERE t.lat IS NOT NULL
-              AND t.trade_id IN (SELECT trade_id FROM trade_tollgate_link
-                                 WHERE is_nearest)
-        """).fetchdf()
+        # 패널·events·rank 가 같은 함수를 쓴다. 갈라 두면 또 한 곳만
+        # 고치게 된다 — run 20 이 정확히 그렇게 죽었다.
+        trades, links = _analysis_inputs(con)
         traffic = con.execute("SELECT * FROM traffic").fetchdf()
-    print(f"  읽음: 거래 {len(trades):,}행 × {len(trades.columns)}칸 · "
-          f"최근접 연결 {len(links):,}쌍")
     if trades.empty or links.empty or traffic.empty:
         sys.exit("패널을 만들 재료가 부족합니다. status 로 확인하세요.")
 
@@ -1100,8 +1121,7 @@ def cmd_events(args):
     """지시2 — 신규 개통 영업소 주변 지가를 개통 전후로 비교 (이중차분)."""
     from .analyze import events
     with db.connect(read_only=True) as con:
-        trades = con.execute("SELECT * FROM trade WHERE lat IS NOT NULL").fetchdf()
-        links = con.execute("SELECT * FROM trade_tollgate_link").fetchdf()
+        trades, links = _analysis_inputs(con)
     if trades.empty or links.empty:
         sys.exit("거래 또는 공간조인이 비어 있습니다. status 로 확인하세요.")
     kept = trades[~trades["is_share_deal"].fillna(False)
@@ -1313,8 +1333,7 @@ def cmd_hypotheses(args):
     panel = pd.read_parquet(path)
 
     with db.connect(read_only=True) as con:
-        trades = con.execute("SELECT * FROM trade WHERE lat IS NOT NULL").fetchdf()
-        links = con.execute("SELECT * FROM trade_tollgate_link").fetchdf()
+        trades, links = _analysis_inputs(con)
         region = con.execute("SELECT * FROM region_year").fetchdf()
         zones = con.execute("SELECT * FROM zone_event").fetchdf()
         zlinks = con.execute("""

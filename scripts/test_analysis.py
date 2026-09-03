@@ -1225,6 +1225,70 @@ check(np.allclose(_cut["adj_ln_price"], _again["adj_ln_price"]),
       "두 번 돌려도 같은 값이 나온다 (표본 씨앗 고정)")
 
 print()
+print("29. 무거운 표를 통째로 읽는 곳이 남아 있지 않다")
+
+# run 20 이 '신규 개통 전후 지가' 에서 러너째 죽었습니다. 패널에서 고친
+# 것과 **똑같은 코드가 두 곳 더 있었고 제가 한 곳만 고쳤습니다.**
+#
+#   SELECT * FROM trade WHERE lat IS NOT NULL      789만 행 × 전 컬럼
+#   SELECT * FROM trade_tollgate_link            1,961만 행
+#
+# 한 곳을 고치고 같은 모양을 안 찾은 것이 원인입니다. 그래서 세 곳이
+# 같은 함수(_analysis_inputs)를 부르게 묶고, **넷째가 생기면 걸리도록**
+# 여기서 소스를 봅니다. 검사가 코드를 읽는 것은 흔치 않지만, 이 사고는
+# '어디에도 안 걸리고 러너만 죽는' 종류라 실행으로는 못 잡습니다.
+import re as _re                                                # noqa: E402
+_cli = (pathlib.Path(__file__).resolve().parents[1]
+        / "src" / "redt" / "cli.py").read_text(encoding="utf-8")
+# **con.execute() 에 실제로 넘기는 문자열만** 봅니다.
+#
+# 처음엔 파일 전체를 정규식으로 훑었는데, _analysis_inputs 의 설명이
+# 바로 그 SELECT * 를 '예전에 이랬다' 고 인용하고 있어서 자기 설명에
+# 걸렸습니다. 문서 문자열을 지우려 ast 로 문자열을 비워봤더니 정작
+# 찾으려는 SQL 도 문자열이라 같이 사라졌습니다.
+#
+# 실행 인자만 보면 둘 다 해결됩니다 — 설명은 execute 에 안 들어가고,
+# SQL 은 반드시 들어갑니다.
+import ast as _ast                                              # noqa: E402
+
+
+def _sql_args(src: str) -> list[str]:
+    """con.execute(...) 의 첫 인자로 넘어가는 SQL 문자열들."""
+    out = []
+    for node in _ast.walk(_ast.parse(src)):
+        if not (isinstance(node, _ast.Call)
+                and isinstance(node.func, _ast.Attribute)
+                and node.func.attr == "execute" and node.args):
+            continue
+        arg = node.args[0]
+        if isinstance(arg, _ast.Constant) and isinstance(arg.value, str):
+            out.append(arg.value)
+        elif isinstance(arg, _ast.JoinedStr):      # f-string
+            out.append("".join(v.value for v in arg.values
+                               if isinstance(v, _ast.Constant)
+                               and isinstance(v.value, str)))
+    return out
+
+
+_wide = [q for q in _sql_args(_cli)
+         if _re.search(r'SELECT \* FROM (trade|trade_tollgate_link)\b', q)]
+check(not _wide, f"무거운 표를 SELECT * 로 읽는 곳이 없다 ({len(_wide)}군데)")
+
+_code = _cli
+_uses = len(_re.findall(r'_analysis_inputs\(con\)', _code))
+check(_uses >= 3,
+      f"패널·events·rank 가 같은 함수를 쓴다 (부르는 곳 {_uses}군데)")
+
+# 그 함수가 실제로 좁혀 읽는지 — 이름만 같고 안이 넓으면 의미가 없습니다.
+_body = _code.split("def _analysis_inputs(con):")[1].split("\ndef ")[0]
+check("WHERE is_nearest" in _body,
+      "최근접 연결만 읽는다 (1,961만 → 662만)")
+check("PANEL_TRADE_COLS" in _body,
+      "거래는 필요한 칸만 읽는다 (전 컬럼이 아니다)")
+check("distance_km" in _body,
+      "events 가 쓰는 distance_km 을 빠뜨리지 않는다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
