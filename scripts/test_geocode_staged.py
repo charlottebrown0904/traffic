@@ -114,12 +114,23 @@ with db.connect() as con:
         "SELECT trade_id, lat, lon, geocode_level FROM trade ORDER BY trade_id"
     ).fetchall()
 by_id = {r[0]: r for r in got}
-check(all(r[1] is not None for r in got), "세 건 모두 좌표가 붙었다")
+check(by_id["t1"][1] is not None and by_id["t2"][1] is not None,
+      "반경 안 두 건에 좌표가 붙었다")
 check(by_id["t1"][3] == "parcel", "반경 안은 지번단위로 기록된다")
-check(by_id["t3"][3] == "umd", "반경 밖은 법정동단위로 기록된다")
 
 print()
-print("4. 거친 좌표가 정밀 좌표를 덮지 않는다")
+print("4. 반경 밖에는 거친 좌표도 안 붙는다")
+# run 17 은 전국 법정동 **전부**에 거친 좌표를 썼다. 그러자 좌표 있는
+# 거래가 수백만 건으로 불어나 공간 조인에서 러너가 메모리 부족으로
+# 죽었고, 그 앞의 수집·지오코딩 4시간 30분이 같이 사라졌다.
+#
+# 반경 밖 거래는 어느 밴드에도 못 들어간다. 좌표를 붙여도 쓰이지 않고
+# 조인 비용만 늘린다.
+check(by_id["t3"][1] is None and by_id["t3"][3] is None,
+      f"반경 밖 거래는 좌표 없이 남는다 (받은 값: {by_id['t3'][1:]})")
+
+print()
+print("5. 거친 좌표가 정밀 좌표를 덮지 않는다")
 # 법정동 UPDATE 는 lat IS NULL 인 행만 건드려야 한다. t1 은 지번으로
 # 이미 채워졌으므로 법정동 중심점(NEAR)과 달라야 한다.
 check(by_id["t1"][1] != NEAR[0],

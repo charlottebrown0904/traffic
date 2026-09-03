@@ -46,6 +46,7 @@ test: test-server
 	$(PY) scripts/test_backfill.py
 	$(PY) scripts/test_trades_concurrent.py
 	$(PY) scripts/test_geocode_staged.py
+	$(PY) scripts/test_link_stream.py
 	$(PY) scripts/test_upsert_preserve.py
 	$(PY) scripts/test_geocode_quota.py
 	$(PY) scripts/test_web.py

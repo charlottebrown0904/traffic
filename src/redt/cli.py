@@ -769,7 +769,20 @@ def cmd_geocode_staged(args):
             con.unregister("_fine")
             print(f"  지번단위 {len(fine):,}개 주소를 반영했습니다")
 
-        coarse = umd_points.assign(geocode_level="umd")
+        # **반경 안 법정동에만** 거친 좌표를 쓴다.
+        #
+        # 예전에는 전국 법정동 전부에 썼다. 그러면 영업소에서 100km 떨어진
+        # 거래에도 좌표가 붙고, 그 거래가 전부 공간 조인 대상이 된다.
+        # run 17 이 그 조인에서 러너째 죽었다 — 좌표 있는 거래가 수백만
+        # 건으로 불어났기 때문이다.
+        #
+        # 반경 밖 거래는 어느 밴드에도 못 들어가므로 좌표를 붙일 이유가
+        # 없다. 붙이면 비용만 늘고 쓰이지는 않는다.
+        coarse = (near[["sigungu", "umd", "lat", "lon"]]
+                  if not near.empty else umd_points.iloc[0:0])
+        coarse = coarse.assign(geocode_level="umd")
+        print(f"  거친 좌표를 쓸 법정동 {len(coarse):,}개 "
+              f"(전체 {len(umd_points):,} 중 반경 안만)")
         con.register("_coarse", coarse)
         # **이미 지번 좌표가 있는 행은 건드리지 않는다.** 거친 좌표로
         # 덮으면 정밀도가 조용히 내려간다.
@@ -851,19 +864,44 @@ def cmd_geocode(args):
     print("   근거리 밴드 분석에서는 settings.yaml 의 require_parcel_bands 로 걸러집니다.")
 
 
+LINK_CHUNK = 200_000
+
+
 def cmd_link(args):
+    """거래 ↔ 영업소 공간 조인.
+
+    결과를 **청크마다 DB 에 흘려 넣는다.** 예전에는 전부 메모리에 쌓아
+    두었다가 한 번에 넣었는데, 좌표 있는 거래가 수백만 건이 되자 러너가
+    메모리 부족으로 통째로 죽었다(run 17). 러너가 죽으면 if: always() 인
+    캐시 저장 단계조차 안 돌아서, 그 앞의 수집·지오코딩 4시간 30분이
+    같이 사라진다.
+    """
     with db.connect() as con:
-        trades = con.execute(
-            "SELECT trade_id, lat, lon FROM trade WHERE lat IS NOT NULL"
-        ).fetchdf()
+        total = con.execute(
+            "SELECT count(*) FROM trade WHERE lat IS NOT NULL").fetchone()[0]
         tgs = con.execute(
             "SELECT tollgate_id, lat, lon FROM tollgate WHERE lat IS NOT NULL"
         ).fetchdf()
-        links = spatial.link_trades_to_tollgates(trades, tgs)
+        if not total or tgs.empty:
+            print("조인 결과 없음 (좌표 있는 거래 또는 영업소가 없습니다)")
+            return
+
         con.execute("DELETE FROM trade_tollgate_link")
-        n = db.upsert(con, "trade_tollgate_link", links)
-    print(f"공간 조인 {n:,}쌍 "
-          f"({links['trade_id'].nunique():,}건 거래가 영업소 반경 내)" if n else "조인 결과 없음")
+        n, seen, done = 0, set(), 0
+        for off in range(0, total, LINK_CHUNK):
+            block = con.execute(
+                "SELECT trade_id, lat, lon FROM trade WHERE lat IS NOT NULL "
+                f"ORDER BY trade_id LIMIT {LINK_CHUNK} OFFSET {off}").fetchdf()
+            if block.empty:
+                break
+            links = spatial.link_trades_to_tollgates(block, tgs)
+            done += len(block)
+            if len(links):
+                n += db.upsert(con, "trade_tollgate_link", links)
+                seen.update(links["trade_id"].unique().tolist())
+            print(f"  {done:,}/{total:,}  누적 {n:,}쌍")
+    print(f"공간 조인 {n:,}쌍 ({len(seen):,}건 거래가 영업소 반경 내)"
+          if n else "조인 결과 없음")
 
 
 def cmd_panel(args):
