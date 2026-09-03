@@ -362,8 +362,51 @@ jobs:
               for c in sorted(caches, key=lambda x: -x["size_in_bytes"])[:6]:
                   print(f"    {c['size_in_bytes']/GB:5.2f} GB  {c['key']}"
                         f"  (마지막 사용 {c['last_accessed_at'][:10]})")
+
+          # ── 이번 달 실행 시간 ──
+          #
+          # 청구 화면(settings/billing)은 **한도를 넘긴 뒤에야** 숫자가
+          # 보입니다. 포함된 분 안에서 쓰는 동안은 비어 보여서, 얼마나
+          # 다가갔는지 알 수가 없습니다. 사장님이 "못 찾겠다" 고 하신
+          # 것이 그래서입니다.
+          #
+          # 그래서 실행 기록에서 직접 셉니다. GITHUB_TOKEN 으로 읽히고
+          # 새 비밀값이 필요 없습니다. 청구액이 아니라 **실행 시간**
+          # 이므로 GitHub 이 청구한 값과 완전히 같지는 않지만, 한도에
+          # 얼마나 다가갔는지 보는 데는 이것이면 충분합니다.
+          from datetime import datetime, timezone
+          now = datetime.now(timezone.utc)
+          month = now.strftime("%Y-%m")
+          total, counted, page = 0.0, 0, 1
+          while page <= 4:
+              runs = api(f"/actions/runs?per_page=100&page={page}")["workflow_runs"]
+              if not runs:
+                  break
+              stop = False
+              for r in runs:
+                  st, en = r.get("run_started_at"), r.get("updated_at")
+                  if not (st and en):
+                      continue
+                  if st[:7] < month:          # 지난달로 넘어갔다
+                      stop = True
+                      continue
+                  if st[:7] > month:
+                      continue
+                  a = datetime.strptime(st, "%Y-%m-%dT%H:%M:%SZ")
+                  b = datetime.strptime(en, "%Y-%m-%dT%H:%M:%SZ")
+                  total += (b - a).total_seconds() / 60
+                  counted += 1
+              if stop:
+                  break
+              page += 1
+
+          print()
+          print(f"=== 이번 달({month}) 실행 시간 ===")
+          print(f"  {total:,.0f}분 · 실행 {counted}건")
+          for plan, cap in (("Free", 2000), ("Pro", 3000)):
+              mark = " ⚠" if total > cap * 0.8 else ""
+              print(f"    {plan} 한도 {cap:,}분 대비 {total/cap:5.0%}{mark}")
+          print("  * 실행 시간을 직접 센 값입니다. 청구 기준은")
+          print("    github.com/settings/billing (Settings → Access → Billing and licensing)")
           PY
           echo
-          echo "=== 실행 시간 ==="
-          echo "  이번 실행: 이 페이지 오른쪽 위 ··· → Usage"
-          echo "  이번 달 누적: github.com/settings/billing → Usage"
