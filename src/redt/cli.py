@@ -655,16 +655,49 @@ def cmd_trades(args):
         if budget:
             print(f"이번 실행 예산 {budget:,}셀 — 남는 것은 다음 실행이 이어받습니다")
 
-        total_rows = 0
-        spent = 0
+        # 예산을 종류별로 **나눠** 씁니다. 앞의 종류부터 다 끝내고 넘어가지
+        # 않습니다.
+        #
+        # 예전에는 `for kind in kinds` 로 토지를 다 받은 다음에야 공장 차례가
+        # 왔습니다. 전국 × 2006~2025 는 한 종류만 61,200셀이고 한 번에
+        # 35,000셀씩 받으므로, 공장은 세 번째 실행이 되어서야 시작됩니다.
+        # 실제로 그렇게 됐습니다 — 2026-09-02 기준 패널에서
+        #
+        #   토지    2006~2025 (20년) 406,510건
+        #   공장    2021~2025 ( 5년)   4,149건   ← 옛 실행에서 받은 것뿐
+        #
+        # 공장은 이 제품의 **기준 물건**입니다. 토지는 지목·용도·모양·도로
+        # 접함에 따라 필지별로 값이 크게 흔들리지만, 공장은 용도가 정해져
+        # 있어 교통량·산단·인구·IC 개통의 효과를 읽기에 훨씬 안정적입니다.
+        # 그 기준 물건을 맨 뒤로 미뤄두고 있었습니다.
+        #
+        # 다 받는 데 걸리는 총 실행 횟수는 같습니다. 다른 것은 **공장 자료가
+        # 마지막 실행에서야 처음 생기느냐, 지금부터 같이 쌓이느냐**입니다.
+        # 남은 양에 비례해 나누므로, 한쪽이 먼저 끝나면 남는 몫은 다른 쪽이
+        # 가져갑니다.
+        plans = []
         for kind in kinds:
             done = set() if args.refresh else db.done_cells(con, kind)
             todo = [(c, ym) for c in targets for ym in months if (c, ym) not in done]
-            remaining = len(todo)
-            if budget is not None:
-                todo = todo[: max(0, budget - spent)]
-            print(f"\n[{kind}] 남은 셀 {remaining:,} (이미 완료 {len(done):,})"
-                  + (f" · 이번에 {len(todo):,}개" if budget else ""))
+            plans.append([kind, todo, len(done)])
+
+        if budget is not None:
+            left = budget
+            # 남은 양이 적은 종류부터 배분합니다. 자기 몫보다 적게 남은
+            # 종류가 몫을 다 못 쓰고 반납하면, 그 몫이 뒤쪽으로 넘어갑니다.
+            order = sorted(range(len(plans)), key=lambda i: len(plans[i][1]))
+            for n, i in enumerate(order):
+                share = left // (len(order) - n)
+                take = min(len(plans[i][1]), share)
+                plans[i][1] = plans[i][1][:take]
+                left -= take
+
+        total_rows = 0
+        spent = 0
+        for kind, todo, n_done in plans:
+            print(f"\n[{kind}] 남은 셀 {len(todo):,} 처리 (이미 완료 {n_done:,})"
+                  if not budget else
+                  f"\n[{kind}] 이미 완료 {n_done:,} · 이번에 {len(todo):,}개")
             if not todo:
                 continue
             n_rows, stopped = _collect_cells(con, kind, todo, workers)
@@ -673,9 +706,8 @@ def cmd_trades(args):
             if stopped:
                 print("\n남은 셀은 다음 실행에서 이어받습니다.")
                 break
-            if budget is not None and spent >= budget:
-                print(f"\n예산 {budget:,}셀을 다 썼습니다. 남은 것은 다음 실행에서.")
-                break
+        if budget is not None and spent >= budget:
+            print(f"\n예산 {budget:,}셀을 다 썼습니다. 남은 것은 다음 실행에서.")
 
     print(f"\n실거래 {total_rows:,}건 신규 저장")
 

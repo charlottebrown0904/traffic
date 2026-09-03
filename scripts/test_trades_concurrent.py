@@ -120,6 +120,74 @@ def main():
               p and {"lat", "lon", "geocode_level"} <= set(p)
               for p in con.preserved))
 
+    # 6) 예산이 한 종류에 다 먹히지 않는가
+    #
+    # 예전에는 `for kind in kinds` 로 토지를 다 받은 다음에야 공장 차례가
+    # 왔다. 전국 × 2006~2025 는 한 종류만 61,200셀이고 한 번에 35,000셀씩
+    # 받으므로, 공장은 세 번째 실행이 되어서야 시작된다. 실제로 그렇게
+    # 됐다 — 토지는 2006~2025 20년인데 공장은 2021~2025 5년뿐이었다.
+    #
+    # 공장이 이 제품의 기준 물건이라 더 나쁘다. 토지는 필지별로 값이 크게
+    # 흔들리지만 공장은 용도가 정해져 있어 효과를 읽기에 안정적이다.
+    # 그 기준 물건이 맨 뒤에 있었다.
+    import argparse                                          # noqa: PLC0415
+
+    class _Ctx:
+        def __enter__(self): return FakeCon()
+        def __exit__(self, *a): return False
+
+    called = []
+    real_connect, real_collect = cli.db.connect, cli._collect_cells
+    real_done, real_target = cli.db.done_cells, cli._target_sigungu
+    try:
+        cli.db.connect = lambda *a, **k: _Ctx()
+        cli.db.done_cells = lambda con, kind: set()
+        cli._target_sigungu = lambda args, con: {f"C{i}": None for i in range(10)}
+        cli._collect_cells = lambda con, kind, todo, workers: (
+            called.append((kind, len(todo))), (0, False))[-1]
+        cli.cmd_trades(argparse.Namespace(
+            kind="land,factory", region="nationwide",
+            start="2006-01", end="2025-12",
+            max_cells=100, workers=1, refresh=False))
+    finally:
+        cli.db.connect, cli._collect_cells = real_connect, real_collect
+        cli.db.done_cells, cli._target_sigungu = real_done, real_target
+
+    got = dict(called)
+    # 시군구 10 × 240개월 = 2,400셀씩, 예산 100 → 50/50
+    check("예산을 두 종류가 나눠 쓴다", set(got) == {"land", "factory"},
+          f"받은 종류: {sorted(got)}")
+    check("한쪽이 예산을 다 먹지 않는다",
+          all(v > 0 for v in got.values()) and sum(got.values()) <= 100,
+          f"{got}")
+    check("고르게 나눈다", abs(got.get("land", 0) - got.get("factory", 0)) <= 1,
+          f"{got}")
+
+    # 한쪽이 거의 끝났으면 남는 몫은 다른 쪽이 가져가야 한다 —
+    # 안 그러면 마지막에 예산이 놀면서 실행 횟수만 늘어난다.
+    called.clear()
+    try:
+        cli.db.connect = lambda *a, **k: _Ctx()
+        cli._target_sigungu = lambda args, con: {f"C{i}": None for i in range(10)}
+        cli._collect_cells = lambda con, kind, todo, workers: (
+            called.append((kind, len(todo))), (0, False))[-1]
+        # 토지는 20셀만 남았다고 둔다 (나머지는 이미 완료)
+        allcells = {(c, ym) for c in [f"C{i}" for i in range(10)]
+                    for ym in cli._months("2006-01", "2025-12")}
+        few = set(list(allcells)[:20])
+        cli.db.done_cells = lambda con, kind: (
+            set() if kind == "factory" else allcells - few)
+        cli.cmd_trades(argparse.Namespace(
+            kind="land,factory", region="nationwide",
+            start="2006-01", end="2025-12",
+            max_cells=100, workers=1, refresh=False))
+    finally:
+        cli.db.connect, cli._collect_cells = real_connect, real_collect
+        cli.db.done_cells, cli._target_sigungu = real_done, real_target
+    got = dict(called)
+    check("남는 몫은 다른 종류가 가져간다",
+          got.get("land") == 20 and got.get("factory") == 80, f"{got}")
+
     print("\n실패 " + str(len(FAIL)) + "건" if FAIL else "\n동시 수집 검사 전부 통과")
     sys.exit(1 if FAIL else 0)
 
