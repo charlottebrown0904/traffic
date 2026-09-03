@@ -978,8 +978,10 @@ function styleTollgate(marker, t, tier, vol) {
   const isNew = tier === 'new';
   const q = isNew ? 0 : tier;
   marker.setStyle({
-    radius: isNew ? 6 : (known ? 4.5 + q * 1.4 : 3.5),
-    weight: isNew ? 2.4 : 1.6,
+    radius: isNew ? 7 : (known ? 4.5 + q * 1.4 : 3.5),
+    // 신설은 링이 굵고 거의 검정이다. 네 구간은 흰 링이라 **테두리
+    // 색만 봐도** 갈린다 — 채움 색이 비슷해 보이는 작은 배율에서도.
+    weight: isNew ? 3 : 1.6,
     color: isNew ? cssVar('--tg-new-ring') : '#fff',
     fillColor: isNew ? cssVar('--tg-new')
       : (known ? cssVar(`--tg-${q + 1}`) : cssVar('--faint')),

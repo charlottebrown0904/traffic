@@ -244,11 +244,24 @@ def main() -> int:
         print("  ⚠ 온전하지 않은 해가 있습니다. 연도끼리 비교하려면 같은 달만"
               " 모아야 합니다 — 12개월과 7개월을 나란히 두면 안 됩니다.")
 
-    missing = int((long["영업소명"] == "").sum())
+    # 이름 대조표는 2025년 파일이라 **그 뒤에 생긴 영업소를 모른다.**
+    # 이름을 빈 채로 두면 화면에 이름 없는 점이 하나 뜨고, 그것이 하필
+    # 이 제품에서 가장 중요한 관측 대상(신설 IC)이다.
+    #
+    # 코드로라도 채워 둔다. 빈 이름은 '없는 것' 처럼 보이지만 '영업소
+    # 327' 은 찾아볼 대상으로 보인다.
+    blank = long["영업소명"] == ""
+    missing = int(blank.sum())
     if missing:
-        codes = [int(c) for c in
-                 sorted(long.loc[long['영업소명'] == '', '영업소코드'].unique())[:5]]
-        print(f"  ⚠ 영업소명을 못 찾은 {missing:,}행 (코드 예: {codes})")
+        codes = sorted(long.loc[blank, "영업소코드"].unique())
+        long.loc[blank, "영업소명"] = (
+            "영업소 " + long.loc[blank, "영업소코드"].astype(int).astype(str))
+        print(f"  ⚠ 이름 대조표에 없는 영업소 {len(codes)}곳 "
+              f"— 코드로 채웠습니다: {[int(c) for c in codes]}")
+        print(f"     대조표는 {NAME_SOURCE.name} 이고 2025년 기준입니다.")
+        print(f"     그 뒤에 생긴 영업소는 여기 없습니다 — **신설 IC 일 수 있습니다.**")
+        print(f"     이름과 좌표는 도로공사 마스터에서 받아야 합니다"
+              f" (collect.yml 의 '영업소 마스터' 단계).")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

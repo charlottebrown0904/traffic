@@ -21,15 +21,19 @@
      네 색은 전 쌍 검사(색약 포함) 통과. */
   --tg-1:#3FBFB5;   /* ~1만대   민트 */
   --tg-2:#3B82D9;   /* 1~2만대  파랑 */
-  --tg-3:#F08C28;   /* 2~3만대  주황 */
+  --tg-3:#E2571E;   /* 2~3만대  붉은 주황 */
   --tg-4:#C2186B;   /* 3만대+   진분홍 */
 
   /* 신설 — 그 해에 처음 교통량이 잡힌 영업소.
      개통 효과를 보는 제품에서 가장 중요한 관측 대상이라 교통량 구간에
      섞지 않고 따로 표시합니다. 신설은 '교통량이 적은 곳' 이 아니라
-     '이제 막 생긴 곳' 입니다. 노랑은 네 구간 어느 것과도 안 붙고,
-     밝은 지도 위에서 눈에 먼저 들어옵니다. 대비는 진한 링이 맡습니다. */
-  --tg-new:#FACC15; --tg-new-ring:#713F12;
+     '이제 막 생긴 곳' 입니다.
+
+     처음에는 2~3만 구간이 주황(#F08C28)이라 노랑과 ΔE 15.9 로, 통과는
+     하지만 작은 마커에서는 헷갈렸습니다. 2~3만을 붉은 주황으로 밀어
+     ΔE 27.7 로 벌렸습니다. 링도 거의 검정으로 두껍게 둘러, 흰 링을
+     두른 네 구간과 **테두리 색만 봐도** 갈립니다. */
+  --tg-new:#FACC15; --tg-new-ring:#1A1205;
 
   /* ── 거리 밴드: 원색 점선 ──
      화면에 그리는 밴드는 **영향범위 3개까지**입니다. 위약 대조(5-10km)는
@@ -60,7 +64,7 @@
   --q-under:#2563C9; --q-rising:#1F8A54; --q-over:#C2740B; --q-quiet:#6B7280;
 
   /* ── 교통량 계열 (추이 비교) ── */
-  --traffic-1:#171A1F; --traffic-2:#F08C28; --traffic-3:#C2186B; --traffic-4:#3B82D9;
+  --traffic-1:#171A1F; --traffic-2:#E2571E; --traffic-3:#C2186B; --traffic-4:#3B82D9;
 
   --danger:#C62828;
   --shadow:0 1px 2px rgba(23,26,31,.06), 0 8px 24px -18px rgba(23,26,31,.30);
@@ -72,7 +76,7 @@
     --ink:#EDF0F4; --muted:#9AA4B2; --faint:#7E8794;
     --border:#2A313A; --border-strong:#3D4753;
     --accent:#9FC0DE; --accent-soft:#1C242E; --on-accent:#0E1319;
-    --tg-1:#4FD8CD; --tg-2:#6BA6F0; --tg-3:#F5A24E; --tg-4:#E8558F;
+    --tg-1:#4FD8CD; --tg-2:#6BA6F0; --tg-3:#F2703A; --tg-4:#E8558F;
     --tg-new:#FDE047; --tg-new-ring:#FEF9C3;
     --band-1:#A78BFA; --band-2:#F472B6; --band-3:#22D3EE;
     --band-4:#9CA3AF; --band-5:#D1D5DB;
@@ -88,7 +92,7 @@
   --ink:#EDF0F4; --muted:#9AA4B2; --faint:#7E8794;
   --border:#2A313A; --border-strong:#3D4753;
   --accent:#9FC0DE; --accent-soft:#1C242E; --on-accent:#0E1319;
-  --tg-1:#4FD8CD; --tg-2:#6BA6F0; --tg-3:#F5A24E; --tg-4:#E8558F;
+  --tg-1:#4FD8CD; --tg-2:#6BA6F0; --tg-3:#F2703A; --tg-4:#E8558F;
     --tg-new:#FDE047; --tg-new-ring:#FEF9C3;
   --band-1:#E5E7EB; --band-2:#9CA3AF; --band-3:#6B7280;
   --band-4:#D1D5DB; --band-5:#F3F4F6;
