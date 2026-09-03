@@ -60,6 +60,25 @@ class CallFailed(RuntimeError):
     """창구가 막힌 것. '찾았는데 없더라' 와 구분하려고 따로 둔다."""
 
 
+class QuotaExhausted(CallFailed):
+    """하루 한도를 다 쓴 것.
+
+    **이것을 '그런 곳은 없다' 로 캐시하면 영업소를 영영 잃는다.**
+
+    브이월드는 한도를 넘겨도 HTTP 200 에 정상 모양의 JSON 을 준다. 다만
+    result.items 가 없다. 예전 코드는 그것을 '검색 결과 없음' 과 구별하지
+    못하고 lat=None 으로 캐시에 박았다. 캐시는 다음 실행이 그대로 물려받고,
+    한 번 박히면 다시 안 묻는다 — 한도가 풀린 뒤에 돌려도 영원히 못 찾는다.
+
+    같은 사고를 지오코딩(collect/geocode.py)에서 한 번 냈고 거기는 고쳤는데,
+    여기는 놓쳤다. 두 곳이 **같은 브이월드 키와 같은 하루 한도**를 쓴다는
+    것을 사장님이 짚어주셔서 찾았다 — 지오코딩이 한도를 다 쓰면 영업소
+    보충도 같이 막힌다.
+
+    CallFailed 를 물려받아, 이것을 모르는 기존 처리도 최소한 '캐시하지
+    않는다' 는 지킨다. 아는 쪽은 따로 잡아 즉시 멈춘다."""
+
+
 KOREA_LAT = (33.0, 39.0)
 KOREA_LON = (124.0, 132.0)
 DUP_METERS = 200.0
@@ -233,7 +252,16 @@ def search_place(query: str, cache: _Cache) -> dict | None:
         # 영원히 안 찾는다. '답을 받았는데 없더라' 만 캐시한다.
         raise CallFailed(str(exc)[:200]) from exc
 
-    result = (payload.get("response") or {}).get("result") or {}
+    resp_body = payload.get("response") or {}
+    status = str(resp_body.get("status") or "").upper()
+    # 브이월드는 한도 초과에도 HTTP 200 을 준다. 몸통의 status 를 봐야
+    # '없더라' 와 '못 물어봤다' 가 갈린다.
+    if status and status not in ("OK", "NOT_FOUND"):
+        err = resp_body.get("error") or {}
+        raise QuotaExhausted(
+            f"status={status} code={err.get('code')} text={err.get('text')}"[:200])
+
+    result = resp_body.get("result") or {}
     items = result.get("items") or []
     rows = []
     for item in items:
@@ -249,8 +277,36 @@ def search_place(query: str, cache: _Cache) -> dict | None:
     # 사본을 만들고, 후보에는 고르지 않은 것만 남긴다.
     picked = dict(rows[0]) if rows else {"lat": None, "lon": None, "title": None}
     picked["candidates"] = [dict(r) for r in rows[1:5]]
+    # 어떤 답을 받고 이렇게 적었는지 남긴다. 이 칸이 없는 행은 옛 코드가
+    # 쓴 것이라 '진짜 없더라' 인지 '한도에 걸렸다' 인지 알 수 없다 —
+    # purge_failures 가 그 구분에 이 칸을 쓴다.
+    picked["status"] = status or "OK"
     cache.put(query, picked)
     return picked if picked.get("lat") is not None else None
+
+
+def purge_failures(cache: _Cache) -> int:
+    """출처를 알 수 없는 '못 찾음' 기록을 지운다. 지운 개수를 돌려준다.
+
+    한도에 걸린 응답을 '그런 곳은 없다' 로 캐시에 박아 두면, 한도가
+    풀린 뒤에 돌려도 영원히 못 찾는다. 옛 코드가 그렇게 적은 행에는
+    status 칸이 없다 — 그 행은 '진짜 없더라' 인지 '못 물어봤다' 인지
+    구분할 수 없으므로 지우고 다시 묻는다.
+
+    새 코드가 status='NOT_FOUND' 로 적은 행은 답을 받고 없다고 확인한
+    것이므로 남긴다. 그래서 이 청소는 한 번만 값을 치르고 끝난다.
+    """
+    keep = {q: row for q, row in cache.data.items()
+            if row.get("lat") is not None or row.get("status")}
+    dropped = len(cache.data) - len(keep)
+    if not dropped:
+        return 0
+    cache.data = keep
+    ensure_dirs()
+    with open(cache.path, "w", encoding="utf-8") as fh:
+        for row in keep.values():
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return dropped
 
 
 def _haversine_m(lat1, lon1, lat2, lon2) -> float:
@@ -322,6 +378,11 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
           f" (그중 교통량이 없는 민자 {no_traffic}개)", flush=True)
 
     cache = _Cache()
+    quota = None
+    purged = purge_failures(cache)
+    if purged:
+        print(f"  출처를 알 수 없는 '못 찾음' 기록 {purged}건을 지우고 다시 묻습니다",
+              flush=True)
     filled, failed = [], []
     err_streak = 0
     stopped = False
@@ -339,6 +400,12 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
         for suffix in SUFFIXES:
             try:
                 row = search_place(f"{core}{suffix}", cache)
+            except QuotaExhausted as exc:
+                # 여기서 계속 돌면 남은 영업소를 전부 '못 찾음' 으로
+                # 캐시에 박는다. 한 번 박히면 다음 실행이 다시 안 묻는다.
+                quota = str(exc)
+                stopped = True
+                break
             except CallFailed as exc:
                 why, call_failed = f"호출 실패 — {exc}"[:160], True
                 continue
@@ -350,6 +417,16 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
                 break
             why = detail
             polite_sleep()
+
+        # 한도에 걸렸으면 바깥 고리도 즉시 멈춘다. 안쪽 break 만으로는
+        # 다음 영업소로 넘어가서, 남은 곳을 전부 '못 찾음' 으로 박는다.
+        if quota:
+            print(f"  ⛔ {done}번째 '{name}' 에서 하루 한도에 걸렸습니다 — 멈춥니다.",
+                  flush=True)
+            print(f"    {quota}", flush=True)
+            print("    **캐시에 아무것도 안 적었습니다.** 한도가 풀리면 "
+                  "다음 실행이 여기서부터 이어받습니다.", flush=True)
+            break
 
         # 창구가 막힌 것만 연속으로 센다. '없더라' 로는 멈추지 않는다.
         err_streak = err_streak + 1 if call_failed else 0

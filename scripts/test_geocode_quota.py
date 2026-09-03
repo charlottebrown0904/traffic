@@ -174,6 +174,98 @@ check(len(dr._fail) == 1,
       f"한도 말고 진짜 실패는 그대로 막는다 (막힘 {dr._fail})")
 
 print()
+print("7. 영업소 좌표 찾기도 같은 한도를 쓴다 — 캐시를 오염시키면 안 된다")
+
+# 사장님 지적: "지금 ic 좌표 붙이고 있는 API가 지오코딩 API입니다."
+# 맞습니다. fill-tollgates 의 장소검색과 지오코딩은 **같은 브이월드 키,
+# 같은 하루 한도**를 씁니다. 지오코딩이 한도를 다 쓰면 영업소 보충도
+# 같이 막힙니다.
+#
+# 그런데 이쪽에는 한도 감지가 없었습니다. 브이월드는 한도를 넘겨도
+# HTTP 200 에 정상 모양의 JSON 을 주고 result.items 만 없습니다. 옛
+# 코드는 그것을 '검색 결과 없음' 과 구별하지 못하고 lat=None 으로
+# 캐시에 박았습니다. 캐시는 다음 실행이 물려받고 한 번 박히면 다시 안
+# 묻습니다 — **한도가 풀린 뒤에 돌려도 마도를 영원히 못 찾습니다.**
+#
+# 지오코딩에서 한 번 낸 사고인데 여기는 놓쳤습니다.
+import json as _json                                            # noqa: E402
+import tempfile as _tf                                          # noqa: E402
+from pathlib import Path as _P                                  # noqa: E402
+from redt.collect import tollgate_fill as tf                    # noqa: E402
+
+SEARCH_OK = {"response": {"status": "OK", "result": {"items": [
+    {"title": "마도영업소", "point": {"x": "126.75", "y": "37.15"}}]}}}
+SEARCH_NONE = {"response": {"status": "NOT_FOUND", "result": {"items": []}}}
+SEARCH_OVER = {"response": {"status": "ERROR",
+                            "error": {"code": "OVER_REQUEST_LIMIT",
+                                      "text": "일일 제한량 초과"}}}
+
+def _serve(*bodies):
+    seq, calls = list(bodies), []
+    def _once(url, params=None, **kw):
+        calls.append(params or {})
+        body = seq[min(len(calls) - 1, len(seq) - 1)]
+        return type("R", (), {"json": staticmethod(lambda b=body: b),
+                              "status_code": 200})()
+    tf.get_once = _once
+    return calls
+
+def _cache():
+    return tf._Cache(_P(_tf.mkdtemp()) / "poi.jsonl")
+
+_real_keys = tf.keys
+tf.keys = lambda: type("K", (), {"require": staticmethod(lambda n: "T")})()
+try:
+    # 한도에 걸린 응답을 '없더라' 로 캐시하면 안 된다
+    c = _cache()
+    _serve(SEARCH_OVER)
+    try:
+        tf.search_place("마도영업소", c)
+        check(False, "한도 초과를 예외로 알린다")
+    except tf.QuotaExhausted as exc:
+        check("OVER_REQUEST_LIMIT" in str(exc),
+              f"한도 초과를 예외로 알린다 ({str(exc)[:60]})")
+    check(len(c.data) == 0, f"한도 초과는 캐시에 안 적는다 (적힌 것 {len(c.data)}건)")
+
+    # 진짜 '없더라' 는 적어 둔다 — 매번 다시 물으면 한도를 낭비한다
+    c2 = _cache()
+    _serve(SEARCH_NONE)
+    check(tf.search_place("없는영업소", c2) is None, "없는 이름은 None 을 준다")
+    check(len(c2.data) == 1 and c2.data["없는영업소"]["status"] == "NOT_FOUND",
+          "진짜 없더라는 근거(status)와 함께 적어 둔다")
+
+    # 옛 코드가 적은 행(status 없음)은 출처를 알 수 없으므로 지우고 다시 묻는다
+    c3 = _cache()
+    c3.put("마도영업소", {"lat": None, "lon": None, "title": None})   # 옛 모양
+    c3.put("확인된없음", {"lat": None, "lon": None, "status": "NOT_FOUND"})
+    c3.put("찾은곳", {"lat": 37.1, "lon": 126.7})
+    dropped = tf.purge_failures(c3)
+    check(dropped == 1, f"출처 불명 1건만 지운다 (지운 것 {dropped}건)")
+    check("마도영업소" not in c3.data, "오염된 행은 사라진다")
+    check("확인된없음" in c3.data, "근거 있는 '없음' 은 남는다 (한도를 아낀다)")
+    check("찾은곳" in c3.data, "찾은 것은 당연히 남는다")
+
+    # 한도에 걸리면 남은 영업소를 건드리지 않고 멈춘다
+    class _Con:
+        def execute(self, sql, *a):
+            low = sql.lower()
+            if "from tollgate where lat is not null" in low:
+                rows = []
+            elif "select lat, lon from tollgate" in low:
+                rows = []
+            elif "from traffic" in low:
+                rows = [("805",), ("806",), ("808",)]
+            else:
+                rows = [("805", "마도"), ("806", "마도서"), ("808", "마도서2")]
+            return type("C", (), {"fetchall": staticmethod(lambda r=rows: r)})()
+    tf.names_from_traffic = lambda: {}
+    _serve(SEARCH_OVER)
+    got = tf.fill_missing(_Con())
+    check(len(got) == 0, f"한도면 한 곳도 안 채운다 (채운 것 {len(got)}건)")
+finally:
+    tf.keys = _real_keys
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
