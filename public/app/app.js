@@ -220,7 +220,13 @@ function buildLegend() {
 
   const kindRow = (key, label) =>
     `<div class="row"><span class="sw" style="background:var(--kind-${key});opacity:.75"></span>${label}</div>`;
-  $('#map-legend').innerHTML =
+  // 범례는 좁은 화면에서 접힌다(CSS). 여는 단추와 내용을 나눠 둔다 —
+  // 지도를 키워 놓고 그 위를 12줄짜리 범례로 다시 덮으면 의미가 없다.
+  const legend = $('#map-legend');
+  legend.innerHTML =
+    '<button type="button" class="legend-peek" aria-expanded="false">' +
+    '<span aria-hidden="true">◍</span>범례</button>' +
+    '<div class="legend-rows">' +
     '<div class="grp">영업소</div>' +
     Object.values(QUADRANTS)
       .map((q) => `<div class="row"><span class="sw" style="background:${q.color}"></span>${q.label}</div>`)
@@ -230,7 +236,15 @@ function buildLegend() {
     '<div class="grp">거리 밴드</div>' +
     bands.map(([lo, hi], i) =>
       `<div class="row" style="--c:${bandColor(i)}">` +
-      `<span class="sw ring"></span>${lo}–${hi} km</div>`).join('');
+      `<span class="sw ring"></span>${lo}–${hi} km` +
+      (i === last ? ' (대조)' : '') + '</div>').join('') +
+    '</div>';
+
+  const peek = legend.querySelector('.legend-peek');
+  peek.addEventListener('click', () => {
+    const open = legend.classList.toggle('is-open');
+    peek.setAttribute('aria-expanded', String(open));
+  });
 }
 
 /* ─────────── 교통량 순위 (지시4) ───────────
@@ -442,9 +456,16 @@ function trendSeriesFor(id) {
   const bands = chart.bands || [];
   Object.entries(row.band || {}).forEach(([band, pts]) => {
     const i = Math.max(0, bands.indexOf(band));
+    // 대조 밴드는 점선으로 끊는다. 두 가지 이유가 겹친다.
+    //   뜻   영향범위 바깥의 기준선이라 '자료 계열' 과 성격이 다르다.
+    //   색약 중립 회색과 승용(자홍)이 적록색약에서 ΔE 5.9 로 붙는다.
+    //        색만으로는 구별이 안 되므로 모양이 그 몫을 대신한다.
+    const isControl = i === bands.length - 1;
     out.push({
-      key: `band:${band}`, label: `지가 · ${band} km`, group: '지가 (반경별)',
-      color: bandColor(i), dash: false, unit: '원/㎡', points: pts,
+      key: `band:${band}`,
+      label: `지가 · ${band} km${isControl ? ' (대조)' : ''}`,
+      group: '지가 (반경별)',
+      color: bandColor(i), dash: isControl, unit: '원/㎡', points: pts,
     });
   });
 
@@ -769,9 +790,15 @@ function buildMap() {
   const withCoords = state.tollgates.filter((t) => t.lat && t.lon);
   map = L.map('map', { zoomControl: true, preferCanvas: true })
     .setView([36.5, 127.8], 7);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 18, attribution: '© OpenStreetMap',
-  }).addTo(map);
+  // 기본 지도는 무채색을 쓴다. OSM 기본 타일은 도로가 노랑·주황, 녹지가
+  // 초록, 물이 파랑이라 그 위에 얹은 밴드 색과 경쟁한다. 자료를 얹을
+  // 지도는 배경이 물러나야 한다 — 밴드 파랑이 강물 파랑과 겹치면
+  // 색을 아무리 잘 골라도 안 보인다.
+  L.tileLayer(
+    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19, subdomains: 'abcd',
+      attribution: '© OpenStreetMap © CARTO',
+    }).addTo(map);
 
   bandLayer = L.layerGroup().addTo(map);
   tradeLayer = L.layerGroup().addTo(map);
@@ -836,11 +863,14 @@ function selectTollgate(id) {
   const bands = state.meta.bands_km || [];
   bands.forEach(([, hi], i) => {
     const isPlacebo = i === bands.length - 1;
+    // 선을 굵게. 1.5px 반투명 링은 지도 위에서 사실상 안 보인다.
+    // 대조 밴드만 점선으로 끊어 '여기는 성격이 다르다' 를 색 말고
+    // 모양으로도 말한다 — 색맹이어도 구별된다.
     bandLayer.addLayer(L.circle([t.lat, t.lon], {
       radius: hi * 1000, fill: false,
-      weight: isPlacebo ? 2 : 1.5, opacity: isPlacebo ? .85 : .7,
+      weight: isPlacebo ? 2 : 3, opacity: isPlacebo ? .9 : .95,
       color: cssVar(`--band-${(i % BAND_COLORS) + 1}`),
-      dashArray: isPlacebo ? '2 6' : '5 4',
+      dashArray: isPlacebo ? '3 7' : null,
     }));
   });
   map.panTo([t.lat, t.lon]);
@@ -1290,5 +1320,37 @@ function endPick(latlng) {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && state.pickMode) endPick(null);
 });
+
+/* 모바일 필터 접기.
+ *
+ * 좁은 화면에서는 접은 채로 시작한다. 필터가 펼쳐진 채로 지도 위에 있으면
+ * 지도를 보려고 매번 스크롤해야 하고, 지도가 화면 아래쪽 조각으로 남는다.
+ * 폭 기준은 CSS 의 56rem 미디어쿼리와 같은 값을 쓴다 — 둘이 어긋나면
+ * 데스크톱에서 필터가 사라지거나 모바일에서 단추가 안 보인다.
+ *
+ * 접었다 펴면 지도 높이가 바뀌므로 Leaflet 에 알려줘야 한다. 안 그러면
+ * 새로 드러난 부분이 회색으로 남는다.
+ */
+(function foldRail() {
+  const rail = document.querySelector('.rail');
+  const btn = document.getElementById('rail-toggle');
+  if (!rail || !btn) return;
+  const narrow = () => window.matchMedia('(max-width:56rem)').matches;
+
+  const apply = (folded) => {
+    rail.classList.toggle('is-folded', folded);
+    btn.setAttribute('aria-expanded', String(!folded));
+    if (map) setTimeout(() => map.invalidateSize(), 220);
+  };
+
+  if (narrow()) apply(true);
+  btn.addEventListener('click', () => apply(!rail.classList.contains('is-folded')));
+
+  // 가로/세로를 돌리거나 창을 넓히면 데스크톱 배치로 돌아간다. 접힌 상태가
+  // 남아 있으면 넓은 화면에서 필터가 통째로 사라진다.
+  window.matchMedia('(max-width:56rem)').addEventListener('change', (e) => {
+    apply(e.matches);
+  });
+})();
 
 boot();

@@ -17,12 +17,24 @@
   --border:#E7DDD1; --border-strong:#CDBDAB;
   --accent:#8A6547; --accent-soft:#F4E9DD; --on-accent:#FFFFFF;
 
-  /* ── 구분색: 거리 밴드 (가까움 → 멂) ── */
-  --band-1:#C62828;   /* 0-1   적  */
-  --band-2:#C25E00;   /* 1-3   주황 */
-  --band-3:#00796B;   /* 3-5   청록 */
-  --band-4:#1565C0;   /* 5-10  청  */
-  --band-5:#6A3FA0;   /* 10-20 보라 (위약 밴드) */
+  /* ── 거리 밴드: 순서형 램프 (가까움 → 멂) ──
+     밴드는 **순서가 있는 값**이다. 예전에는 적·주황·청록·청·보라 무지개를
+     썼는데, 무지개는 순서를 못 보여준다 — 어느 쪽이 가까운지 색만 봐서는
+     알 수 없다. 게다가 검증에서 0-1(적)과 1-3(주황)이 ΔE 10.2 로,
+     **정상 시력으로도** 구별 한계(15) 아래였다. 가장 중요한 두 밴드가
+     서로 안 구별됐다.
+
+     한 색상(파랑)의 명도 단계로 바꿨다. 진할수록 가깝다 — 효과가 클
+     것으로 보는 쪽이 진하다. 순서형 검사 전 항목 통과.
+
+     5-10km 만 중립 회색이다. 이 밴드는 '영향범위 바깥' 이자 위약 대조라,
+     색을 주면 다섯 번째 밴드로 읽힌다. 회색은 '여기는 기준선' 이라고
+     말한다. 채도 검사에서 '회색으로 읽힘' 이 뜨는데 그것이 의도다. */
+  --band-1:#0D366B;   /* 0-1   가장 진한 파랑 */
+  --band-2:#256ABF;   /* 1-3   */
+  --band-3:#5598E7;   /* 3-5   */
+  --band-4:#767676;   /* 5-10  중립 — 대조/위약 밴드 (순수 무채색) */
+  --band-5:#4A4038;   /* 예비 (밴드가 더 늘면) */
 
   /* ── 구분색: 분면 ── */
   --q-under:#0B57A4; --q-rising:#0B7A43; --q-over:#B45309; --q-quiet:#6E6259;
@@ -31,13 +43,14 @@
   --kind-land:#2E7D32; --kind-factory:#5E35B1;
 
   /* ── 구분색: 교통량 계열 (추이 비교) ──
-     밴드색(적·주황·청록·청·보라)과 겹치지 않는 색만 골랐다. 교통량 전체를
-     --q-under 로 쓰다가 지가 5-10km(--band-4)와 똑같은 파랑이 나와, 한 그래프
-     안에서 두 선을 구별할 수 없었다. */
-  --traffic-1:#1C1611;   /* 전체 — 기준선 역할이라 가장 진하게 */
-  --traffic-2:#B0107A;   /* 화물 */
-  --traffic-3:#6B6000;   /* 승용 */
-  --traffic-4:#8A6547;   /* 중형 */
+     밴드가 파랑 램프를 가져갔으므로 교통량은 파랑·보라를 쓰면 안 된다.
+     보라(#4a3aa7)를 넣어봤더니 중간 밴드(#256ABF)와 ΔE 12.2 로 붙었다.
+     초록은 주황과 적록색약에서 ΔE 3.2 로 무너져 함께 못 쓴다.
+     주황·자홍·청록 셋은 밴드 3색과 같이 놓고 전 쌍 검사를 통과한다. */
+  --traffic-1:#1C1611;   /* 전체 — 기준선이라 계열색이 아닌 먹색 */
+  --traffic-2:#C25E00;   /* 화물 */
+  --traffic-3:#B0107A;   /* 승용 */
+  --traffic-4:#1BAF7A;   /* 중형 */
 
   --danger:#B3261E;
   --shadow:0 1px 2px rgba(28,22,17,.06), 0 8px 24px -18px rgba(28,22,17,.35);
@@ -189,6 +202,9 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 }
 
 /* ── 지도 ── */
+/* 접기 단추는 모바일 전용이다 (아래 미디어쿼리에서 켠다). */
+.rail-toggle{display:none}
+
 .map-wrap{flex:1; position:relative; min-width:0}
 #map{position:absolute; inset:0; background:var(--surface-2)}
 .leaflet-container{font:inherit; background:var(--surface-2)}
@@ -197,6 +213,9 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
   background:var(--surface); border:1px solid var(--border); border-radius:.45rem;
   padding:.55rem .7rem; font-size:.75rem; box-shadow:var(--shadow); display:grid; gap:.25rem;
 }
+/* 넓은 화면에서는 범례를 항상 펼쳐 둔다. 여는 단추는 모바일 전용이다. */
+.map-legend > .legend-peek{display:none}
+.map-legend > .legend-rows{display:grid; gap:.25rem}
 .map-legend .row{display:flex; align-items:center; gap:.45rem; color:var(--muted)}
 .map-legend .sw{width:.7rem; height:.7rem; border-radius:50%; flex:0 0 auto}
 .map-legend .sw.ring{background:none; border:2px solid var(--c)}
@@ -488,7 +507,11 @@ body.picking .leaflet-container{cursor:crosshair}
   .meta-stamp{display:none}
   .guide-link{margin-left:auto; font-size:.76rem; padding:.28rem .55rem}
   .tabs{order:3; width:100%; gap:.3rem}
-  .tab{flex:1; text-align:center; padding:.4rem .5rem; font-size:.82rem}
+  /* 단어 중간에서 끊기면 '추이 비 / 교' 처럼 읽힌다. 끊지 말고 넘치면
+     가로로 밀어 보게 한다. */
+  .tabs{overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch}
+  .tab{flex:0 0 auto; text-align:center; padding:.4rem .6rem;
+       font-size:.82rem; white-space:nowrap}
 
   /* 탐색 뷰: 레일 → 지도 → 상세 순으로 세로 배치 */
   #view-explore.is-active{flex-direction:column; overflow:auto}
@@ -505,7 +528,44 @@ body.picking .leaflet-container{cursor:crosshair}
   .checks{grid-auto-flow:column; grid-auto-columns:max-content; gap:.9rem; overflow-x:auto}
   .legend{grid-template-columns:1fr 1fr}
 
-  .map-wrap{flex:0 0 auto; height:58vh; min-height:20rem}
+  /* 필터를 접을 수 있게. 기본은 접힌 상태로 시작해(app.js) 지도가
+     화면 위쪽에 바로 오게 한다. */
+  .rail{padding:0}
+  .rail-toggle{
+    display:flex; align-items:center; justify-content:space-between;
+    width:100%; padding:.6rem .9rem; background:none; border:none;
+    font:inherit; font-size:.85rem; font-weight:600; color:var(--ink);
+    cursor:pointer;
+  }
+  .rail-toggle-mark{
+    width:.5rem; height:.5rem; border-right:2px solid var(--muted);
+    border-bottom:2px solid var(--muted); transform:rotate(45deg);
+    transition:transform .15s; margin-bottom:.2rem;
+  }
+  .rail[aria-hidden]{}
+  .rail.is-folded .rail-toggle-mark{transform:rotate(-135deg); margin-bottom:-.2rem}
+  .rail.is-folded .rail-body{display:none}
+  .rail-body{padding:0 .9rem .8rem}
+
+  /* 지도를 키운다. 접힌 상태에서 화면 대부분을 지도가 쓴다.
+     dvh 는 주소창이 접혔다 펴져도 튀지 않는다 — vh 는 모바일에서
+     주소창 높이를 안 빼서 아래가 잘린다. */
+  .map-wrap{flex:0 0 auto; height:74dvh; min-height:24rem}
+
+  /* 범례를 접는다. 좁은 화면에서 12줄짜리 범례는 지도의 3분의 1을
+     덮는다 — 지도를 키워 놓고 그 위를 범례로 다시 가리는 셈이다.
+     기본은 접힌 알약 하나, 누르면 펼친다. */
+  .map-legend{
+    left:.5rem; bottom:.5rem; right:auto; max-width:calc(100% - 1rem);
+    padding:0; gap:0; overflow:hidden;
+  }
+  .map-legend > .legend-rows{display:none; padding:.5rem .7rem; gap:.25rem}
+  .map-legend.is-open > .legend-rows{display:grid}
+  .map-legend > .legend-peek{
+    display:flex; align-items:center; gap:.4rem;
+    padding:.4rem .6rem; font-size:.72rem; font-weight:600; color:var(--ink);
+    background:none; border:none; font-family:inherit; cursor:pointer;
+  }
 
   .detail{
     flex:1 1 auto; width:100%; overflow:visible;

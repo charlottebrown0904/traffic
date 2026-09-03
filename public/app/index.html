@@ -47,6 +47,14 @@
 <!-- ══ 탐색 ══ -->
 <main class="view is-active" id="view-explore">
   <aside class="rail">
+    <!-- 모바일에서만 보이는 접기 단추. 필터가 지도를 아래로 밀어내
+         지도가 답답해지던 것을 막는다. 데스크톱에서는 숨기고 항상 편다. -->
+    <button class="rail-toggle" id="rail-toggle" type="button"
+            aria-expanded="true" aria-controls="rail-body">
+      <span class="rail-toggle-label">필터</span>
+      <span class="rail-toggle-mark" aria-hidden="true"></span>
+    </button>
+    <div class="rail-body" id="rail-body">
     <section class="rail-block">
       <h2>분면 필터</h2>
       <div class="quad-filters" id="quad-filters"></div>
@@ -68,6 +76,7 @@
       <p class="hint">영업소를 선택하면 반경이 표시됩니다.</p>
       <div class="legend" id="band-legend"></div>
     </section>
+    </div>
   </aside>
 
   <div class="map-wrap">
