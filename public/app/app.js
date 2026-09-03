@@ -19,6 +19,8 @@ const state = {
   rank: { year: null, vehicle: 'total', sort: 'volume', q: '', coordsOnly: false },
   trend: { id: null, scale: 'index', base: null, on: new Set() },
   activeTiers: new Set([0, 1, 2, 3, 'new', 'none']),
+  // 용도지역 배경은 기본으로 켜 둔다 — 사장님이 요청하신 화면이다.
+  zoning: true,
   tgYear: null, tgVehicle: 'total', dealFrom: null, dealTo: null,
   activeKinds: new Set(),
   parcelOnly: false, selected: null, showAllBands: false, tiers: null,
@@ -1084,6 +1086,8 @@ function buildMap() {
     maxZoom: 19, attribution: '© OpenStreetMap',
   }).addTo(map);
 
+  addZoningLayer();
+
   bandLayer = L.layerGroup().addTo(map);
   tradeLayer = L.layerGroup().addTo(map);
   tollgateLayer = L.layerGroup().addTo(map);
@@ -1210,6 +1214,42 @@ function refreshMap() {
   window.__tradeStyles = tradeLayer.getLayers
     ? tradeLayer.getLayers().map((l) => l.options)
     : undefined;
+}
+
+/* 용도지역 폴리곤 배경 — 네이버 지적편집도의 그 화면.
+ *
+ * 한국 **법정** 용도지역(계획관리·생산관리·자연녹지…)은 OSM 에 없다.
+ * 국토교통부 자료이고 브이월드에서만 온다.
+ *
+ * **인증키를 여기 적지 않는다.** 우리 서버(api/tile.js)가 대신 받아온다.
+ * 그 키는 실거래 지오코딩에 쓰는 하루 3만 건짜리 자원이고, 이 프로젝트에서
+ * 가장 자주 병목이 되는 것이다 — 오늘도 그것 때문에 수집이 한 번 멈췄다.
+ * 페이지에 적어두면 누가 대신 써버릴 수 있고, 그러면 수집이 선다.
+ *
+ * 배율이 낮을 때는 켜지 않는다. 전국이 보이는 배율에서 용도지역을 깔면
+ * 색면이 지도를 통째로 덮어 거래 점도 영업소도 안 보인다 — 지적편집도는
+ * 원래 필지를 들여다볼 때 쓰는 것이다.
+ */
+const ZONING_MIN_ZOOM = 12;
+
+function addZoningLayer() {
+  zoningLayer = L.tileLayer('/api/tile?layer=zoning&z={z}&y={y}&x={x}', {
+    maxZoom: 19,
+    minZoom: ZONING_MIN_ZOOM,
+    // 위에 거래 점과 영업소가 얹히므로 반투명해야 한다. 불투명하면
+    // 배경 지도의 도로까지 같이 가린다.
+    opacity: .42,
+    attribution: '용도지역 © 국토교통부 브이월드',
+  });
+  if (state.zoning) zoningLayer.addTo(map);
+}
+
+/* 끌 수 있어야 한다. 용도지역을 깔면 지도가 확 복잡해지는데, 거래 점
+ * 위치만 보고 싶은 순간이 있다. */
+function toggleZoning(on) {
+  state.zoning = on;
+  if (!map || !zoningLayer) return;
+  on ? zoningLayer.addTo(map) : zoningLayer.remove();
 }
 
 /* 거래 점 색 = 용도지역.
@@ -1735,6 +1775,12 @@ document.addEventListener('keydown', (e) => {
 
 /* 상단 '전체 IC 반경' 스위치. */
 (function allBandsSwitch() {
+  const zbox = document.getElementById('zoning-bg');
+  if (zbox) {
+    zbox.checked = state.zoning;
+    zbox.addEventListener('change', () => toggleZoning(zbox.checked));
+  }
+
   const box = document.getElementById('all-bands');
   if (!box) return;
   box.addEventListener('change', () => {

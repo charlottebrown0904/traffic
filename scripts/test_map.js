@@ -162,10 +162,58 @@ const FAKE_LEAFLET = () => {
     console.log();
     console.log('2. 배경 지도에 키가 필요 없다');
     const tiles = await page.evaluate(() => window.__map.tiles);
-    check('타일 주소가 하나다', tiles.length === 1, tiles.join(' '));
+    // 배경 지도(OSM) + 용도지역(우리 서버 경유) = 2장.
+    check('타일 원천이 둘이다 (배경 + 용도지역)', tiles.length === 2,
+          tiles.join(' '));
     check('API 키를 요구하는 서비스가 아니다',
           tiles.every((u) => !/carto|stadia|mapbox|thunderforest|apikey/i.test(u)),
           tiles.join(' '));
+
+    // ── 용도지역 배경이 실제로 붙어 있는가 ──
+    //
+    // 이 검사가 왜 있나. 이 기능을 한 번 '넣었다' 고 보고했는데 편집
+    // 스크립트가 중간에 실패해서 **디스크에 안 써져 있었다.** 파일은
+    // 문법상 멀쩡했고 아무도 그 함수를 부르지 않아서 다른 검사도 전부
+    // 초록이었다. 없는 기능을 있다고 말한 셈이다.
+    //
+    // 그래서 '함수가 있다' 가 아니라 **'타일 층이 실제로 만들어졌다'** 를
+    // 본다. 부르지 않으면 여기서 걸린다.
+    const zone = tiles.find((u) => /\/api\/tile/.test(u));
+    check('용도지역 타일 층이 실제로 만들어진다', !!zone, tiles.join(' '));
+    if (zone) {
+      check('브이월드를 직접 안 부른다 (키가 페이지에 없다)',
+            !/vworld/i.test(zone), zone);
+      check('z·y·x 자리를 Leaflet 이 채우게 둔다',
+            /\{z\}/.test(zone) && /\{y\}/.test(zone) && /\{x\}/.test(zone), zone);
+    }
+    // 페이지에 실려 나가는 코드 어디에도 브이월드 키 모양이 없어야 한다.
+    // 'key=' 뒤에 무언가 붙어 있으면 그것이 곧 노출이다.
+    const leaked = await page.evaluate(async () => {
+      const out = [];
+      for (const f of ['/app/app.js', '/app/config.js']) {
+        const t = await (await fetch(f)).text();
+        if (/vworld[^\n]*key\s*[:=]\s*['"][^'"]+['"]/i.test(t)) out.push(f);
+        if (/api\.vworld\.kr[^\n]*key=/i.test(t)) out.push(f);
+      }
+      return out;
+    });
+    check('클라이언트 파일에 브이월드 키가 없다', leaked.length === 0,
+          leaked.join(' ') || '없음');
+
+    // 끌 수 있어야 한다 — 용도지역을 깔면 지도가 확 복잡해진다.
+    const toggled = await page.evaluate(() => {
+      const b = document.getElementById('zoning-bg');
+      if (!b) return null;
+      const before = b.checked;
+      b.checked = false;
+      b.dispatchEvent(new Event('change', { bubbles: true }));
+      const off = window.state ? window.state.zoning : null;
+      b.checked = before;
+      b.dispatchEvent(new Event('change', { bubbles: true }));
+      return { off, back: window.state ? window.state.zoning : null };
+    });
+    check('용도지역 스위치가 있다', toggled !== null,
+          toggled === null ? '#zoning-bg 가 없음' : '');
 
     console.log();
     console.log('3. 밴드 = 선 + 음영, 큰 원부터');
