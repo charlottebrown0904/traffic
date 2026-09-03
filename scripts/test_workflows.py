@@ -127,6 +127,60 @@ check(_cfg.get("spatial", {}).get("max_link_km") is not None,
 check(bool(_cfg.get("spatial", {}).get("require_parcel_bands")),
       "근거리 밴드가 지번 좌표만 받도록 돼 있다")
 
+
+print()
+print("6. Actions 용량 — 3시간짜리를 매번 돌지 않는다")
+
+# 실측(9월 3일간): Actions 최소 1,994분. 비공개 저장소 Free 한도가
+# 월 2,000분이다. 그중 952분(48%)이 실패·취소로 날아갔고, 성공한
+# run 21 도 3시간 11분이 걸렸다 — 그 대부분이 지오코딩이다.
+#
+#   지오코딩   2시간 58분   브이월드 하루 3만건에 묶여 있다
+#   조인            9분
+#   분석 + 화면     3분
+#
+# 화면 색 하나 고치는 데 필요한 것은 뒤의 12분뿐이다.
+_wf = (ROOT / ".github/workflows/collect.yml").read_text(encoding="utf-8")
+import yaml as _yamllib                                     # noqa: E402
+_y = _yamllib.safe_load(_wf)
+# YAML 1.1 은 on 을 **불리언 True** 로 읽는다. GitHub 워크플로의 가장
+# 흔한 함정이라, _y["on"] 은 KeyError 가 난다.
+_on = _y.get("on", _y.get(True))
+_inputs = _on["workflow_dispatch"]["inputs"]
+check("stage" in _inputs, "무엇까지 돌릴지 고를 수 있다 (stage)")
+if "stage" in _inputs:
+    _opts = _inputs["stage"].get("options") or []
+    check("analyze" in _opts, f"분석만 돌리는 선택지가 있다 ({_opts})")
+
+_steps = _y["jobs"]["collect"]["steps"]
+_named = {s.get("name"): s for s in _steps if s.get("name")}
+_geo = next((s for n, s in _named.items() if "지오코딩" in n), None)
+check(_geo is not None and "stage == 'all'" in str(_geo.get("if", "")),
+      "분석만 돌 때는 지오코딩을 건너뛴다")
+_col = next((s for n, s in _named.items() if "실거래가 수집" in n), None)
+check(_col is not None and "stage == 'all'" in str(_col.get("if", "")),
+      "분석만 돌 때는 수집도 건너뛴다")
+
+# 캐시는 한 번만 저장한다. 한 번이 2.36GB 인데 GitHub 한도는 10GB 라,
+# 두 번씩 저장하면 실행 두 번치밖에 안 남는다. 넘치면 오래된 것부터
+# 지워지고, 지오코딩 3시간이 든 캐시가 밀려나면 그 3시간을 다시 쓴다.
+_saves = [s for s in _steps if "cache/save" in str(s.get("uses", ""))]
+check(len(_saves) == 1, f"캐시 저장은 실행당 한 번이다 ({len(_saves)}회)")
+if _saves:
+    check("stage == 'all'" in str(_saves[0].get("if", "")),
+          "분석만 도는 실행은 캐시를 저장하지 않는다 (값진 캐시를 밀어내지 않게)")
+
+# 조인 결과는 매 실행 다시 만든다. 캐시에 이고 다닐 이유가 없다.
+_names = list(_named)
+_compact = next((i for i, n in enumerate(_names) if "캐시 앞 정리" in n), None)
+_save_i = next((i for i, n in enumerate(_names)
+                if "cache/save" in str(_named[n].get("uses", ""))), None)
+_link_i = next((i for i, n in enumerate(_names) if "공간 조인" in n), None)
+check(_compact is not None, "캐시 앞에 조인 결과를 빼는 단계가 있다")
+if None not in (_compact, _save_i, _link_i):
+    check(_compact < _save_i < _link_i,
+          f"정리 → 저장 → 조인 순이다 ({_compact} < {_save_i} < {_link_i})")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

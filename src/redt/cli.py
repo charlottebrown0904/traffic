@@ -1036,6 +1036,60 @@ def cmd_panel(args):
         print(f"보정 거래 {len(priced):,}행 → {pp}")
 
 
+def cmd_compact_db(args):
+    """캐시에 실을 DB 를 줄인다. 줄어든 양을 찍는다.
+
+    왜 필요한가. 캐시 한 번이 2.36GB 이고 GitHub 한도는 저장소당 10GB 다.
+    실행 두 번치밖에 안 남고, 넘치면 오래된 것부터 지워진다. 지오코딩
+    3시간어치가 든 캐시가 밀려나면 그 3시간을 다시 써야 한다.
+
+    무엇을 빼는가. trade_tollgate_link 1,961만 행은 **매 실행 DELETE 하고
+    다시 만든다**(cmd_link). 캐시에 실어 봐야 다음 실행이 곧바로 버린다.
+    다시 만드는 데 9분이고, 캐시에 이고 다니는 값이 그보다 크다.
+
+    DELETE 만으로는 파일이 안 줄어든다. DuckDB 는 지운 자리를 재사용할
+    뿐 파일을 깎지 않고, 그 자리에는 옛 바이트가 그대로 남아 있어 압축도
+    안 먹는다. 그래서 **새 파일로 옮겨 담는다**(COPY FROM DATABASE).
+
+    줄어든 양을 반드시 찍는다. 안 찍으면 이 단계가 값을 하는지 아무도
+    모른 채 매 실행 1~2분을 쓰게 된다.
+    """
+    import shutil
+
+    src = PROCESSED / "redt.duckdb"
+    if not src.exists():
+        print("  DB 가 없습니다 — 건너뜁니다")
+        return
+    before = src.stat().st_size
+
+    with db.connect() as con:
+        rows = con.execute("SELECT count(*) FROM trade_tollgate_link").fetchone()[0]
+        con.execute("DELETE FROM trade_tollgate_link")
+
+    tmp = PROCESSED / "redt.compact.duckdb"
+    tmp.unlink(missing_ok=True)
+    with db.connect() as con:
+        # 붙어 있는 이름을 물어본다. 파일명에서 짐작하면 파일 이름이
+        # 바뀌는 순간 조용히 엉뚱한 DB 를 복사한다.
+        main = con.execute(
+            "SELECT database_name FROM duckdb_databases() "
+            "WHERE NOT internal ORDER BY database_oid LIMIT 1").fetchone()[0]
+        con.execute(f"ATTACH '{tmp}' AS compact")
+        con.execute(f"COPY FROM DATABASE {main} TO compact")
+        con.execute("DETACH compact")
+
+    after = tmp.stat().st_size
+    # 새 파일이 더 크면 옮겨 담을 이유가 없다 — 원본을 지키고 물러난다.
+    if after >= before:
+        tmp.unlink(missing_ok=True)
+        print(f"  줄지 않아 그대로 둡니다 ({before/2**30:.2f}GB → {after/2**30:.2f}GB)")
+        return
+    shutil.move(str(tmp), str(src))
+    print(f"  조인 {rows:,}행을 뺐습니다 (다음 실행이 9분에 다시 만듭니다)")
+    print(f"  DB {before/2**30:.2f}GB → {after/2**30:.2f}GB "
+          f"({(1 - after/before):.0%} 줄었습니다)")
+
+
 def cmd_analyze(args):
     path = PROCESSED / "panel.parquet"
     if not path.exists():
@@ -1669,6 +1723,9 @@ def main(argv=None):
                    help="영업소 누락 진단 — 명단·좌표·거래 중 어디서 새는지"
                    ).set_defaults(func=cmd_gaps)
     sub.add_parser("status", help="적재 현황").set_defaults(func=cmd_status)
+    sub.add_parser("compact-db",
+                   help="캐시에 실을 DB 를 줄인다 (조인 결과는 매번 다시 만든다)"
+                   ).set_defaults(func=cmd_compact_db)
 
     args = parser.parse_args(argv)
     args.func(args)

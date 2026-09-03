@@ -8,6 +8,25 @@ name: 수집 (실거래가 → 지오코딩 → 분석 → 화면)
 on:
   workflow_dispatch:
     inputs:
+      stage:
+        # **코드 한 줄 고치려고 3시간을 쓰지 않기 위한 입력입니다.**
+        #
+        # run 21 의 실제 비용을 보면 어디에 시간이 가는지 분명합니다.
+        #
+        #   실거래가 수집      0초    ← 다 받았습니다
+        #   지오코딩       2시간 58분  ← 브이월드 하루 3만건에 묶여 있습니다
+        #   조인               9분
+        #   분석 + 화면        3분
+        #
+        # 화면 색을 고치거나 분석을 다시 돌리는 데 필요한 것은 뒤의 12분
+        # 뿐인데, 지금까지는 매번 앞의 3시간을 같이 돌았습니다.
+        #
+        #   all      수집 → 지오코딩 → 조인 → 분석 → 화면   (하루 한 번)
+        #   analyze  조인 → 분석 → 화면                     (약 12분)
+        description: "무엇까지 돌릴지"
+        type: choice
+        options: [all, analyze]
+        default: all
       start:
         # 토지·공장 가격은 경제 순환을 탄다. 두세 해만 보면 순환의 한 국면을
         # 효과로 착각한다. 그래서 받을 수 있는 만큼 길게 받는다.
@@ -105,6 +124,7 @@ jobs:
       # 영업소 엔드포인트가 아직 확정되지 않았다 (P2-3).
       # 여기서 멈추면 실거래가 수집까지 못 하므로 넘어간다. link 도 마찬가지.
       - name: 영업소 마스터
+        if: inputs.stage == 'all'
         continue-on-error: true
         run: python -m redt.cli tollgates
 
@@ -112,6 +132,7 @@ jobs:
       # 있고, 보충한 뒤에 공간 조인을 해야 새 영업소에도 거래가 붙는다.
       # 순서가 어긋나면 민자 영업소가 지도에는 뜨는데 거래는 0 으로 보인다.
       - name: 교통량 적재 (저장소의 연간 CSV)
+        if: inputs.stage == 'all'
         continue-on-error: true
         run: python -m redt.cli load-traffic
 
@@ -124,6 +145,7 @@ jobs:
       # 이름 하나에 접미사 다섯 개까지 물으므로 최대 800여 회, 브이월드
       # 하루 한도(3만) 안에서 충분하다.
       - name: 영업소 보충 (민자 등)
+        if: inputs.stage == 'all'
         continue-on-error: true
         run: python -m redt.cli fill-tollgates
 
@@ -135,10 +157,11 @@ jobs:
       # public/app/data 뿐이라 결과를 통째로 잃었다 (캐시 경로에도 config 가
       # 없다). 아래 '결과 커밋' 이 이 파일도 함께 담는다.
       - name: 전국 시군구 코드 확보
-        if: contains(inputs.region, 'nationwide')
+        if: inputs.stage == 'all' && contains(inputs.region, 'nationwide')
         run: python -m redt.cli discover-sigungu
 
       - name: 실거래가 수집
+        if: inputs.stage == 'all'
         run: |
           python -m redt.cli trades \
             --kind "${{ inputs.kind }}" \
@@ -157,16 +180,36 @@ jobs:
       # 올린다. 근거리 밴드는 지번 좌표만 받으므로(require_parcel_bands)
       # 반경 밖에 쓰는 호출은 밴드에 한 건도 보태지 못한다.
       - name: 지오코딩 (법정동 먼저 → 반경 안만 지번)
+        if: inputs.stage == 'all'
         run: |
           python -m redt.cli geocode-staged \
             --limit "${{ inputs.geocode_limit }}"
 
-      # 여기까지가 비싼 단계다 — 수집 2시간 26분 + 지오코딩 1시간 58분.
-      # 그 뒤 조인에서 러너가 메모리 부족으로 죽으면 `if: always()` 인
-      # 마지막 캐시 저장조차 안 돌아서 4시간 30분이 통째로 사라진다
-      # (run 17). 비싼 것을 손에 넣은 **즉시** 저장한다.
-      - name: 수집분 중간 보관 (수집·지오코딩 직후)
-        if: always()
+      # 캐시에서 조인 결과를 뺀다.
+      #
+      # trade_tollgate_link 는 1,961만 행인데 **매 실행 DELETE 하고 다시
+      # 만든다**(cmd_link). 캐시에 실어 봐야 다음 실행이 곧바로 버린다.
+      # 그런데 캐시 한 번이 2.36GB 이고 GitHub 한도는 저장소당 10GB 라,
+      # 지금은 실행 두 번치밖에 안 남는다. 오래된 것부터 지워지므로
+      # 중간 캐시가 밀려나면 지오코딩 3시간이 통째로 날아간다.
+      - name: 캐시 앞 정리 (조인 결과는 매번 다시 만든다)
+        if: always() && inputs.stage == 'all'
+        continue-on-error: true
+        run: python -m redt.cli compact-db
+
+      # 여기까지가 비싼 단계다 — 지오코딩이 run 21 에서 2시간 58분 걸렸다.
+      # 그 뒤에서 러너가 죽으면 `if: always()` 인 캐시 저장조차 안 돌아서
+      # 그 시간이 통째로 사라진다 (run 17). 비싼 것을 손에 넣은 **즉시**
+      # 저장한다.
+      #
+      # 실행당 한 번만 저장한다. 예전에는 여기와 맨 끝에서 두 번 저장해
+      # 4.73GB 를 썼는데, 뒤엣것은 앞엣것에 조인 결과와 parquet 몇 개를
+      # 더한 것뿐이다. 조인은 위에서 뺐고 parquet 은 3분이면 다시 만든다.
+      #
+      # 분석만 도는 실행(stage=analyze)은 새로 산 것이 없으므로 저장하지
+      # 않는다 — 저장하면 값진 캐시를 밀어내기만 한다.
+      - name: 수집분 보관 (지오코딩 직후, 실행당 한 번)
+        if: always() && inputs.stage == 'all'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -231,15 +274,6 @@ jobs:
             exit 1
           fi
           echo "패널 생성 확인"
-
-      - name: 수집분 보관
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            data/processed
-            data/interim
-          key: redt-data-${{ github.run_id }}
 
       - name: 결과 커밋
         if: always()
