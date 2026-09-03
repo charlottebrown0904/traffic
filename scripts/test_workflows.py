@@ -67,10 +67,22 @@ NEEDED = [
     "data/raw/tollgate_succession.csv",   # 승계 제외 (없으면 처치군 오염)
     "data/raw/PROVENANCE.md",             # 연도별 검증 기록
 ]
+
+# 영업소 명부는 파일 이름에 날짜가 붙으므로 목록이 아니라 유형으로 본다.
+# 교통량 파일에는 영업소명이 없어서, 좌표를 이름으로 찾을 때 이것이
+# 유일한 원천이다. 무시되면 러너가 못 읽고 신설 영업소는 이름 없이 남는다.
+import glob as _glob
+_master = _glob.glob(str(ROOT / "data/raw/tollgate_master_*.csv"))
 tracked = set(subprocess.run(
     ["git", "ls-files"], cwd=ROOT, capture_output=True, text=True).stdout.split())
 for rel in NEEDED:
     check(rel in tracked, f"{rel} 이 저장소에 추적되고 있다")
+if _master:
+    rel = [str(Path(f).relative_to(ROOT)) for f in _master]
+    check(all(r in tracked for r in rel),
+          f"영업소 명부가 추적되고 있다 ({len(rel)}개)")
+else:
+    check(False, "영업소 명부(tollgate_master_*.csv)가 없습니다")
 
 # 교통량 연간 CSV 는 한 해라도 빠지면 그 해가 통째로 사라진다.
 import glob

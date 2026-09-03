@@ -17,6 +17,11 @@ data/processed/*
 !data/raw/tcs_annual_*.csv
 !data/raw/tcs_monthly_*.csv
 !data/raw/tollgate_events.csv
+# 도로공사 영업소 명부. 교통량 파일에는 이름이 없어서 좌표를 이름으로
+# 찾을 때 이것이 유일한 원천이다. 무시되면 러너가 못 읽고, 신설 영업소는
+# 이름 없이 남아 지도에 영영 안 뜬다 — tollgate_succession.csv 때와
+# 같은 함정이다.
+!data/raw/tollgate_master_*.csv
 # 승계 판정은 러너의 분석이 읽는다. 없으면 '이름일치' 영업소를 처치군에서
 # 빼지 못하는데, events.py 가 조용히 넘어가므로 로그에도 안 남는다.
 # run 13 이 실제로 그렇게 돌았다.

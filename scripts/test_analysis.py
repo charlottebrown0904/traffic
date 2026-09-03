@@ -1034,6 +1034,37 @@ _all_land = pd.DataFrame({
 check(len(filter_land_use(_all_land)) == 1, "용도지역이 있는 공장은 정상적으로 걸린다")
 
 print()
+print("25. 영업소 이름을 명부에서 가져온다 (코드 이름으로는 좌표를 못 찾는다)")
+
+# 교통량 일별 파일에는 영업소명이 없어서 2025년 연간 파일에서 빌려 왔다.
+# 그 파일은 **그 뒤에 생긴 영업소를 모른다.** 2026년 신설 327 이 이름
+# 없이 들어왔고, 이름이 없으니 좌표도 못 찾았다 — 하필 이 제품에서
+# 가장 중요한 관측 대상(신설 IC)이다.
+from redt.collect.tollgate_fill import names_from_master, names_from_traffic  # noqa: E402
+
+_master = names_from_master()
+check(len(_master) > 500, f"도로공사 명부를 읽는다 ({len(_master)}곳)")
+
+_names = names_from_traffic()
+# 327 은 교통량 파일에 '영업소 327' 로 채워져 있다. 명부의 진짜 이름이
+# 이겨야 한다 — 코드 이름을 브이월드에 물어봐야 아무것도 안 나온다.
+check(_names.get("327") == "서영천",
+      f"명부 이름이 코드 이름을 이긴다 (327 → {_names.get('327')})")
+check(not any(v.startswith("영업소 ") for v in _names.values()),
+      "코드로 채운 이름이 남아 있지 않다")
+
+# 가상 영업소는 실제 시설이 아니다. 좌표를 찾으면 엉뚱한 곳이 찍힌다.
+import csv as _csv                                              # noqa: E402
+from redt.config import RAW as _RAW                             # noqa: E402
+import glob as _glob                                            # noqa: E402
+_f = sorted(_glob.glob(str(_RAW / "tollgate_master_*.csv")))[-1]
+_virtual = {r["영업소코드"].strip().lstrip("0") or "0"
+            for r in _csv.DictReader(open(_f, encoding="utf-8-sig"))
+            if r.get("가상영업소여부", "").strip() == "Y"}
+check(bool(_virtual) and not (_virtual & set(_master)),
+      f"가상 영업소 {len(_virtual)}곳은 이름표에 안 넣는다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

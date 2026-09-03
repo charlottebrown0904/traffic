@@ -72,8 +72,34 @@ SUFFIXES = ("영업소", "요금소", "IC", "나들목", "톨게이트")
 TRIM = ("본선", "JC", "분기점")
 
 
+# 도로공사가 내려주는 영업소 명부. 교통량 파일에는 이름이 없어서
+# 지금까지 2025년 연간 파일에서 이름을 빌려 왔는데, 그 파일은 **그 뒤에
+# 생긴 영업소를 모른다.** 2026년 신설 327 이 이름 없이 들어와 좌표를
+# 못 찾은 것이 그 때문이다. 명부가 있으면 그것이 우선이다.
+MASTER_GLOB = "tollgate_master_*.csv"
+
+
+def names_from_master() -> dict[str, str]:
+    """도로공사 영업소 명부에서 코드 → 이름. 가장 최근 파일을 쓴다."""
+    files = sorted(Path(RAW).glob(MASTER_GLOB))
+    if not files:
+        return {}
+    df = pd.read_csv(files[-1], encoding="utf-8-sig", dtype=str)
+    if "영업소코드" not in df or "영업소명" not in df:
+        return {}
+    # 가상 영업소(가상영업소여부 Y)는 실제 시설이 아니다 — 좌표를 찾으면
+    # 엉뚱한 곳이 찍힌다.
+    if "가상영업소여부" in df:
+        df = df[df["가상영업소여부"].fillna("").str.strip() != "Y"]
+    out: dict[str, str] = {}
+    for tid, name in zip(canon_series(df["영업소코드"]), df["영업소명"]):
+        if isinstance(name, str) and name.strip():
+            out[tid] = name.strip()
+    return out
+
+
 def names_from_traffic() -> dict[str, str]:
-    """교통량 CSV 에서 영업소코드 → 영업소명."""
+    """영업소코드 → 영업소명. 명부가 있으면 그것이 이긴다."""
     out: dict[str, str] = {}
     for path in sorted(Path(RAW).glob("tcs_annual_*.csv")):
         if path.name.startswith("legacy_"):
@@ -83,6 +109,15 @@ def names_from_traffic() -> dict[str, str]:
         for tid, name in zip(df["tollgate_id"], df["영업소명"]):
             if isinstance(name, str) and name.strip():
                 out[tid] = name.strip()          # 최신 파일 이름이 이긴다
+    # 교통량 파일의 이름은 '영업소 327' 처럼 코드로 채워 둔 것이 섞인다.
+    # 명부에 진짜 이름이 있으면 그것으로 덮는다 — 코드 이름으로는
+    # 좌표를 못 찾는다.
+    master = names_from_master()
+    if master:
+        replaced = sum(1 for k in out if k in master and out[k] != master[k])
+        out.update(master)
+        if replaced:
+            print(f"  영업소 명부에서 이름 {replaced}건을 바로잡았습니다")
     return out
 
 
