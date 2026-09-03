@@ -70,6 +70,10 @@ on:
 # 결과를 저장소에 다시 커밋해야 하므로 쓰기 권한이 필요합니다.
 permissions:
   contents: write
+  # 캐시 사용량을 스스로 읽어 찍기 위해서다 (마지막 단계). 사장님이
+  # 휴대폰으로 일하시므로, 한도에 얼마나 다가갔는지를 찾아다니지 않고
+  # 실행 로그에서 바로 보이게 한다.
+  actions: read
 
 # 같은 워크플로가 겹쳐 돌면 커밋이 충돌하므로 한 번에 하나만.
 concurrency:
@@ -314,3 +318,52 @@ jobs:
         with:
           name: web-data-${{ github.run_number }}
           path: public/app/data
+
+      # 용량을 매 실행이 스스로 찍는다.
+      #
+      # 캐시 한도는 저장소당 10GB 이고, 넘치면 **오래된 것부터 조용히
+      # 지워진다.** 지오코딩 3시간이 든 캐시가 그렇게 밀려나면 그 3시간을
+      # 다시 써야 하는데, 밀려났다는 사실은 다음 실행이 처음부터 다시
+      # 받기 시작할 때에야 드러난다.
+      #
+      # 찾아가 봐야 아는 숫자는 아무도 안 본다. 여기 찍어 두면 실행
+      # 로그를 열 때마다 눈에 들어온다.
+      - name: 용량 (캐시·실행시간)
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          repo = os.environ["GITHUB_REPOSITORY"]
+          def api(path):
+              r = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}{path}",
+                  headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                           "Accept": "application/vnd.github+json"})
+              return json.load(urllib.request.urlopen(r, timeout=20))
+
+          GB = 2 ** 30
+          LIMIT = 10 * GB          # GitHub 저장소당 Actions 캐시 한도
+          u = api("/actions/cache/usage")
+          used = u["active_caches_size_in_bytes"]
+          n = u["active_caches_count"]
+          print("=== Actions 캐시 ===")
+          print(f"  {used/GB:.2f} GB / 10 GB  ({used/LIMIT:.0%}) · {n}개")
+          if used > LIMIT * 0.8:
+              print("  ⚠ 80% 를 넘었습니다. 넘치면 오래된 것부터 지워지고,")
+              print("    지오코딩이 든 캐시가 밀려나면 그 시간을 다시 씁니다.")
+              print("    → github.com/%s/actions/caches 에서 오래된 것을 지우세요" % repo)
+
+          caches = api("/actions/caches?per_page=20")["actions_caches"]
+          if caches:
+              print("  큰 것부터")
+              for c in sorted(caches, key=lambda x: -x["size_in_bytes"])[:6]:
+                  print(f"    {c['size_in_bytes']/GB:5.2f} GB  {c['key']}"
+                        f"  (마지막 사용 {c['last_accessed_at'][:10]})")
+          PY
+          echo
+          echo "=== 실행 시간 ==="
+          echo "  이번 실행: 이 페이지 오른쪽 위 ··· → Usage"
+          echo "  이번 달 누적: github.com/settings/billing → Usage"
