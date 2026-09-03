@@ -161,8 +161,10 @@ const rows = (page) => page.evaluate(() =>
     // 밴드 개수는 설정에서 온다. 숫자를 박아 두면 밴드를 조정할 때마다 검사가
     // '깨진 것' 처럼 빨개진다 — 실제로 5개에서 4개로 줄이자 그랬다.
     const bandCount = await page.evaluate(() => (window.__bands || []).length);
-    check('거리 밴드가 설정만큼 그려진다', ringColors.length === bandCount,
-          `범례 ${ringColors.length}개 vs 설정 ${bandCount}개`);
+    // 화면 범례는 **영향범위까지**다. 가장 바깥(위약 대조)은 분석 절차라
+    // 화면에서 뺐다(2026-09-03 지시) — app.js shownBands() 참고.
+    check('거리 밴드가 대조를 뺀 만큼 그려진다', ringColors.length === bandCount - 1,
+          `범례 ${ringColors.length}개 vs 설정 ${bandCount}개 (대조 1개 제외)`);
     check('밴드 색이 모두 다르다', new Set(ringColors).size === ringColors.length,
           ringColors.join(' / '));
     // 영향범위 바깥의 대조 밴드가 하나는 있어야 위약 검정을 할 수 있다.

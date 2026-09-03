@@ -64,11 +64,20 @@ const FAKE_LEAFLET = () => {
     map: () => chain({
       setView() { return this; }, fitBounds() { return this; },
       panTo() { return this; }, invalidateSize() { return this; },
+      getZoom() { return 7; },
     }),
     tileLayer: (url) => { rec.tiles.push(url); return chain(); },
     layerGroup: grp,
     circle: (ll, opts) => chain({ __circle: true, __opts: opts }),
-    circleMarker: (ll, opts) => { rec.markers.push(opts); return chain(); },
+    circleMarker: (ll, opts) => {
+      const m = chain({
+        setStyle(o) { Object.assign(this.__opts, o); return this; },
+        openTooltip() { return this; }, unbindTooltip() { return this; },
+      });
+      m.__opts = Object.assign({}, opts);
+      rec.markers.push(m.__opts);
+      return m;
+    },
     marker: () => chain(), divIcon: () => ({}),
     latLngBounds: () => ({ pad: () => ({}) }),
   };
@@ -145,18 +154,19 @@ const FAKE_LEAFLET = () => {
       check('큰 원부터 그린다 (작은 원이 위에 온다)',
             radii.every((r, i) => i === 0 || radii[i - 1] >= r),
             radii.join(' → '));
-      const control = circles[0];
-      check('가장 바깥(대조) 밴드는 채우지 않는다',
-            !control.fill || control.fillOpacity === 0,
-            `fill=${control.fill} op=${control.fillOpacity}`);
+      // 위약 대조 밴드(가장 바깥)는 화면에 안 그린다. 분석 절차이지
+      // 사용자가 볼 것이 아니다 — 화면에 '위약 대조' 라고 적어두면
+      // 무슨 말인지 모르는 채로 지도만 복잡해진다.
+      const cfgBands = await page.evaluate(() => (window.__bands || []).length);
+      check('위약 대조 밴드는 안 그린다 (분석 전용)',
+            circles.length === cfgBands - 1,
+            `그린 ${circles.length}개 vs 설정 ${cfgBands}개`);
       // 실선은 행정경계나 도로처럼 보여 배경 지도의 선과 섞인다.
       // 점선이라야 '우리가 그은 선' 으로 읽힌다.
       check('모든 밴드가 점선이다',
             circles.every((c) => !!c.dashArray),
             circles.map((c) => c.dashArray || '실선').join(' / '));
-      check('대조 밴드는 다른 점선이다 (색 말고도 구별된다)',
-            control.dashArray !== circles[circles.length - 1].dashArray,
-            `${control.dashArray} vs ${circles[circles.length - 1].dashArray}`);
+
     }
 
     console.log();

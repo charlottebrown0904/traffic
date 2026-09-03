@@ -18,9 +18,10 @@ const state = {
   meta: null, tollgates: [], trades: [], series: {}, traffic: null, chart: null,
   rank: { year: null, vehicle: 'total', sort: 'volume', q: '', coordsOnly: false },
   trend: { id: null, scale: 'index', base: null, on: new Set() },
-  activeQuadrants: new Set(Object.keys(QUADRANTS)),
+  activeTiers: new Set([0, 1, 2, 3, 'new']),
+  tgYear: null, tgVehicle: 'total', dealFrom: null, dealTo: null,
   activeKinds: new Set(),
-  minYear: 0, parcelOnly: false, selected: null, showAllBands: false, tiers: null,
+  parcelOnly: false, selected: null, showAllBands: false, tiers: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
   apiAvailable: false,
 };
@@ -81,7 +82,8 @@ async function boot() {
   }
 
   state.activeKinds = new Set(state.meta.kinds);
-  state.minYear = state.meta.year_min;
+  state.dealFrom = `${state.meta.year_min}-01`;
+  state.dealTo = `${state.meta.year_max}-12`;
 
   if (state.meta.is_synthetic) $('#demo-banner').hidden = false;
   $('#meta-stamp').innerHTML =
@@ -112,6 +114,9 @@ async function boot() {
   // 4분위는 지도와 무관하게 미리 잡는다. buildMap 안에서 잡으면 Leaflet 이
   // 없을 때(CDN 차단·오프라인) 계산 자체를 건너뛰고, 범례가 실제 교통량
   // 대신 '하위 25%' 같은 맹탕 문구로 떨어진다.
+  // 기준 연도는 자료의 마지막 해. 연도 선택이 이 값에서 시작한다.
+  const _ty = (state.traffic || {}).years || [];
+  state.tgYear = _ty.length ? _ty[_ty.length - 1] : null;
   state.tiers = buildTiers();
 
   // 검사가 설정값을 읽을 수 있게 열어 둔다. 밴드 개수를 검사에 박아 두면
@@ -162,22 +167,70 @@ function buildFilters() {
     counts[key] = (counts[key] || 0) + 1;
   });
 
-  const box = $('#quad-filters');
-  Object.entries(QUADRANTS).forEach(([key, info]) => {
+  // ── IC 교통량: 기준 연도 · 차종 ──
+  const years = (state.traffic || {}).years || [];
+  const ySel = $('#tg-year');
+  years.slice().reverse().forEach((y) => {
+    const o = el('option', null, `${y}년`);
+    o.value = String(y);
+    ySel.append(o);
+  });
+  ySel.value = String(state.tgYear);
+  ySel.addEventListener('change', () => {
+    state.tgYear = Number(ySel.value);
+    recolorTollgates();
+  });
+
+  const vSel = $('#tg-vehicle');
+  [['total', '전체 차종']].concat(
+    ((state.traffic || {}).vehicle_types || [])
+      .map((v) => [String(v.code), v.label])
+  ).forEach(([val, label]) => {
+    const o = el('option', null, label);
+    o.value = val;
+    vSel.append(o);
+  });
+  vSel.value = state.tgVehicle;
+  vSel.addEventListener('change', () => {
+    state.tgVehicle = vSel.value;
+    recolorTollgates();
+  });
+
+  // 구간 필터 — 예전 '분면 필터'(저평가·과열 등) 자리다. 분면은 평가라
+  // 오해를 부르고, 지도 색과 뜻이 달라 혼란스러웠다. 지도 색과 필터가
+  // 같은 것을 가리키는 편이 낫다.
+  const tierBox = $('#tier-filters');
+  TRAFFIC_LABEL.forEach((label, i) => {
     const btn = el('button', 'quad-btn');
     btn.type = 'button';
-    btn.style.setProperty('--c', info.color);
+    btn.dataset.tier = String(i);
+    btn.style.setProperty('--c', `var(--tg-${i + 1})`);
     btn.setAttribute('aria-pressed', 'true');
-    btn.append(el('span', 'dot'), el('span', null, info.label),
-               el('span', 'n', String(counts[key] || 0)));
+    btn.append(el('span', 'dot'), el('span', null, label),
+               el('span', 'n', '0'));
     btn.addEventListener('click', () => {
       const on = btn.getAttribute('aria-pressed') === 'true';
       btn.setAttribute('aria-pressed', String(!on));
-      on ? state.activeQuadrants.delete(key) : state.activeQuadrants.add(key);
+      on ? state.activeTiers.delete(i) : state.activeTiers.add(i);
       refreshMap();
     });
-    box.append(btn);
+    tierBox.append(btn);
   });
+  // 신설 — 그 해에 처음 교통량이 잡힌 영업소
+  const newBtn = el('button', 'quad-btn');
+  newBtn.type = 'button';
+  newBtn.dataset.tier = 'new';
+  newBtn.style.setProperty('--c', 'var(--tg-new)');
+  newBtn.setAttribute('aria-pressed', 'true');
+  newBtn.append(el('span', 'dot'), el('span', null, '신설'),
+                el('span', 'n', '0'));
+  newBtn.addEventListener('click', () => {
+    const on = newBtn.getAttribute('aria-pressed') === 'true';
+    newBtn.setAttribute('aria-pressed', String(!on));
+    on ? state.activeTiers.delete('new') : state.activeTiers.add('new');
+    refreshMap();
+  });
+  tierBox.append(newBtn);
 
   const kinds = $('#kind-filters');
   state.meta.kinds.forEach((kind) => {
@@ -193,34 +246,38 @@ function buildFilters() {
     kinds.append(label);
   });
 
-  const range = $('#year-range');
-  range.min = state.meta.year_min;
-  range.max = state.meta.year_max;
-  range.value = state.meta.year_min;
-  $('#year-out').textContent = state.meta.year_min;
-  range.addEventListener('input', () => {
-    state.minYear = Number(range.value);
-    $('#year-out').textContent = range.value;
+  // ── 실거래 기간: 시작·끝 년월 ──
+  // 슬라이더는 '언제부터' 만 고를 수 있었다. 특정 구간(예: 2015-03 ~
+  // 2018-06)을 보려면 끝도 정할 수 있어야 한다.
+  const from = $('#deal-from'), to = $('#deal-to');
+  from.min = to.min = `${state.meta.year_min}-01`;
+  from.max = to.max = `${state.meta.year_max}-12`;
+  from.value = `${state.meta.year_min}-01`;
+  to.value = `${state.meta.year_max}-12`;
+  const onRange = () => {
+    state.dealFrom = from.value || null;
+    state.dealTo = to.value || null;
     refreshMap();
-  });
+  };
+  from.addEventListener('change', onRange);
+  to.addEventListener('change', onRange);
 
   $('#parcel-only').addEventListener('change', (e) => {
     state.parcelOnly = e.target.checked;
     refreshMap();
   });
+
+  // 처음 그릴 때도 개수를 채운다. 안 하면 전부 0 으로 보인다.
+  updateTierCounts();
 }
 
 function buildLegend() {
-  const bands = state.meta.bands_km || [];
-  const last = bands.length - 1;
-  $('#band-legend').innerHTML = bands
-    .map(([lo, hi], i) => {
-      // 마지막 밴드는 위약(대조) 밴드다. 여기서 효과가 크게 나오면 IC 효과가
-      // 아니라는 뜻이라, 화면에서도 다른 밴드와 구별해 표시한다.
-      const tag = i === last ? '<span class="tagline">위약 대조</span>' : '';
-      return `<div class="row${i === last ? ' is-placebo' : ''}" style="--c:${bandColor(i)}">` +
-             `<span class="ring"></span>${lo}–${hi} km${tag}</div>`;
-    })
+  // 위약 대조 밴드(가장 바깥)는 화면에 안 그린다 — 분석 절차이지
+  // 사용자가 볼 것이 아니다. shownBands() 참고.
+  $('#band-legend').innerHTML = shownBands()
+    .map(([lo, hi], i) =>
+      `<div class="row" style="--c:${bandColor(i)}">` +
+      `<span class="ring"></span>${lo}–${hi} km</div>`)
     .join('');
 
   const kindRow = (key, label) =>
@@ -242,14 +299,15 @@ function buildLegend() {
     kindRow('land', '토지') + kindRow('factory', '공장·창고') +
     '<div class="grp">매물</div>' +
     '<div class="row"><span class="sw sw-listing"></span>등록 매물</div>' +
-    '<div class="grp">영업소 · 교통량</div>' +
+    `<div class="grp">영업소 · ${state.tgYear}년 교통량</div>` +
     TRAFFIC_LABEL.map((_, i) => qRow(i)).join('') +
+    `<div class="row"><span class="sw" style="background:var(--tg-new);` +
+    `border:2px solid var(--tg-new-ring)"></span>${state.tgYear}년 신설</div>` +
     '<div class="row"><span class="sw" style="background:var(--faint);opacity:.5"></span>자료 없음</div>' +
     '<div class="grp">거리 밴드</div>' +
-    bands.map(([lo, hi], i) =>
+    shownBands().map(([lo, hi], i) =>
       `<div class="row" style="--c:${bandColor(i)}">` +
-      `<span class="sw ring"></span>${lo}–${hi} km` +
-      (i === last ? ' (대조)' : '') + '</div>').join('') +
+      `<span class="sw ring"></span>${lo}–${hi} km</div>`).join('') +
     '</div>';
 
   const peek = legend.querySelector('.legend-peek');
@@ -472,12 +530,17 @@ function trendSeriesFor(id) {
     //   뜻   영향범위 바깥의 기준선이라 '자료 계열' 과 성격이 다르다.
     //   색약 중립 회색과 승용(자홍)이 적록색약에서 ΔE 5.9 로 붙는다.
     //        색만으로는 구별이 안 되므로 모양이 그 몫을 대신한다.
-    const isControl = i === bands.length - 1;
+    // **지가 계열은 전부 점선.** 교통량 계열은 실선이다.
+    //
+    // 한 그래프에 교통량 4계열 + 지가 3밴드까지 들어가는데, 일곱 색이
+    // 서로 다 구별되게 만드는 것은 색상환 안에서 불가능하다. 선 모양으로
+    // 무리를 갈라두면 색은 무리 안에서만 달라도 된다. 지도에서 밴드가
+    // 점선인 것과도 말이 맞는다.
     out.push({
       key: `band:${band}`,
-      label: `지가 · ${band} km${isControl ? ' (대조)' : ''}`,
+      label: `지가 · ${band} km`,
       group: '지가 (반경별)',
-      color: bandColor(i), dash: isControl, unit: '원/㎡', points: pts,
+      color: bandColor(i), dash: true, unit: '원/㎡', points: pts,
     });
   });
 
@@ -809,33 +872,145 @@ const TRAFFIC_CUTS = [10000, 20000, 30000];
 const TRAFFIC_LABEL = ['1만대 미만', '1만~2만대', '2만~3만대', '3만대 이상'];
 const TRAFFIC_TIERS = TRAFFIC_CUTS.length + 1;
 
-function tollgateVolumes() {
-  const rows = (state.traffic || {}).rows || [];
-  const years = (state.traffic || {}).years || [];
-  const last = years.length - 1;
+/* 선택한 연도·차종의 영업소별 교통량. 둘 다 사용자가 고른다 —
+ * 2003년 화물만 보고 싶을 수도 있고, 올해 전체를 보고 싶을 수도 있다. */
+function tollgateVolumes(year, vehicle) {
+  const tr = state.traffic || {};
+  const years = tr.years || [];
+  const types = tr.types || [];
+  const yi = years.indexOf(year);
+  if (yi < 0) return new Map();
+  const vi = vehicle === 'total' ? -1 : types.indexOf(Number(vehicle));
   const out = new Map();
-  rows.forEach((r) => {
-    // v[연도][차종] 이다. 차종을 합쳐 그 해 전체 교통량을 쓴다.
-    const yv = (r.v || [])[last];
+  (tr.rows || []).forEach((r) => {
+    const yv = (r.v || [])[yi];
     if (!Array.isArray(yv)) return;
-    const total = yv.reduce((a, b) => a + (Number(b) || 0), 0);
+    const total = vi < 0
+      ? yv.reduce((a, b) => a + (Number(b) || 0), 0)
+      : (Number(yv[vi]) || 0);
     if (total > 0) out.set(String(r.id), total);
   });
   return out;
 }
 
+/* 그 해에 **처음** 교통량이 잡힌 영업소 = 신설.
+ *
+ * 이전 해에 값이 없다가 그 해에 생겼다는 뜻이다. 개통 효과를 보는
+ * 이 제품에서 신설 IC 는 가장 중요한 관측 대상이라, 교통량 구간에
+ * 섞지 않고 따로 표시한다 — 신설은 '교통량이 적은 곳' 이 아니라
+ * '이제 막 생긴 곳' 이다. */
+function newTollgates(year) {
+  const tr = state.traffic || {};
+  const years = tr.years || [];
+  const yi = years.indexOf(year);
+  const out = new Set();
+  if (yi <= 0) return out;          // 첫 해는 비교 대상이 없다
+  (tr.rows || []).forEach((r) => {
+    const v = r.v || [];
+    const now = Array.isArray(v[yi])
+      ? v[yi].reduce((a, b) => a + (Number(b) || 0), 0) : 0;
+    if (now <= 0) return;
+    const before = v.slice(0, yi).some(
+      (yv) => Array.isArray(yv) && yv.reduce((a, b) => a + (Number(b) || 0), 0) > 0);
+    if (!before) out.add(String(r.id));
+  });
+  return out;
+}
+
 /* 값 → 0..3. 경계는 고정이라 해마다 흔들리지 않는다 — 작년과 올해 지도를
- * 나란히 놓고 비교할 수 있다는 뜻이다. 분위였으면 같은 색이 해마다 다른
- * 교통량을 뜻하게 된다. */
+ * 나란히 놓고 비교할 수 있다는 뜻이다. */
 function buildTiers() {
-  const vol = tollgateVolumes();
+  const year = state.tgYear;
+  const vol = tollgateVolumes(year, state.tgVehicle);
+  const fresh = newTollgates(year);
   const tier = new Map();
   vol.forEach((v, id) => {
+    if (fresh.has(id)) { tier.set(id, 'new'); return; }
     let q = 0;
     while (q < TRAFFIC_CUTS.length && v >= TRAFFIC_CUTS[q]) q++;
     tier.set(id, q);
   });
-  return { rank: tier, vol, cut: TRAFFIC_CUTS };
+  return { rank: tier, vol, cut: TRAFFIC_CUTS, fresh };
+}
+
+/* 연도·차종을 바꾸면 마커 색·크기를 다시 칠한다. 지도를 새로 만들지
+ * 않는다 — 442개를 다시 그리면 화면이 한 번 껌뻑인다. */
+function recolorTollgates() {
+  state.tiers = buildTiers();
+  const { rank, vol } = state.tiers;
+  state.tollgates.forEach((t) => {
+    const m = markers.get(t.tollgate_id);
+    if (!m) return;
+    styleTollgate(m, t, rank.get(String(t.tollgate_id)),
+                  vol.get(String(t.tollgate_id)));
+  });
+  updateTierCounts();
+  refreshMap();
+  buildLegend();
+}
+
+function updateTierCounts() {
+  const counts = {};
+  (state.tiers ? state.tiers.rank : new Map()).forEach((q) => {
+    counts[q] = (counts[q] || 0) + 1;
+  });
+  document.querySelectorAll('#tier-filters .quad-btn').forEach((btn) => {
+    const key = btn.dataset.tier === 'new' ? 'new' : Number(btn.dataset.tier);
+    btn.querySelector('.n').textContent = String(counts[key] || 0);
+  });
+}
+
+/* 마커 한 개의 색·크기·툴팁. 지도를 만들 때와 연도·차종을 바꿀 때
+ * 같은 함수를 쓴다 — 두 군데에 따로 쓰면 한쪽만 고치게 된다. */
+const LABEL_ZOOM = 10;
+
+/* 화면에 그리는 밴드는 **영향범위까지**다.
+ *
+ * 가장 바깥(5-10km)은 위약 대조 밴드로, 분석이 '여기서도 효과가 나오면
+ * IC 때문이 아니다' 를 판정하는 데 쓴다. 그것은 통계 절차이지 사용자가
+ * 볼 것이 아니다 — 화면에 '위약 대조' 라고 적어두면 무슨 말인지 모르는
+ * 채로 지도만 복잡해진다. 분석에서는 그대로 쓴다.
+ */
+const shownBands = () => (state.meta.bands_km || []).slice(0, -1);      // 이 배율부터 이름을 띄운다
+
+function styleTollgate(marker, t, tier, vol) {
+  const known = tier !== undefined && tier !== null;
+  const isNew = tier === 'new';
+  const q = isNew ? 0 : tier;
+  marker.setStyle({
+    radius: isNew ? 6 : (known ? 4.5 + q * 1.4 : 3.5),
+    weight: isNew ? 2.4 : 1.6,
+    color: isNew ? cssVar('--tg-new-ring') : '#fff',
+    fillColor: isNew ? cssVar('--tg-new')
+      : (known ? cssVar(`--tg-${q + 1}`) : cssVar('--faint')),
+    fillOpacity: known ? .92 : .45,
+    opacity: known ? .95 : .5,
+  });
+  const name = t.name || t.tollgate_id;
+  marker.bindTooltip(
+    name + (isNew ? ` · ${state.tgYear}년 신설 (하루 ${num(vol)}대)`
+      : known ? ` · 하루 ${num(vol)}대` : ' · 교통량 자료 없음'),
+    { direction: 'top' });
+  marker._tgName = name;
+}
+
+/* 확대 배율에 따라 이름표를 켜고 끈다. */
+function syncTollgateLabels() {
+  if (!map) return;
+  const on = map.getZoom() >= LABEL_ZOOM;
+  markers.forEach((m) => {
+    if (on && !m._nameOn) {
+      m.bindTooltip(m._tgName, {
+        permanent: true, direction: 'right', offset: [6, 0],
+        className: 'tg-label',
+      }).openTooltip();
+      m._nameOn = true;
+    } else if (!on && m._nameOn) {
+      m.unbindTooltip();
+      m.bindTooltip(m._tgName, { direction: 'top' });
+      m._nameOn = false;
+    }
+  });
 }
 
 /* ─────────── 지도 ─────────── */
@@ -872,29 +1047,16 @@ function buildMap() {
   // 색으로 말한다 — 값이 있는 것처럼 아무 색이나 칠하면 안 된다.
   const { rank, vol } = state.tiers || buildTiers();
   withCoords.forEach((t) => {
-    const q = rank.get(String(t.tollgate_id));
-    const known = q != null;
-    // 채움은 파스텔로 부드럽게, 대비는 **링**이 맡는다. 파스텔만으로는
-    // 밝은 지도 위에서 가장 연한 단계가 1.19:1 밖에 안 나온다. 링을
-    // 같은 색상의 진한 단계로 두면 부드러움과 또렷함을 같이 얻는다.
-    // 흰 링을 두르면 어떤 배경 위에서도 마커가 떨어져 나온다. 채움은
-    // 단계마다 색상이 다르므로(명도가 아니라) 확대해도 구별된다.
-    const marker = L.circleMarker([t.lat, t.lon], {
-      // 교통량이 많을수록 크게 — 색약이어도 크기로 읽힌다.
-      radius: known ? 4.5 + q * 1.4 : 3.5,
-      weight: 1.6, color: '#fff',
-      fillColor: known ? cssVar(`--tg-${q + 1}`) : cssVar('--faint'),
-      fillOpacity: known ? .92 : .45,
-      opacity: known ? .95 : .5,
-    });
-    const v = vol.get(String(t.tollgate_id));
-    marker.bindTooltip(
-      `${t.name || t.tollgate_id}` +
-      (known ? ` · 하루 ${num(v)}대` : ' · 교통량 자료 없음'),
-      { direction: 'top' });
+    const marker = L.circleMarker([t.lat, t.lon], { radius: 5, weight: 1.6 });
+    styleTollgate(marker, t, rank.get(String(t.tollgate_id)),
+                  vol.get(String(t.tollgate_id)));
     marker.on('click', () => selectTollgate(t.tollgate_id));
     markers.set(t.tollgate_id, marker);
   });
+
+  // 확대하면 이름을 띄운다. 축소 상태에서 442개 이름을 다 띄우면
+  // 글자가 서로 덮여 아무것도 못 읽는다.
+  map.on('zoomend', syncTollgateLabels);
 
   map.on('click', (e) => { if (state.pickMode) endPick(e.latlng); });
 
@@ -939,35 +1101,42 @@ function drawAllBands() {
   if (!map || !bandLayer) return;
   if (!state.showAllBands) return;
   bandLayer.clearLayers();
-  const bands = state.meta.bands_km || [];
-  const outer = bands.length - 1;
+  const bands = shownBands();
   state.tollgates.forEach((t) => {
     if (!t.lat || !t.lon) return;
-    // 전체 보기에서는 영향범위(대조 바로 앞 밴드)까지만 그린다. 대조까지
-    // 442곳을 겹쳐 그리면 무엇도 안 보인다.
-    for (let i = outer - 1; i >= 0; i--) {
+    for (let i = bands.length - 1; i >= 0; i--) {
       bandLayer.addLayer(bandRing(t.lat, t.lon, bands[i][1], i, false, true));
     }
   });
 }
 
 function visibleTrades() {
+  // 거래에는 연·월이 다 있지만 화면 자료에는 연도만 실려 있다.
+  // 년월 입력의 연도 부분으로 자른다 — 월까지 자르려면 export 에
+  // deal_month 를 실어야 하고, 그건 파일이 커지는 값에 비해 이득이 적다.
+  const fy = state.dealFrom ? Number(state.dealFrom.slice(0, 4)) : -Infinity;
+  const ty = state.dealTo ? Number(state.dealTo.slice(0, 4)) : Infinity;
   return state.trades.filter((t) =>
     state.activeKinds.has(t.kind) &&
-    t.deal_year >= state.minYear &&
+    t.deal_year >= fy && t.deal_year <= ty &&
     (!state.parcelOnly || t.geocode_level === 'parcel'));
 }
 
 function refreshMap() {
   if (!map) return;
   tollgateLayer.clearLayers();
+  const rank = (state.tiers || {}).rank || new Map();
   state.tollgates.forEach((t) => {
     const marker = markers.get(t.tollgate_id);
     if (!marker) return;
-    const key = t.quadrant_key;
-    // 스코어가 없는 영업소는 필터와 무관하게 항상 보여준다 (데이터 부족 표시)
-    if (!key || state.activeQuadrants.has(key)) tollgateLayer.addLayer(marker);
+    const tier = rank.get(String(t.tollgate_id));
+    // 교통량을 모르는 영업소는 필터와 무관하게 늘 보여준다 — 걸러버리면
+    // '그 자리에 영업소가 없다' 로 읽힌다.
+    if (tier === undefined || state.activeTiers.has(tier)) {
+      tollgateLayer.addLayer(marker);
+    }
   });
+  syncTollgateLabels();
   // 필터를 만질 때마다 밴드를 다시 그린다. 선택이 있으면 선택이 이긴다.
   if (state.showAllBands) {
     if (state.selected) selectTollgate(state.selected);
@@ -1002,12 +1171,10 @@ function selectTollgate(id) {
   } else {
     bandLayer.clearLayers();
   }
-  const bands = state.meta.bands_km || [];
-  // **큰 원부터** 그린다. 음영이 있으므로 순서를 뒤집으면 가까운 밴드가
-  // 먼 밴드의 면에 덮여 안 보인다.
+  const bands = shownBands();
+  // 큰 원부터 그린다 — 작은 원이 위에 오게.
   for (let i = bands.length - 1; i >= 0; i--) {
-    bandLayer.addLayer(
-      bandRing(t.lat, t.lon, bands[i][1], i, i === bands.length - 1));
+    bandLayer.addLayer(bandRing(t.lat, t.lon, bands[i][1], i, false));
   }
   map.panTo([t.lat, t.lon]);
 }

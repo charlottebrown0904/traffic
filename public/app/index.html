@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260903b">
+<link rel="stylesheet" href="/app/style.css?v=20260903c">
 </head>
 <body>
 
@@ -56,18 +56,35 @@
     </button>
     <div class="rail-body" id="rail-body">
     <section class="rail-block">
-      <h2>분면 필터</h2>
-      <p class="hint">어떤 영업소를 <em>보여줄지</em> 고르는 것입니다.
-        지도의 색은 <strong>교통량 4분위</strong>입니다.</p>
-      <div class="quad-filters" id="quad-filters"></div>
+      <h2>IC 교통량</h2>
+      <label class="field">
+        <span>기준 연도</span>
+        <select id="tg-year"></select>
+      </label>
+      <label class="field">
+        <span>차종</span>
+        <select id="tg-vehicle"></select>
+      </label>
+      <div class="quad-filters" id="tier-filters"></div>
     </section>
     <section class="rail-block">
       <h2>실거래 표시</h2>
       <div class="checks" id="kind-filters"></div>
-      <label class="field">
-        <span>연도 <output id="year-out"></output> 이후</span>
-        <input type="range" id="year-range">
-      </label>
+      <p class="hint"><strong>공장·창고</strong>가 분석의 기준 물건입니다.
+        토지는 지목·형상·도로 조건에 따라 물건마다 값이 크게 흔들려,
+        교통량·산단·인구·IC 신설의 효과를 가려내기 어렵습니다.
+        공장은 <em>지어질 수 있는 땅에만</em> 들어서므로 입지 조건이
+        가격에 그대로 드러납니다.</p>
+      <div class="field-row">
+        <label class="field">
+          <span>거래 시작</span>
+          <input type="month" id="deal-from">
+        </label>
+        <label class="field">
+          <span>거래 끝</span>
+          <input type="month" id="deal-to">
+        </label>
+      </div>
       <label class="check">
         <input type="checkbox" id="parcel-only">
         <span>지번단위 좌표만 <em>정밀도 높은 거래</em></span>
@@ -350,12 +367,12 @@
 <footer class="disclaimer" id="disclaimer"></footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="/app/config.js?v=20260903b"></script>
+<script src="/app/config.js?v=20260903c"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/app/supabase.js?v=20260903b"></script>
-<script src="/lib/supabase-init.js?v=20260903b"></script>
+<script src="/app/supabase.js?v=20260903c"></script>
+<script src="/lib/supabase-init.js?v=20260903c"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
-<script src="/app/gate.js?v=20260903b"></script>
+<script src="/app/gate.js?v=20260903c"></script>
 </body>
 </html>

@@ -57,20 +57,23 @@ const dE = (x, y) => {
   return Math.hypot(p.L - q.L, p.a - q.a, p.b - q.b) * 100;
 };
 
-console.log('1. 거리 밴드는 순서형이고 무채색이다');
+console.log('1. 거리 밴드 3개가 서로 또렷이 구별된다');
+// 화면에 그리는 밴드는 영향범위 3개까지다(위약 대조는 분석 전용이라
+// 화면에서 뺐다). 동심원이라 **반지름이 이미 순서를 말하므로**, 색은
+// 순서가 아니라 구분을 맡는다 — 명도 램프가 아니라 서로 다른 원색이다.
 const ramp = ['band-1', 'band-2', 'band-3'].map(token);
 check('영향범위 3밴드가 모두 정의돼 있다', ramp.every(Boolean), ramp.join(' '));
 if (ramp.every(Boolean)) {
-  const Ls = ramp.map((h) => oklab(h).L);
-  check('가까울수록 진하다 (명도가 단조 증가)',
-        Ls[0] < Ls[1] && Ls[1] < Ls[2],
-        Ls.map((v) => v.toFixed(3)).join(' → '));
-  check('단계 간격이 눈에 보인다 (ΔL ≥ 0.06)',
-        [Ls[1] - Ls[0], Ls[2] - Ls[1]].every((g) => g >= 0.06));
-  // 밴드는 '자' 다. 색을 주면 지도 위 자료색과 경쟁하고, 넓은 색면은
-  // 용도지역(주거 노랑·상업 빨강·공업 보라·녹지 초록)처럼 읽힌다.
-  check('무채색이다 (자료색과 경쟁하지 않는다)',
-        ramp.every((h) => chroma(h) < 0.02),
+  let worst = { d: Infinity, p: '' };
+  for (let i = 0; i < ramp.length; i++)
+    for (let j = i + 1; j < ramp.length; j++) {
+      const d = dE(ramp[i], ramp[j]);
+      if (d < worst.d) worst = { d, p: `${ramp[i]}↔${ramp[j]}` };
+    }
+  check('세 밴드가 서로 ΔE ≥ 15', worst.d >= 15,
+        `${worst.p} = ${worst.d.toFixed(1)}`);
+  check('원색이다 (채도가 살아 있다)',
+        ramp.every((h) => chroma(h) > 0.08),
         ramp.map((h) => chroma(h).toFixed(3)).join(' '));
 }
 
@@ -113,32 +116,31 @@ if (land && fac) {
 }
 
 console.log();
-console.log('4. 교통량 계열이 밴드 색과 안 붙는다 (한 그래프에 같이 그려진다)');
+console.log('4. 교통량 계열끼리 구별된다 (밴드와는 선 모양으로 가른다)');
+// 추이 차트에는 교통량 4계열 + 지가 3밴드가 함께 들어간다. 일곱 색을
+// 전부 구별되게 만드는 것은 색상환 안에서 불가능하다. 그래서 지가는
+// 점선, 교통량은 실선으로 무리를 가르고(app.js trendSeriesFor), 색은
+// 무리 안에서만 달라도 되게 했다. 지도에서 밴드가 점선인 것과도 말이 맞는다.
 const traffic = ['traffic-1', 'traffic-2', 'traffic-3', 'traffic-4'].map(token);
-const bands = ['band-1', 'band-2', 'band-3', 'band-4'].map(token);
 check('교통량 4계열이 모두 정의돼 있다', traffic.every(Boolean), traffic.join(' '));
-if (traffic.every(Boolean) && bands.every(Boolean)) {
-  let worst = { d: Infinity, pair: '' };
-  for (const t of traffic) {
-    for (const b of bands) {
-      const d = dE(t, b);
-      if (d < worst.d) worst = { d, pair: `${t}↔${b}` };
-    }
-  }
-  // 15 는 '정상 시력으로 구별 가능' 의 하한이다. 예전 팔레트는 교통량
-  // 파랑과 밴드 파랑이 같은 값이라 이 검사가 있었으면 즉시 걸렸다.
-  check('가장 가까운 교통량↔밴드 쌍도 ΔE ≥ 15',
-        worst.d >= 15, `${worst.pair} = ${worst.d.toFixed(1)}`);
-
-  let wt = { d: Infinity, pair: '' };
-  for (let i = 0; i < traffic.length; i++) {
+if (traffic.every(Boolean)) {
+  let wt = { d: Infinity, p: '' };
+  for (let i = 0; i < traffic.length; i++)
     for (let j = i + 1; j < traffic.length; j++) {
       const d = dE(traffic[i], traffic[j]);
-      if (d < wt.d) wt = { d, pair: `${traffic[i]}↔${traffic[j]}` };
+      if (d < wt.d) wt = { d, p: `${traffic[i]}↔${traffic[j]}` };
     }
-  }
-  check('교통량 계열끼리도 ΔE ≥ 15', wt.d >= 15,
-        `${wt.pair} = ${wt.d.toFixed(1)}`);
+  check('교통량 계열끼리 ΔE ≥ 15', wt.d >= 15, `${wt.p} = ${wt.d.toFixed(1)}`);
+}
+
+console.log();
+console.log('5. 신설 영업소가 네 구간 어느 것과도 안 붙는다');
+const tgNew = token('tg-new');
+const tiers = ['tg-1', 'tg-2', 'tg-3', 'tg-4'].map(token);
+check('신설 색이 정의돼 있다', !!tgNew, String(tgNew));
+if (tgNew && tiers.every(Boolean)) {
+  const w = Math.min(...tiers.map((t) => dE(tgNew, t)));
+  check('신설 ↔ 구간 최소 ΔE ≥ 15', w >= 15, w.toFixed(1));
 }
 
 console.log();
