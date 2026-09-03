@@ -137,6 +137,43 @@ check(len(parcels) == 1, f"지번 루프도 한도에서 멈춘다 (받은 값: 
 check(len(cache4) == 1, f"캐시 오염 없음 (받은 값: {len(cache4)})")
 
 print()
+print("6. 한도 소진이 파이프라인 전체를 세우지 않는다")
+
+# run 19 가 2분 만에 죽었습니다. doctor 가 브이월드 한도 초과를 '막힌
+# 항목' 으로 세고 exit 1 을 냈고, 그 뒤 단계가 전부 skipped 됐습니다.
+#
+#   공장 남은 16,060셀 수집   ← 실거래 API 는 멀쩡했다
+#   거래 ↔ 영업소 공간 조인   ← 지오코딩과 무관
+#   분석 패널 · 탄력성 · DiD  ← 무관
+#   화면용 JSON 생성          ← 무관
+#
+# 넷 중 어느 것도 지오코딩을 쓰지 않는데 하나도 못 했습니다. 하루 한도는
+# 자정에 저절로 풀리는 것이지 고쳐야 할 고장이 아닙니다. 막힌 것과
+# 기다리면 되는 것을 갈라야 합니다.
+from redt import doctor as dr                                   # noqa: E402
+
+# 검사 환경에는 키가 없어서 doctor 가 앞에서 '건너뜀' 으로 빠진다.
+# 그러면 정작 보고 싶은 갈래를 한 줄도 안 탄다.
+class _Keys:
+    vworld = "TESTKEY"
+dr.keys = lambda: _Keys()
+
+dr._fail.clear(); dr._warn.clear()
+gc.get, _ = serve(OVER_LIMIT)
+dr._check_vworld()
+check(not dr._fail, f"한도 초과는 '막힌 항목' 이 아니다 (막힘 {dr._fail})")
+check(len(dr._warn) == 1, f"대신 경고로 남는다 (경고 {dr._warn})")
+
+# 다른 실패까지 같이 눈감으면 안 된다 — 키가 틀린 것은 기다려도 안 풀린다.
+dr._fail.clear(); dr._warn.clear()
+def _boom(*a, **k):
+    raise RuntimeError("키가 승인되지 않았습니다")
+gc.get = _boom
+dr._check_vworld()
+check(len(dr._fail) == 1,
+      f"한도 말고 진짜 실패는 그대로 막는다 (막힘 {dr._fail})")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

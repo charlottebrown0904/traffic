@@ -289,6 +289,10 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
             SELECT * FROM (
                 SELECT trade_id, kind, lat, lon, deal_year, price_per_m2, area_m2,
                        coalesce(jimok, '') AS jimok,
+                       -- 용도지역을 함께 내보냅니다. 지도에서 거래 점을
+                       -- 용도지역 색으로 칠하기 위해서입니다 — 한국
+                       -- 지적편집도를 읽어온 분들에게는 이 색이 곧 뜻입니다.
+                       coalesce(land_use, '') AS land_use,
                        coalesce(geocode_level, '') AS geocode_level
                 FROM trade
                 WHERE lat IS NOT NULL AND price_per_m2 IS NOT NULL

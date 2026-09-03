@@ -110,13 +110,28 @@ def _check_vworld() -> None:
         _say(None, "건너뜀 — 키 없음")
         return
     try:
-        from .collect.geocode import geocode_one
+        from .collect.geocode import geocode_one, QuotaExhausted
         lat, lon = geocode_one("경기도 성남시 분당구 판교역로 235", kind="ROAD")
         if lat and lon:
             _say(True, f"좌표 회신 ({lat:.5f}, {lon:.5f})")
         else:
             _say(False, "좌표 없음",
                  "키 승인 상태와 등록 도메인을 VWorld 마이페이지에서 확인하세요")
+    except QuotaExhausted as exc:
+        # **하루 한도를 다 쓴 것은 고장이 아니다.**
+        #
+        # run 19 가 여기서 통째로 멈췄다. 2분 만에 죽고 공장 16,060셀도,
+        # 조인도, 패널도, 화면 갱신도 하나도 못 했다. 그 넷 중 어느 것도
+        # 지오코딩을 쓰지 않는다.
+        #
+        # 하루 한도는 자정에 저절로 풀린다. 그 사이에 못 할 일과 할 수
+        # 있는 일을 갈라야지, 하나가 막혔다고 전부 세우면 안 된다.
+        # 지오코딩 단계는 자기가 알아서 멈추고(QuotaExhausted 를 잡는다)
+        # 남은 것을 다음 실행에 넘긴다.
+        _say(None, "지오코딩 한도 소진 — 오늘은 좌표를 못 붙입니다",
+             f"{str(exc)[:160]}\n"
+             "         나머지 단계(수집·조인·분석·화면)는 그대로 진행합니다. "
+             "한도는 자정에 풀립니다.")
     except Exception as exc:
         _say(False, "VWorld 호출 실패", f"{type(exc).__name__}: {str(exc)[:200]}")
 

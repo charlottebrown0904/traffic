@@ -46,13 +46,31 @@ const check = (label, ok, note = '') => {
 };
 
 const FAKE_LEAFLET = () => {
-  const rec = { circles: [], markers: [], tiles: [] };
+  const rec = { circles: [], markers: [], tiles: [], tradeOpts: [] };
   window.__map = rec;
+  // 무리(layerGroup)마다 자기가 담은 것을 따로 들고 있어야 한다.
+  // 예전에는 모두가 rec 하나에 밀어 넣어서, 밴드 무리가 clearLayers 를
+  // 부르면 거래 점 기록까지 같이 지워졌다. 그러면 '거래가 안 그려진다'
+  // 와 '다른 무리가 지웠다' 를 구분할 수 없다.
+  const groups = [];
+  const sync = () => {
+    rec.circles.length = 0;
+    rec.tradeOpts.length = 0;
+    groups.forEach((g) => g._items.forEach((x) => {
+      if (x.__circle) rec.circles.push(x.__opts);
+      else if (x.__marker) rec.tradeOpts.push(x.__opts);
+    }));
+  };
   const grp = () => {
-    const g = { _n: 0,
-      addLayer(x) { g._n++; if (x && x.__circle) rec.circles.push(x.__opts); return g; },
-      clearLayers() { g._n = 0; rec.circles.length = 0; return g; },
+    const g = { _n: 0, _items: [],
+      addLayer(x) { g._n++; if (x) g._items.push(x); sync(); return g; },
+      clearLayers() { g._n = 0; g._items.length = 0; sync(); return g; },
+      // 진짜 Leaflet 의 layerGroup 이 갖고 있는 것. 없으면 이것을 쓰는
+      // 코드가 조용히 undefined 로 빠지고, 검사는 '건너뜀' 으로 초록이
+      // 된다 — 건너뛴 검사는 통과가 아니라 **안 본 것**이다.
+      getLayers() { return g._items; },
       addTo() { return g; } };
+    groups.push(g);
     return g;
   };
   const chain = (extra) => Object.assign({
@@ -75,6 +93,9 @@ const FAKE_LEAFLET = () => {
         openTooltip() { return this; }, unbindTooltip() { return this; },
       });
       m.__opts = Object.assign({}, opts);
+      // 진짜 Leaflet 은 만들 때 준 값을 layer.options 로 들고 있다.
+      m.options = m.__opts;
+      m.__marker = true;
       rec.markers.push(m.__opts);
       return m;
     },
@@ -198,7 +219,7 @@ const FAKE_LEAFLET = () => {
       const box = sw ? sw.getBoundingClientRect() : null;
       return { groups: rows, listingW: box ? box.width : null };
     });
-    check('실거래가 첫 묶음이다', legend.groups[0] === '실거래',
+    check('실거래가 첫 묶음이다', legend.groups[0].startsWith('실거래'),
           legend.groups.join(' / '));
     check('매물이 둘째 묶음이다', legend.groups[1] === '매물',
           legend.groups.join(' / '));
@@ -221,6 +242,40 @@ const FAKE_LEAFLET = () => {
     await page.waitForTimeout(800);
     const off = (await page.evaluate(() => window.__map.circles)).length;
     check('끄면 되돌아온다', off < after / 10, `${after} → ${off}`);
+
+    console.log();
+    console.log('7. 거래 점이 배경에서 보인다 · 도로 위계가 살아 있다');
+    // 사장님 지적: "토지, 공장 색상이 배경과 너무 구분이 안됩니다."
+    // 원인은 반경 2.5 · 테두리 없음 · 불투명도 0.3~0.6 이었다.
+    // 색을 더 진하게 하는 것으로는 못 이긴다 — 흰 테두리가 점을
+    // 배경에서 끊어주는 것이 핵심이라 그것을 못박는다.
+    const tradeStyle = await page.evaluate(() => window.__tradeStyles || []);
+    if (tradeStyle.length) {
+      check('거래 점에 테두리가 있다 (배경과 끊긴다)',
+            tradeStyle.every((o) => o.weight >= 1 && o.color === '#fff'),
+            `${tradeStyle.length}개 · 예: weight=${tradeStyle[0].weight} color=${tradeStyle[0].color}`);
+      check('지번 좌표 점은 거의 불투명하다',
+            tradeStyle.some((o) => o.fillOpacity >= .9),
+            `최대 ${Math.max(...tradeStyle.map((o) => o.fillOpacity))}`);
+      const fills = new Set(tradeStyle.map((o) => o.fillColor));
+      check('용도지역 색을 쓴다 (한 가지 갈색이 아니다)', fills.size >= 2,
+            [...fills].join(' '));
+    } else {
+      console.log('  건너뜀 — 그려진 거래 점이 없습니다.');
+    }
+    // 가짜 Leaflet 은 .leaflet-tile-pane 을 만들지 않으므로 계산된
+    // 스타일로는 볼 수 없다. 규칙 자체를 읽는다.
+    const sat = await page.evaluate(async () => {
+      const css = await (await fetch('/app/style.css')).text();
+      const hit = /\.leaflet-tile-pane\s*\{([^}]*)\}/.exec(css);
+      return hit ? hit[1] : '';
+    });
+    // saturate(.10) 은 OSM 이 갖고 있는 도로 위계 색(고속도로 분홍·
+    // 국도 노랑)을 통째로 지운다. IC 주변 땅값을 보는 제품에서
+    // 고속도로가 안 보이는 것은 앞뒤가 안 맞는다.
+    const satHit = /saturate\(([\d.]+)\)/.exec(sat);
+    check('배경 지도가 도로 색을 지우지 않는다',
+          satHit && Number(satHit[1]) >= .5, sat || '(필터 없음)');
 
     console.log();
     console.log('6. 통행량 미공개 = 속이 빈 점');
