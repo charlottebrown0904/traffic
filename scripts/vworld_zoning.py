@@ -183,9 +183,55 @@ def main() -> int:
         if keys:
             print(f"     칸: {', '.join(keys)}")
 
+    # ── 6. 웹 머케이터로도 그려주는가 ────────────────────────────
+    #
+    # Leaflet 의 타일 격자는 **웹 머케이터(EPSG:3857)** 다. 4326 으로
+    # 받아 머케이터 격자에 붙이면 위도가 늘어나 땅이 어긋난다. 남은
+    # 가정이 이것 하나뿐이라 확인한다 — 앞의 두 가정(레이어 이름·WMTS)이
+    # 다 틀렸으므로 이번엔 묻고 간다.
+    print("\n6. 웹 머케이터(EPSG:3857)로도 그려주는가 — Leaflet 격자와 맞추려면 필요")
+    # 화성 향남을 덮는 머케이터 좌표 (m). z=13 타일 한 장 크기쯤.
+    MERC = "14122000,4438000,14127000,4443000"
+    for crs_key in ("CRS", "SRS"):
+        for layer in ("lt_c_lhblpn", "lt_c_uq112"):
+            img, up, n = fetch("https://api.vworld.kr/req/wms", {
+                "SERVICE": "WMS", "REQUEST": "GetMap", "VERSION": "1.3.0",
+                "LAYERS": layer, "STYLES": "", crs_key: "EPSG:3857",
+                "BBOX": MERC, "WIDTH": "256", "HEIGHT": "256",
+                "FORMAT": "image/png", "TRANSPARENT": "true", "domain": DOMAIN,
+            }, binary=True)
+            print(f"   {crs_key}={layer:<14} {up or '(타입 없음)':<26} {n:>7,}B  {say(img)}")
+
+    # ── 7. 관리지역(계획·생산관리가 있는 곳)도 그려지는가 ────────
+    print("\n7. 우리 필터가 보는 용도지역이 어느 레이어에 있는가")
+    print("   land_use_filter = 계획관리 · 생산관리 · 자연녹지")
+    for layer, what in (("lt_c_uq111", "도시지역 (자연녹지가 이 안)"),
+                        ("lt_c_uq112", "관리지역 (계획·생산관리가 이 안)"),
+                        ("lt_c_lhblpn", "토지이용계획도 (전부 한 장)")):
+        img, up, n = fetch("https://api.vworld.kr/req/wms", {
+            "SERVICE": "WMS", "REQUEST": "GetMap", "VERSION": "1.3.0",
+            "LAYERS": layer, "STYLES": "", "CRS": "EPSG:4326",
+            "BBOX": "37.06,126.87,37.11,126.93",
+            "WIDTH": "256", "HEIGHT": "256", "FORMAT": "image/png",
+            "TRANSPARENT": "true", "domain": DOMAIN,
+        }, binary=True)
+        print(f"   {layer:<14} {n:>7,}B  {say(img):<12} {what}")
+
+    print("\n8. 토지이용계획도의 용도지역 이름 값 (필지를 눌렀을 때 띄울 것)")
+    body4, _, _ = fetch("https://api.vworld.kr/req/wfs", {
+        "SERVICE": "WFS", "REQUEST": "GetFeature", "VERSION": "2.0.0",
+        "TYPENAME": "lt_c_lhblpn", "BBOX": BBOX, "SRSNAME": "EPSG:4326",
+        "OUTPUT": "application/json", "MAXFEATURES": "12", "domain": DOMAIN,
+    })
+    names = re.findall(r'"zonename"\s*:\s*"([^"]*)"', body4)
+    codes = re.findall(r'"zonecode"\s*:\s*"([^"]*)"', body4)
+    print(f"   zonename: {', '.join(sorted(set(names))) or '(없음)'}")
+    print(f"   zonecode: {', '.join(sorted(set(codes))[:12]) or '(없음)'}")
+
     print("\n" + "=" * 68)
     print(" 판단: 3·4 에서 PNG 가 온 방식이 화면에 깔 수 있는 길입니다.")
-    print("       5 에서 용도지역 이름이 오면 필지를 눌러 속성을 띄울 수 있습니다.")
+    print("       6 이 통과하면 Leaflet 격자에 그대로 얹을 수 있습니다.")
+    print("       8 에 용도지역 이름이 오면 필지를 눌러 속성을 띄울 수 있습니다.")
     return 0
 
 
