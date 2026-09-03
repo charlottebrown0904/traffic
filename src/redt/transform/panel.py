@@ -158,6 +158,25 @@ def filter_land_use(trades: pd.DataFrame) -> pd.DataFrame:
 
     col = trades["land_use"].fillna("").astype(str)
     hit = col.str.contains("|".join(wanted), regex=True, na=False)
+
+    # **용도지역 칸이 아예 없는 물건 종류는 거를 수 없다.**
+    #
+    # 토지(LandTrade)는 용도지역을 주지만 공장·창고(InduTrade)는 주지
+    # 않는다. fillna("") 를 거치면 그런 거래는 전부 '안 맞음' 이 되어
+    # 통째로 사라진다 — 필터를 통과 못 한 것이 아니라 **물어볼 칸이
+    # 없었던 것**인데, 로그에는 그냥 건수가 줄어든 것으로만 보인다.
+    #
+    # '이 종류는 용도지역을 모른다' 와 '이 종류는 조건에 안 맞는다' 는
+    # 다르다. 앞은 필터가 적용 불가능한 것이므로 통과시킨다.
+    if "kind" in trades.columns:
+        for kind, grp in trades.groupby("kind"):
+            has_any = (col[grp.index] != "").any()
+            if not has_any and len(grp):
+                print(f"  용도지역이 없는 종류 '{kind}' {len(grp):,}건 — "
+                      f"필터 적용 대상이 아니므로 통과시킵니다 "
+                      f"(이 API 는 용도지역을 주지 않습니다)")
+                hit.loc[grp.index] = True
+
     before = len(trades)
     out = trades[hit]
     print(f"  용도지역 필터 {wanted}: {before:,} → {len(out):,}건")

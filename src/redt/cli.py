@@ -694,8 +694,14 @@ def cmd_geocode_staged(args):
     wanted = [] if args.all else (settings().get("land_use_filter") or [])
     where = "1=1"
     if wanted:
-        where += " AND (" + " OR ".join(
-            f"land_use LIKE '%{w}%'" for w in wanted) + ")"
+        # 용도지역이 **비어 있는 거래도 통과**시킨다. 공장·창고(InduTrade)
+        # API 는 용도지역을 주지 않으므로, LIKE 조건만 걸면 공장 거래가
+        # 통째로 지오코딩 대기열에서 빠진다 — 좌표가 안 붙으니 지도에도
+        # 표에도 안 나오고, '공장 거래가 원래 적구나' 로 읽힌다.
+        # 걸러야 할 것은 '조건에 안 맞는 땅' 이지 '물어볼 칸이 없는 물건'
+        # 이 아니다.
+        cond = " OR ".join(f"land_use LIKE '%{w}%'" for w in wanted)
+        where += f" AND ({cond} OR land_use IS NULL OR land_use = '')"
 
     with db.connect() as con:
         pairs_df = con.execute(
@@ -792,7 +798,9 @@ def cmd_geocode(args):
     wanted = [] if args.all else (settings().get("land_use_filter") or [])
     where = "lat IS NULL"
     if wanted:
-        cond = " OR ".join(f"land_use LIKE '%{w}%'" for w in wanted)
+        # 용도지역이 빈 거래도 포함한다 (geocode-staged 의 같은 이유).
+        cond = (" OR ".join(f"land_use LIKE '%{w}%'" for w in wanted)
+                + " OR land_use IS NULL OR land_use = ''")
         where += f" AND ({cond})"
 
     with db.connect() as con:

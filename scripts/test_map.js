@@ -135,9 +135,12 @@ const FAKE_LEAFLET = () => {
     let circles = await page.evaluate(() => window.__map.circles);
     check('밴드가 그려진다', circles.length >= 3, `${circles.length}개`);
     if (circles.length) {
-      check('면을 채운다 (선만이 아니다)',
-            circles.some((c) => c.fill && c.fillOpacity > 0),
-            circles.map((c) => `${c.radius}:${c.fillOpacity}`).join(' '));
+      // 면은 채우지 않는다. 넓은 색면은 한국 토지이용계획도의 용도지역
+      // (주거 노랑·상업 빨강·공업 보라·녹지 초록)처럼 읽히는데, 우리
+      // 밴드는 용도와 아무 상관이 없다.
+      check('면을 채우지 않는다 (용도지역으로 오독되지 않게)',
+            circles.every((c) => !c.fill),
+            circles.map((c) => `${c.radius}:${c.fill}`).join(' '));
       const radii = circles.map((c) => c.radius);
       check('큰 원부터 그린다 (작은 원이 위에 온다)',
             radii.every((r, i) => i === 0 || radii[i - 1] >= r),

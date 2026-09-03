@@ -57,7 +57,7 @@ const dE = (x, y) => {
   return Math.hypot(p.L - q.L, p.a - q.a, p.b - q.b) * 100;
 };
 
-console.log('1. 거리 밴드는 순서형 램프다 (한 색상, 가까울수록 진함)');
+console.log('1. 거리 밴드는 순서형이고 무채색이다');
 const ramp = ['band-1', 'band-2', 'band-3'].map(token);
 check('영향범위 3밴드가 모두 정의돼 있다', ramp.every(Boolean), ramp.join(' '));
 if (ramp.every(Boolean)) {
@@ -65,30 +65,55 @@ if (ramp.every(Boolean)) {
   check('가까울수록 진하다 (명도가 단조 증가)',
         Ls[0] < Ls[1] && Ls[1] < Ls[2],
         Ls.map((v) => v.toFixed(3)).join(' → '));
-  const gaps = [Ls[1] - Ls[0], Ls[2] - Ls[1]];
   check('단계 간격이 눈에 보인다 (ΔL ≥ 0.06)',
-        gaps.every((g) => g >= 0.06),
-        gaps.map((v) => v.toFixed(3)).join(' / '));
-  const hues = ramp.map(hueDeg);
-  const spread = Math.max(...hues) - Math.min(...hues);
-  check('한 색상이다 (색상 폭 ≤ 40°)', spread <= 40, `${spread.toFixed(0)}°`);
+        [Ls[1] - Ls[0], Ls[2] - Ls[1]].every((g) => g >= 0.06));
+  // 밴드는 '자' 다. 색을 주면 지도 위 자료색과 경쟁하고, 넓은 색면은
+  // 용도지역(주거 노랑·상업 빨강·공업 보라·녹지 초록)처럼 읽힌다.
+  check('무채색이다 (자료색과 경쟁하지 않는다)',
+        ramp.every((h) => chroma(h) < 0.02),
+        ramp.map((h) => chroma(h).toFixed(3)).join(' '));
 }
 
 console.log();
-console.log('2. 대조 밴드는 중립이다 (다섯 번째 계열로 읽히면 안 된다)');
-const control = token('band-4');
-check('대조 밴드가 정의돼 있다', !!control, control || '');
-if (control) {
-  check('채도가 낮다 (중립으로 읽힌다)', chroma(control) < 0.05,
-        chroma(control).toFixed(3));
-  // 그러면서도 배경에서 보여야 한다. 회색이라고 흐려도 된다는 뜻이 아니다.
-  const ground = token('ground') || '#FAF7F3';
-  check('그래도 지면 위에서 보인다 (ΔE ≥ 20)', dE(control, ground) >= 20,
-        dE(control, ground).toFixed(1));
+console.log('2. 영업소 4단계는 **색상**이 다르다 (명도만 다르면 확대 시 못 가린다)');
+const tg = ['tg-1', 'tg-2', 'tg-3', 'tg-4'].map(token);
+check('4단계가 모두 정의돼 있다', tg.every(Boolean), tg.join(' '));
+if (tg.every(Boolean)) {
+  const hues = tg.map(hueDeg);
+  let minGap = 360;
+  for (let i = 0; i < hues.length; i++)
+    for (let j = i + 1; j < hues.length; j++) {
+      let d = Math.abs(hues[i] - hues[j]);
+      d = Math.min(d, 360 - d);
+      minGap = Math.min(minGap, d);
+    }
+  check('색상이 서로 충분히 벌어져 있다 (≥ 40°)', minGap >= 40,
+        `${minGap.toFixed(0)}° · ${hues.map((h) => h.toFixed(0)).join('/')}`);
+  let worst = { d: Infinity, p: '' };
+  for (let i = 0; i < tg.length; i++)
+    for (let j = i + 1; j < tg.length; j++) {
+      const d = dE(tg[i], tg[j]);
+      if (d < worst.d) worst = { d, p: `${tg[i]}↔${tg[j]}` };
+    }
+  check('네 단계가 서로 ΔE ≥ 15', worst.d >= 15,
+        `${worst.p} = ${worst.d.toFixed(1)}`);
+  // 차가움 → 따뜻함이라야 색상이 달라도 순서를 잃지 않는다.
+  const warm = tg.map((h) => { const c = oklab(h); return c.a; });
+  check('차가운 색에서 따뜻한 색으로 간다 (순서를 잃지 않는다)',
+        warm[0] < warm[3] && warm[1] < warm[3],
+        warm.map((v) => v.toFixed(3)).join(' → '));
 }
 
 console.log();
-console.log('3. 교통량 계열이 밴드 색과 안 붙는다 (한 그래프에 같이 그려진다)');
+console.log('3. 거래 두 종류가 서로 구별된다');
+const land = token('kind-land'), fac = token('kind-factory');
+check('토지·공장이 정의돼 있다', !!land && !!fac, `${land} ${fac}`);
+if (land && fac) {
+  check('토지↔공장 ΔE ≥ 15', dE(land, fac) >= 15, dE(land, fac).toFixed(1));
+}
+
+console.log();
+console.log('4. 교통량 계열이 밴드 색과 안 붙는다 (한 그래프에 같이 그려진다)');
 const traffic = ['traffic-1', 'traffic-2', 'traffic-3', 'traffic-4'].map(token);
 const bands = ['band-1', 'band-2', 'band-3', 'band-4'].map(token);
 check('교통량 4계열이 모두 정의돼 있다', traffic.every(Boolean), traffic.join(' '));

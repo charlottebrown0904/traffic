@@ -1008,6 +1008,32 @@ check("만 맞습니다" in msg, "일부만 맞으면 비율을 말한다")
 check("41113" in msg, "안 맞는 코드를 이름으로 짚어준다")
 
 print()
+print("24. 용도지역이 없는 물건 종류를 조용히 버리지 않는다")
+
+# 토지(LandTrade)는 용도지역을 주지만 공장·창고(InduTrade)는 주지 않는다.
+# 예전 필터는 fillna("") 뒤 부분일치라, 용도지역이 없는 거래를 전부
+# '안 맞음' 으로 버렸다. **공장 거래가 통째로 사라지는데 로그에는 건수가
+# 줄어든 것으로만 보인다** — '공장은 원래 거래가 적구나' 로 읽힌다.
+from redt.transform.panel import filter_land_use                # noqa: E402
+
+_mixed = pd.DataFrame({
+    "kind":     ["land"] * 3 + ["factory"] * 4,
+    "land_use": ["계획관리지역", "상업지역", "자연녹지지역", None, None, "", None],
+    "price_per_m2": [1] * 7,
+})
+_kept = filter_land_use(_mixed)
+check((_kept["kind"] == "land").sum() == 2, "용도지역이 있는 토지는 필터가 걸러낸다")
+check((_kept["kind"] == "factory").sum() == 4, "용도지역이 없는 공장은 전부 남는다 (API 가 안 주는 칸이다)")
+
+# 한 종류라도 값이 있으면 그 종류에는 필터가 정상 적용돼야 한다.
+_all_land = pd.DataFrame({
+    "kind": ["factory"] * 3,
+    "land_use": ["계획관리지역", "상업지역", "공업지역"],
+    "price_per_m2": [1] * 3,
+})
+check(len(filter_land_use(_all_land)) == 1, "용도지역이 있는 공장은 정상적으로 걸린다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
