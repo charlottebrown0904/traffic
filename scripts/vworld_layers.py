@@ -5,6 +5,15 @@
 GetCapabilities 가 있다. 페이지를 긁을 이유가 없다 — 서버에 물으면 된다.
 
   python scripts/vworld_layers.py [찾을말 ...]
+
+첫 인자가 `zoning` 이면 용도지역을 지도에 깔 경로를 갈라 본다
+(scripts/vworld_zoning.py). 워크플로를 새로 만들지 않고 여기에 얹은
+이유는, **workflow_dispatch 가 기본 브랜치에 있는 워크플로만 부르기
+때문**이다. 새 워크플로를 이 브랜치에 올려도 GitHub 가 404 를 준다.
+이 워크플로(vworld-layers.yml)는 main 에 있고, 체크아웃은 부른
+브랜치를 하므로 이 파일의 새 코드가 그대로 돈다.
+
+  python scripts/vworld_layers.py zoning
 """
 from __future__ import annotations
 
@@ -92,6 +101,14 @@ def tag(el) -> str:
     return el.tag.split("}")[-1]
 
 
+def _zoning_mode() -> bool:
+    """`zoning` 으로 불렀으면 용도지역 경로 탐침으로 넘긴다."""
+    if len(sys.argv) < 2 or sys.argv[1] != "zoning":
+        return False
+    import vworld_zoning
+    raise SystemExit(vworld_zoning.main())
+
+
 def feature_types(xml_text: str) -> list[tuple[str, str]]:
     """(Name, Title) 목록. 네임스페이스가 버전마다 달라 태그 이름만 본다."""
     try:
@@ -133,6 +150,7 @@ def key_alive() -> None:
 
 
 def main() -> None:
+    _zoning_mode()          # `zoning` 이면 여기서 갈라져 나간다
     if not RELAY or not TOKEN:
         sys.exit("RELAY_URL / RELAY_TOKEN 이 필요합니다.")
     needles = sys.argv[1:] or ["공시지가"]
