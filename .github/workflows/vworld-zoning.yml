@@ -1,0 +1,26 @@
+# 용도지역을 지도에 깔 최적 경로를 서버에 물어서 정한다.
+#
+# api/tile.js 에 레이어 이름을 LT_C_UQ111 로 박아 넣었는데 그 이름은
+# 저장소 어디에도 근거가 없다 — 추측이다. 앞선 WFS 탐침이 확인한
+# 토지이용계획도 이름은 lt_c_lhblpn 이었다(docs/land-price-fallback.md).
+#
+# 레이어 이름을 추측하지 않는다. WMS·WMTS 에는 서버가 가진 목록을 통째로
+# 돌려주는 GetCapabilities 가 있다. 그걸 쓰고, 후보를 실제로 그려본다.
+name: 브이월드 용도지역 경로 탐침
+
+on:
+  workflow_dispatch:
+
+jobs:
+  zoning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python scripts/vworld_zoning.py
