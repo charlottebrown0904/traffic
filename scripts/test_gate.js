@@ -54,8 +54,8 @@ function stub(page, user) {
 
 /* 진짜 supabase-init.js 가 스텁을 덮어쓰지 않게 막는다. CDN 도 막는다. */
 async function blockAuthScripts(page) {
-  await page.route('**/lib/supabase-init.js', (r) => r.fulfill({ status: 200, body: '' }));
-  await page.route('**/app/supabase.js', (r) => r.fulfill({ status: 200, body: '' }));
+  await page.route('**/lib/supabase-init.js*', (r) => r.fulfill({ status: 200, body: '' }));
+  await page.route('**/app/supabase.js*', (r) => r.fulfill({ status: 200, body: '' }));
   await page.route('**/supabase-js*/**', (r) => r.fulfill({ status: 200, body: '' }));
 }
 
@@ -86,10 +86,11 @@ async function blockAuthScripts(page) {
       await stub(page, true);
       await page.goto(`${BASE}/app/`, { waitUntil: 'domcontentloaded' });
       await page.waitForFunction(
-        () => !!document.querySelector('script[src="/app/app.js"]'),
+        // 경로로 찾는다. 캐시 무효화 꼬리표(?v=...)가 붙어도 같은 파일이다.
+        () => !!document.querySelector('script[src^="/app/app.js"]'),
         { timeout: 5000 }).catch(() => {});
       const hasApp = await page.evaluate(
-        () => !!document.querySelector('script[src="/app/app.js"]'));
+        () => !!document.querySelector('script[src^="/app/app.js"]'));
       const visible = await page.evaluate(
         () => document.documentElement.style.visibility !== 'hidden');
       check('회원에게는 app.js 를 붙인다', hasApp);

@@ -42,8 +42,8 @@ function check(name, ok, detail) {
 /* 관문을 통과한 것처럼 꾸미고, 실제 Supabase·CDN 은 부르지 않는다. */
 async function openApp(browser) {
   const page = await browser.newPage();
-  await page.route('**/lib/supabase-init.js', (r) => r.fulfill({ status: 200, body: '' }));
-  await page.route('**/app/supabase.js', (r) => r.fulfill({ status: 200, body: '' }));
+  await page.route('**/lib/supabase-init.js*', (r) => r.fulfill({ status: 200, body: '' }));
+  await page.route('**/app/supabase.js*', (r) => r.fulfill({ status: 200, body: '' }));
   await page.route('**/supabase-js*/**', (r) => r.fulfill({ status: 200, body: '' }));
   await page.addInitScript(() => {
     window.SB = {};

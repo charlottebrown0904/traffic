@@ -8,100 +8,100 @@
  * 화면에서 0-1km 와 10-20km 를 눈으로 가릴 수 없었다.
  */
 :root{
-  /* ── 지면 (브라운) ──
-     밝은 바탕(#FAF7F3) 대비 명암비: ink 16.8 · muted 5.9 · faint 4.8 · accent 4.9.
-     faint 는 힌트와 표 머리글에 쓰는 '진짜 글자' 라 4.5 아래로 내리지 않는다.
-     구분색도 전부 4.0 이상으로 잡아 색맹이 아니어도 읽히게 했다. */
-  --ground:#FAF7F3; --surface:#FFFFFF; --surface-2:#F3EDE5;
-  --ink:#1C1611; --muted:#6B5E52; --faint:#7A6B5C;
-  --border:#E7DDD1; --border-strong:#CDBDAB;
-  --accent:#8A6547; --accent-soft:#F4E9DD; --on-accent:#FFFFFF;
+  /* ── 지면 ──
+     브라운 전제를 버렸습니다(2026-09-03 지시). 지면은 중립 회색으로
+     물러나고, 색은 전부 자료가 씁니다. 파스텔이 앉으려면 바탕이
+     따뜻하면 안 됩니다 — 크림색 위의 파스텔은 탁해 보입니다. */
+  --ground:#F6F7F9; --surface:#FFFFFF; --surface-2:#EDEFF3;
+  --ink:#171A1F; --muted:#59616E; --faint:#6B7280;
+  --border:#E2E6EC; --border-strong:#C2C9D4;
+  /* 크롬(탭·단추)은 자료와 경쟁하면 안 되므로 채도를 낮게 잡는다. */
+  --accent:#3F5B77; --accent-soft:#E8EDF3; --on-accent:#FFFFFF;
 
-  /* ── 거리 밴드: 순서형 램프 (가까움 → 멂) ──
-     밴드는 **순서가 있는 값**이다. 예전에는 적·주황·청록·청·보라 무지개를
-     썼는데, 무지개는 순서를 못 보여준다 — 어느 쪽이 가까운지 색만 봐서는
-     알 수 없다. 게다가 검증에서 0-1(적)과 1-3(주황)이 ΔE 10.2 로,
-     **정상 시력으로도** 구별 한계(15) 아래였다. 가장 중요한 두 밴드가
-     서로 안 구별됐다.
+  /* ── 거리 밴드: 또렷한 보라 계열 순서형 (점선) ──
+     지도에서 밴드는 동심원이라 **반지름이 이미 순서를 말한다.** 색은
+     그것을 거들면 된다. 원색으로 또렷하게 하되 한 색상의 명도 단계라
+     진할수록 가깝다는 규칙은 지킨다.
 
-     한 색상(파랑)의 명도 단계로 바꿨다. 진할수록 가깝다 — 효과가 클
-     것으로 보는 쪽이 진하다. 순서형 검사 전 항목 통과.
+     보라를 고른 이유는 소거법이다. 진홍은 거래 초록과 적록색약에서
+     ΔE 2.2 로 무너지고, 파랑은 영업소가 쓰고, 초록·주황은 배경 지도의
+     녹지·도로와 겹친다. 보라는 지도에 거의 없는 색이다.
 
-     5-10km 만 중립 회색이다. 이 밴드는 '영향범위 바깥' 이자 위약 대조라,
-     색을 주면 다섯 번째 밴드로 읽힌다. 회색은 '여기는 기준선' 이라고
-     말한다. 채도 검사에서 '회색으로 읽힘' 이 뜨는데 그것이 의도다. */
-  --band-1:#0D366B;   /* 0-1   가장 진한 파랑 */
-  --band-2:#256ABF;   /* 1-3   */
-  --band-3:#5598E7;   /* 3-5   */
-  --band-4:#767676;   /* 5-10  중립 — 대조/위약 밴드 (순수 무채색) */
-  --band-5:#4A4038;   /* 예비 (밴드가 더 늘면) */
+     대조 밴드만 중립이다. 영향범위 바깥의 기준선이라 네 번째 계열로
+     읽히면 안 된다. */
+  --band-1:#6218B0;   /* 0-1  가장 진함 — 가까울수록 진하다 */
+  --band-2:#9B4FE0;   /* 1-3  */
+  --band-3:#C79BF2;   /* 3-5  가장 연함 */
+  --band-4:#4A4A4A;   /* 5-10 중립 — 대조/위약 */
+  --band-5:#2E2E2E;   /* 예비 */
 
-  /* ── 영업소: 교통량 4분위 (순서형 램프) ──
-     지도의 영업소 색은 **교통량이 많은 순서**다. 잘한 곳/못한 곳을 매기는
-     것이 아니다. 4분위도 순서가 있는 값이라 한 색상의 명도 단계로 그린다
-     — 진할수록 교통량이 많다.
+  /* ── 영업소: 교통량 4분위 (파스텔 채움 + 진한 링) ──
+     파스텔만으로는 밝은 지도 위에서 대비가 안 나온다(가장 연한 단계가
+     1.19:1). 그래서 **채움은 파스텔로 부드럽게, 대비는 링이 맡는다.**
+     링 4단계는 순서형 검사를 통과한다. */
+  --tg-f1:#D6EBF7; --tg-r1:#5AA6CC;   /* 하위 25% */
+  --tg-f2:#A8D7EC; --tg-r2:#3389B5;
+  --tg-f3:#74BEDE; --tg-r3:#1B6C95;
+  --tg-f4:#3E9DC9; --tg-r4:#0B4D71;   /* 상위 25% */
 
-     밴드가 파랑, 거래가 초록·보라이므로 따뜻한 쪽을 쓴다. 지도 위 다른
-     모든 색과 최소 ΔE 16.3 (3분위 ↔ 대조 회색). 처음 고른 차분한
-     주황은 그 쌍이 13.2 여서 더 선명한 쪽으로 밀었다. */
-  --tg-q1:#E9A13F;   /* 하위 25% */
-  --tg-q2:#D06A10;
-  --tg-q3:#A33C06;
-  --tg-q4:#63220A;   /* 상위 25% — 가장 진함 */
+  /* ── 실거래·매물 (범주형) ──
+     작은 점이라 파스텔로 하면 사라진다. 채도를 살리고 크기로 부드럽게
+     한다. 위 영업소·밴드 대표색과 함께 전 쌍 검사를 통과한다. */
+  --kind-land:#2E9E5C;      /* 토지 */
+  --kind-factory:#D2691E;   /* 공장·창고 */
+  --listing:#C2185B;        /* 매물 */
 
-  /* ── 구분색: 분면 (스코어보드 전용) ──
-     지도에서는 더 이상 쓰지 않는다. 평가로 오해를 부르고, 442곳 중
-     83곳만 값이 있어 나머지가 전부 같은 색으로 찍혔다. */
-  --q-under:#0B57A4; --q-rising:#0B7A43; --q-over:#B45309; --q-quiet:#6E6259;
+  /* ── 분면 (스코어보드 전용, 지도에서는 안 쓴다) ── */
+  --q-under:#2563C9; --q-rising:#1F8A54; --q-over:#C2740B; --q-quiet:#6B7280;
 
-  /* ── 구분색: 물건 종류 ── */
-  --kind-land:#2E7D32; --kind-factory:#5E35B1;
+  /* ── 교통량 계열 (추이 비교) ──
+     밴드가 보라, 영업소가 파랑이므로 그 둘을 피한다. */
+  --traffic-1:#171A1F;   /* 전체 — 기준선이라 계열색이 아닌 먹색 */
+  --traffic-2:#D2691E;   /* 화물 */
+  --traffic-3:#C2185B;   /* 승용 */
+  --traffic-4:#2E9E5C;   /* 중형 */
 
-  /* ── 구분색: 교통량 계열 (추이 비교) ──
-     밴드가 파랑 램프를 가져갔으므로 교통량은 파랑·보라를 쓰면 안 된다.
-     보라(#4a3aa7)를 넣어봤더니 중간 밴드(#256ABF)와 ΔE 12.2 로 붙었다.
-     초록은 주황과 적록색약에서 ΔE 3.2 로 무너져 함께 못 쓴다.
-     주황·자홍·청록 셋은 밴드 3색과 같이 놓고 전 쌍 검사를 통과한다. */
-  --traffic-1:#1C1611;   /* 전체 — 기준선이라 계열색이 아닌 먹색 */
-  --traffic-2:#C25E00;   /* 화물 */
-  --traffic-3:#B0107A;   /* 승용 */
-  --traffic-4:#1BAF7A;   /* 중형 */
-
-  --danger:#B3261E;
-  --shadow:0 1px 2px rgba(28,22,17,.06), 0 8px 24px -18px rgba(28,22,17,.35);
+  --danger:#C62828;
+  --shadow:0 1px 2px rgba(23,26,31,.06), 0 8px 24px -18px rgba(23,26,31,.30);
   --rail-w:16rem; --detail-w:23rem; --top-h:3.75rem;
 }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
-    --ground:#12100D; --surface:#1C1915; --surface-2:#26221D;
-    --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
-    --border:#332D26; --border-strong:#4A4239;
-    --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
-    /* 어두운 바탕에서는 방향이 뒤집힌다. 밝을수록 가깝다 — '강조가 셀수록
-       가깝다' 는 뜻은 같고 물리적 방향만 바뀐다. 다크는 자동 반전이 아니라
-       어두운 바탕에 맞춰 따로 고른 값이고, 순서형 검사를 통과했다. */
-    --band-1:#9EC5F4; --band-2:#5598E7; --band-3:#2A78D6;
-    --band-4:#9A9A9A; --band-5:#C9C4BE;
-    --tg-q1:#F5C07A; --tg-q2:#E0913C; --tg-q3:#C2670F; --tg-q4:#8F4408;
-    --q-under:#6BAEF0; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#9A8C7E;
-    --kind-land:#6FCF7A; --kind-factory:#B99BF0;
-    --traffic-1:#F0EAE3; --traffic-2:#E8873B; --traffic-3:#E86AAE; --traffic-4:#3FCB97;
+    --ground:#101318; --surface:#181C22; --surface-2:#222831;
+    --ink:#EDF0F4; --muted:#9AA4B2; --faint:#7E8794;
+    --border:#2A313A; --border-strong:#3D4753;
+    --accent:#9FC0DE; --accent-soft:#1C242E; --on-accent:#0E1319;
+    /* 어두운 바탕에서는 밝을수록 가깝다 — '강조가 셀수록 가깝다' 는 뜻은
+       같고 물리적 방향만 바뀐다. 자동 반전이 아니라 따로 고른 값이다. */
+    --band-1:#D8B4FE; --band-2:#A855F7; --band-3:#7C3AED;
+    --band-4:#9A9A9A; --band-5:#C4C4C4;
+    --tg-f1:#1E3A4C; --tg-r1:#5AA6CC;
+    --tg-f2:#245A78; --tg-r2:#7FC4E4;
+    --tg-f3:#2E7FA6; --tg-r3:#A8DAF0;
+    --tg-f4:#43A6D4; --tg-r4:#D6EEFA;
+    --kind-land:#4ECB78; --kind-factory:#F09A4A; --listing:#F06292;
+    --q-under:#6BA8F5; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#8E97A4;
+    --traffic-1:#EDF0F4; --traffic-2:#F09A4A; --traffic-3:#F06292; --traffic-4:#4ECB78;
     --danger:#F0837A;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
   }
 }
 :root[data-theme="dark"]{
-  --ground:#12100D; --surface:#1C1915; --surface-2:#26221D;
-  --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
-  --border:#332D26; --border-strong:#4A4239;
-  --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
-  /* 어두운 바탕에서는 방향이 뒤집힌다. 밝을수록 가깝다 (위 설명 참고). */
-  --band-1:#9EC5F4; --band-2:#5598E7; --band-3:#2A78D6;
-  --band-4:#9A9A9A; --band-5:#C9C4BE;
-  --tg-q1:#F5C07A; --tg-q2:#E0913C; --tg-q3:#C2670F; --tg-q4:#8F4408;
-  --q-under:#6BAEF0; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#9A8C7E;
-  --kind-land:#6FCF7A; --kind-factory:#B99BF0;
-  --traffic-1:#F0EAE3; --traffic-2:#E8873B; --traffic-3:#E86AAE; --traffic-4:#3FCB97;
+--ground:#101318; --surface:#181C22; --surface-2:#222831;
+  --ink:#EDF0F4; --muted:#9AA4B2; --faint:#7E8794;
+  --border:#2A313A; --border-strong:#3D4753;
+  --accent:#9FC0DE; --accent-soft:#1C242E; --on-accent:#0E1319;
+  /* 어두운 바탕에서는 밝을수록 가깝다 — '강조가 셀수록 가깝다' 는 뜻은
+     같고 물리적 방향만 바뀐다. 자동 반전이 아니라 따로 고른 값이다. */
+  --band-1:#D8B4FE; --band-2:#A855F7; --band-3:#7C3AED;
+  --band-4:#9A9A9A; --band-5:#C4C4C4;
+  --tg-f1:#1E3A4C; --tg-r1:#5AA6CC;
+  --tg-f2:#245A78; --tg-r2:#7FC4E4;
+  --tg-f3:#2E7FA6; --tg-r3:#A8DAF0;
+  --tg-f4:#43A6D4; --tg-r4:#D6EEFA;
+  --kind-land:#4ECB78; --kind-factory:#F09A4A; --listing:#F06292;
+  --q-under:#6BA8F5; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#8E97A4;
+  --traffic-1:#EDF0F4; --traffic-2:#F09A4A; --traffic-3:#F06292; --traffic-4:#4ECB78;
   --danger:#F0837A;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
 }
@@ -231,7 +231,7 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
    API 키를 요구하므로 키 없이 같은 결과를 낸다. 타일 판에만 걸어야
    한다 — .leaflet-container 에 걸면 그 위의 마커·밴드까지 같이
    흐려져서 고치려던 것을 정확히 반대로 만든다. */
-.leaflet-tile-pane{filter:saturate(.22) brightness(1.05) contrast(.94)}
+.leaflet-tile-pane{filter:saturate(.10) brightness(1.08) contrast(.88) opacity(.85)}
 .map-tools{
   position:absolute; top:.6rem; right:.6rem; z-index:500;
   display:flex; gap:.4rem;
@@ -260,7 +260,7 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
    display:grid 를 걸고 있어서 스와치가 카드 크기로 부푼다. 흔한
    이름을 재사용하면 이렇게 조용히 다른 규칙을 물려받는다. */
 .map-legend .sw.sw-listing{
-  background:var(--accent); border-radius:.1rem; transform:rotate(45deg);
+  background:var(--listing); border-radius:.1rem; transform:rotate(45deg);
   width:.55rem; height:.55rem;
 }
 .map-legend .grp{margin-top:.15rem; font-size:.68rem; color:var(--faint);
@@ -506,7 +506,7 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 .link:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 
 .listing-pin{
-  background:var(--accent); border:2px solid var(--surface); border-radius:.2rem;
+  background:var(--listing); border:2px solid var(--surface); border-radius:.2rem;
   transform:rotate(45deg); box-shadow:0 0 0 1px rgba(0,0,0,.25);
 }
 body.picking .leaflet-container{cursor:crosshair}

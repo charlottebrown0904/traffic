@@ -109,6 +109,11 @@ async function boot() {
     state.chart = null;
   }
 
+  // 4분위는 지도와 무관하게 미리 잡는다. buildMap 안에서 잡으면 Leaflet 이
+  // 없을 때(CDN 차단·오프라인) 계산 자체를 건너뛰고, 범례가 실제 교통량
+  // 대신 '하위 25%' 같은 맹탕 문구로 떨어진다.
+  state.quartiles = buildQuartiles();
+
   // 검사가 설정값을 읽을 수 있게 열어 둔다. 밴드 개수를 검사에 박아 두면
   // 밴드를 조정할 때마다 멀쩡한 검사가 빨개진다.
   window.__bands = state.meta.bands_km || [];
@@ -223,9 +228,11 @@ function buildLegend() {
   // 범례는 좁은 화면에서 접힌다(CSS). 여는 단추와 내용을 나눠 둔다 —
   // 지도를 키워 놓고 그 위를 12줄짜리 범례로 다시 덮으면 의미가 없다.
   const legend = $('#map-legend');
+  // 범례도 지도와 같은 모양이어야 한다 — 파스텔 채움 + 진한 링.
+  const qLabels = quartileLabels((state.quartiles || {}).cut);
   const qRow = (i) =>
-    `<div class="row"><span class="sw" style="background:var(--tg-q${i + 1})"></span>` +
-    `${QUARTILE_LABEL[i]}</div>`;
+    `<div class="row"><span class="sw" style="background:var(--tg-f${i + 1});` +
+    `border:2px solid var(--tg-r${i + 1})"></span>${qLabels[i]}</div>`;
   legend.innerHTML =
     '<button type="button" class="legend-peek" aria-expanded="false">' +
     '<span aria-hidden="true">◍</span>범례</button>' +
@@ -790,8 +797,28 @@ function wireTrendHover(svg, prepared, years, sx, indexed) {
  * 교통량은 traffic.json 에 484곳이 다 있다. 4분위는 순서형이므로 한 색상의
  * 명도 단계로 그린다 — 진할수록 교통량이 많다. */
 const QUARTILE_COUNT = 4;
-const quartileColor = (q) => `var(--tg-q${q + 1})`;
-const QUARTILE_LABEL = ['하위 25%', '25–50%', '50–75%', '상위 25%'];
+
+/* 4분위 이름에 **실제 교통량**을 넣는다. '하위 25%' 만으로는 그것이
+ * 하루 몇 대인지 알 수 없어, 지도를 봐도 규모 감이 안 온다. 경계값은
+ * 자료에서 나오므로 해마다 바뀐다 — 숫자를 박아 두면 안 된다. */
+function manDae(v) {
+  if (v == null) return '—';
+  if (v >= 10000) {
+    const man = v / 10000;
+    return `${man >= 10 ? Math.round(man) : man.toFixed(1)}만`;
+  }
+  return `${Math.round(v / 1000)}천`;
+}
+
+function quartileLabels(cut) {
+  if (!cut || cut.length < 3) return ['하위 25%', '25–50%', '50–75%', '상위 25%'];
+  return [
+    `${manDae(cut[0])}대 미만`,
+    `${manDae(cut[0])}~${manDae(cut[1])}대`,
+    `${manDae(cut[1])}~${manDae(cut[2])}대`,
+    `${manDae(cut[2])}대 이상`,
+  ];
+}
 
 function tollgateVolumes() {
   const rows = (state.traffic || {}).rows || [];
@@ -854,23 +881,27 @@ function buildMap() {
 
   // 색은 교통량 4분위다. 값이 없는 곳은 회색 테두리만 남겨 '모른다' 를
   // 색으로 말한다 — 값이 있는 것처럼 아무 색이나 칠하면 안 된다.
-  state.quartiles = buildQuartiles();
-  const { rank, vol } = state.quartiles;
+  const { rank, vol } = state.quartiles || buildQuartiles();
   withCoords.forEach((t) => {
     const q = rank.get(String(t.tollgate_id));
     const known = q != null;
+    // 채움은 파스텔로 부드럽게, 대비는 **링**이 맡는다. 파스텔만으로는
+    // 밝은 지도 위에서 가장 연한 단계가 1.19:1 밖에 안 나온다. 링을
+    // 같은 색상의 진한 단계로 두면 부드러움과 또렷함을 같이 얻는다.
     const marker = L.circleMarker([t.lat, t.lon], {
       // 교통량이 많을수록 크게. 색과 크기가 같은 것을 말하면 색약이어도
       // 읽히고, 작은 화면에서 상위권이 먼저 눈에 든다.
-      radius: known ? 5 + q * 1.6 : 4,
-      weight: 2, color: '#fff',
-      fillColor: known ? cssVar(`--tg-q${q + 1}`) : cssVar('--faint'),
-      fillOpacity: known ? .95 : .5,
+      radius: known ? 4.5 + q * 1.5 : 3.5,
+      weight: known ? 2 : 1.5,
+      color: known ? cssVar(`--tg-r${q + 1}`) : cssVar('--faint'),
+      fillColor: known ? cssVar(`--tg-f${q + 1}`) : cssVar('--surface-2'),
+      fillOpacity: known ? .9 : .55,
+      opacity: known ? .95 : .5,
     });
     const v = vol.get(String(t.tollgate_id));
     marker.bindTooltip(
       `${t.name || t.tollgate_id}` +
-      (known ? ` · 교통량 ${QUARTILE_LABEL[q]} (${num(v)}대/일)` : ' · 교통량 자료 없음'),
+      (known ? ` · 하루 ${num(v)}대` : ' · 교통량 자료 없음'),
       { direction: 'top' });
     marker.on('click', () => selectTollgate(t.tollgate_id));
     markers.set(t.tollgate_id, marker);
@@ -896,9 +927,12 @@ function bandRing(lat, lon, hi, i, isControl, faint) {
   return L.circle([lat, lon], {
     radius: hi * 1000,
     color,
-    weight: faint ? 1 : (isControl ? 2 : 3),
-    opacity: faint ? .5 : (isControl ? .9 : .95),
-    dashArray: isControl ? '3 7' : null,
+    weight: faint ? 1.2 : (isControl ? 2 : 2.5),
+    opacity: faint ? .55 : (isControl ? .85 : 1),
+    // **모든 밴드를 점선으로** 긋는다(2026-09-03 지시). 실선은 행정경계나
+    // 도로처럼 보여 배경 지도의 선과 섞인다. 점선은 '우리가 그은 선' 이라고
+    // 말한다. 대조 밴드만 더 성기게 끊어 성격이 다르다는 것을 보탠다.
+    dashArray: isControl ? '2 8' : '7 5',
     // 대조 밴드는 채우지 않는다. 영향범위 바깥이라 면적을 강조할 이유가
     // 없고, 가장 큰 원이라 채우면 화면 전체가 물든다.
     fill: !isControl,

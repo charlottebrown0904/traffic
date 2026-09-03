@@ -82,7 +82,7 @@ const FAKE_LEAFLET = () => {
   const browser = await chromium.launch({ executablePath: chromiumPath() });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    for (const pat of ['**/lib/supabase-init.js', '**/app/supabase.js',
+    for (const pat of ['**/lib/supabase-init.js*', '**/app/supabase.js*',
                        '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'])
       await page.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
     await page.addInitScript(() => {
@@ -146,6 +146,14 @@ const FAKE_LEAFLET = () => {
       check('가장 바깥(대조) 밴드는 채우지 않는다',
             !control.fill || control.fillOpacity === 0,
             `fill=${control.fill} op=${control.fillOpacity}`);
+      // 실선은 행정경계나 도로처럼 보여 배경 지도의 선과 섞인다.
+      // 점선이라야 '우리가 그은 선' 으로 읽힌다.
+      check('모든 밴드가 점선이다',
+            circles.every((c) => !!c.dashArray),
+            circles.map((c) => c.dashArray || '실선').join(' / '));
+      check('대조 밴드는 다른 점선이다 (색 말고도 구별된다)',
+            control.dashArray !== circles[circles.length - 1].dashArray,
+            `${control.dashArray} vs ${circles[circles.length - 1].dashArray}`);
     }
 
     console.log();
