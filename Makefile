@@ -54,6 +54,7 @@ test: test-server
 	node scripts/test_board.js
 	node scripts/test_gate.js
 	node scripts/test_rank.js
+	node scripts/test_map.js
 
 ## 매물 API 인증·권한 검증
 test-server:

@@ -20,7 +20,7 @@ const state = {
   trend: { id: null, scale: 'index', base: null, on: new Set() },
   activeQuadrants: new Set(Object.keys(QUADRANTS)),
   activeKinds: new Set(),
-  minYear: 0, parcelOnly: false, selected: null,
+  minYear: 0, parcelOnly: false, selected: null, showAllBands: false, quartiles: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
   apiAvailable: false,
 };
@@ -223,16 +223,21 @@ function buildLegend() {
   // 범례는 좁은 화면에서 접힌다(CSS). 여는 단추와 내용을 나눠 둔다 —
   // 지도를 키워 놓고 그 위를 12줄짜리 범례로 다시 덮으면 의미가 없다.
   const legend = $('#map-legend');
+  const qRow = (i) =>
+    `<div class="row"><span class="sw" style="background:var(--tg-q${i + 1})"></span>` +
+    `${QUARTILE_LABEL[i]}</div>`;
   legend.innerHTML =
     '<button type="button" class="legend-peek" aria-expanded="false">' +
     '<span aria-hidden="true">◍</span>범례</button>' +
     '<div class="legend-rows">' +
-    '<div class="grp">영업소</div>' +
-    Object.values(QUADRANTS)
-      .map((q) => `<div class="row"><span class="sw" style="background:${q.color}"></span>${q.label}</div>`)
-      .join('') +
+    // 지도에서 먼저 찾는 것은 거래와 매물이다. 그것을 위에 둔다.
     '<div class="grp">실거래</div>' +
     kindRow('land', '토지') + kindRow('factory', '공장·창고') +
+    '<div class="grp">매물</div>' +
+    '<div class="row"><span class="sw sw-listing"></span>등록 매물</div>' +
+    '<div class="grp">영업소 · 교통량</div>' +
+    [0, 1, 2, 3].map(qRow).join('') +
+    '<div class="row"><span class="sw" style="background:var(--faint);opacity:.5"></span>자료 없음</div>' +
     '<div class="grp">거리 밴드</div>' +
     bands.map(([lo, hi], i) =>
       `<div class="row" style="--c:${bandColor(i)}">` +
@@ -776,6 +781,47 @@ function wireTrendHover(svg, prepared, years, sx, indexed) {
   });
 }
 
+/* ─────────── 영업소 교통량 4분위 ─────────── */
+/* 지도의 영업소 색은 **교통량이 많은 순서**다. 잘한 곳/못한 곳을 매기는
+ * 것이 아니다. 예전에는 분면(저평가·과열 등) 색을 썼는데, 그것은 평가라
+ * 오해를 부르고 무엇보다 442곳 중 83곳만 값이 있어 나머지가 전부 같은
+ * 색으로 찍혔다.
+ *
+ * 교통량은 traffic.json 에 484곳이 다 있다. 4분위는 순서형이므로 한 색상의
+ * 명도 단계로 그린다 — 진할수록 교통량이 많다. */
+const QUARTILE_COUNT = 4;
+const quartileColor = (q) => `var(--tg-q${q + 1})`;
+const QUARTILE_LABEL = ['하위 25%', '25–50%', '50–75%', '상위 25%'];
+
+function tollgateVolumes() {
+  const rows = (state.traffic || {}).rows || [];
+  const years = (state.traffic || {}).years || [];
+  const last = years.length - 1;
+  const out = new Map();
+  rows.forEach((r) => {
+    // v[연도][차종] 이다. 차종을 합쳐 그 해 전체 교통량을 쓴다.
+    const yv = (r.v || [])[last];
+    if (!Array.isArray(yv)) return;
+    const total = yv.reduce((a, b) => a + (Number(b) || 0), 0);
+    if (total > 0) out.set(String(r.id), total);
+  });
+  return out;
+}
+
+/* 값 → 0..3. 경계는 값이 있는 영업소만으로 잡는다. */
+function buildQuartiles() {
+  const vol = tollgateVolumes();
+  const sorted = [...vol.values()].sort((a, b) => a - b);
+  const cut = [0.25, 0.5, 0.75].map((p) => sorted[Math.floor(sorted.length * p)]);
+  const rank = new Map();
+  vol.forEach((v, id) => {
+    let q = 0;
+    while (q < cut.length && v >= cut[q]) q++;
+    rank.set(id, q);
+  });
+  return { rank, vol, cut };
+}
+
 /* ─────────── 지도 ─────────── */
 function buildMap() {
   // CDN 이 막히거나 오프라인이면 Leaflet 이 없다. 지도만 포기하고 나머지는 살린다.
@@ -790,26 +836,42 @@ function buildMap() {
   const withCoords = state.tollgates.filter((t) => t.lat && t.lon);
   map = L.map('map', { zoomControl: true, preferCanvas: true })
     .setView([36.5, 127.8], 7);
-  // 기본 지도는 무채색을 쓴다. OSM 기본 타일은 도로가 노랑·주황, 녹지가
-  // 초록, 물이 파랑이라 그 위에 얹은 밴드 색과 경쟁한다. 자료를 얹을
-  // 지도는 배경이 물러나야 한다 — 밴드 파랑이 강물 파랑과 겹치면
-  // 색을 아무리 잘 골라도 안 보인다.
-  L.tileLayer(
-    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 19, subdomains: 'abcd',
-      attribution: '© OpenStreetMap © CARTO',
-    }).addTo(map);
+  // 배경 지도는 물러나야 한다. OSM 기본 타일은 도로가 노랑·주황, 녹지가
+  // 초록, 물이 파랑이라 그 위에 얹은 밴드 색과 경쟁한다 — 밴드 파랑이
+  // 강물 파랑과 겹치면 색을 아무리 잘 골라도 안 보인다.
+  //
+  // 무채색 타일 서비스(CARTO·Stadia 등)는 이제 API 키를 요구한다. 키를
+  // 하나 더 늘리는 대신 **CSS 로 채도를 낮춘다**(style.css 의
+  // .leaflet-tile-pane). 키도 계정도 없이 같은 결과를 얻고, 남의 서비스
+  // 정책이 바뀌어도 지도가 안 깨진다.
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '© OpenStreetMap',
+  }).addTo(map);
 
   bandLayer = L.layerGroup().addTo(map);
   tradeLayer = L.layerGroup().addTo(map);
   tollgateLayer = L.layerGroup().addTo(map);
 
+  // 색은 교통량 4분위다. 값이 없는 곳은 회색 테두리만 남겨 '모른다' 를
+  // 색으로 말한다 — 값이 있는 것처럼 아무 색이나 칠하면 안 된다.
+  state.quartiles = buildQuartiles();
+  const { rank, vol } = state.quartiles;
   withCoords.forEach((t) => {
-    const info = quad(t.quadrant_key);
+    const q = rank.get(String(t.tollgate_id));
+    const known = q != null;
     const marker = L.circleMarker([t.lat, t.lon], {
-      radius: 7, weight: 2, color: '#fff', fillColor: info.color, fillOpacity: .95,
+      // 교통량이 많을수록 크게. 색과 크기가 같은 것을 말하면 색약이어도
+      // 읽히고, 작은 화면에서 상위권이 먼저 눈에 든다.
+      radius: known ? 5 + q * 1.6 : 4,
+      weight: 2, color: '#fff',
+      fillColor: known ? cssVar(`--tg-q${q + 1}`) : cssVar('--faint'),
+      fillOpacity: known ? .95 : .5,
     });
-    marker.bindTooltip(`${t.name || t.tollgate_id} · ${info.label}`, { direction: 'top' });
+    const v = vol.get(String(t.tollgate_id));
+    marker.bindTooltip(
+      `${t.name || t.tollgate_id}` +
+      (known ? ` · 교통량 ${QUARTILE_LABEL[q]} (${num(v)}대/일)` : ' · 교통량 자료 없음'),
+      { direction: 'top' });
     marker.on('click', () => selectTollgate(t.tollgate_id));
     markers.set(t.tollgate_id, marker);
   });
@@ -820,6 +882,49 @@ function buildMap() {
     map.fitBounds(L.latLngBounds(withCoords.map((t) => [t.lat, t.lon])).pad(0.15));
   }
   refreshMap();
+}
+
+/* 밴드 하나. 선 + 옅은 음영으로 그린다.
+ *
+ * 선만 그으면 '어디까지가 그 밴드인지' 를 눈으로 채워 넣어야 한다. 음영이
+ * 있으면 면적이 바로 읽힌다. 다만 원이 겹쳐 쌓이므로 아주 옅게 깔고,
+ * **큰 원부터 그려** 작은 원이 위에 오게 한다. 순서를 뒤집으면 가까운
+ * 밴드가 먼 밴드에 덮여 안 보인다.
+ */
+function bandRing(lat, lon, hi, i, isControl, faint) {
+  const color = cssVar(`--band-${(i % BAND_COLORS) + 1}`);
+  return L.circle([lat, lon], {
+    radius: hi * 1000,
+    color,
+    weight: faint ? 1 : (isControl ? 2 : 3),
+    opacity: faint ? .5 : (isControl ? .9 : .95),
+    dashArray: isControl ? '3 7' : null,
+    // 대조 밴드는 채우지 않는다. 영향범위 바깥이라 면적을 강조할 이유가
+    // 없고, 가장 큰 원이라 채우면 화면 전체가 물든다.
+    fill: !isControl,
+    fillColor: color,
+    fillOpacity: isControl ? 0 : (faint ? .04 : .10),
+  });
+}
+
+/* 상단에서 '전체 IC 반경' 을 켜면 모든 영업소의 반경을 한 번에 그린다.
+ * 어디가 비어 있는지, 어디가 겹치는지를 전국 단위로 보려는 용도라
+ * 선을 얇게 하고 음영도 더 옅게 깐다 — 442곳을 진하게 그리면 지도가
+ * 통째로 덮인다. */
+function drawAllBands() {
+  if (!map || !bandLayer) return;
+  if (!state.showAllBands) return;
+  bandLayer.clearLayers();
+  const bands = state.meta.bands_km || [];
+  const outer = bands.length - 1;
+  state.tollgates.forEach((t) => {
+    if (!t.lat || !t.lon) return;
+    // 전체 보기에서는 영향범위(대조 바로 앞 밴드)까지만 그린다. 대조까지
+    // 442곳을 겹쳐 그리면 무엇도 안 보인다.
+    for (let i = outer - 1; i >= 0; i--) {
+      bandLayer.addLayer(bandRing(t.lat, t.lon, bands[i][1], i, false, true));
+    }
+  });
 }
 
 function visibleTrades() {
@@ -839,6 +944,11 @@ function refreshMap() {
     // 스코어가 없는 영업소는 필터와 무관하게 항상 보여준다 (데이터 부족 표시)
     if (!key || state.activeQuadrants.has(key)) tollgateLayer.addLayer(marker);
   });
+  // 필터를 만질 때마다 밴드를 다시 그린다. 선택이 있으면 선택이 이긴다.
+  if (state.showAllBands) {
+    if (state.selected) selectTollgate(state.selected);
+    else { bandLayer.clearLayers(); drawAllBands(); }
+  }
 
   tradeLayer.clearLayers();
   visibleTrades().forEach((t) => {
@@ -859,20 +969,22 @@ function selectTollgate(id) {
   if (!map) return;
 
   markers.forEach((m, key) => m.setStyle({ weight: key === id ? 4 : 2 }));
-  bandLayer.clearLayers();
+  // 전체 보기 중이면 얇은 밴드를 지우지 않고 그 위에 진하게 얹는다.
+  // 지우면 '전체' 를 켜 둔 채로 하나를 눌렀을 때 나머지가 사라져,
+  // 스위치가 꺼진 것처럼 보인다.
+  if (state.showAllBands) {
+    bandLayer.clearLayers();
+    drawAllBands();
+  } else {
+    bandLayer.clearLayers();
+  }
   const bands = state.meta.bands_km || [];
-  bands.forEach(([, hi], i) => {
-    const isPlacebo = i === bands.length - 1;
-    // 선을 굵게. 1.5px 반투명 링은 지도 위에서 사실상 안 보인다.
-    // 대조 밴드만 점선으로 끊어 '여기는 성격이 다르다' 를 색 말고
-    // 모양으로도 말한다 — 색맹이어도 구별된다.
-    bandLayer.addLayer(L.circle([t.lat, t.lon], {
-      radius: hi * 1000, fill: false,
-      weight: isPlacebo ? 2 : 3, opacity: isPlacebo ? .9 : .95,
-      color: cssVar(`--band-${(i % BAND_COLORS) + 1}`),
-      dashArray: isPlacebo ? '3 7' : null,
-    }));
-  });
+  // **큰 원부터** 그린다. 음영이 있으므로 순서를 뒤집으면 가까운 밴드가
+  // 먼 밴드의 면에 덮여 안 보인다.
+  for (let i = bands.length - 1; i >= 0; i--) {
+    bandLayer.addLayer(
+      bandRing(t.lat, t.lon, bands[i][1], i, i === bands.length - 1));
+  }
   map.panTo([t.lat, t.lon]);
 }
 
@@ -1350,6 +1462,23 @@ document.addEventListener('keydown', (e) => {
   // 남아 있으면 넓은 화면에서 필터가 통째로 사라진다.
   window.matchMedia('(max-width:56rem)').addEventListener('change', (e) => {
     apply(e.matches);
+  });
+})();
+
+/* 상단 '전체 IC 반경' 스위치. */
+(function allBandsSwitch() {
+  const box = document.getElementById('all-bands');
+  if (!box) return;
+  box.addEventListener('change', () => {
+    state.showAllBands = box.checked;
+    if (!map || !bandLayer) return;
+    bandLayer.clearLayers();
+    if (box.checked) {
+      drawAllBands();
+    } else if (state.selected) {
+      // 켜기 전에 고른 영업소가 있으면 그것만 다시 그린다.
+      selectTollgate(state.selected);
+    }
   });
 })();
 

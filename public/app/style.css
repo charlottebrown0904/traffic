@@ -36,7 +36,22 @@
   --band-4:#767676;   /* 5-10  중립 — 대조/위약 밴드 (순수 무채색) */
   --band-5:#4A4038;   /* 예비 (밴드가 더 늘면) */
 
-  /* ── 구분색: 분면 ── */
+  /* ── 영업소: 교통량 4분위 (순서형 램프) ──
+     지도의 영업소 색은 **교통량이 많은 순서**다. 잘한 곳/못한 곳을 매기는
+     것이 아니다. 4분위도 순서가 있는 값이라 한 색상의 명도 단계로 그린다
+     — 진할수록 교통량이 많다.
+
+     밴드가 파랑, 거래가 초록·보라이므로 따뜻한 쪽을 쓴다. 지도 위 다른
+     모든 색과 최소 ΔE 16.3 (3분위 ↔ 대조 회색). 처음 고른 차분한
+     주황은 그 쌍이 13.2 여서 더 선명한 쪽으로 밀었다. */
+  --tg-q1:#E9A13F;   /* 하위 25% */
+  --tg-q2:#D06A10;
+  --tg-q3:#A33C06;
+  --tg-q4:#63220A;   /* 상위 25% — 가장 진함 */
+
+  /* ── 구분색: 분면 (스코어보드 전용) ──
+     지도에서는 더 이상 쓰지 않는다. 평가로 오해를 부르고, 442곳 중
+     83곳만 값이 있어 나머지가 전부 같은 색으로 찍혔다. */
   --q-under:#0B57A4; --q-rising:#0B7A43; --q-over:#B45309; --q-quiet:#6E6259;
 
   /* ── 구분색: 물건 종류 ── */
@@ -62,12 +77,15 @@
     --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
     --border:#332D26; --border-strong:#4A4239;
     --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
-    /* 어두운 바탕에서는 같은 색이 가라앉는다. 채도·명도를 올려 다시 벌린다. */
-    --band-1:#FF6B5E; --band-2:#FFA23D; --band-3:#38C8B4;
-    --band-4:#6BA8F5; --band-5:#B98CF0;
+    /* 어두운 바탕에서는 방향이 뒤집힌다. 밝을수록 가깝다 — '강조가 셀수록
+       가깝다' 는 뜻은 같고 물리적 방향만 바뀐다. 다크는 자동 반전이 아니라
+       어두운 바탕에 맞춰 따로 고른 값이고, 순서형 검사를 통과했다. */
+    --band-1:#9EC5F4; --band-2:#5598E7; --band-3:#2A78D6;
+    --band-4:#9A9A9A; --band-5:#C9C4BE;
+    --tg-q1:#F5C07A; --tg-q2:#E0913C; --tg-q3:#C2670F; --tg-q4:#8F4408;
     --q-under:#6BAEF0; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#9A8C7E;
     --kind-land:#6FCF7A; --kind-factory:#B99BF0;
-    --traffic-1:#F0EAE3; --traffic-2:#FF7ABF; --traffic-3:#D6C43A; --traffic-4:#D8B18C;
+    --traffic-1:#F0EAE3; --traffic-2:#E8873B; --traffic-3:#E86AAE; --traffic-4:#3FCB97;
     --danger:#F0837A;
     --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
   }
@@ -77,12 +95,13 @@
   --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
   --border:#332D26; --border-strong:#4A4239;
   --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
-  /* 어두운 바탕에서는 같은 색이 가라앉는다. 채도·명도를 올려 다시 벌린다. */
-  --band-1:#FF6B5E; --band-2:#FFA23D; --band-3:#38C8B4;
-  --band-4:#6BA8F5; --band-5:#B98CF0;
+  /* 어두운 바탕에서는 방향이 뒤집힌다. 밝을수록 가깝다 (위 설명 참고). */
+  --band-1:#9EC5F4; --band-2:#5598E7; --band-3:#2A78D6;
+  --band-4:#9A9A9A; --band-5:#C9C4BE;
+  --tg-q1:#F5C07A; --tg-q2:#E0913C; --tg-q3:#C2670F; --tg-q4:#8F4408;
   --q-under:#6BAEF0; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#9A8C7E;
   --kind-land:#6FCF7A; --kind-factory:#B99BF0;
-  --traffic-1:#F0EAE3; --traffic-2:#FF7ABF; --traffic-3:#D6C43A; --traffic-4:#D8B18C;
+  --traffic-1:#F0EAE3; --traffic-2:#E8873B; --traffic-3:#E86AAE; --traffic-4:#3FCB97;
   --danger:#F0837A;
   --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
 }
@@ -208,6 +227,23 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 .map-wrap{flex:1; position:relative; min-width:0}
 #map{position:absolute; inset:0; background:var(--surface-2)}
 .leaflet-container{font:inherit; background:var(--surface-2)}
+/* 배경 지도의 채도를 낮춰 자료가 앞에 오게 한다. 무채색 타일 서비스는
+   API 키를 요구하므로 키 없이 같은 결과를 낸다. 타일 판에만 걸어야
+   한다 — .leaflet-container 에 걸면 그 위의 마커·밴드까지 같이
+   흐려져서 고치려던 것을 정확히 반대로 만든다. */
+.leaflet-tile-pane{filter:saturate(.22) brightness(1.05) contrast(.94)}
+.map-tools{
+  position:absolute; top:.6rem; right:.6rem; z-index:500;
+  display:flex; gap:.4rem;
+}
+.map-switch{
+  display:flex; align-items:center; gap:.4rem; cursor:pointer;
+  background:var(--surface); border:1px solid var(--border-strong);
+  border-radius:.4rem; padding:.35rem .6rem; font-size:.76rem;
+  font-weight:600; color:var(--ink); box-shadow:var(--shadow);
+}
+.map-switch input{margin:0}
+
 .map-legend{
   position:absolute; left:.75rem; bottom:.75rem; z-index:500;
   background:var(--surface); border:1px solid var(--border); border-radius:.45rem;
@@ -219,6 +255,14 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 .map-legend .row{display:flex; align-items:center; gap:.45rem; color:var(--muted)}
 .map-legend .sw{width:.7rem; height:.7rem; border-radius:50%; flex:0 0 auto}
 .map-legend .sw.ring{background:none; border:2px solid var(--c)}
+/* 매물은 지도에서 마름모다. 범례도 같은 모양이어야 눈이 잇는다.
+   클래스 이름을 'listing' 으로 두면 안 된다 — 매물 카드(.listing)가
+   display:grid 를 걸고 있어서 스와치가 카드 크기로 부푼다. 흔한
+   이름을 재사용하면 이렇게 조용히 다른 규칙을 물려받는다. */
+.map-legend .sw.sw-listing{
+  background:var(--accent); border-radius:.1rem; transform:rotate(45deg);
+  width:.55rem; height:.55rem;
+}
 .map-legend .grp{margin-top:.15rem; font-size:.68rem; color:var(--faint);
   letter-spacing:.08em; text-transform:uppercase}
 .tg-marker{border-radius:50%; border:2px solid var(--surface); box-shadow:0 0 0 1px rgba(0,0,0,.25)}
