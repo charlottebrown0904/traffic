@@ -228,6 +228,56 @@ def main() -> int:
     print(f"   zonename: {', '.join(sorted(set(names))) or '(없음)'}")
     print(f"   zonecode: {', '.join(sorted(set(codes))[:12]) or '(없음)'}")
 
+    # ── 9. 네 장을 한 번에 겹쳐 주는가 ──────────────────────────
+    #
+    # 용도지역은 대분류별로 레이어가 넷이다(도시·관리·농림·자연환경보전).
+    # WMS 규격은 LAYERS 를 쉼표로 여러 장 받게 되어 있는데, 브이월드가
+    # 그것을 지키는지는 별개다. 지키면 타일 한 장에 한 번만 부르면 되고,
+    # 안 지키면 네 번 불러 우리가 겹쳐야 한다 — 비용이 네 배다.
+    print("\n9. 용도지역 네 장을 한 요청에 겹쳐 주는가 (LAYERS 쉼표)")
+    combos = [
+        ("lt_c_uq111", "도시 한 장"),
+        ("lt_c_uq111,lt_c_uq112", "도시+관리"),
+        ("lt_c_uq111,lt_c_uq112,lt_c_uq113,lt_c_uq114", "네 장 전부"),
+    ]
+    for layers, what in combos:
+        img, up, n = fetch("https://api.vworld.kr/req/wms", {
+            "SERVICE": "WMS", "REQUEST": "GetMap", "VERSION": "1.3.0",
+            "LAYERS": layers, "STYLES": "", "CRS": "EPSG:3857",
+            "BBOX": "14122000,4438000,14127000,4443000",
+            "WIDTH": "256", "HEIGHT": "256", "FORMAT": "image/png",
+            "TRANSPARENT": "true", "domain": DOMAIN,
+        }, binary=True)
+        print(f"   {what:<12} {n:>7,}B  {say(img)}   ({layers})")
+
+    # ── 10. 지적도(필지 경계)가 있는가 ──────────────────────────
+    #
+    # 네이버 지적편집도는 용도지역 색 위에 필지 경계선이 얹혀 있다.
+    # 그 선이 있어야 '이 필지' 를 눈으로 짚을 수 있다.
+    print("\n10. 필지 경계선 레이어가 있는가 (지적편집도의 그 선)")
+    body5, _, _ = fetch("https://api.vworld.kr/req/wms", {
+        "SERVICE": "WMS", "REQUEST": "GetCapabilities", "VERSION": "1.3.0",
+        "domain": DOMAIN,
+    })
+    for n, t in layer_names(body5, ("지적", "필지", "경계", "연속")):
+        print(f"     {n:<24} {t}")
+
+    # ── 11. 한 점의 용도지역을 물을 수 있는가 ───────────────────
+    #
+    # 필지를 눌렀을 때 '계획관리지역' 이라고 띄우려면 점 하나의 값을
+    # 알아야 한다. WMS 규격의 GetFeatureInfo 가 그것이다. 되면 WFS 로
+    # 도형을 다 받아올 필요가 없다 — 훨씬 싸다.
+    print("\n11. 누른 점의 용도지역을 물을 수 있는가 (GetFeatureInfo)")
+    for layers in ("lt_c_uq112", "lt_c_uq111,lt_c_uq112"):
+        got, up, n = fetch("https://api.vworld.kr/req/wms", {
+            "SERVICE": "WMS", "REQUEST": "GetFeatureInfo", "VERSION": "1.3.0",
+            "LAYERS": layers, "QUERY_LAYERS": layers, "STYLES": "",
+            "CRS": "EPSG:4326", "BBOX": "37.06,126.87,37.11,126.93",
+            "WIDTH": "256", "HEIGHT": "256", "I": "128", "J": "128",
+            "INFO_FORMAT": "application/json", "domain": DOMAIN,
+        })
+        print(f"   {layers:<26} {say(got)}")
+
     print("\n" + "=" * 68)
     print(" 판단: 3·4 에서 PNG 가 온 방식이 화면에 깔 수 있는 길입니다.")
     print("       6 이 통과하면 Leaflet 격자에 그대로 얹을 수 있습니다.")
