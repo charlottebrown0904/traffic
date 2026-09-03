@@ -115,8 +115,14 @@ jobs:
         continue-on-error: true
         run: python -m redt.cli load-traffic
 
-      # 영업소 마스터(도로공사 API)에는 민자고속도로가 없다. 교통량 파일에는
-      # 있으므로, 이름으로 좌표를 찾아 채운다 (docs/tollgate-coverage.md).
+      # 영업소 마스터(도로공사 API)에는 민자고속도로가 없다. 교통량 파일과
+      # 도로공사 명부에는 있으므로, 이름으로 좌표를 찾아 채운다
+      # (docs/tollgate-coverage.md).
+      #
+      # 명부를 등재하면서 대상이 늘었다. 교통량이 아예 없는 민자 영업소
+      # 163곳이 여기서 처음 좌표를 받는다 — 마도(805)가 그중 하나다.
+      # 이름 하나에 접미사 다섯 개까지 물으므로 최대 800여 회, 브이월드
+      # 하루 한도(3만) 안에서 충분하다.
       - name: 영업소 보충 (민자 등)
         continue-on-error: true
         run: python -m redt.cli fill-tollgates

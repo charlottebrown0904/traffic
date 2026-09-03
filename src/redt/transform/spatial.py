@@ -27,7 +27,22 @@ def haversine_matrix(lat1, lon1, lat2, lon2) -> np.ndarray:
 
 def link_trades_to_tollgates(trades: pd.DataFrame, tollgates: pd.DataFrame,
                              chunk_size: int = 20_000) -> pd.DataFrame:
-    """max_link_km 이내 모든 (거래, 영업소) 쌍을 만든다."""
+    """max_link_km 이내 모든 (거래, 영업소) 쌍을 만든다.
+
+    is_nearest 는 **교통량이 있는 영업소 중** 가장 가까운 것을 가리킨다.
+    tollgates 에 no_traffic 칸이 있으면 그것으로 가른다.
+
+    왜 그냥 '가장 가까운 영업소' 가 아닌가. 패널은 is_nearest 행만 쓴다
+    (transform/panel.py 의 nearest_only). 그런데 도로공사 TCS 에 통행량이
+    없는 민자 영업소를 지도에 띄우려고 영업소 표에 등재하는 순간, 그
+    영업소가 어떤 거래의 '가장 가까운 곳' 이 된다. 그 거래는 교통량을
+    붙일 수 없어 패널에서 통째로 빠진다 — **지도를 고쳤더니 분석 표본이
+    줄어드는** 모양이다. 화성 남부처럼 우리가 가장 보고 싶은 지역이
+    정확히 그렇게 빈다.
+
+    그래서 연결 자체는 전부 만들되(지도·상세는 이것을 쓴다), '패널에
+    쓸 대표 영업소' 는 교통량이 있는 곳 중에서 고른다.
+    """
     max_km = float(settings()["spatial"]["max_link_km"])
     trades = trades.dropna(subset=["lat", "lon"])
     tollgates = tollgates.dropna(subset=["lat", "lon"])
@@ -37,6 +52,14 @@ def link_trades_to_tollgates(trades: pd.DataFrame, tollgates: pd.DataFrame,
         )
 
     tg_ids = tollgates["tollgate_id"].to_numpy()
+    # 대표를 뽑을 후보. 칸이 없으면 예전처럼 전부가 후보다.
+    if "no_traffic" in tollgates.columns:
+        usable = ~tollgates["no_traffic"].fillna(False).to_numpy(dtype=bool)
+    else:
+        usable = np.ones(len(tollgates), dtype=bool)
+    if not usable.any():                 # 전부 미공개면 가를 것이 없다
+        usable = np.ones(len(tollgates), dtype=bool)
+    usable_idx = np.flatnonzero(usable)
     frames = []
 
     for start in range(0, len(trades), chunk_size):
@@ -48,7 +71,8 @@ def link_trades_to_tollgates(trades: pd.DataFrame, tollgates: pd.DataFrame,
         rows, cols = np.where(dist <= max_km)
         if len(rows) == 0:
             continue
-        nearest_col = dist.argmin(axis=1)
+        # argmin 을 후보 열에서만 구한 뒤 원래 열 번호로 되돌린다.
+        nearest_col = usable_idx[dist[:, usable_idx].argmin(axis=1)]
         frames.append(pd.DataFrame({
             "trade_id": block["trade_id"].to_numpy()[rows],
             "tollgate_id": tg_ids[cols],

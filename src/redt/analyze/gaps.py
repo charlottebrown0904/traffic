@@ -83,6 +83,24 @@ def tollgate_gaps(con) -> dict[str, pd.DataFrame]:
         GROUP BY band ORDER BY band
     """).fetchdf()
 
+    # 4. 명부에는 가동중인데 TCS 교통량이 **한 해도** 없다.
+    #
+    # 이것을 '누락' 으로 부르면 고칠 수 없는 것을 고치려 든다. 운영기관별로
+    # 세어 보면 기관 단위로 딱 갈린다 — 도로공사가 요금을 걷는 노선은
+    # 100% 있고, 민자 운영사가 직접 걷는 노선은 100% 없다. 도로공사가
+    # 내는 자료이므로 당연하다. 채울 수 있는 결측이 아니라 **다른 기관이
+    # 가진 자료**다. 마도(805)가 여기 해당한다.
+    out["교통량_미공개"] = con.execute("""
+        SELECT coalesce(m.operator_cd, '(미상)') AS 운영기관,
+               count(*)                          AS 영업소,
+               count(m.lat)                      AS 좌표있음,
+               string_agg(m.name, ', ' ORDER BY m.tollgate_id) AS 예시
+        FROM tollgate m
+        WHERE m.tollgate_id NOT IN (SELECT DISTINCT tollgate_id FROM traffic)
+          AND m.name IS NOT NULL AND trim(m.name) <> ''
+        GROUP BY 1 ORDER BY 2 DESC
+    """).fetchdf()
+
     out["좌표_출처"] = con.execute("""
         SELECT coalesce(src, '(미상)') AS 출처, count(*) AS 영업소
         FROM tollgate WHERE lat IS NOT NULL
@@ -154,6 +172,20 @@ def report(con) -> None:
             print(f"  가장 많이 걸러지는 밴드: {row['band']} "
                   f"— 연결 {int(row['거래연결_전체']):,}건 중 "
                   f"{int(row['거래연결_최근접']):,}건({row['_ratio']:.1%})만 패널에 들어갑니다.")
+
+    nt = tables.get("교통량_미공개")
+    if nt is not None and not nt.empty:
+        total = int(nt["영업소"].sum())
+        print(f"\n--- 통행량 미공개 : {total}개 (운영기관 {len(nt)}곳) ---")
+        print("  도로공사 TCS 에 한 해도 통행량이 없는 영업소입니다. 대부분 민자")
+        print("  운영사가 요금을 직접 걷는 노선이라 도로공사가 그 자료를 갖고")
+        print("  있지 않습니다 — 채울 수 있는 결측이 아닙니다. 지도에는 '통행량")
+        print("  미공개' 로 그리고, 교통량이 필요한 분석에서는 뺍니다.")
+        view = nt.copy()
+        view["예시"] = view["예시"].str.slice(0, 60)
+        print(view.head(15).to_string(index=False))
+        if len(nt) > 15:
+            print(f"  … 외 운영기관 {len(nt) - 15}곳")
 
     src = tables.get("좌표_출처")
     if src is not None and not src.empty:

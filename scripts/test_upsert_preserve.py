@@ -95,6 +95,45 @@ check(got == (36.5, 127.5, "충북"),
       f"이름으로 채운 좌표가 살아남는다 (받은 값: {got})")
 
 print()
+print("5-2. 명부 등재가 좌표를, 이름검색이 운영기관코드를 안 지운다")
+# 이제 영업소 표를 세 곳이 쓴다. 어느 하나도 남의 칸을 갖고 있지 않다.
+#
+#   도로공사 API   좌표·노선은 있고, 운영기관코드가 없다
+#   명부 CSV       이름·노선·운영기관코드는 있고, 좌표가 없다
+#   이름검색(POI)  좌표만 있고, 나머지가 전부 없다
+#
+# 지키지 않으면 단계를 하나 돌 때마다 서로의 값을 지운다. 마도(805)가
+# 좌표를 받아도 다음 실행의 명부 등재가 그것을 지우면 지도에서 다시
+# 사라진다 — 같은 사고를 이미 거래 좌표에서 한 번 냈다.
+with db.connect() as con:
+    con.execute("DELETE FROM tollgate")
+    # 1) 명부가 먼저 등재한다 — 이름·운영기관코드만 있다
+    db.upsert(con, "tollgate", pd.DataFrame([{
+        "tollgate_id": "805", "name": "마도", "route_no": "400",
+        "operator_cd": "48"}]),
+        preserve=["lat", "lon", "sido", "sigungu", "sigungu_cd", "is_open_type"])
+    # 2) 이름검색이 좌표를 채운다 — 운영기관코드가 없다
+    db.upsert(con, "tollgate", pd.DataFrame([{
+        "tollgate_id": "805", "name": "마도", "route_no": None,
+        "lat": 37.15, "lon": 126.75, "src": "poi"}]),
+        preserve=["operator_cd", "route_no"])
+    got = con.execute("SELECT lat, operator_cd, route_no FROM tollgate "
+                      "WHERE tollgate_id='805'").fetchone()
+check(got == (37.15, "48", "400"),
+      f"좌표를 채워도 운영기관코드·노선이 남는다 (받은 값: {got})")
+
+with db.connect() as con:
+    # 3) 다음 실행의 명부 등재가 좌표를 지우지 않는다
+    db.upsert(con, "tollgate", pd.DataFrame([{
+        "tollgate_id": "805", "name": "마도", "route_no": "400",
+        "operator_cd": "48"}]),
+        preserve=["lat", "lon", "sido", "sigungu", "sigungu_cd", "is_open_type"])
+    got = con.execute("SELECT lat, lon FROM tollgate "
+                      "WHERE tollgate_id='805'").fetchone()
+check(got == (37.15, 126.75),
+      f"명부를 다시 실어도 좌표가 살아남는다 (받은 값: {got})")
+
+print()
 print("6. preserve 를 안 주면 예전 동작 그대로다")
 # 이 검사가 없으면 preserve 가 전역 동작을 바꿔버렸는지 알 수 없다.
 with db.connect() as con:

@@ -1057,12 +1057,103 @@ check(not any(v.startswith("영업소 ") for v in _names.values()),
 import csv as _csv                                              # noqa: E402
 from redt.config import RAW as _RAW                             # noqa: E402
 import glob as _glob                                            # noqa: E402
+import pathlib                                                  # noqa: E402
 _f = sorted(_glob.glob(str(_RAW / "tollgate_master_*.csv")))[-1]
 _virtual = {r["영업소코드"].strip().lstrip("0") or "0"
             for r in _csv.DictReader(open(_f, encoding="utf-8-sig"))
             if r.get("가상영업소여부", "").strip() == "Y"}
 check(bool(_virtual) and not (_virtual & set(_master)),
       f"가상 영업소 {len(_virtual)}곳은 이름표에 안 넣는다")
+
+print()
+print("26. 마도IC — 교통량이 없는 영업소도 명부로 등재한다")
+
+# 사장님이 '수도권제2순환고속도로에 마도IC가 있습니다' 라고 하셨는데
+# 지도에 없었다. 원인을 코드 단위로 못박아 둔다.
+#
+#   마도(805)는 운영기관 48, TCS노선 400 — 봉담~송산 민자 구간이다.
+#   TCS 연간 교통량에 **한 해도** 없다. 그래서 fill-tollgates 가 좌표를
+#   찾을 대상에 들지 못했고(교통량 있는 영업소만 찾고 있었다), 좌표가
+#   없으니 지도에도 못 올라갔다.
+#
+# 자료가 새는 것이 아니라 도로공사가 그 자료를 갖고 있지 않은 것이다.
+# 그러므로 '교통량 0' 이 아니라 '통행량 미공개' 로 다뤄야 한다.
+from redt.collect.tollgate_fill import roster_from_master, TCS_OPERATORS  # noqa: E402
+
+_roster = roster_from_master()
+check(len(_roster) > 600, f"명부에서 가동중 영업소를 등재한다 ({len(_roster)}곳)")
+check("805" in set(_roster["tollgate_id"]), "마도(805)가 등재 대상에 들어간다")
+_mado = _roster[_roster["tollgate_id"] == "805"].iloc[0]
+check(_mado["name"] == "마도", f"이름이 붙는다 ({_mado['name']})")
+check(_mado["operator_cd"] == "48", f"운영기관코드를 싣는다 ({_mado['operator_cd']})")
+check(_mado["operator_cd"] not in TCS_OPERATORS,
+      "도로공사가 요금을 걷는 노선이 아니다 — 교통량이 없는 이유다")
+check(_roster["lat"].isna().all(), "명부에는 좌표가 없다 (좌표는 API·이름검색이 채운다)")
+
+# 운영기관으로 갈린다는 것이 이 진단의 핵심이다. 한 곳이라도 섞이면
+# '기관 문제' 가 아니라 '자료 문제' 이므로 손쓸 방법이 달라진다.
+#
+# 24년치를 통틀면 예외가 딱 하나 있다 — 조원(022·기관 67)이 2003~2004년
+# 에만 있다가 사라진다. 그래서 '한 번이라도' 가 아니라 **최근 연도로**
+# 못박는다. 지금 지도와 분석이 쓰는 것은 최근 연도다.
+_seen = {}
+for _p in sorted(_glob.glob(str(_RAW / "tcs_annual_*.csv"))):
+    if pathlib.Path(_p).name.startswith("legacy_"):
+        continue
+    for _r in _csv.DictReader(open(_p, encoding="utf-8-sig")):
+        _seen.setdefault(_r["영업소코드"].strip().lstrip("0") or "0",
+                         set()).add(int(_r["연도"]))
+_last = max(y for ys in _seen.values() for y in ys)
+_recent = {t for t, ys in _seen.items() if any(y >= _last - 4 for y in ys)}
+_no = {t for t, o in zip(_roster["tollgate_id"], _roster["operator_cd"])
+       if o not in TCS_OPERATORS}
+check(not (_no & _recent),
+      f"도로공사 노선이 아닌 {len(_no)}곳은 최근 5년 교통량이 하나도 없다")
+_yes = {t for t, o in zip(_roster["tollgate_id"], _roster["operator_cd"])
+        if o in TCS_OPERATORS}
+check(len(_yes & _recent) / max(len(_yes), 1) > .95,
+      f"도로공사 노선은 {len(_yes & _recent)}/{len(_yes)} 가 최근 교통량을 갖는다")
+
+print()
+print("27. 미공개 영업소를 지도에 띄워도 분석 표본이 줄지 않는다")
+
+# 이것이 이번 수정의 가장 위험한 부분이었다.
+#
+# 패널은 거래마다 '가장 가까운 영업소' 한 곳만 쓴다. 그런데 마도처럼
+# 통행량이 없는 영업소를 지도에 띄우려고 영업소 표에 등재하면, 그
+# 영업소가 어떤 거래의 가장 가까운 곳이 된다. 그 거래는 교통량을
+# 붙일 수 없어 패널에서 통째로 빠진다 — **지도를 고쳤더니 분석이
+# 얇아지는** 모양이고, 하필 화성 남부처럼 가장 보고 싶은 곳이 빈다.
+#
+# 오류도 경고도 안 난다. 표본 수만 조용히 줄어든다. 그래서 못박는다.
+from redt.transform.spatial import link_trades_to_tollgates  # noqa: E402
+
+_tr = pd.DataFrame([{"trade_id": "T1", "lat": 37.150, "lon": 126.750}])
+_far = pd.DataFrame([{"tollgate_id": "18", "lat": 37.180, "lon": 126.800,
+                      "no_traffic": False}])
+_base = link_trades_to_tollgates(_tr, _far)
+check(bool(_base["is_nearest"].any()),
+      "미공개 영업소가 없을 때는 교통량 있는 곳이 대표다")
+
+# 바로 옆(200m)에 미공개 영업소를 하나 놓는다. 거리로는 이쪽이 이긴다.
+_with = link_trades_to_tollgates(_tr, pd.DataFrame([
+    {"tollgate_id": "805", "lat": 37.1515, "lon": 126.7505, "no_traffic": True},
+    {"tollgate_id": "18", "lat": 37.180, "lon": 126.800, "no_traffic": False},
+]))
+check(set(_with["tollgate_id"]) == {"805", "18"},
+      "연결 자체는 둘 다 만든다 (지도·상세가 이것을 쓴다)")
+_rep = _with[_with["is_nearest"]]
+check(len(_rep) == 1 and _rep.iloc[0]["tollgate_id"] == "18",
+      f"대표는 교통량이 있는 곳이다 (뽑힌 곳: {list(_rep['tollgate_id'])})")
+
+# 칸이 아예 없으면 예전 동작 그대로여야 한다 — 이 수정이 전역 동작을
+# 바꿨는지 확인한다.
+_old = link_trades_to_tollgates(_tr, pd.DataFrame([
+    {"tollgate_id": "805", "lat": 37.1515, "lon": 126.7505},
+    {"tollgate_id": "18", "lat": 37.180, "lon": 126.800},
+]))
+check(list(_old[_old["is_nearest"]]["tollgate_id"]) == ["805"],
+      "no_traffic 칸이 없으면 예전처럼 가장 가까운 곳이 대표다")
 
 print()
 if fail:

@@ -144,5 +144,17 @@ if (tgNew && tiers.every(Boolean)) {
 }
 
 console.log();
+console.log('6. 통행량 미공개가 구간·신설과 안 붙는다');
+// 이 상태는 지도에서 **속이 빈 점**으로 그립니다 — 모양이 먼저 갈라
+// 줍니다. 그래도 테두리 색이 어느 구간과 비슷하면 작은 배율에서
+// '통행량이 이만큼인 IC' 로 읽히므로, 색으로도 벌려 둡니다.
+const tgNone = token('tg-none');
+check('미공개 색이 정의돼 있다', !!tgNone, String(tgNone));
+if (tgNone && tgNew && tiers.every(Boolean)) {
+  const w = Math.min(...[...tiers, tgNew].map((t) => dE(tgNone, t)));
+  check('미공개 ↔ 구간·신설 최소 ΔE ≥ 15', w >= 15, w.toFixed(1));
+}
+
+console.log();
 console.log(failed ? `실패 ${failed}건` : '모두 통과');
 process.exit(failed ? 1 : 0);

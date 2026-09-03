@@ -266,9 +266,22 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     with db.connect(read_only=True) as con:
         # ORDER BY 가 없으면 DuckDB 가 매번 다른 순서로 돌려주어, 내용이 같아도
         # 커밋 diff 가 생긴다. 이 파일들은 배포에 함께 커밋되므로 순서를 고정한다.
-        tollgates = con.execute(
-            "SELECT tollgate_id, name, route_no, lat, lon, sido, sigungu "
-            "FROM tollgate WHERE lat IS NOT NULL ORDER BY tollgate_id").fetchdf()
+        # no_traffic: 도로공사 TCS 공공데이터에 통행량이 **한 해도** 없는
+        # 영업소. 대부분 민자 운영사가 직접 요금을 걷는 노선이라(마도·
+        # 남봉담 등 수도권제2순환 봉담~송산 구간) 도로공사가 그 자료를
+        # 갖고 있지 않다. 화면에서 '한산한 IC' 로 보이면 정반대의 결론이
+        # 나오므로, 교통량 0 이 아니라 '미공개' 로 구분해 내보낸다.
+        tollgates = con.execute("""
+            SELECT t.tollgate_id, t.name, t.route_no, t.lat, t.lon,
+                   t.sido, t.sigungu,
+                   coalesce(t.operator_cd, '') AS operator_cd,
+                   (v.tollgate_id IS NULL) AS no_traffic
+            FROM tollgate t
+            LEFT JOIN (SELECT DISTINCT tollgate_id FROM traffic) v
+                   ON v.tollgate_id = t.tollgate_id
+            WHERE t.lat IS NOT NULL
+            ORDER BY t.tollgate_id
+        """).fetchdf()
         trade_total = con.execute("SELECT count(*) FROM trade").fetchone()[0]
         # REPEATABLE 로 표본을 고정한다. 없으면 실행할 때마다 다른 거래가 뽑혀
         # 500KB 파일 전체가 바뀐 것처럼 보인다.

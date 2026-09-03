@@ -34,7 +34,11 @@ from .transform import spatial
 # 다시 수집해도 지워지면 안 되는 칸들. 어느 것도 원본 API 응답에 없고,
 # 따로 돈이나 호출을 들여 붙인 것이다 (db.upsert 의 preserve 참고).
 GEOCODE_COLS = ["lat", "lon", "geocode_level"]      # 브이월드 하루 4,000건
-TOLLGATE_FILLED = ["lat", "lon", "sido", "sigungu"]  # 민자 영업소 이름으로 찾음
+# 민자 영업소 이름으로 찾은 좌표·지역, 그리고 명부에서만 오는 운영기관코드·
+# 노선번호. 어느 출처도 나머지 출처의 칸을 갖고 있지 않으므로, 지키지 않으면
+# 단계를 하나 돌 때마다 서로의 값을 지운다.
+TOLLGATE_FILLED = ["lat", "lon", "sido", "sigungu", "operator_cd",
+                   "route_no", "name"]
 
 
 def _months(start: str, end: str) -> list[str]:
@@ -49,14 +53,24 @@ def cmd_tollgates(args):
         # 이름으로 찾아 채워둔 것을 이 단계가 다시 지우면, 매 실행마다
         # 같은 일을 반복하면서 그 사이 분석은 좌표 없는 영업소를 버린다.
         n = db.upsert(con, "tollgate", df, preserve=TOLLGATE_FILLED)
-    print(f"영업소 {n}건 저장")
+        # 도로공사 API 는 자기가 운영하는 노선만 안다. 명부(CSV)에는 민자
+        # 노선 영업소까지 942곳이 들어 있고, 그중 가동중·비가상이 646곳이다.
+        # 등재해 두지 않으면 fill-tollgates 가 좌표를 찾을 대상조차 모른다.
+        roster = tollgate_fill.roster_from_master()
+        m = db.upsert(con, "tollgate", roster,
+                      preserve=["lat", "lon", "sido", "sigungu",
+                                "sigungu_cd", "is_open_type"]) if len(roster) else 0
+    print(f"영업소 {n}건 저장 · 명부 등재 {m}건")
 
 
 def cmd_fill_tollgates(args):
     """교통량에만 있고 마스터에 없는 영업소(대부분 민자고속도로)를 이름으로 채운다."""
     with db.connect() as con:
         df = tollgate_fill.fill_missing(con, limit=args.limit)
-        n = db.upsert(con, "tollgate", df) if len(df) else 0
+        # 이름검색 결과에는 운영기관코드도 노선번호도 없다. 지키지 않으면
+        # 좌표를 채우는 대가로 명부에서 받아온 칸을 지운다.
+        n = db.upsert(con, "tollgate", df,
+                      preserve=["operator_cd", "route_no"]) if len(df) else 0
         # 좌표를 채운 뒤에 지역을 되짚는다. 방금 넣은 영업소도 함께 채워진다.
         regions = 0 if args.skip_regions else tollgate_fill.fill_regions(con)
     print(f"영업소 {n}건 추가 (출처: 이름검색) · 지역 {regions}건 보완")
@@ -879,9 +893,18 @@ def cmd_link(args):
     with db.connect() as con:
         total = con.execute(
             "SELECT count(*) FROM trade WHERE lat IS NOT NULL").fetchone()[0]
-        tgs = con.execute(
-            "SELECT tollgate_id, lat, lon FROM tollgate WHERE lat IS NOT NULL"
-        ).fetchdf()
+        # no_traffic 을 함께 넘긴다. 연결은 전부 만들되, 패널이 쓸 대표
+        # 영업소(is_nearest)는 교통량이 있는 곳 중에서 고르게 하기 위해서다.
+        # 안 그러면 마도 같은 미공개 영업소를 지도에 띄우는 순간 그 주변
+        # 거래가 패널에서 통째로 빠진다 (spatial.link_trades_to_tollgates).
+        tgs = con.execute("""
+            SELECT t.tollgate_id, t.lat, t.lon,
+                   (v.tollgate_id IS NULL) AS no_traffic
+            FROM tollgate t
+            LEFT JOIN (SELECT DISTINCT tollgate_id FROM traffic) v
+                   ON v.tollgate_id = t.tollgate_id
+            WHERE t.lat IS NOT NULL
+        """).fetchdf()
         if not total or tgs.empty:
             print("조인 결과 없음 (좌표 있는 거래 또는 영업소가 없습니다)")
             return

@@ -16,7 +16,10 @@ CREATE TABLE IF NOT EXISTS tollgate (
     sigungu     VARCHAR,
     sigungu_cd  VARCHAR,
     is_open_type BOOLEAN,
-    src         VARCHAR          -- ex(도로공사 API) / poi(이름검색) / csv
+    src         VARCHAR,         -- ex(도로공사 API) / poi(이름검색) / master(명부) / csv
+    -- 도로공사 명부의 '고속도로운영기관구분코드'. 이 칸이 교통량 결측을
+    -- 설명한다 — 아래 traffic_source 주석 참고.
+    operator_cd VARCHAR
 );
 
 -- 교통량은 출처가 여러 개이고 성격이 다르다. source 를 키에 포함해 섞이지 않게 한다.
@@ -137,6 +140,7 @@ CREATE TABLE IF NOT EXISTS trade_tollgate_link (
 # 캐시로 되살린 DB 에 새 컬럼을 붙일 때 필요하다.
 MIGRATIONS = [
     "ALTER TABLE tollgate ADD COLUMN IF NOT EXISTS src VARCHAR",
+    "ALTER TABLE tollgate ADD COLUMN IF NOT EXISTS operator_cd VARCHAR",
     "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS sigungu_cd VARCHAR",
     "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS source VARCHAR",
     "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS geocode_level VARCHAR",

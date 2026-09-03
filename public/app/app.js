@@ -18,7 +18,7 @@ const state = {
   meta: null, tollgates: [], trades: [], series: {}, traffic: null, chart: null,
   rank: { year: null, vehicle: 'total', sort: 'volume', q: '', coordsOnly: false },
   trend: { id: null, scale: 'index', base: null, on: new Set() },
-  activeTiers: new Set([0, 1, 2, 3, 'new']),
+  activeTiers: new Set([0, 1, 2, 3, 'new', 'none']),
   tgYear: null, tgVehicle: 'total', dealFrom: null, dealTo: null,
   activeKinds: new Set(),
   parcelOnly: false, selected: null, showAllBands: false, tiers: null,
@@ -232,6 +232,24 @@ function buildFilters() {
   });
   tierBox.append(newBtn);
 
+  // 통행량 미공개 — 켜 두는 것이 기본이다. 마도처럼 실재하는 IC 가
+  // 지도에서 사라지는 것이 지금까지의 문제였다.
+  const noneBtn = el('button', 'quad-btn is-hollow');
+  noneBtn.type = 'button';
+  noneBtn.dataset.tier = 'none';
+  noneBtn.style.setProperty('--c', 'var(--tg-none)');
+  noneBtn.setAttribute('aria-pressed', 'true');
+  noneBtn.title = '민자 운영사가 요금을 직접 걷는 노선. 도로공사 TCS 공공데이터에 통행량이 없습니다.';
+  noneBtn.append(el('span', 'dot'), el('span', null, '통행량 미공개'),
+                 el('span', 'n', '0'));
+  noneBtn.addEventListener('click', () => {
+    const on = noneBtn.getAttribute('aria-pressed') === 'true';
+    noneBtn.setAttribute('aria-pressed', String(!on));
+    on ? state.activeTiers.delete('none') : state.activeTiers.add('none');
+    refreshMap();
+  });
+  tierBox.append(noneBtn);
+
   const kinds = $('#kind-filters');
   state.meta.kinds.forEach((kind) => {
     const label = el('label', 'check');
@@ -303,7 +321,10 @@ function buildLegend() {
     TRAFFIC_LABEL.map((_, i) => qRow(i)).join('') +
     `<div class="row"><span class="sw" style="background:var(--tg-new);` +
     `border:2px solid var(--tg-new-ring)"></span>${state.tgYear}년 신설</div>` +
-    '<div class="row"><span class="sw" style="background:var(--faint);opacity:.5"></span>자료 없음</div>' +
+    // 속이 빈 점 = 값이 없다. 민자 운영사가 요금을 직접 걷는 노선이라
+    // 도로공사 TCS 에 통행량이 없습니다 (마도 등).
+    '<div class="row"><span class="sw" style="background:var(--surface);' +
+    'border:2px solid var(--tg-none)"></span>통행량 미공개 (민자)</div>' +
     '<div class="grp">거리 밴드</div>' +
     shownBands().map(([lo, hi], i) =>
       `<div class="row" style="--c:${bandColor(i)}">` +
@@ -930,6 +951,13 @@ function buildTiers() {
     while (q < TRAFFIC_CUTS.length && v >= TRAFFIC_CUTS[q]) q++;
     tier.set(id, q);
   });
+  // 통행량 미공개 — 도로공사 TCS 에 한 해도 값이 없는 영업소. 민자
+  // 운영사가 요금을 직접 걷는 노선이라 도로공사가 자료를 갖고 있지
+  // 않다(마도 등). 0 으로 두면 '가장 한산한 IC' 로 줄을 서서 정반대의
+  // 결론이 나오므로, 구간이 아니라 별도 상태로 둔다.
+  (state.tollgates || []).forEach((t) => {
+    if (t.no_traffic) tier.set(String(t.tollgate_id), 'none');
+  });
   return { rank: tier, vol, cut: TRAFFIC_CUTS, fresh };
 }
 
@@ -955,7 +983,8 @@ function updateTierCounts() {
     counts[q] = (counts[q] || 0) + 1;
   });
   document.querySelectorAll('#tier-filters .quad-btn').forEach((btn) => {
-    const key = btn.dataset.tier === 'new' ? 'new' : Number(btn.dataset.tier);
+    const t = btn.dataset.tier;
+    const key = (t === 'new' || t === 'none') ? t : Number(t);
     btn.querySelector('.n').textContent = String(counts[key] || 0);
   });
 }
@@ -976,21 +1005,27 @@ const shownBands = () => (state.meta.bands_km || []).slice(0, -1);      // 이 �
 function styleTollgate(marker, t, tier, vol) {
   const known = tier !== undefined && tier !== null;
   const isNew = tier === 'new';
-  const q = isNew ? 0 : tier;
+  const isNone = tier === 'none';
+  const q = (isNew || isNone) ? 0 : tier;
   marker.setStyle({
-    radius: isNew ? 7 : (known ? 4.5 + q * 1.4 : 3.5),
+    radius: isNew ? 7 : isNone ? 5.5 : (known ? 4.5 + q * 1.4 : 3.5),
     // 신설은 링이 굵고 거의 검정이다. 네 구간은 흰 링이라 **테두리
     // 색만 봐도** 갈린다 — 채움 색이 비슷해 보이는 작은 배율에서도.
-    weight: isNew ? 3 : 1.6,
-    color: isNew ? cssVar('--tg-new-ring') : '#fff',
+    // 미공개는 **속이 비어 있다** — 색을 하나 더 만들지 않은 이유는,
+    // 색 구간에 끼워 넣는 순간 '통행량이 이만큼' 으로 읽히기 때문이다.
+    weight: isNew ? 3 : isNone ? 2.2 : 1.6,
+    color: isNew ? cssVar('--tg-new-ring')
+      : isNone ? cssVar('--tg-none') : '#fff',
     fillColor: isNew ? cssVar('--tg-new')
+      : isNone ? cssVar('--surface')
       : (known ? cssVar(`--tg-${q + 1}`) : cssVar('--faint')),
-    fillOpacity: known ? .92 : .45,
+    fillOpacity: isNone ? .95 : known ? .92 : .45,
     opacity: known ? .95 : .5,
   });
   const name = t.name || t.tollgate_id;
   marker.bindTooltip(
     name + (isNew ? ` · ${state.tgYear}년 신설 (하루 ${num(vol)}대)`
+      : isNone ? ' · 통행량 미공개 (민자 운영 — 도로공사 자료에 없음)'
       : known ? ` · 하루 ${num(vol)}대` : ' · 교통량 자료 없음'),
     { direction: 'top' });
   marker._tgName = name;

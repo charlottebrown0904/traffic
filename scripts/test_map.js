@@ -94,6 +94,24 @@ const FAKE_LEAFLET = () => {
     for (const pat of ['**/lib/supabase-init.js*', '**/app/supabase.js*',
                        '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'])
       await page.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
+
+    // 영업소 하나를 '통행량 미공개' 로 표시해 내려준다. 실제 자료에는
+    // 마도(805)처럼 도로공사 TCS 에 통행량이 없는 민자 영업소가 들어
+    // 있는데, 아직 좌표가 안 붙어 커밋된 파일에는 없을 수 있다. 검사가
+    // 자료의 우연에 기대면 안 되므로 여기서 한 곳을 만들어 넣는다.
+    const TG_FILE = path.join(ROOT, 'public', 'app', 'data', 'tollgates.json');
+    let hollowId = null;
+    if (fs.existsSync(TG_FILE)) {
+      const rows = JSON.parse(fs.readFileSync(TG_FILE, 'utf8'));
+      if (rows.length) {
+        rows[0].no_traffic = true;
+        hollowId = String(rows[0].tollgate_id);
+        await page.route('**/app/data/tollgates.json*', (r) => r.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify(rows),
+        }));
+      }
+    }
     await page.addInitScript(() => {
       window.SB = {};
       window.SBUtil = { me: async () => ({ user: { id: 'u1' }, profile: null }) };
@@ -203,6 +221,40 @@ const FAKE_LEAFLET = () => {
     await page.waitForTimeout(800);
     const off = (await page.evaluate(() => window.__map.circles)).length;
     check('끄면 되돌아온다', off < after / 10, `${after} → ${off}`);
+
+    console.log();
+    console.log('6. 통행량 미공개 = 속이 빈 점');
+    // 민자 운영사가 요금을 직접 걷는 노선은 도로공사 TCS 에 통행량이
+    // 없다. 이때 0 으로 칠하면 '가장 한산한 IC' 로 보여서 정반대의
+    // 결론이 나온다. 그래서 구간 색을 주지 않고 **속을 비운다**.
+    if (hollowId) {
+      const hollow = await page.evaluate(() => {
+        const none = getComputedStyle(document.documentElement)
+          .getPropertyValue('--tg-none').trim();
+        const found = window.__map.markers.filter((o) => o.color === none);
+        return { none, n: found.length, one: found[0] || null };
+      });
+      check('미공개 마커가 있다', hollow.n === 1, `${hollow.n}개 · ${hollow.none}`);
+      if (hollow.one) {
+        check('속을 채우지 않는다 (구간 색이 아니다)',
+              hollow.one.fillColor !== hollow.none
+              && /^#?(fff|FFF)/.test(hollow.one.fillColor.replace('#', '#')),
+              String(hollow.one.fillColor));
+        check('테두리가 굵어 작은 배율에서도 보인다',
+              hollow.one.weight >= 2, String(hollow.one.weight));
+      }
+      const label = await page.evaluate(() => {
+        const b = [...document.querySelectorAll('#tier-filters .quad-btn')]
+          .find((x) => x.dataset.tier === 'none');
+        return b ? { text: b.textContent, n: b.querySelector('.n').textContent } : null;
+      });
+      check('필터에 미공개 칸이 있고 개수를 센다',
+            !!label && /미공개/.test(label.text) && Number(label.n) === 1,
+            label ? `${label.text}` : '없음');
+    } else {
+      console.log('  건너뜀 — tollgates.json 이 없습니다.');
+    }
+
 
     await page.close();
   } finally {

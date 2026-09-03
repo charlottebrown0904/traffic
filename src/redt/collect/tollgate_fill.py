@@ -98,6 +98,67 @@ def names_from_master() -> dict[str, str]:
     return out
 
 
+# TCS 연간 교통량에 실리는 영업소는 **운영기관으로 갈린다.**
+#
+# 명부 942곳 중 가상 아님·가동중이 646곳인데, 그 646곳을 운영기관코드로
+# 나눠 TCS 등장 여부를 세면 기관 단위로 딱 갈린다 — 섞인 기관이 하나도
+# 없다.
+#
+#   운영기관 00,01,02,08,10,11,18,28   483곳 → TCS 에 100% 있음
+#   그 밖의 45개 기관                  163곳 → TCS 에 100% 없음
+#
+# 예외는 24년치를 통틀어 딱 하나, 조원(022·기관 67)이 2003~2004년에만
+# 있다가 사라진다. 그 뒤 민자로 넘어간 것으로 보인다. 2005년부터는
+# 예외가 없다 — 그래서 검사는 최근 연도로 못박는다.
+#
+# 앞의 여덟은 한국도로공사가 직접 정산하는 노선(00 이 도로공사 본선,
+# 나머지는 도로공사가 요금을 대행 수납하는 민자 노선)이다. 뒤의 45개는
+# 각 민자 운영사가 자기 노선 요금을 직접 걷는 곳이라, 도로공사가 내는
+# TCS 공공데이터에 애초에 들어오지 않는다.
+#
+# 사장님이 찾으신 **마도(805)** 가 정확히 여기다. 운영기관 48, TCS노선
+# 400 — 수도권제2순환고속도로 봉담~송산 구간이고, 같은 기관의 남봉담·
+# 청요동·남비봉팔탄 등 8곳이 전부 교통량 0이다. '자료가 새는' 것이
+# 아니라 **그 자료를 도로공사가 갖고 있지 않다.**
+#
+# 그래서 이 영업소들은 지도에 '통행량 미공개' 로 그리고, 교통량이 필요한
+# 분석(탄력성·순위)에서는 뺀다. 없는 값을 0 으로 두면 '한산한 IC' 로
+# 보여서 정반대의 결론이 나온다.
+TCS_OPERATORS = frozenset({"00", "01", "02", "08", "10", "11", "18", "28"})
+
+
+def roster_from_master() -> pd.DataFrame:
+    """명부의 **가동중·비가상** 영업소 전부를 영업소 표에 등재할 형태로.
+
+    좌표는 없다. 좌표는 도로공사 API(`ex`) 나 이름검색(`poi`) 이 채운다.
+    이 함수가 하는 일은 '그런 영업소가 있다' 를 먼저 알리는 것이다 —
+    지금까지 교통량에 없는 영업소는 존재조차 모르고 있었다.
+    """
+    files = sorted(Path(RAW).glob(MASTER_GLOB))
+    if not files:
+        return pd.DataFrame()
+    df = pd.read_csv(files[-1], encoding="utf-8-sig", dtype=str)
+    need = {"영업소코드", "영업소명", "가상영업소여부", "가동영업소여부"}
+    if not need <= set(df.columns):
+        return pd.DataFrame()
+    keep = ((df["가상영업소여부"].fillna("").str.strip() != "Y")
+            & (df["가동영업소여부"].fillna("").str.strip() == "Y"))
+    df = df[keep]
+    out = pd.DataFrame({
+        "tollgate_id": canon_series(df["영업소코드"]),
+        "name": df["영업소명"].fillna("").str.strip(),
+        "route_no": df.get("TCS노선번호", pd.Series("", index=df.index))
+                      .fillna("").str.strip(),
+        "operator_cd": df.get("고속도로운영기관구분코드",
+                              pd.Series("", index=df.index)).fillna("").str.strip(),
+    })
+    out = out[out["tollgate_id"].notna() & (out["name"] != "")]
+    for col in ("lat", "lon", "sido", "sigungu", "sigungu_cd", "is_open_type"):
+        out[col] = None
+    out["src"] = "master"
+    return out.reset_index(drop=True)
+
+
 def names_from_traffic() -> dict[str, str]:
     """영업소코드 → 영업소명. 명부가 있으면 그것이 이긴다."""
     out: dict[str, str] = {}
@@ -227,8 +288,14 @@ def _accept(name: str, row: dict, known: list[tuple[float, float]]) -> tuple[boo
 def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
     """마스터에 없는 영업소를 이름으로 찾아 채운다. 채운 행을 돌려준다."""
     names = names_from_traffic()
+    # 교통량 CSV 에 한 번도 안 나온 영업소는 이름을 거기서 얻을 수 없다.
+    # 영업소 표에 명부로 등재해 둔 이름을 쓴다.
+    for tid, nm in con.execute(
+            "SELECT tollgate_id, name FROM tollgate WHERE name IS NOT NULL "
+            "AND trim(name) <> ''").fetchall():
+        names.setdefault(tid, nm.strip())
     if not names:
-        print("  교통량 CSV 가 없어 이름을 얻을 수 없습니다.")
+        print("  영업소 이름을 얻을 수 없습니다 (교통량 CSV·명부 모두 없음).")
         return pd.DataFrame()
 
     have = {r[0] for r in con.execute(
@@ -239,11 +306,20 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
 
     traffic_ids = {r[0] for r in con.execute(
         "SELECT DISTINCT tollgate_id FROM traffic").fetchall()}
-    todo = sorted(traffic_ids - have, key=lambda t: int(t) if t.isdigit() else 0)
+    # 교통량이 있는 영업소만 찾으면 마도(805)처럼 **교통량이 아예 없는**
+    # 민자 영업소가 영원히 좌표를 못 받는다. 지도에서 사라지는 이유가
+    # 그것이었다. 명부에 가동중으로 올라 있으면 실재하는 시설이므로
+    # 교통량과 무관하게 찾는다.
+    roster_ids = {r[0] for r in con.execute(
+        "SELECT tollgate_id FROM tollgate WHERE name IS NOT NULL "
+        "AND trim(name) <> ''").fetchall()}
+    todo = sorted((traffic_ids | roster_ids) - have,
+                  key=lambda t: int(t) if t.isdigit() else 0)
     if limit:
         todo = todo[:limit]
-    print(f"  마스터에 없는 영업소 {len(todo)}개 — 이름으로 좌표를 찾습니다",
-          flush=True)
+    no_traffic = sum(1 for t in todo if t not in traffic_ids)
+    print(f"  좌표 없는 영업소 {len(todo)}개 — 이름으로 좌표를 찾습니다"
+          f" (그중 교통량이 없는 민자 {no_traffic}개)", flush=True)
 
     cache = _Cache()
     filled, failed = [], []
@@ -254,7 +330,7 @@ def fill_missing(con, limit: int | None = None) -> pd.DataFrame:
             print(f"    …{done}/{len(todo)} (확보 {len(filled)})", flush=True)
         name = names.get(tid)
         if not name:
-            failed.append((tid, "", "교통량 파일에 이름이 없음"))
+            failed.append((tid, "", "이름을 알 수 없음"))
             continue
 
         core = _core(name)

@@ -35,6 +35,16 @@
      두른 네 구간과 **테두리 색만 봐도** 갈립니다. */
   --tg-new:#FACC15; --tg-new-ring:#1A1205;
 
+  /* 통행량 미공개 — 도로공사 TCS 에 통행량이 한 해도 없는 영업소.
+     민자 운영사가 요금을 직접 걷는 노선이라(마도·남봉담 등 수도권
+     제2순환 봉담~송산) 도로공사가 그 자료를 갖고 있지 않습니다.
+
+     **채우지 않고 테두리만 그립니다.** 네 구간과 신설은 속이 찬 점이라
+     '값이 있다' 를 뜻하고, 이것은 속이 비어 '값이 없다' 를 뜻합니다.
+     색으로 한 구간 더 만들면 '통행량이 이만큼인 곳' 처럼 읽혀, 정반대의
+     결론이 나옵니다 — 한산한 IC 가 아니라 자료가 없는 IC 입니다. */
+  --tg-none:#4B5563;
+
   /* ── 거리 밴드: 원색 점선 ──
      화면에 그리는 밴드는 **영향범위 3개까지**입니다. 위약 대조(5-10km)는
      분석 절차라 화면에서 뺐고, 그만큼 색상환에 자리가 생겨 원색을 쓸 수
@@ -78,6 +88,7 @@
     --accent:#9FC0DE; --accent-soft:#1C242E; --on-accent:#0E1319;
     --tg-1:#4FD8CD; --tg-2:#6BA6F0; --tg-3:#F2703A; --tg-4:#E8558F;
     --tg-new:#FDE047; --tg-new-ring:#FEF9C3;
+    --tg-none:#DCE3EC;
     --band-1:#A78BFA; --band-2:#F472B6; --band-3:#22D3EE;
     --band-4:#9CA3AF; --band-5:#D1D5DB;
     --kind-land:#B08968; --kind-factory:#A78BFA; --listing:#F3F4F6;
@@ -94,6 +105,7 @@
   --accent:#9FC0DE; --accent-soft:#1C242E; --on-accent:#0E1319;
   --tg-1:#4FD8CD; --tg-2:#6BA6F0; --tg-3:#F2703A; --tg-4:#E8558F;
     --tg-new:#FDE047; --tg-new-ring:#FEF9C3;
+    --tg-none:#DCE3EC;
   --band-1:#E5E7EB; --band-2:#9CA3AF; --band-3:#6B7280;
   --band-4:#D1D5DB; --band-5:#F3F4F6;
   --kind-land:#B08968; --kind-factory:#A78BFA; --listing:#F3F4F6;
@@ -190,6 +202,8 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 }
 .quad-btn .dot{width:.6rem; height:.6rem; border-radius:50%; background:var(--c)}
 .quad-btn .n{font-variant-numeric:tabular-nums; color:var(--faint); font-size:.78rem}
+/* 지도의 마커와 같은 모양을 씁니다 — 속이 빈 점은 값이 없다는 뜻입니다. */
+.quad-btn.is-hollow .dot{background:var(--surface); box-shadow:inset 0 0 0 2px var(--c)}
 .quad-btn[aria-pressed="false"]{opacity:.42}
 .quad-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 
