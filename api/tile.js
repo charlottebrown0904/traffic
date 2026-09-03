@@ -1,43 +1,61 @@
-// 용도지역 지도 타일 중계 — 네이버 지적편집도의 그 화면.
+// 용도지역 지도 타일 — 네이버 지적편집도의 그 화면.
 //
-// 한국 **법정** 용도지역(계획관리·생산관리·자연녹지…)은 OSM 에 없다.
-// 국토교통부 자료이고 브이월드에서만 온다.
+// 한국 **법정** 용도지역은 OSM 에 없다. 국토교통부 자료이고 브이월드에서
+// 온다. 브라우저가 브이월드를 직접 부르면 인증키를 페이지에 적어야 하는데,
+// 그 키는 실거래 지오코딩에 쓰는 하루 3만 건짜리 자원이고 이 프로젝트에서
+// 가장 자주 병목이 된다. 누가 대신 써버리면 수집이 선다. 그래서 이 서버가
+// 대신 받아온다.
 //
-// 왜 브라우저가 브이월드를 직접 부르지 않는가
-// -------------------------------------------
-// 그러려면 인증키를 페이지에 적어야 한다. 그 키는 지금 실거래 지오코딩에
-// 쓰는 **하루 3만 건짜리 자원**이고, 이 프로젝트에서 가장 자주 병목이
-// 되는 것이다(오늘도 그것 때문에 수집이 한 번 멈췄다). 누가 대신 써버리면
-// 수집이 선다. 키는 서버에만 둔다는 원칙을 여기서 깨지 않는다.
+// ── 어느 서비스로 받을지는 서버에 물어서 정했다 ──────────────────────
 //
-// relay.js 를 쓰지 않는 이유
-// --------------------------
-// 그쪽은 서버끼리 쓰는 창구다. 공유 토큰을 헤더로 요구하고, 바이너리를
-// base64 로 감싸 보낸다. <img> 태그는 헤더를 붙일 수 없고 base64 문자열을
-// 그림으로 읽지도 못한다. 그래서 브라우저용으로 따로 둔다.
+// 처음에는 WMTS 로 `LT_C_UQ111` 을 부르게 만들었다. 그 이름은 근거가 없는
+// 추측이었고, 탐침(scripts/vworld_zoning.py)을 돌려보니 세 겹으로 틀렸다.
 //
-// 열린 중계기가 되지 않게
-// -----------------------
-// target 을 받지 않는다. z/x/y 와 미리 정한 레이어 이름만 받아 주소를
-// 우리가 만든다. 그래서 이 경로로는 브이월드의 그 레이어 말고 아무것도
-// 부를 수 없다. relay.js 는 목적지를 받으므로 토큰이 필요했지만, 여기는
-// 부를 수 있는 곳이 하나뿐이라 토큰 없이도 열린 중계기가 되지 않는다.
+//   WMTS        캐패빌리티·타일 전부 404 — 브이월드 WMTS 로는 못 받는다
+//   대문자      LT_C_UQ111 → text/xml 오류.  lt_c_uq111 → PNG 33KB
+//               **레이어 이름은 소문자여야 한다**
+//   uq111       이름이 '용도지역' 이 아니라 **'도시지역'** 이다
 //
-// 캐시
-// ----
-// 타일은 한 화면에 수십 장이 뜨고, 같은 자리를 다시 보면 같은 그림이다.
-// 용도지역은 자주 바뀌는 자료가 아니므로 길게 캐시한다. Vercel CDN 이
-// 반복 요청을 대신 받아주므로 함수 호출도, 브이월드 호출도 줄어든다.
+// 마지막이 가장 위험했다. 용도지역은 한 장이 아니라 국토계획법 대분류별로
+// 넷이다. 우리 분석 필터(계획관리·생산관리·자연녹지)는 그중 **관리지역과
+// 도시지역에 걸쳐** 있어서, uq111 만 깔면 정작 우리가 보는 땅이 안 나온다.
+//
+//   lt_c_uq111  도시지역          ← 자연녹지가 이 안
+//   lt_c_uq112  관리지역          ← 계획관리·생산관리가 이 안
+//   lt_c_uq113  농림지역
+//   lt_c_uq114  자연환경보전지역
+//
+// 확인된 것 (2026-09-03 탐침)
+//
+//   LAYERS 쉼표   네 장을 한 요청에 겹쳐 준다 — 55,190B PNG.
+//                 타일 한 장에 한 번만 부르면 된다.
+//   EPSG:3857     `CRS` 로 보내면 온다. `SRS` 로 보내면 레이어가 달라도
+//                 똑같이 1,784B — 빈 그림이다. SRS 는 WMS 1.1.1 것이고
+//                 1.3.0 은 CRS 를 쓴다. 크기가 같은 것이 단서였다.
+//   연속지적도    lp_pa_cbnd_bubun 로 필지 경계선을 받을 수 있다.
+//
+// Leaflet 의 타일 격자는 웹 머케이터다. 그래서 z/x/y 를 받아 머케이터
+// bbox 로 바꿔 WMS 에 넘긴다. 주소가 z/x/y 로 고정되므로 CDN 이 반복
+// 요청을 대신 받아준다 — bbox 를 그대로 받으면 주소가 매번 달라 캐시가
+// 안 걸린다.
 
+const VWORLD_WMS = "https://api.vworld.kr/req/wms";
+
+// 화면에 깔 수 있는 것. 목적지를 받지 않고 이 표에서만 고른다.
 const LAYERS = {
-  // 용도지역. 지적편집도에서 색으로 칠해지는 그 면이다.
-  zoning: "LT_C_UQ111",
+  // 용도지역 네 장을 한 번에. 지적편집도에서 색으로 칠해지는 그 면이다.
+  zoning: "lt_c_uq111,lt_c_uq112,lt_c_uq113,lt_c_uq114",
+  // 필지 경계선. 색면 위에 얹으면 '이 필지' 를 눈으로 짚을 수 있다.
+  cadastral: "lp_pa_cbnd_bubun",
 };
+
+// 웹 머케이터 격자의 한쪽 끝 (m). 타일 좌표를 bbox 로 바꾸는 데 쓴다.
+const MERC_EDGE = 20037508.342789244;
 
 const MAX_ZOOM = 19;
 const TIMEOUT_MS = 10_000;
-// 성공한 타일은 하루, CDN 에는 한 주. 실패는 짧게만 — 키를 넣거나
-// 한도가 풀린 뒤에 빈 화면이 오래 남으면 안 된다.
+// 성공한 타일은 하루, CDN 에는 한 주. 용도지역은 자주 바뀌는 자료가 아니다.
+// 실패는 짧게만 — 한도가 풀린 뒤에도 빈 화면이 오래 남으면 안 된다.
 const CACHE_OK = "public, max-age=86400, s-maxage=604800";
 const CACHE_BAD = "public, max-age=0, s-maxage=60";
 
@@ -46,17 +64,28 @@ function fail(res, code, message) {
   res.status(code).json({ tileError: message });
 }
 
-/** 정수인지 본다. '01' · '1.5' · '1e3' 같은 것을 통과시키면 안 된다. */
+/** 정수인지 본다. '01' · '1.5' · '1e3' · 음수를 통과시키면 안 된다. */
 function whole(value) {
   if (typeof value !== "string" || !/^\d{1,7}$/.test(value)) return null;
   return Number(value);
 }
 
+/** 타일 z/x/y → 웹 머케이터 bbox "minX,minY,maxX,maxY".
+ *
+ * 투영좌표계라 축 순서가 easting,northing 이다. WMS 1.3.0 이 축 순서를
+ * 뒤집는 것은 EPSG:4326 같은 **지리**좌표계뿐이다. */
+function mercBbox(z, x, y) {
+  const size = (MERC_EDGE * 2) / 2 ** z;
+  const minX = -MERC_EDGE + x * size;
+  const maxY = MERC_EDGE - y * size;
+  return [minX, maxY - size, minX + size, maxY].join(",");
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") return fail(res, 405, "GET 만 허용합니다");
 
-  const layer = LAYERS[String(req.query.layer || "zoning")];
-  if (!layer) return fail(res, 400, "그런 레이어가 없습니다");
+  const layers = LAYERS[String(req.query.layer || "zoning")];
+  if (!layers) return fail(res, 400, "그런 레이어가 없습니다");
 
   const z = whole(String(req.query.z ?? ""));
   const y = whole(String(req.query.y ?? ""));
@@ -73,12 +102,20 @@ module.exports = async function handler(req, res) {
   const key = process.env.VWORLD_KEY;
   if (!key) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
 
-  // 브이월드 키는 '웹사이트' 유형으로 서비스URL 이 등록돼 있다. 서버에서
-  // 부르면 브라우저처럼 Referer 가 안 붙으므로 등록된 주소를 실어 보낸다
-  // (relay.js 가 같은 이유로 같은 값을 쓴다).
+  // 브이월드 키는 '웹사이트' 유형으로 서비스URL 이 등록돼 있다. WMS 는
+  // 요청이 그 도메인에서 왔는지를 Referer 로 본다. 서버에서 부르면
+  // 브라우저처럼 Referer 가 안 붙으므로 등록된 주소를 실어 보낸다
+  // (api/relay.js 가 같은 이유로 같은 값을 쓴다).
   const referer = process.env.VWORLD_REFERER || "https://sado-toji.vercel.app/";
-  const url = `https://api.vworld.kr/req/wmts/1.0.0/${encodeURIComponent(key)}`
-            + `/${layer}/${z}/${y}/${x}.png`;
+  const url = `${VWORLD_WMS}?` + new URLSearchParams({
+    SERVICE: "WMS", REQUEST: "GetMap", VERSION: "1.3.0",
+    LAYERS: layers, STYLES: "",
+    CRS: "EPSG:3857",              // SRS 로 보내면 빈 그림이 온다
+    BBOX: mercBbox(z, x, y),
+    WIDTH: "256", HEIGHT: "256",
+    FORMAT: "image/png", TRANSPARENT: "true",
+    key,
+  });
 
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), TIMEOUT_MS);
@@ -89,8 +126,8 @@ module.exports = async function handler(req, res) {
       headers: { "User-Agent": "redt-tile/1.0", Accept: "image/png,*/*", Referer: referer },
     });
     const type = upstream.headers.get("content-type") || "";
-    // 한도 초과·키 오류는 PNG 가 아니라 JSON·HTML 로 온다. 그것을 그림인
-    // 척 돌려주면 지도에 깨진 이미지가 뜨고 원인을 알 수 없다.
+    // 한도 초과·키 오류는 PNG 가 아니라 XML 로 온다. 그것을 그림인 척
+    // 돌려주면 지도에 깨진 이미지가 뜨고 원인을 알 수 없다.
     if (!upstream.ok || !/^image\//i.test(type)) {
       return fail(res, 502,
         `브이월드가 그림을 주지 않았습니다 (HTTP ${upstream.status}, ${type || "타입 없음"})`);
@@ -108,3 +145,8 @@ module.exports = async function handler(req, res) {
     clearTimeout(timer);
   }
 };
+
+// 검사가 bbox 계산을 직접 확인할 수 있게 내보낸다. 이 계산이 틀리면
+// 그림은 오는데 땅이 어긋난다 — 눈으로는 잡기 어려운 종류다.
+module.exports.mercBbox = mercBbox;
+module.exports.LAYERS = LAYERS;

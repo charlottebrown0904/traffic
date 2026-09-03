@@ -162,8 +162,9 @@ const FAKE_LEAFLET = () => {
     console.log();
     console.log('2. 배경 지도에 키가 필요 없다');
     const tiles = await page.evaluate(() => window.__map.tiles);
-    // 배경 지도(OSM) + 용도지역(우리 서버 경유) = 2장.
-    check('타일 원천이 둘이다 (배경 + 용도지역)', tiles.length === 2,
+    // 배경 지도(OSM) + 용도지역 색면 + 필지 경계선 = 3장.
+    // 뒤의 둘은 우리 서버를 지난다(키를 페이지에 안 적기 위해).
+    check('타일 원천이 셋이다 (배경 + 용도지역 + 필지선)', tiles.length === 3,
           tiles.join(' '));
     check('API 키를 요구하는 서비스가 아니다',
           tiles.every((u) => !/carto|stadia|mapbox|thunderforest|apikey/i.test(u)),
@@ -178,8 +179,10 @@ const FAKE_LEAFLET = () => {
     //
     // 그래서 '함수가 있다' 가 아니라 **'타일 층이 실제로 만들어졌다'** 를
     // 본다. 부르지 않으면 여기서 걸린다.
-    const zone = tiles.find((u) => /\/api\/tile/.test(u));
+    const zone = tiles.find((u) => /layer=zoning/.test(u));
+    const cad = tiles.find((u) => /layer=cadastral/.test(u));
     check('용도지역 타일 층이 실제로 만들어진다', !!zone, tiles.join(' '));
+    check('필지 경계선 층도 만들어진다', !!cad, tiles.join(' '));
     if (zone) {
       check('브이월드를 직접 안 부른다 (키가 페이지에 없다)',
             !/vworld/i.test(zone), zone);

@@ -70,8 +70,8 @@ const call = async (query, method = 'GET') => {
   const src = require('fs').readFileSync(
     path.join(__dirname, '..', 'api', 'tile.js'), 'utf8');
   check('target 파라미터를 읽지 않는다', !/query\.target/.test(src));
-  check('주소를 코드가 만든다 (api.vworld.kr 고정)',
-        /https:\/\/api\.vworld\.kr\/req\/wmts/.test(src));
+  check('주소를 코드가 만든다 (api.vworld.kr WMS 고정)',
+        /https:\/\/api\.vworld\.kr\/req\/wms/.test(src));
   const evil = await call({ layer: 'evil', z: '10', y: '1', x: '1' });
   check('모르는 레이어는 거절한다', evil.code === 400 && calls.length === 0,
         `${evil.code} · 상류 호출 ${calls.length}회`);
@@ -143,6 +143,64 @@ const call = async (query, method = 'GET') => {
   check('503 으로 알린다', noKey.code === 503, String(noKey.code));
   check('상류를 부르지 않는다', calls.length === 0, `${calls.length}회`);
   process.env.VWORLD_KEY = KEY;
+
+  console.log();
+  console.log('8. 탐침으로 확정한 것을 지킨다');
+  // 이 넷은 모두 추측이었다가 서버가 깨준 것이다. 되돌아가지 않게 못박는다.
+  stubFetch(pngReply);
+  await call({ z: '13', y: '3186', x: '6983' });
+  const q = new URL(calls[0].url).searchParams;
+  // ① 용도지역은 한 장이 아니라 넷이다. uq112(관리지역)가 빠지면
+  //    계획관리·생산관리가 안 나온다 — 우리가 보는 땅이 통째로 빈다.
+  const asked = (q.get('LAYERS') || '').split(',');
+  check('용도지역 네 장을 함께 부른다',
+        ['lt_c_uq111', 'lt_c_uq112', 'lt_c_uq113', 'lt_c_uq114']
+          .every((l) => asked.includes(l)),
+        asked.join(','));
+  check('관리지역(uq112)이 반드시 들어 있다', asked.includes('lt_c_uq112'));
+  // ② 레이어 이름은 소문자만 받는다. 대문자는 text/xml 오류가 온다.
+  check('레이어 이름이 소문자다', !/[A-Z]/.test(q.get('LAYERS') || ''),
+        q.get('LAYERS'));
+  // ③ WMS 1.3.0 은 CRS 를 쓴다. SRS 로 보내면 빈 그림(1,784B)이 온다.
+  check('CRS 로 보낸다 (SRS 는 빈 그림이 온다)',
+        q.get('CRS') === 'EPSG:3857' && !q.has('SRS'),
+        `CRS=${q.get('CRS')} SRS=${q.get('SRS')}`);
+  check('WMS GetMap 이다 (WMTS 는 404 였다)',
+        q.get('REQUEST') === 'GetMap' && q.get('VERSION') === '1.3.0',
+        `${q.get('REQUEST')} ${q.get('VERSION')}`);
+  // ④ 등록 도메인을 Referer 로 실어야 WMS 가 열린다.
+  check('등록된 Referer 를 싣는다',
+        calls[0].headers.Referer === 'https://sado-toji.vercel.app/');
+
+  console.log();
+  console.log('9. 타일 좌표 → 머케이터 bbox 가 맞는가');
+  // 이 계산이 틀리면 그림은 오는데 **땅이 어긋난다.** 눈으로 잡기
+  // 어려운 종류라 숫자로 못박는다.
+  const EDGE = 20037508.342789244;
+  const z0 = handler.mercBbox(0, 0, 0).split(',').map(Number);
+  check('z=0 은 세상 전체다',
+        Math.abs(z0[0] + EDGE) < 1 && Math.abs(z0[2] - EDGE) < 1, z0.join(','));
+  const z1 = handler.mercBbox(1, 0, 0).split(',').map(Number);
+  check('z=1 (0,0) 은 서쪽·북쪽 사분면이다',
+        Math.abs(z1[0] + EDGE) < 1 && Math.abs(z1[1]) < 1
+        && Math.abs(z1[2]) < 1 && Math.abs(z1[3] - EDGE) < 1, z1.join(','));
+  // 화성 향남(126.90E, 37.085N)이 z=13 의 그 타일 안에 들어가야 한다.
+  // 탐침에서 실제로 용도지역이 그려진 자리다.
+  const lon = 126.90, lat = 37.085;
+  const mx = lon * EDGE / 180;
+  const my = Math.log(Math.tan((90 + lat) * Math.PI / 360)) * EDGE / Math.PI;
+  const b = handler.mercBbox(13, 6983, 3186).split(',').map(Number);
+  check('화성 향남이 z=13 의 그 타일 안에 있다',
+        mx > b[0] && mx < b[2] && my > b[1] && my < b[3],
+        `점(${Math.round(mx)},${Math.round(my)}) 타일(${b.map(Math.round).join(',')})`);
+
+  console.log();
+  console.log('10. 필지 경계선도 고를 수 있다');
+  stubFetch(pngReply);
+  const cad = await call({ layer: 'cadastral', z: '16', y: '27958', x: '55916' });
+  check('연속지적도를 부른다', cad.code === 200
+        && new URL(calls[0].url).searchParams.get('LAYERS') === 'lp_pa_cbnd_bubun',
+        String(cad.code));
 
   console.log();
   console.log('7. GET 만 받는다');

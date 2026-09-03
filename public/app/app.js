@@ -1231,16 +1231,30 @@ function refreshMap() {
  * 원래 필지를 들여다볼 때 쓰는 것이다.
  */
 const ZONING_MIN_ZOOM = 12;
+// 필지 경계선은 더 깊이 들어가야 뜻이 있다. 12배율에서 필지선을 깔면
+// 실선 뭉치가 되어 용도지역 색을 오히려 가린다.
+const CADASTRAL_MIN_ZOOM = 15;
 
 function addZoningLayer() {
-  zoningLayer = L.tileLayer('/api/tile?layer=zoning&z={z}&y={y}&x={x}', {
+  zoningLayer = L.layerGroup();
+  // 색면 — 용도지역 네 장을 서버가 한 요청에 겹쳐 받아온다
+  // (api/tile.js 의 LAYERS.zoning). 브이월드 공식 색이라 지적편집도를
+  // 읽어온 분들에게는 설명이 필요 없다.
+  L.tileLayer('/api/tile?layer=zoning&z={z}&y={y}&x={x}', {
     maxZoom: 19,
     minZoom: ZONING_MIN_ZOOM,
     // 위에 거래 점과 영업소가 얹히므로 반투명해야 한다. 불투명하면
     // 배경 지도의 도로까지 같이 가린다.
     opacity: .42,
     attribution: '용도지역 © 국토교통부 브이월드',
-  });
+  }).addTo(zoningLayer);
+  // 필지 경계선 — 지적편집도의 그 선. 이것이 있어야 '이 필지' 를
+  // 눈으로 짚을 수 있다. 색면보다 깊은 배율에서만 켠다.
+  L.tileLayer('/api/tile?layer=cadastral&z={z}&y={y}&x={x}', {
+    maxZoom: 19,
+    minZoom: CADASTRAL_MIN_ZOOM,
+    opacity: .55,
+  }).addTo(zoningLayer);
   if (state.zoning) zoningLayer.addTo(map);
 }
 
