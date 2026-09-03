@@ -1156,6 +1156,75 @@ check(list(_old[_old["is_nearest"]]["tollgate_id"]) == ["805"],
       "no_traffic 칸이 없으면 예전처럼 가장 가까운 곳이 대표다")
 
 print()
+print("28. 헤도닉이 러너를 죽이지 않는다 — 적합은 표본, 예측은 전수")
+
+# run 18 이 조인까지 살아서 끝나고 '분석 패널' 에서 exit 143 으로 죽었다.
+# 원인은 이 회귀다. C(시군구)·C(연도)·C(지목) 을 빽빽한 더미로 펴므로
+# 열이 300개쯤 되고, 거래 600만이면 행렬만 14GB — 러너는 16GB 다.
+#
+# run 16 까지는 좌표 있는 거래가 387건뿐이라 안 보였다. 지오코딩을
+# 고쳐 789만 건이 되자 바로 터졌다. 앞을 고치니 뒤가 드러난 것이다.
+#
+# 나눠서 예측하는 것이 값을 바꾸면 안 된다 — 예측은 계수를 곱하는
+# 것뿐이므로 나눠도 같아야 한다. 그것을 여기서 못박는다.
+from redt.transform.panel import hedonic_adjust                 # noqa: E402
+from redt.config import settings as _settings                   # noqa: E402
+
+_rng = np.random.default_rng(7)
+_n = 2400
+_big = pd.DataFrame({
+    "trade_id": [f"H{i}" for i in range(_n)],
+    "kind": "land",
+    "area_m2": _rng.uniform(300, 3000, _n),
+    "sigungu_cd": _rng.choice(["41590", "41461", "41210"], _n),
+    "deal_year": _rng.choice([2022, 2023, 2024], _n),
+    "jimok": _rng.choice(["전", "답", "대"], _n),
+    "land_use": "계획관리",
+})
+_big["price_per_m2"] = (200000 * (_big["area_m2"] / 1000) ** -0.2
+                        * _rng.lognormal(0, .25, _n)).round()
+
+_cfg = _settings()["panel"]
+_orig = _cfg.get("hedonic_fit_max")
+try:
+    _cfg["hedonic_fit_max"] = 10 ** 9          # 자르지 않음 = 예전 동작
+    _full = hedonic_adjust(_big.copy())
+    _cfg["hedonic_fit_max"] = 800              # 적합 표본을 강제로 자름
+    _cut = hedonic_adjust(_big.copy())
+finally:
+    if _orig is None:
+        _cfg.pop("hedonic_fit_max", None)
+    else:
+        _cfg["hedonic_fit_max"] = _orig
+
+check(len(_full) == len(_cut) == _n,
+      f"자르든 안 자르든 전수를 돌려준다 ({len(_full)} · {len(_cut)})")
+check(_full["adj_ln_price"].notna().all() and _cut["adj_ln_price"].notna().all(),
+      "나눠 예측해도 빠지는 행이 없다")
+
+# 표본으로 적합해도 보정값이 크게 달라지면 안 된다. 계수가 흔들린 만큼은
+# 달라지지만, 그것이 결론을 뒤집을 정도면 표본 상한이 너무 낮은 것이다.
+_a = _full.set_index("trade_id")["adj_ln_price"]
+_b = _cut.set_index("trade_id")["adj_ln_price"].reindex(_a.index)
+_corr = _a.corr(_b)
+check(_corr > .99, f"표본으로 적합해도 보정값이 사실상 같다 (상관 {_corr:.4f})")
+check(abs(_a - _b).max() < .15,
+      f"가장 크게 벌어진 거래도 차이가 작다 ({abs(_a - _b).max():.4f})")
+
+# 씨앗이 고정이라 두 번 돌려도 같아야 한다 — 실행할 때마다 화면 값이
+# 달라지면 사장님이 자료를 못 믿는다.
+try:
+    _cfg["hedonic_fit_max"] = 800
+    _again = hedonic_adjust(_big.copy())
+finally:
+    if _orig is None:
+        _cfg.pop("hedonic_fit_max", None)
+    else:
+        _cfg["hedonic_fit_max"] = _orig
+check(np.allclose(_cut["adj_ln_price"], _again["adj_ln_price"]),
+      "두 번 돌려도 같은 값이 나온다 (표본 씨앗 고정)")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

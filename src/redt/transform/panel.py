@@ -45,6 +45,25 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
         df["has_building"] = has_bldg.astype(int)
         df["ln_building_area"] = np.log(df["building_area_m2"].where(has_bldg)).fillna(0)
 
+    # 회귀에 쓸 표본 상한. 이것이 없으면 러너가 죽는다.
+    #
+    # 이 회귀는 C(jimok)·C(sigungu_cd)·C(deal_year) 을 넣는다. patsy 가
+    # 그것을 **빽빽한(dense) 더미 행렬**로 편다. 시군구 255 + 연도 20 +
+    # 지목·용도지역이면 열이 300개쯤 된다.
+    #
+    #   거래 600만 × 300열 × 8바이트 = 14GB
+    #
+    # 러너 메모리가 16GB 다. run 18 이 정확히 여기서 죽었다(exit 143).
+    # run 16 까지는 좌표 있는 거래가 387건뿐이라 이 문제가 안 보였다 —
+    # 지오코딩을 고쳐 789만 건이 되자 바로 터졌다. **앞을 고치니 뒤가
+    # 드러난 것**이지 새로 생긴 문제가 아니다.
+    #
+    # 계수는 표본을 늘려도 거의 안 변한다. 30만 건이면 면적 계수의 표준
+    # 오차가 소수점 셋째 자리다. 반면 예측은 전수에 해야 하므로 나눠서
+    # 한다 — 예측은 계수를 곱하는 것뿐이라 나눠도 값이 같다.
+    fit_max = int(cfg.get("hedonic_fit_max", 300_000))
+    chunk = 100_000
+
     adjusted = []
     for kind, group in df.groupby("kind"):
         group = group.copy()
@@ -62,20 +81,36 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
             terms += ["has_building", "ln_building_area"]
         fe = [f"C({c})" for c in ("sigungu_cd", "deal_year")
               if c in group and group[c].nunique() > 1]
-        model = smf.ols(f"ln_price ~ {' + '.join(terms + fe)}", data=group).fit()
+        formula = f"ln_price ~ {' + '.join(terms + fe)}"
+        # 적합은 표본으로, 예측은 전수로. 표본을 뽑을 때 씨앗을 고정한다 —
+        # 실행할 때마다 계수가 흔들리면 화면 값이 이유 없이 달라진다.
+        fit_on = group
+        if len(group) > fit_max:
+            fit_on = group.sample(fit_max, random_state=20260903)
+        model = smf.ols(formula, data=fit_on).fit()
 
         # 반사실: 모든 물건이 '평균 면적 · 최빈 지목'이었다면?
-        overrides = {"ln_area": group["ln_area"].mean()}
+        #
+        # 기준값은 **적합에 쓴 표본**에서 뽑는다. 전수에서 뽑으면 표본을
+        # 바꿀 때마다 기준이 함께 움직여, 계수가 같아도 보정값이 달라진다.
+        overrides = {"ln_area": fit_on["ln_area"].mean()}
         for col in ("jimok", "land_use", "building_use"):
             if col in group:
-                overrides[col] = group[col].mode().iat[0]
+                overrides[col] = fit_on[col].mode().iat[0]
         for col in ("has_building", "ln_building_area"):
             if col in group:
-                overrides[col] = group[col].mean()
-        baseline = group.assign(**overrides)
-        char_effect = model.predict(group) - model.predict(baseline)
+                overrides[col] = fit_on[col].mean()
+
+        # 나눠서 예측한다. 한 번에 하면 여기서 다시 600만 × 300 을 만든다.
+        parts = []
+        for start in range(0, len(group), chunk):
+            block = group.iloc[start:start + chunk]
+            parts.append(model.predict(block)
+                         - model.predict(block.assign(**overrides)))
+        char_effect = pd.concat(parts) if parts else pd.Series(dtype=float)
         group["adj_ln_price"] = group["ln_price"] - char_effect
-        print(f"  헤도닉[{kind}]: n={len(group):,} R²={model.rsquared:.3f} "
+        note = "" if fit_on is group else f" (적합 표본 {len(fit_on):,})"
+        print(f"  헤도닉[{kind}]: n={len(group):,}{note} R²={model.rsquared:.3f} "
               f"면적계수={model.params['ln_area']:.3f}")
         adjusted.append(group)
 

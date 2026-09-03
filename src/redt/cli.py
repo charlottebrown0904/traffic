@@ -959,11 +959,44 @@ def cmd_link(args):
           if n else "조인 결과 없음")
 
 
+# 패널이 쓰는 거래 칸. `SELECT *` 를 쓰면 주소·좌표까지 딸려 오는데,
+# 좌표 있는 거래가 789만 건이 되자 그것만으로 몇 GB 다.
+PANEL_TRADE_COLS = [
+    "trade_id", "kind", "sigungu_cd", "deal_year", "area_m2", "price_per_m2",
+    "jimok", "land_use", "building_area_m2", "building_use",
+    "is_share_deal", "is_cancelled", "deal_type", "geocode_level",
+]
+
+
 def cmd_panel(args):
+    """분석 패널.
+
+    run 18 이 여기서 러너째 죽었다(exit 143, 1분 41초). 조인은 살아서
+    끝났는데 그 다음이었다. 두 겹이었다.
+
+    1) 통째로 읽고 있었다. 연결 1,961만 행 × 전 컬럼 + 거래 789만 행 ×
+       전 컬럼. 패널이 실제로 쓰는 것은 **최근접 연결 662만 쌍**과 칸
+       열네 개뿐이다. 나머지는 읽어서 버린다.
+    2) 그 앞에 진짜 범인이 있다 — 헤도닉 회귀(transform/panel.py).
+    """
     with db.connect() as con:
-        trades = con.execute("SELECT * FROM trade WHERE lat IS NOT NULL").fetchdf()
-        links = con.execute("SELECT * FROM trade_tollgate_link").fetchdf()
+        # 패널은 최근접 연결만 쓴다(nearest_only). 나머지 1,300만 쌍은
+        # 지도·상세용이라 여기서 읽을 이유가 없다.
+        links = con.execute(
+            "SELECT trade_id, tollgate_id, band, is_nearest "
+            "FROM trade_tollgate_link WHERE is_nearest").fetchdf()
+        # 연결이 없는 거래는 패널에 못 들어간다. 미리 걸러 오면 789만 →
+        # 662만 이고, 무엇보다 뒤의 헤도닉이 그만큼 가벼워진다.
+        cols = ", ".join(f"t.{c}" for c in PANEL_TRADE_COLS)
+        trades = con.execute(f"""
+            SELECT {cols} FROM trade t
+            WHERE t.lat IS NOT NULL
+              AND t.trade_id IN (SELECT trade_id FROM trade_tollgate_link
+                                 WHERE is_nearest)
+        """).fetchdf()
         traffic = con.execute("SELECT * FROM traffic").fetchdf()
+    print(f"  읽음: 거래 {len(trades):,}행 × {len(trades.columns)}칸 · "
+          f"최근접 연결 {len(links):,}쌍")
     if trades.empty or links.empty or traffic.empty:
         sys.exit("패널을 만들 재료가 부족합니다. status 로 확인하세요.")
 

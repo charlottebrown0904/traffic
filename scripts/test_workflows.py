@@ -84,6 +84,15 @@ if _master:
 else:
     check(False, "영업소 명부(tollgate_master_*.csv)가 없습니다")
 
+# 전국 공장등록현황도 같은 함정에 걸린다. data/raw/* 가 통째로 무시되므로
+# .gitignore 에 되살리는 줄이 없으면 러너에는 파일이 아예 없다. 명부와
+# 승계표에서 이미 두 번 당했다.
+_freg = _glob.glob(str(ROOT / "data/raw/factory_registry_*.csv.gz"))
+if _freg:
+    rel = [str(Path(f).relative_to(ROOT)) for f in _freg]
+    check(all(r in tracked for r in rel),
+          f"공장등록현황이 추적되고 있다 ({len(rel)}개)")
+
 # 교통량 연간 CSV 는 한 해라도 빠지면 그 해가 통째로 사라진다.
 import glob
 years = sorted(int(Path(f).stem.split("_")[-1])
