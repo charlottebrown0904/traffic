@@ -30,7 +30,12 @@ if (!pw) { console.log('순위 탭 검사 건너뜀 — playwright 가 없습니
 const { chromium } = pw;
 
 const ROOT = path.resolve(__dirname, '..');
-const PORT = 8201;
+// 검사마다 포트가 달라야 한다. test_gate.js 와 8201 을 같이 쓰고 있었고,
+// 둘은 Makefile 에서 나란히 돈다. 앞 검사의 http.server 가 아직 안 죽었으면
+// 이 검사의 서버는 포트를 못 잡고(stdio:'ignore' 라 조용히 실패한다) 페이지가
+// **앞 검사의 서버**에 붙는다. 그 서버가 정리되는 순간 화면이 안 뜨고
+// '탭이 안 보인다' 로 나타난다 — 코드는 멀쩡한데 검사만 빨개진다.
+const PORT = 8215;
 const BASE = `http://127.0.0.1:${PORT}`;
 
 let failed = 0;

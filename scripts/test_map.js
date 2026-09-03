@@ -340,7 +340,14 @@ const FAKE_LEAFLET = () => {
         const found = window.__map.markers.filter((o) => o.color === none);
         return { none, n: found.length, one: found[0] || null };
       });
-      check('미공개 마커가 있다', hollow.n === 1, `${hollow.n}개 · ${hollow.none}`);
+      // '정확히 1개' 로 못박아 뒀다가 화석이 됐다. 그때는 실제 자료에
+      // 미공개 영업소가 하나도 없어서 우리가 넣은 것 하나뿐이었는데,
+      // run 21 이 명부에서 영업소를 등재하고 좌표를 붙이면서 **진짜
+      // 미공개가 119곳** 생겼다. 기능이 작동한 것인데 검사만 빨개졌다.
+      //
+      // 지켜야 할 것은 개수가 아니라 **지도와 필터가 같은 것을 센다**는
+      // 사실이다. 그것을 본다.
+      check('미공개 마커가 있다', hollow.n >= 1, `${hollow.n}개 · ${hollow.none}`);
       if (hollow.one) {
         check('속을 채우지 않는다 (구간 색이 아니다)',
               hollow.one.fillColor !== hollow.none
@@ -354,9 +361,10 @@ const FAKE_LEAFLET = () => {
           .find((x) => x.dataset.tier === 'none');
         return b ? { text: b.textContent, n: b.querySelector('.n').textContent } : null;
       });
-      check('필터에 미공개 칸이 있고 개수를 센다',
-            !!label && /미공개/.test(label.text) && Number(label.n) === 1,
-            label ? `${label.text}` : '없음');
+      check('필터에 미공개 칸이 있고 지도와 같은 수를 센다',
+            !!label && /미공개/.test(label.text)
+            && Number(label.n) === hollow.n,
+            label ? `필터 ${label.n} vs 지도 ${hollow.n}` : '없음');
     } else {
       console.log('  건너뜀 — tollgates.json 이 없습니다.');
     }

@@ -78,11 +78,45 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return [{k: _clean(v) for k, v in row.items()} for row in df.to_dict("records")]
 
 
+def _text(value) -> str:
+    """문자열이 아니면 빈 문자열. NaN 을 걸러내는 것이 목적이다."""
+    return value if isinstance(value, str) else ""
+
+
+def _finite(obj):
+    """NaN·Infinity 를 None 으로 바꾼다. 중첩된 것까지 훑는다.
+
+    **NaN 은 JSON 이 아니다.** 파이썬 json 은 기본값으로 그것을 `NaN` 이라고
+    적어 주고 다시 읽을 수도 있지만, 브라우저의 JSON.parse 는 거부한다.
+    그래서 파일은 멀쩡해 보이고 파이썬 검사도 통과하는데 화면만 죽는다.
+
+    실제로 그렇게 됐다. run 21 이 명부에서 영업소 119곳을 새로 등재했는데
+    그중 41곳은 시도·시군구를 아직 모른다(좌표를 못 받아 지역을 못 되짚었다).
+    그 NaN 이 traffic.json 에 그대로 실려 파일이 JSON 이 아니게 됐고,
+    순위 탭이 통째로 꺼졌다.
+
+    코드에는 `meta_row.get("sido") or ""` 라는 방어가 있었다. 그런데
+    **NaN 은 파이썬에서 참**이라 `or` 를 그냥 통과한다. 빈 값을 막는
+    관용구가 정작 NaN 앞에서만 안 듣는다.
+    """
+    if isinstance(obj, float):
+        return None if (obj != obj or obj in (float("inf"), float("-inf"))) else obj
+    if isinstance(obj, dict):
+        return {k: _finite(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_finite(v) for v in obj]
+    return obj
+
+
 def _write(name: str, payload) -> Path:
     WEB_DATA.mkdir(parents=True, exist_ok=True)
     path = WEB_DATA / name
-    path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-                    encoding="utf-8")
+    # allow_nan=False 가 마지막 벽이다. _finite 가 놓친 것이 있으면 조용히
+    # 깨진 파일을 내보내지 않고 여기서 멈춘다 — 화면이 죽고 나서 아는 것보다
+    # 러너가 빨개지는 편이 낫다.
+    text = json.dumps(_finite(payload), ensure_ascii=False,
+                      separators=(",", ":"), allow_nan=False)
+    path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -141,8 +175,9 @@ def _traffic_ranking() -> dict:
             "name": ((meta_row.get("name") or "").strip()
                      or csv_names.get(str(tid), "")
                      or f"영업소 {tid}"),
-            "sido": meta_row.get("sido") or "",
-            "sigungu": meta_row.get("sigungu") or "",
+            # NaN 은 참이라 `or ""` 를 통과한다. 문자열인지 먼저 본다.
+            "sido": _text(meta_row.get("sido")),
+            "sigungu": _text(meta_row.get("sigungu")),
             "lat": _clean(meta_row.get("lat")),
             "lon": _clean(meta_row.get("lon")),
             "v": grid,
