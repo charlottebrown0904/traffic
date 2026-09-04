@@ -17,6 +17,8 @@ import re
 import sys
 from pathlib import Path
 
+import yaml as _yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 WF = ROOT / ".github" / "workflows"
 
@@ -32,11 +34,42 @@ def check(ok, label):
 print("1. 결과를 되돌려 놓는 브랜치를 고정하지 않는다")
 # 'HEAD:main' 처럼 브랜치 이름을 박아 넣으면 어느 브랜치에서 돌리든
 # main 으로 간다. github.ref_name 을 써야 실행한 자리로 돌아간다.
+#
+# 예외가 하나 있다. **일부러 라이브에 올리는 푸시**다. Vercel 이 main 만
+# 프로덕션으로 배포하므로, 실행이 끝에서 main 을 따라오게 한다. 그것까지
+# 막으면 사람이 매번 손으로 머지해야 하고, 그러다 19개 커밋이 라이브에
+# 안 올라간 채로 하루가 지났다.
+#
+# 그래서 이름으로 봐주지 않고 **조건으로** 봐준다: fast-forward 인지
+# 확인한 뒤에 미는 푸시만 허용한다. merge-base --is-ancestor 가 없는
+# 푸시는 남의 커밋을 지울 수 있으므로 이름이 무엇이든 걸린다.
 HARDCODED = re.compile(r"git\s+push\s+\S+\s+[\"']?HEAD:(?!\$)(\w+)")
+GUARD = "merge-base --is-ancestor"
+
+
+def _run_blocks(text: str) -> list[str]:
+    """워크플로의 run 스크립트를 하나씩 꺼낸다.
+
+    파일 전체를 한 덩어리로 보면 '한 단계의 안전장치' 가 '다른 단계의
+    무모한 푸시' 를 덮어준다. 단계별로 봐야 그 착시가 없다.
+    """
+    try:
+        doc = _yaml.safe_load(text) or {}
+    except _yaml.YAMLError:
+        return [text]
+    blocks = []
+    for job in (doc.get("jobs") or {}).values():
+        for step in (job or {}).get("steps") or []:
+            if isinstance(step, dict) and step.get("run"):
+                blocks.append(str(step["run"]))
+    return blocks or [text]
+
+
 for path in sorted(WF.glob("*.yml")):
     text = path.read_text(encoding="utf-8")
-    hits = HARDCODED.findall(text)
-    check(not hits, f"{path.name} — 고정된 push 대상 {hits or '없음'}")
+    hits = [b for block in _run_blocks(text)
+            for b in HARDCODED.findall(block) if GUARD not in block]
+    check(not hits, f"{path.name} — 확인 없이 고정된 push 대상 {hits or '없음'}")
 
 print()
 print("2. rebase 하는 워크플로는 전체 이력을 받는다")
@@ -180,6 +213,51 @@ check(_compact is not None, "캐시 앞에 조인 결과를 빼는 단계가 있
 if None not in (_compact, _save_i, _link_i):
     check(_compact < _save_i < _link_i,
           f"정리 → 저장 → 조인 순이다 ({_compact} < {_save_i} < {_link_i})")
+
+print()
+print("7. 라이브 반영 — 브랜치에만 쌓이고 사이트는 그대로이던 것")
+
+# Vercel 은 main 만 프로덕션으로 배포한다. 브랜치 푸시는 preview URL 만
+# 만든다. 그래서 9월 3~4일 19개 커밋이 전부 라이브에 없었다 — 배포 목록에
+# READY 로 떠 있는데도. 실행이 스스로 main 을 fast-forward 하게 했고,
+# 여기서는 **그 자동화가 사고를 키우지 않는지**를 본다.
+_ff = next((s for n, s in _named.items() if "라이브 반영" in n), None)
+check(_ff is not None, "main 을 따라오게 하는 단계가 있다")
+
+if _ff is not None:
+    _run = str(_ff.get("run", ""))
+    _if = str(_ff.get("if", ""))
+
+    check("HEAD:main" in _run, "main 으로 민다")
+
+    # 이것이 이 검사의 핵심이다. --force 가 들어가는 순간 남이 main 에
+    # 올린 것을 실행이 조용히 지운다.
+    check(not re.search(r"push[^\n]*(--force|--f\b|-f\b|\+HEAD)", _run),
+          "강제 푸시를 하지 않는다 (--force 없음)")
+    check("merge-base --is-ancestor" in _run,
+          "fast-forward 인지 먼저 확인한다 (갈라져 있으면 안 민다)")
+
+    # 깨진 JSON 이 올라가면 브라우저가 조용히 탭을 끈다 — traffic.json 이
+    # NaN 을 담아 순위 탭이 꺼져 있던 그 사고다. 오류도 안 난다.
+    check("json.load" in _run,
+          "화면 JSON 이 읽히는지 보고 민다 (깨진 것을 라이브로 안 보낸다)")
+
+    check("github.ref_name != 'main'" in _if,
+          f"main 에서 돌 때는 아무것도 안 한다 (if: {_if})")
+
+    # 3시간 수집이 성공했는데 배포 한 줄 때문에 빨갛게 뜨면, 다음부터
+    # 빨간 표시를 안 읽게 된다. 대신 요약칸에 적는다.
+    check(_ff.get("continue-on-error") is True,
+          "여기서 실패해도 수집 결과를 빨갛게 만들지 않는다")
+    check("GITHUB_STEP_SUMMARY" in _run,
+          "반영했는지/못 했는지를 실행 요약에 적는다 (휴대폰에서 맨 위)")
+
+    # 데이터 커밋이 먼저 올라간 뒤에 밀어야 그 커밋까지 라이브에 간다.
+    _commit_i = next((i for i, n in enumerate(_names) if "결과 커밋" in n), None)
+    _ff_i = next((i for i, n in enumerate(_names) if "라이브 반영" in n), None)
+    if None not in (_commit_i, _ff_i):
+        check(_commit_i < _ff_i,
+              f"결과 커밋 뒤에 민다 ({_commit_i} < {_ff_i})")
 
 print()
 if fail:
