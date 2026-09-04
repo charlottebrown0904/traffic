@@ -365,9 +365,21 @@ def h3(panel: pd.DataFrame, controls: list[str], kind: str = "land") -> pd.DataF
             continue
         fe = " + C(year)" + (" + C(sigungu_cd)" if sub["sigungu_cd"].nunique() > 1 else "")
         m = _fit(sub, f"d_ln_price ~ {col}{fe}", "tollgate_id")
-        rows.append({**_row(m, col, col, len(sub), sub["tollgate_id"].nunique())})
+        # _row 는 이름 칸을 '항' 으로 준다. 이 표의 첫 칸 이름은 '변수' 다.
+        # 그대로 넣으면 표본이 모자란 줄(위쪽)과 칸 이름이 어긋나고,
+        # **성공한 줄만 있을 때는 '변수' 칸이 아예 없어 KeyError 로 죽는다.**
+        # H3 통제가 하나도 없던 동안에는 이 자리에 닿을 일이 없어 드러나지
+        # 않았다 — 인구를 넣은 첫 실행에서 판정이 통째로 안 나왔다.
+        got = _row(m, col, col, len(sub), sub["tollgate_id"].nunique())
+        got["변수"] = got.pop("항")
+        rows.append(got)
     out = pd.DataFrame(rows)
-    return out[cols] if len(out) else pd.DataFrame(columns=cols)
+    if not len(out):
+        return pd.DataFrame(columns=cols)
+    missing = [c for c in cols if c not in out.columns]
+    if missing:                       # 있어서는 안 되는 일이지만, 조용히 죽지 않게
+        raise ValueError(f"h3 표에 칸이 없습니다: {missing} (있는 칸: {list(out.columns)})")
+    return out[cols]
 
 
 def judge_h3(table: pd.DataFrame) -> tuple[str, str]:

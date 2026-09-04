@@ -294,6 +294,12 @@ jobs:
           fi
           echo "패널 생성 확인"
 
+          # continue-on-error 가 실패를 초록으로 덮는다. run 27 이 그랬다 —
+          # 세 가설 판정이 KeyError 로 죽었는데 실행은 성공으로 끝났고,
+          # 판정 파일은 **전 실행 것 그대로** 커밋됐다. 낡은 숫자가 새
+          # 숫자인 척하는 것이 아무 숫자도 없는 것보다 나쁘다.
+          python scripts/check_fresh.py public/app/data/verdicts.json --max-age-min 180
+
       # 결과를 브랜치에 되돌려 놓는다.
       #
       # **rebase 로 하면 안 된다.** run 24 가 그렇게 실패했다.

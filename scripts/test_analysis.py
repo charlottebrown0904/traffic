@@ -1425,6 +1425,53 @@ check(int(_get("48120", 2010)["population"].iloc[0]) == 1090
       and int(_get("48121", 2010)["population"].iloc[0]) == 260,
       "시와 구는 각자 제 값을 갖는다 (합치지 않는다)")
 
+# ────────────────────────────────────────────────────────────────
+print("\n32. H3 표가 추정에 성공했을 때도 칸 이름이 맞는가")
+
+# run 27 이 여기서 죽었다. H3 통제가 하나도 없던 동안에는 이 자리에 닿을
+# 일이 없어 드러나지 않다가, 인구를 넣은 **첫 실행**에서 판정이 통째로
+# 안 나왔다. 게다가 그 단계가 continue-on-error 라 실행은 초록이었다.
+#
+#   표본이 모자란 줄은 {"변수": ...} 로 만들고
+#   추정에 성공한 줄은 _row() 가 {"항": ...} 로 만든다
+#   → 성공한 줄만 있으면 '변수' 칸이 아예 없어 out[cols] 가 KeyError.
+_rng = np.random.default_rng(20260904)
+_n = 600
+_h3in = pd.DataFrame({
+    "kind": "land",
+    "d_ln_price": _rng.normal(0, .2, _n),
+    "d_pop": _rng.normal(0, .05, _n),
+    "year": _rng.integers(2015, 2025, _n),
+    "sigungu_cd": _rng.integers(41000, 41030, _n).astype(str),
+    "tollgate_id": ["tg%02d" % i for i in _rng.integers(0, 40, _n)],
+})
+_t3 = H.h3(_h3in, ["d_pop"], kind="land")
+check(list(_t3.columns) == ["변수", "n", "영업소", "beta", "se", "p"],
+      f"추정 성공 줄도 '변수' 칸을 갖는다 ({list(_t3.columns)})")
+check(len(_t3) == 1 and _t3["변수"].iloc[0] == "d_pop"
+      and not pd.isna(_t3["beta"].iloc[0]),
+      "실제로 계수가 들어 있다")
+
+# 표본이 모자란 줄과 성공한 줄이 **섞여도** 칸이 어긋나지 않아야 한다.
+_h3in["d_thin"] = np.where(_h3in.index < 20, _rng.normal(0, .05, _n), np.nan)
+_mixed = H.h3(_h3in, ["d_pop", "d_thin"], kind="land")
+check(list(_mixed.columns) == ["변수", "n", "영업소", "beta", "se", "p"]
+      and len(_mixed) == 2,
+      f"모자란 줄과 성공한 줄이 섞여도 칸이 같다 ({len(_mixed)}줄)")
+check(bool(_mixed["beta"].isna().any()) and bool(_mixed["beta"].notna().any()),
+      "모자란 줄은 비고, 성공한 줄은 값이 든다")
+
+# payload 가 그 표를 그대로 읽는가 (화면·요약이 같은 것을 본다).
+_v = pd.DataFrame([{"가설": "H1", "판정": "아직 모름", "근거": ""},
+                   {"가설": "H2", "판정": "아직 모름", "근거": ""},
+                   {"가설": "H3", "판정": "지지", "근거": ""}])
+_pay = H.payload(_v, {"H3": _t3}, kind="land", volume_col="volume_total",
+                 controls=["d_pop"], pre_trend_ok=None)
+_h3rows = [h for h in _pay["hypotheses"] if h["key"] == "H3"][0]["rows"]
+check(len(_h3rows) == 1 and _h3rows[0]["var"] == "d_pop"
+      and _h3rows[0]["label"] == "d_pop",
+      f"판정 파일에 변수 이름이 실린다 ({_h3rows[0]['label'] if _h3rows else '없음'})")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
