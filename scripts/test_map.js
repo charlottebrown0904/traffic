@@ -204,6 +204,20 @@ const FAKE_LEAFLET = () => {
           verdict: '기각', why: '계수가 0 과 구분되지 않습니다.', rows: [] },
       ],
     };
+    // 행정구역 인구. 크기가 곧 값이라 **큰 것과 작은 것**을 같이 넣어
+    // 원 넓이가 인구에 비례하는지(반지름이 √인구인지) 볼 수 있게 한다.
+    const FAKE_REGIONS = [
+      { sigungu_cd: '41110', name: '수원시', lat: 37.263, lon: 127.028,
+        n_umd: 40, pop: { '2024': 1200000, '2025': 1000000 } },
+      { sigungu_cd: '41220', name: '평택시', lat: 36.992, lon: 127.112,
+        n_umd: 30, pop: { '2024': 300000, '2025': 250000 } },
+      { sigungu_cd: '47940', name: '울릉군', lat: 37.484, lon: 130.905,
+        n_umd: 3, pop: { '2024': 10000, '2025': 10000 } },
+    ];
+    await page.route('**/app/data/regions.json*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify(FAKE_REGIONS),
+    }));
     await page.route('**/app/data/verdicts.json*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify(FAKE_VERDICTS),
@@ -437,6 +451,22 @@ const FAKE_LEAFLET = () => {
     // 원인은 반경 2.5 · 테두리 없음 · 불투명도 0.3~0.6 이었다.
     // 색을 더 진하게 하는 것으로는 못 이긴다 — 흰 테두리가 점을
     // 배경에서 끊어주는 것이 핵심이라 그것을 못박는다.
+    // 사장님 지시(2026-09-04): "모든 실거래는 초기 기본설정은 표기 끄는 것."
+    // 처음 화면이 2천 개 점으로 덮이면 IC 도 배경도 안 보인다.
+    const offAtStart = await page.evaluate(() => ({
+      drawn: (window.__tradeStyles || []).length,
+      boxes: [...document.querySelectorAll('#kind-filters input')]
+        .map((b) => b.checked),
+    }));
+    check('처음에는 실거래를 안 그린다', offAtStart.drawn === 0,
+          `${offAtStart.drawn}개`);
+    check('필터 칸도 꺼진 채로 시작한다 (화면과 상태가 같아야 한다)',
+          offAtStart.boxes.length > 0 && offAtStart.boxes.every((b) => !b),
+          offAtStart.boxes.join(','));
+
+    // 여기서부터는 켜고 본다.
+    for (const box of await page.$$('#kind-filters input')) await box.check();
+    await page.waitForTimeout(600);
     const tradeStyle = await page.evaluate(() => window.__tradeStyles || []);
     if (tradeStyle.length) {
       // 사장님 지적(2026-09-04): "어느게 IC이고 어느게 거래건인지 구분이
@@ -558,6 +588,45 @@ const FAKE_LEAFLET = () => {
     const satHit = /saturate\(([\d.]+)\)/.exec(sat);
     check('배경 지도가 도로 색을 지우지 않는다',
           satHit && Number(satHit[1]) >= .5, sat || '(필터 없음)');
+
+    console.log();
+    console.log('9. 행정구역 인구 — 중심에 크기별로');
+    const pop = await page.evaluate(() => {
+      const circles = window.__map.circles || [];
+      return {
+        peek: window.__pop || {},
+        pane: (window.__map.panes && window.__map.panes.popPane)
+          ? Number(window.__map.panes.popPane.style.zIndex) : null,
+        marks: (window.__map.markers || []).filter((o) => o.pane === 'popPane'),
+        switchShown: !(document.getElementById('pop-switch') || {}).hidden,
+        legend: document.querySelector('#map-legend').textContent,
+      };
+    });
+    check('인구 스위치가 보인다 (자료가 있을 때만)', pop.switchShown);
+    check('시군구마다 원을 하나씩 그린다', pop.marks.length === 3,
+          `${pop.marks.length}개`);
+    check('인구 원을 IC 아래 판에 그린다 (200 < z < 400)',
+          pop.pane !== null && pop.pane > 200 && pop.pane < 400,
+          `z-index ${pop.pane}`);
+    if (pop.marks.length === 3) {
+      // 반지름이 √인구에 비례해야 원의 **넓이**가 인구에 비례한다.
+      // 반지름을 인구에 그대로 비례시키면 4배 인구가 넓이로는 16배가 된다.
+      const R = pop.marks.map((m) => m.radius).sort((a, b) => b - a);
+      const big = R[0], mid = R[1];
+      // 가장 큰 곳 1,200,000 · 가운데 300,000 → √비 = 0.5
+      const inner = (r) => r - 4;      // POP_R_MIN 을 뺀 나머지가 √에 비례
+      const ratio = inner(mid) / inner(big);
+      check('원 넓이가 인구에 비례한다 (반지름은 √인구)',
+            Math.abs(ratio - 0.5) < .05,
+            `가운데/최대 반지름비 ${ratio.toFixed(3)} (기대 0.500)`);
+      check('가장 작은 곳도 보인다 (최소 크기가 있다)',
+            R[2] >= 4, `가장 작은 반지름 ${R[2].toFixed(1)}`);
+    }
+    check('범례가 크기와 인구를 짝지어 보여준다',
+          /행정구역 인구/.test(pop.legend) && /명/.test(pop.legend));
+    check('어느 해 인구인지 적는다',
+          !!pop.peek.year && pop.legend.includes(String(pop.peek.year)),
+          String(pop.peek.year));
 
     console.log();
     console.log('8. 세 가설 판정 — 무엇을 말할 수 있고 없는지');

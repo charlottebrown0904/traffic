@@ -291,6 +291,73 @@ def _landprice_series() -> dict:
     return {"rows": rows, "available": bool(rows)}
 
 
+def _regions() -> list[dict]:
+    """시군구별 인구와 **대표점**.
+
+    대표점은 어디서 오는가 — 우리에게 시군구 경계는 없다. 새로 받아오는
+    대신, 이미 가진 **법정동 중심점 좌표의 중앙값**을 쓴다.
+
+      · 법정동 중심점은 지오코딩에서 이미 붙여 둔 값이다 (geocode_level='umd').
+      · 거래 좌표 전체의 평균을 쓰면 거래가 몰린 쪽으로 끌려간다. 그래서
+        **법정동마다 한 점씩**만 세고, 평균이 아니라 중앙값을 쓴다 —
+        섬이나 외딴 법정동 하나가 점을 끌고 가지 못한다.
+
+    행정구역의 기하학적 중심은 아니다. 몇 km 어긋날 수 있고, 화면에도
+    '대표점' 이라고 적는다. 인구를 원 크기로 보이는 용도에는 충분하고,
+    이것 때문에 API 를 하루치 더 쓰는 것은 맞바꿈이 안 맞는다.
+    """
+    with db.connect(read_only=True) as con:
+        has_region = con.execute("""
+            SELECT count(*) FROM information_schema.tables
+            WHERE table_name = 'region_year'
+        """).fetchone()[0]
+        if not has_region:
+            return []
+        pop = con.execute("""
+            SELECT sigungu_cd, year, value
+            FROM region_year
+            WHERE metric = 'population' AND value IS NOT NULL
+            ORDER BY sigungu_cd, year
+        """).fetchdf()
+        if pop.empty:
+            return []
+        # 법정동마다 한 점. 같은 법정동에 거래가 천 건이어도 한 번만 센다.
+        pts = con.execute("""
+            SELECT sigungu_cd,
+                   any_value(sigungu) AS name,
+                   median(lat) AS lat, median(lon) AS lon,
+                   count(*) AS n_umd
+            FROM (
+                SELECT sigungu_cd, any_value(sigungu) AS sigungu,
+                       avg(lat) AS lat, avg(lon) AS lon
+                FROM trade
+                WHERE lat IS NOT NULL AND umd IS NOT NULL AND umd <> ''
+                GROUP BY sigungu_cd, umd
+            )
+            GROUP BY sigungu_cd
+            ORDER BY sigungu_cd
+        """).fetchdf()
+
+    centers = {str(r.sigungu_cd): r for r in pts.itertuples(index=False)}
+    out = []
+    for code, group in pop.groupby("sigungu_cd"):
+        c = centers.get(str(code))
+        if c is None:
+            continue          # 좌표가 없으면 지도에 못 찍는다. 조용히 빼되 수는 센다.
+        out.append({
+            "sigungu_cd": str(code),
+            "name": _text(c.name) or str(code),
+            "lat": round(float(c.lat), 6),
+            "lon": round(float(c.lon), 6),
+            "n_umd": int(c.n_umd),
+            "pop": {str(int(r.year)): int(r.value)
+                    for r in group.itertuples(index=False)},
+        })
+    print(f"  행정구역 인구 {len(out)}개 시군구"
+          f" (좌표 없어 빠진 것 {pop['sigungu_cd'].nunique() - len(out)}개)")
+    return out
+
+
 def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     band = band or primary_band()
     panel_path = PROCESSED / "panel.parquet"
@@ -376,7 +443,14 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         "disclaimer": DISCLAIMER,
     }
 
+    regions = _regions()
+    meta["counts"]["regions"] = len(regions)
+    if regions:
+        years = sorted({int(y) for r in regions for y in r["pop"]})
+        meta["population_years"] = years
+
     _write("meta.json", meta)
+    _write("regions.json", regions)
     _write("traffic.json", _traffic_ranking())
     _write("chart.json", _chart_series())
     _write("tollgates.json", _records(merged))

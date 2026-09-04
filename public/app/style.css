@@ -787,3 +787,20 @@ body.picking .leaflet-container{cursor:crosshair}
 .ci-away{font-variant-numeric:tabular-nums; font-weight:600}
 .ci-null{font-variant-numeric:tabular-nums; color:var(--faint)}
 .ci-null::after{content:' (0 포함)'; font-size:.72rem}
+
+/* 행정구역 인구 — 배경 맥락이라 뒤로 물러나야 한다. 채움은 아주 옅게,
+   테두리로만 존재를 알린다. 영업소·거래 색과 겹치지 않는 중립 남색. */
+:root{ --pop-fill:#1E3A5F; --pop-ring:#1E3A5F; }
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){ --pop-fill:#8FB4DC; --pop-ring:#8FB4DC; }
+}
+:root[data-theme="dark"]{ --pop-fill:#8FB4DC; --pop-ring:#8FB4DC; }
+
+/* 범례의 인구 원은 지도와 **같은 크기 비율**로 그린다. 크기가 곧 값이라
+   색 스와치로는 설명이 안 된다. 큰 원이 줄 높이를 밀지 않게 가운데 정렬. */
+.map-legend .sw.sw-pop{
+  border-radius:50%; flex:0 0 auto;
+  background:color-mix(in srgb, var(--pop-fill) 22%, transparent);
+  border:1px solid var(--pop-ring);
+}
+.map-legend .row:has(> .sw-pop){align-items:center}

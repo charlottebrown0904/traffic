@@ -202,8 +202,25 @@ def load_zones(pattern: str = "zones_*.*") -> pd.DataFrame:
     if not frames:
         return pd.DataFrame()
     allz = pd.concat(frames, ignore_index=True)
-    allz["zone_id"] = (allz["type"].astype(str) + "|" + allz["name"].astype(str)
-                       + "|" + allz["designated_date"].dt.strftime("%Y%m%d"))
+
+    # 빈 칸을 빈 문자열로 바꾼 뒤에 잇는다.
+    #
+    # 예전에는 astype(str) 만 했다. 그때는 결측이 "nan" 이라는 **글자**가
+    # 돼서 zone_id 가 어쨌든 만들어졌는데, pandas 3 의 문자열 dtype 은
+    # 결측을 결측인 채로 둔다. 그러면 이어붙인 zone_id 가 통째로 결측이
+    # 되고, 적재가 NOT NULL 로 터진다 — zones_housing.csv 의 유형이 빈
+    # 한 줄 때문에 172건이 통째로 안 들어갔다. 값 하나가 없다고 파일
+    # 전체를 못 쓰게 두면 안 된다.
+    def _s(col):
+        return col.astype("string").fillna("").str.strip()
+
+    allz["zone_id"] = (_s(allz["type"]) + "|" + _s(allz["name"]) + "|"
+                       + _s(allz["designated_date"].dt.strftime("%Y%m%d")))
+    # 날짜가 없으면 이벤트가 아니다(위에서 걸렀지만 한 번 더 못박는다).
+    empty = allz["zone_id"].str.endswith("|")
+    if empty.any():
+        print(f"  ⚠ 지정일이 비어 zone_id 를 못 만든 {int(empty.sum())}행 제외")
+        allz = allz[~empty]
     before = len(allz)
     allz = allz.drop_duplicates(subset=["zone_id"])
     if before != len(allz):

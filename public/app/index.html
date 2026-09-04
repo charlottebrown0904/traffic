@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260904f">
+<link rel="stylesheet" href="/app/style.css?v=20260904g">
 </head>
 <body>
 
@@ -110,6 +110,12 @@
       <!-- 용도지역(지적편집도) 배경. 기본으로 켜져 있고, 거래 점 위치만
            보고 싶을 때 끌 수 있다. 12배율 아래에서는 색면이 지도를 통째로
            덮으므로 켜져 있어도 안 그려진다. -->
+      <!-- 행정구역 인구. 시군구 대표점에 인구 크기만큼 원을 그린다.
+           IC 아래 판에 깔아서 영업소·거래를 가리지 않는다. -->
+      <label class="map-switch" id="pop-switch" hidden>
+        <input type="checkbox" id="pop-bg" checked>
+        <span>인구</span>
+      </label>
       <label class="map-switch">
         <input type="checkbox" id="zoning-bg" checked>
         <span>용도지역</span>
@@ -422,12 +428,12 @@
 <footer class="disclaimer" id="disclaimer"></footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="/app/config.js?v=20260904f"></script>
+<script src="/app/config.js?v=20260904g"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/app/supabase.js?v=20260904f"></script>
-<script src="/lib/supabase-init.js?v=20260904f"></script>
+<script src="/app/supabase.js?v=20260904g"></script>
+<script src="/lib/supabase-init.js?v=20260904g"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
-<script src="/app/gate.js?v=20260904f"></script>
+<script src="/app/gate.js?v=20260904g"></script>
 </body>
 </html>

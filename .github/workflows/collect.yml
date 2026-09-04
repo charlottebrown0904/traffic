@@ -238,6 +238,13 @@ jobs:
         continue-on-error: true
         run: python -m redt.cli gaps
 
+      # 가설3 통제(시군구 인구·산단·택지). 파일이 저장소에 있으면 적재하고,
+      # 없으면 이 단계만 빨갛게 되고 나머지는 그대로 간다. 지금까지 이
+      # 단계가 파이프라인에 아예 없어서 H3 통제가 늘 비어 있었다.
+      - name: 가설3 자료 적재
+        continue-on-error: true
+        run: python -m redt.cli load-h3
+
       - name: 분석 패널
         continue-on-error: true
         run: python -m redt.cli panel

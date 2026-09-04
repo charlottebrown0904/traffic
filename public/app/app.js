@@ -26,9 +26,10 @@ const state = {
   parcelOnly: false, selected: null, showAllBands: false, tiers: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
   apiAvailable: false, verdicts: null,
+  regions: null, showPop: true, popYear: null,
 };
 
-let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer;
+let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, popLayer;
 const markers = new Map();
 
 /* ─────────── 유틸 ─────────── */
@@ -83,7 +84,9 @@ async function boot() {
     return;
   }
 
-  state.activeKinds = new Set(state.meta.kinds);
+  // 사장님 지시(2026-09-04): "모든 실거래는 초기 기본설정은 표기 끄는 것."
+  // 거래가 2천 점이라 처음 화면이 온통 점으로 덮인다. 필요할 때 켠다.
+  state.activeKinds = new Set();
   state.dealFrom = `${state.meta.year_min}-01`;
   state.dealTo = `${state.meta.year_max}-12`;
 
@@ -112,6 +115,13 @@ async function boot() {
   } catch (err) {
     state.chart = null;
   }
+  // 행정구역 인구. 없으면 그 스위치만 숨긴다.
+  try {
+    const r = await fetch('/app/data/regions.json');
+    if (r.ok) state.regions = await r.json();
+  } catch (err) {
+    state.regions = null;
+  }
   // 판정은 분석이 한 번이라도 돈 뒤에야 생긴다. 없으면 그 탭만 비운다.
   try {
     const r = await fetch('/app/data/verdicts.json');
@@ -136,6 +146,7 @@ async function boot() {
   buildRank();
   buildTrend();
   buildMap();
+  drawPopulation();
   buildLegend();
   buildMatrix();
   buildBoardTable();
@@ -265,7 +276,8 @@ function buildFilters() {
     const label = el('label', 'check');
     const input = el('input');
     input.type = 'checkbox';
-    input.checked = true;
+    // 처음에는 꺼 둔다 (state.activeKinds 가 비어 있는 것과 짝이 맞아야 한다).
+    input.checked = state.activeKinds.has(kind);
     input.addEventListener('change', () => {
       input.checked ? state.activeKinds.add(kind) : state.activeKinds.delete(kind);
       refreshMap();
@@ -340,6 +352,7 @@ function buildLegend() {
     shownBands().map(([lo, hi], i) =>
       `<div class="row" style="--c:${bandColor(i)}">` +
       `<span class="sw ring"></span>${lo}–${hi} km</div>`).join('') +
+    popLegendRows() +
     '</div>';
 
   const peek = legend.querySelector('.legend-peek');
@@ -985,6 +998,9 @@ function recolorTollgates() {
   });
   updateTierCounts();
   refreshMap();
+  // 인구도 같은 해를 본다. 교통량은 2026년인데 인구는 2025년이면
+  // 화면 두 곳이 다른 해를 말하게 된다.
+  drawPopulation();
   buildLegend();
 }
 
@@ -1101,6 +1117,11 @@ function buildMap() {
 
   addZoningLayer();
 
+  // 인구 원은 **가장 아래**에 깐다. 배경 맥락이지 읽을 값이 아니라,
+  // 영업소나 거래를 가리면 안 된다. 370 은 배경 타일(200)보다 위,
+  // 거래(380)와 밴드·영업소(400)보다 아래다.
+  map.createPane('popPane').style.zIndex = 370;
+  popLayer = L.layerGroup().addTo(map);
   bandLayer = L.layerGroup().addTo(map);
   tradeLayer = L.layerGroup().addTo(map);
   tollgateLayer = L.layerGroup().addTo(map);
@@ -1571,6 +1592,91 @@ function buildBoardTable() {
   });
 }
 
+/* 인구 원은 크기가 곧 값이다. 색 스와치로는 설명이 안 되므로 **원 세 개**를
+   실제 크기 비율로 그려 둔다 — 큰 것·중간·작은 것이 각각 몇 명인지. */
+function popLegendRows() {
+  const info = window.__pop || {};
+  if (!state.showPop || !info.year || !info.max) return '';
+  const steps = [1, .25, .04];      // 넓이 비율 1 : 1/4 : 1/25 → 반지름 1 : .5 : .2
+  return '<div class="grp">행정구역 인구 · ' + info.year + '년</div>' +
+    steps.map((frac) => {
+      const r = POP_R_MIN + (POP_R_MAX - POP_R_MIN) * Math.sqrt(frac);
+      const v = Math.round(info.max * frac);
+      return `<div class="row"><span class="sw sw-pop" style="width:${(r * 2).toFixed(0)}px;`
+        + `height:${(r * 2).toFixed(0)}px"></span>`
+        + `약 ${v.toLocaleString('ko-KR')}명</div>`;
+    }).join('');
+}
+
+/* ─────────── 행정구역 인구 ─────────── */
+/* 시군구 대표점에 인구만큼 원을 그린다.
+ *
+ * 크기는 **넓이에 비례**시킨다(반지름은 √인구). 반지름을 인구에 그대로
+ * 비례시키면 인구가 4배인 곳이 넓이로는 16배로 보여, 큰 도시가 화면을
+ * 통째로 덮고 작은 군은 점이 된다. 사람은 원을 넓이로 읽는다.
+ *
+ * 대표점은 행정구역의 기하학적 중심이 아니다 — 우리가 이미 가진 법정동
+ * 중심점의 중앙값이다(webexport._regions). 몇 km 어긋날 수 있어서
+ * 말풍선에도 그렇게 적는다.
+ */
+const POP_R_MIN = 4;
+const POP_R_MAX = 30;
+
+function popYear() {
+  if (!Array.isArray(state.regions) || !state.regions.length) return null;
+  const years = new Set();
+  state.regions.forEach((r) => Object.keys(r.pop || {}).forEach((y) => years.add(y)));
+  if (!years.size) return null;
+  const sorted = [...years].sort();
+  // 교통량 화면이 보고 있는 해와 맞춘다. 그 해 인구가 없으면 가장 최근 해.
+  const want = String(state.popYear || state.tgYear || '');
+  return years.has(want) ? want : sorted[sorted.length - 1];
+}
+
+function drawPopulation() {
+  const have = Array.isArray(state.regions) && state.regions.length > 0;
+  // 자료가 없으면 스위치를 아예 안 보여준다. 눌러도 아무 일이 없는
+  // 스위치가 있으면 사람은 고장으로 읽는다.
+  const pswitch = document.getElementById('pop-switch');
+  const pbox = document.getElementById('pop-bg');
+  if (pswitch) pswitch.hidden = !have;
+  if (pbox) pbox.checked = state.showPop && have;
+
+  if (!map || !popLayer) return;
+  popLayer.clearLayers();
+  window.__pop = { year: null, n: 0, max: 0 };
+  if (!state.showPop || !have) return;
+
+  const year = popYear();
+  if (!year) return;
+  const vals = state.regions
+    .map((r) => (r.pop || {})[year])
+    .filter((v) => typeof v === 'number' && v > 0);
+  if (!vals.length) return;
+  const max = Math.max(...vals);
+
+  state.regions.forEach((r) => {
+    const v = (r.pop || {})[year];
+    if (!(typeof v === 'number' && v > 0)) return;
+    const radius = POP_R_MIN + (POP_R_MAX - POP_R_MIN) * Math.sqrt(v / max);
+    const marker = L.circleMarker([r.lat, r.lon], {
+      pane: 'popPane',
+      radius,
+      color: cssVar('--pop-ring'),
+      weight: 1,
+      fillColor: cssVar('--pop-fill'),
+      fillOpacity: .22,
+      opacity: .55,
+    });
+    marker.bindTooltip(
+      `${r.name} · ${year}년 인구 ${v.toLocaleString('ko-KR')}명`
+      + '<br><em>점 위치는 법정동 중심점의 중앙값(대표점)입니다</em>',
+      { direction: 'top' });
+    popLayer.addLayer(marker);
+  });
+  window.__pop = { year, n: popLayer.getLayers ? popLayer.getLayers().length : 0, max };
+}
+
 /* ─────────── 세 가설 판정 ─────────── */
 /* 이 화면은 숫자를 하나 더 보여주는 곳이 아니다. **그 숫자로 무엇을 주장할
    수 있는가** 를 적는 곳이다. 계수가 유의해도 위약 밴드가 같이 유의하면
@@ -2014,6 +2120,17 @@ document.addEventListener('keydown', (e) => {
   if (zbox) {
     zbox.checked = state.zoning;
     zbox.addEventListener('change', () => toggleZoning(zbox.checked));
+  }
+
+  // 이 함수는 스크립트를 읽자마자 돈다 — 자료를 받기 **전**이다.
+  // 그래서 여기서는 누름만 잇고, 보일지 말지는 drawPopulation 이 정한다.
+  // 여기서 state.regions 를 보면 항상 비어 있어 스위치가 영영 안 뜬다.
+  const pbox = document.getElementById('pop-bg');
+  if (pbox) {
+    pbox.addEventListener('change', () => {
+      state.showPop = pbox.checked;
+      drawPopulation();
+    });
   }
 
   const box = document.getElementById('all-bands');
