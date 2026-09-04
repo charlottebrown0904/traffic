@@ -32,6 +32,9 @@ data/processed/*
 # 가설3 자료 — API 가 막혀 파일로 받는다 (docs/hypothesis-3-data.md)
 !data/raw/zones_*.csv
 !data/raw/region_*.csv
+# KOSIS 인구 원본. 정리한 region_population.csv 만 두면 '어디서 왔나' 를
+# 되짚을 수 없다 — 대응표가 맞는지 확인하려면 원본이 있어야 한다.
+!data/raw/kosis_population_raw.csv
 # 산업단지 '현황' 스냅샷 — 지정일이 없어 이벤트로는 못 쓰지만
 # 횡단 비교(지시3)의 통제로는 쓸 수 있다. zones_ 로 시작하지
 # 않게 둔 것은 로더가 이벤트 파일로 오해하지 않게 하려는 것이다.

@@ -1249,6 +1249,68 @@ def cmd_kosis_fetch(args):
         print("       2자리나 다른 모양이면 KOSIS 자체 코드라 이름으로 맞춰야 합니다.")
 
 
+def cmd_population(args):
+    """KOSIS 원본을 **우리 행정구역 코드에 맞춰** region_population.csv 로.
+
+    받은 그대로는 못 쓴다 — 계층(전국·시도·시군구)이 섞여 있고, 시 코드가
+    구 인구를 이미 포함하며, 2003~2025 사이에 코드가 여러 번 바뀌었다.
+    자세한 것은 collect/population.py 첫머리에 적었다.
+    """
+    from .collect import population as pop
+
+    raw_path = ROOT / "data" / "raw" / args.raw
+    if not raw_path.exists():
+        sys.exit(f"{raw_path} 이 없습니다. 먼저 kosis-fetch 를 실행하세요.")
+    kosis = pop.read_kosis(raw_path)
+    print(f"KOSIS 원본  {raw_path.name}")
+    print(f"  5자리 시군구 총인구 {len(kosis):,}행 · 코드 {kosis['code'].nunique()}개"
+          f" · {kosis['year'].min()}~{kosis['year'].max()}")
+
+    # 우리 코드와 이름. 이름은 시도가 통째로 바뀐 경우에만 쓴다.
+    our = {c: "" for c in rg.discovered_codes()}
+    names_path = ROOT / "data" / "raw" / args.names
+    if names_path.exists():
+        nm = pd.read_csv(names_path, dtype=str)
+        nm = nm.sort_values(["sigungu_cd", "n"], ascending=[True, False]) \
+               .drop_duplicates("sigungu_cd")
+        for r in nm.itertuples(index=False):
+            our[str(r.sigungu_cd)] = str(r.name)
+        print(f"  이름표 {names_path.name} — {len(nm):,}개")
+    else:
+        print(f"  ⚠ {names_path.name} 이 없습니다. 시도가 통째로 바뀐 시군구"
+              " (광주·전남 통합)는 이을 수 없어 빈 채로 남습니다.")
+
+    table, report = pop.normalize(kosis, our)
+    pop.describe(report, our)
+    if table.empty:
+        sys.exit("채운 자리가 없습니다.")
+
+    out = ROOT / "data" / "raw" / args.out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    # load_region 이 읽는 이름으로 낸다 (시군구코드·연도·총인구).
+    table.rename(columns={"sigungu_cd": "시군구코드", "year": "연도",
+                          "population": "총인구", "source": "근거"}) \
+         .to_csv(out, index=False, encoding="utf-8-sig")
+    print(f"\n{out}  {len(table):,}행")
+    _step_summary(_population_markdown(report, our))
+
+
+def _population_markdown(report: dict, our: dict) -> str:
+    cells, cap = report["cells"], report["cells_max"]
+    lines = [f"## 시군구 인구 정리 ({report['years'][0]}~{report['years'][-1]})", "",
+             f"- 채운 자리 **{cells:,} / {cap:,}** ({100 * cells / cap:.1f}%)",
+             f"- 코드 {report['filled_codes']}/{report['our_codes']}"]
+    if report["aliases"]:
+        lines.append(f"- 시도 통합으로 옛 코드에서 이은 것 {len(report['aliases'])}개")
+    gaps = report["gaps"]
+    if gaps:
+        lines += ["", "### 빈 자리 (구가 새로 갈라진 경우 — 나눌 근거가 없어 안 채움)",
+                  "", "| 코드 | 이름 | 빈 해 |", "|---|---|---:|"]
+        for code, ys in sorted(gaps.items(), key=lambda x: -len(x[1]))[:20]:
+            lines.append(f"| {code} | {our.get(code, '')} | {len(ys)} |")
+    return "\n".join(lines)
+
+
 def cmd_region_names(args):
     """우리 시군구 코드에 붙은 **이름**을 거래 자료에서 뽑아 파일로 남긴다.
 
@@ -1770,6 +1832,13 @@ def main(argv=None):
     p.add_argument("--end", default="2025")
     p.add_argument("--out", default="region_population.csv")
     p.set_defaults(func=cmd_kosis_fetch)
+
+    p = sub.add_parser("population",
+                       help="KOSIS 원본 → 우리 시군구 코드에 맞춘 인구표")
+    p.add_argument("--raw", default="kosis_population_raw.csv")
+    p.add_argument("--names", default="region_names.csv")
+    p.add_argument("--out", default="region_population.csv")
+    p.set_defaults(func=cmd_population)
 
     p = sub.add_parser("region-names",
                        help="거래 자료에서 시군구 코드→이름 표 뽑기")

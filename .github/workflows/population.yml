@@ -82,7 +82,13 @@ jobs:
         run: |
           python -m redt.cli kosis-fetch --table population \
             --start "${{ inputs.start }}" --end "${{ inputs.end }}" \
-            --out region_population.csv 2>&1 | tee /tmp/fetch.log
+            --out kosis_population_raw.csv 2>&1 | tee /tmp/fetch.log
+
+      # 받은 그대로는 못 쓴다 — 전국·시도·시군구가 섞여 있고, 시 코드가 구
+      # 인구를 이미 포함하며, 2003~2025 사이에 코드가 여러 번 바뀌었다.
+      # 우리 코드에 맞춰 잇고, 못 채운 자리는 비운 채로 몇 개인지 보고한다.
+      - name: 우리 행정구역에 맞추기
+        run: python -m redt.cli population 2>&1 | tee -a /tmp/fetch.log
 
       - name: 실행 요약
         if: always()
@@ -104,7 +110,7 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -e
-          FILES="data/raw/region_population.csv"
+          FILES="data/raw/region_population.csv data/raw/kosis_population_raw.csv"
           test -s data/raw/region_population.csv \
             || { echo "::error::인구 파일이 비었습니다"; exit 1; }
           if [ -s data/raw/region_names.csv ]; then
