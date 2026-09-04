@@ -1,0 +1,28 @@
+# 법원경매·공매 물건(토지·공장·창고)을 자동으로 받아올 길이 있는지 묻는다.
+#
+# 기억으로 답하지 않는다. 이 저장소에서 레이어 이름을 세 번 틀렸고
+# (api/tile.js), 공시지가 원천도 추측으로 시작했다가 헛돌았다. 포털에
+# 실제로 무엇이 열려 있는지 목록을 받아 보고 답한다.
+#
+# 러너는 미국이라 한국 공공 API 가 막힌다. 서울 중계기를 거친다.
+name: 경매·공매 원천 탐침
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python scripts/auction_probe.py
