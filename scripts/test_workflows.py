@@ -237,6 +237,11 @@ if _ff is not None:
     check("merge-base --is-ancestor" in _run,
           "fast-forward 인지 먼저 확인한다 (갈라져 있으면 안 민다)")
 
+    # main 이 우리보다 앞선 경우를 '갈라졌다' 로 알리면 거짓 경보다.
+    # 실행이 도는 동안 브랜치에 새 커밋이 올라가면 실제로 그렇게 된다.
+    check("--is-ancestor HEAD origin/main" in _run,
+          "main 이 이미 앞서 있으면 조용히 넘어간다 (거짓 경보를 안 만든다)")
+
     # 깨진 JSON 이 올라가면 브라우저가 조용히 탭을 끈다 — traffic.json 이
     # NaN 을 담아 순위 탭이 꺼져 있던 그 사고다. 오류도 안 난다.
     check("json.load" in _run,

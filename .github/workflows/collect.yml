@@ -355,6 +355,15 @@ jobs:
             echo "main 이 이미 같습니다 — 반영할 것 없음"
             exit 0
           fi
+          # main 이 우리보다 **앞서** 있는 경우. 실행이 도는 동안 브랜치에
+          # 새 커밋이 올라가고 그것이 먼저 main 에 반영되면 이렇게 된다.
+          # 갈라진 것이 아니라 이미 지나간 것이므로 조용히 넘어간다 —
+          # 여기서 '갈라졌다' 고 알리면 거짓 경보가 되고, 거짓 경보가
+          # 몇 번 뜨면 진짜 경보도 안 읽게 된다.
+          if git merge-base --is-ancestor HEAD origin/main; then
+            echo "main 이 이미 이 커밋을 담고 있습니다 — 반영할 것 없음"
+            exit 0
+          fi
           if ! git merge-base --is-ancestor origin/main HEAD; then
             echo "::error::main 이 이 브랜치에서 갈라져 있습니다 — fast-forward 가 아니므로 밀지 않습니다."
             {
