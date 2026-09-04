@@ -208,7 +208,9 @@ const FAKE_LEAFLET = () => {
     // 한 단이라도 비면 그 단이 제 크기로 그려지는지 볼 수 없다.
     const FAKE_REGIONS = [
       { sigungu_cd: '41110', name: '수원시', lat: 37.263, lon: 127.028,
-        n_umd: 40, pop: { '2024': 1200000, '2025': 1000000 } },   // 20만 초과
+        n_umd: 40, pop: { '2024': 1200000, '2025': 1000000 } },   // 50만 초과
+      { sigungu_cd: '41460', name: '용인시', lat: 37.241, lon: 127.178,
+        n_umd: 35, pop: { '2024': 350000, '2025': 340000 } },     // 20만~50만
       { sigungu_cd: '41220', name: '평택시', lat: 36.992, lon: 127.112,
         n_umd: 30, pop: { '2024': 120000, '2025': 118000 } },     // 5만~20만
       { sigungu_cd: '47940', name: '울릉군', lat: 37.484, lon: 130.905,
@@ -603,35 +605,36 @@ const FAKE_LEAFLET = () => {
       };
     });
     check('인구 스위치가 보인다 (자료가 있을 때만)', pop.switchShown);
-    check('시군구마다 원을 하나씩 그린다', pop.marks.length === 3,
+    check('시군구마다 원을 하나씩 그린다', pop.marks.length === 4,
           `${pop.marks.length}개`);
     check('인구 원을 IC 아래 판에 그린다 (200 < z < 400)',
           pop.pane !== null && pop.pane > 200 && pop.pane < 400,
           `z-index ${pop.pane}`);
-    if (pop.marks.length === 3) {
-      // 크기는 **세 단**이다. 235가지 크기를 눈으로 가를 수는 없다.
+    if (pop.marks.length === 4) {
+      // 크기는 **네 단**이다. 235가지 크기를 눈으로 가를 수는 없다.
       const R = pop.marks.map((m) => m.radius).sort((a, b) => b - a);
-      check('크기가 세 단으로 끊긴다', new Set(R).size === 3, R.join(' / '));
-      check('인구가 많을수록 크다', R[0] > R[1] && R[1] > R[2], R.join(' > '));
-      // 120,000 은 '20만 이하' 단이다. 경계를 잘못 잡으면 여기서 갈린다.
-      const byName = {};
-      pop.marks.forEach((m) => { byName[m.radius] = (byName[m.radius] || 0) + 1; });
+      check('크기가 네 단으로 끊긴다', new Set(R).size === 4, R.join(' / '));
+      check('인구가 많을수록 크다',
+            R.every((r, i) => i === 0 || R[i - 1] > r), R.join(' > '));
+      // 넣은 넷이 각각 다른 단에 든다 — 경계(5만·20만·50만)가 맞다는 뜻이다.
+      const bySize = {};
+      pop.marks.forEach((m) => { bySize[m.radius] = (bySize[m.radius] || 0) + 1; });
       check('한 단에 하나씩 들어간다 (경계가 맞다)',
-            Object.values(byName).every((n) => n === 1), JSON.stringify(byName));
+            Object.values(bySize).every((n) => n === 1), JSON.stringify(bySize));
     }
     // 범례 원은 지도 원과 **같은 크기**여야 한다. 크기가 곧 값이라
     // 그것이 유일한 단서인데, 둘이 다르면 짝을 못 맞춘다.
     const legendSizes = await page.evaluate(() =>
       [...document.querySelectorAll('#map-legend .sw-pop')]
         .map((el) => Math.round(el.getBoundingClientRect().width)));
-    check('범례에 단이 세 개 있다', legendSizes.length === 3, legendSizes.join('/'));
+    check('범례에 단이 네 개 있다', legendSizes.length === 4, legendSizes.join('/'));
     check('범례 원 크기가 지도와 같다',
-          legendSizes.length === 3
+          legendSizes.length === 4
           && legendSizes.every((w) => pop.marks.some((m) => Math.abs(m.radius * 2 - w) <= 1)),
           `범례 ${legendSizes.join('/')} vs 지도 ${pop.marks.map((m) => m.radius * 2).sort().join('/')}`);
     check('범례가 크기와 인구를 짝지어 말한다',
-          /행정구역 인구/.test(pop.legend) && /5만 이하/.test(pop.legend)
-          && /20만 이하/.test(pop.legend) && /20만 초과/.test(pop.legend));
+          ['행정구역 인구', '5만 이하', '20만 이하', '50만 이하', '50만 초과']
+            .every((t) => pop.legend.includes(t)));
     check('어느 해 인구인지 적는다',
           !!pop.peek.year && pop.legend.includes(String(pop.peek.year)),
           String(pop.peek.year));
