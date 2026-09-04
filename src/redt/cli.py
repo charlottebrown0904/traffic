@@ -1249,6 +1249,50 @@ def cmd_kosis_fetch(args):
         print("       2자리나 다른 모양이면 KOSIS 자체 코드라 이름으로 맞춰야 합니다.")
 
 
+def cmd_region_names(args):
+    """우리 시군구 코드에 붙은 **이름**을 거래 자료에서 뽑아 파일로 남긴다.
+
+    왜 필요한가. config/sigungu_codes.yaml 은 코드와 건수뿐이라 이름이 없다.
+    그런데 KOSIS 같은 바깥 자료는 **옛 코드**로 온다 — 광주(29)·전남(46)이
+    통합되며 접두사 12 를 새로 받았고, KOSIS 는 아직 29·46 으로 준다.
+    코드끼리는 못 맞추고 이름으로 맞춰야 하는데, 그 이름의 출처가 없었다.
+
+    RTMS 응답에는 시군구명(sggNm)이 들어 있고 우리 trade 테이블이 그것을
+    그대로 갖고 있다. **우리 자료에서 뽑는 것**이 가장 확실하다 — 어디서
+    베껴 온 표가 아니라 실제로 우리가 받은 이름이다.
+    """
+    with db.connect(read_only=True) as con:
+        df = con.execute("""
+            SELECT sigungu_cd, sigungu AS name, COUNT(*) AS n
+            FROM trade
+            WHERE sigungu IS NOT NULL AND sigungu <> ''
+            GROUP BY 1, 2
+            ORDER BY 1, n DESC
+        """).fetchdf()
+    if df.empty:
+        sys.exit("trade 테이블에 시군구 이름이 없습니다.")
+    # 코드 하나에 이름이 여럿일 수 있다(표기 흔들림). 가장 많이 온 것을 쓰되
+    # 나머지도 남긴다 — 버리면 왜 그 이름을 골랐는지 나중에 알 수 없다.
+    top = df.sort_values(["sigungu_cd", "n"], ascending=[True, False]) \
+            .drop_duplicates("sigungu_cd")
+    out = ROOT / "data" / "raw" / args.out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out, index=False, encoding="utf-8-sig")
+    print(f"{out}  {len(df):,}행 · 코드 {df['sigungu_cd'].nunique()}개")
+    multi = df.groupby("sigungu_cd").size()
+    multi = multi[multi > 1]
+    if len(multi):
+        print(f"  이름이 둘 이상인 코드 {len(multi)}개 (표기 흔들림):")
+        for cd in list(multi.index)[:10]:
+            names = df[df.sigungu_cd == cd]["name"].tolist()
+            print(f"    {cd}  {names}")
+    for sido in sorted({c[:2] for c in top["sigungu_cd"]}):
+        rows = top[top.sigungu_cd.str.startswith(sido)]
+        print(f"\n  [{sido}] {len(rows)}개")
+        for r in rows.itertuples(index=False):
+            print(f"    {r.sigungu_cd}  {r.name}")
+
+
 def cmd_kosis_find(args):
     """통계표를 이름으로 찾고, 현재 시도 코드를 확인한다."""
     from .collect import kosis
@@ -1726,6 +1770,11 @@ def main(argv=None):
     p.add_argument("--end", default="2025")
     p.add_argument("--out", default="region_population.csv")
     p.set_defaults(func=cmd_kosis_fetch)
+
+    p = sub.add_parser("region-names",
+                       help="거래 자료에서 시군구 코드→이름 표 뽑기")
+    p.add_argument("--out", default="region_names.csv")
+    p.set_defaults(func=cmd_region_names)
 
     p = sub.add_parser("kosis-find",
                        help="이름으로 통계표 찾기 + 현재 시도 코드 확인")

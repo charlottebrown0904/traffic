@@ -59,6 +59,23 @@ jobs:
       - name: 패키지 설치
         run: pip install -r requirements.txt
 
+      # 시군구 코드→이름 표를 우리 거래 자료에서 뽑는다. KOSIS 는 옛
+      # 코드(광주 29·전남 46)로 주는데 우리는 통합 뒤 코드(12)를 쓰므로,
+      # 코드끼리는 못 맞추고 **이름으로** 맞춰야 한다. 그 이름의 출처가
+      # 지금까지 없었다.
+      - name: 이전 수집분 복원
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/processed
+            data/interim
+          key: redt-data-${{ github.run_id }}
+          restore-keys: redt-data-
+
+      - name: 시군구 이름 뽑기
+        continue-on-error: true
+        run: python -m redt.cli region-names --out region_names.csv
+
       # 받은 것을 그대로 찍는다. 코드 체계가 법정동인지 KOSIS 자체
       # 코드인지가 여기서 갈리고, 그것을 모르면 조인이 절반만 붙는다.
       - name: 인구 받기
@@ -87,10 +104,14 @@ jobs:
           BRANCH: ${{ github.ref_name }}
         run: |
           set -e
-          FILE=data/raw/region_population.csv
-          test -s "$FILE" || { echo "::error::$FILE 이 비었습니다"; exit 1; }
+          FILES="data/raw/region_population.csv"
+          test -s data/raw/region_population.csv \
+            || { echo "::error::인구 파일이 비었습니다"; exit 1; }
+          if [ -s data/raw/region_names.csv ]; then
+            FILES="$FILES data/raw/region_names.csv"
+          fi
           SAVE="$(mktemp -d)"
-          cp "$FILE" "$SAVE/"
+          for f in $FILES; do cp "$f" "$SAVE/"; done
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -99,13 +120,13 @@ jobs:
             git fetch origin "$BRANCH"
             git reset --hard "origin/$BRANCH"
             mkdir -p data/raw
-            cp "$SAVE/region_population.csv" "$FILE"
-            git add "$FILE"
+            for f in $FILES; do cp "$SAVE/$(basename "$f")" "$f"; done
+            git add $FILES
             if git diff --cached --quiet; then
               echo "바뀐 것이 없습니다."
               exit 0
             fi
-            git commit -m "data: 시군구 연도별 인구 ${{ inputs.start }}~${{ inputs.end }} (KOSIS DT_1B040A3)"
+            git commit -m "data: 시군구 연도별 인구 ${{ inputs.start }}~${{ inputs.end }} (KOSIS DT_1B040A3) + 시군구 이름표"
             if git push origin "HEAD:$BRANCH"; then
               exit 0
             fi
@@ -119,5 +140,7 @@ jobs:
         if: always()
         with:
           name: population-${{ github.run_number }}
-          path: data/raw/region_population.csv
+          path: |
+            data/raw/region_population.csv
+            data/raw/region_names.csv
           if-no-files-found: warn
