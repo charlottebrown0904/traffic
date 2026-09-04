@@ -49,17 +49,19 @@ from redt.config import relay                 # noqa: E402
 PORTAL = "https://www.data.go.kr/tcs/dss/selectDataSetList.do"
 KEYWORDS = ["법원경매", "공매", "온비드", "압류재산"]
 
-# 온비드 공식 오픈API 는 자체 도메인에서 돈다고 알려져 있다. 어느 서비스
-# 이름인지는 두드려서 확인한다 — 1차에서 apis.data.go.kr 쪽 추측 두 개가
-# 둘 다 '없거나 폐기됨' 이었다.
+# 2차에서 찾은 것. 포털 검색으로 실제 존재를 확인한 데이터셋이다.
+# 이제 '있는가' 가 아니라 **'어떤 칸이 오는가'** 를 묻는다 — 물건 용도
+# (토지·공장·창고)와 소재지·감정가·최저가·입찰기간이 없으면 우리 지도에
+# 얹을 수 없다.
+ONBID_DATASETS = [
+    ("차세대 온비드 부동산 물건목록 조회서비스", "15157207"),
+    ("차세대 온비드 공고목록 조회서비스", "15157216"),
+    ("체납 압류재산 (캠코)", "15126398"),
+]
+
+# 중계기는 https 만 통과시킨다(2차에서 http 로 보내 400 을 받았다).
 ONBID_PROBES = [
-    ("온비드 오픈API 루트", "http://openapi.onbid.co.kr/openapi/services", {}),
-    ("온비드 공매물건 서비스(추정)",
-     "http://openapi.onbid.co.kr/openapi/services/KamcoPblsalThingInquireSvc"
-     "/getKamcoPbctCltrList", {"numOfRows": 1, "pageNo": 1}),
-    ("온비드 통합물건 서비스(추정)",
-     "http://openapi.onbid.co.kr/openapi/services/OnbidUnifyThingInquireSvc"
-     "/getUnifyUsageCltr", {"numOfRows": 1, "pageNo": 1}),
+    ("온비드 오픈API 루트", "https://openapi.onbid.co.kr/openapi/services", {}),
     ("온비드 웹 robots.txt", "https://www.onbid.co.kr/robots.txt", {}),
 ]
 
@@ -140,6 +142,51 @@ def portal(keyword: str) -> None:
             break
 
 
+TAGS = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.S | re.I)
+
+
+def dataset_detail(label: str, ds_id: str) -> None:
+    """포털 상세 화면에서 **엔드포인트와 항목**을 뽑는다.
+
+    '오픈API 가 있다' 까지는 목록으로 알았다. 그것만으로는 못 쓴다 —
+    어떤 주소를 부르고 어떤 칸이 오는지가 붙일 수 있는지를 가른다."""
+    url = f"https://www.data.go.kr/data/{ds_id}/openapi.do"
+    try:
+        resp = H.get_once(url, {}, timeout=30)
+    except Exception as exc:                           # noqa: BLE001
+        print(f"\n  실패  {label} — {type(exc).__name__}: {str(exc)[:140]}")
+        return
+    html = resp.text
+    print(f"\n  {resp.status_code}  {label}  ({len(html):,}자)")
+    print(f"        {url}")
+
+    for pat, name in [(r"https?://[\w.\-]*data\.go\.kr/[\w./\-]+", "엔드포인트 후보"),
+                      (r"https?://openapi\.onbid\.co\.kr/[\w./\-]+", "온비드 주소")]:
+        hits = sorted({h for h in re.findall(pat, html)
+                       if "/data/" not in h and "/tcs/" not in h
+                       and not h.endswith((".css", ".js", ".png", ".jpg"))})
+        if hits:
+            print(f"        [{name}]")
+            for h in hits[:8]:
+                print(f"          {h}")
+
+    text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", TAGS.sub(" ", html)))
+    # 물건 성격을 말해 주는 낱말이 실제로 나오는지 센다. 없으면 우리
+    # 화면에 얹을 수 없는 자료다.
+    for word in ["토지", "공장", "창고", "용도", "감정가", "최저", "입찰",
+                 "소재지", "주소", "위도", "경도", "활용신청", "일반 인증키"]:
+        n = text.count(word)
+        if n:
+            print(f"        '{word}' {n}회", end="")
+    print()
+    idx = text.find("요청변수")
+    if idx < 0:
+        idx = text.find("응답")
+    if idx > 0:
+        print("        [항목 설명 주변]")
+        print("        " + text[idx:idx + 900])
+
+
 def main() -> None:
     cfg = relay()
     print(f"중계기: {'사용' if cfg.enabled else '없음 (직접 호출 — 지오블록 가능)'}")
@@ -149,7 +196,9 @@ def main() -> None:
     for kw in KEYWORDS:
         portal(kw)
 
-    head("2. 온비드(공매)")
+    head("2. 온비드(공매) — 찾은 오픈API 가 어떤 칸을 주는가")
+    for label, ds_id in ONBID_DATASETS:
+        dataset_detail(label, ds_id)
     for label, url, params in ONBID_PROBES:
         show(label, url, params)
 
