@@ -52,7 +52,9 @@ async function openApp(browser) {
   await page.route('**/supabase-js*/**', (r) => r.fulfill({ status: 200, body: '' }));
   await page.addInitScript(() => {
     window.SB = {};
-    window.SBUtil = { me: async () => ({ user: { id: 'u1' }, profile: null }) };
+    // 승인된 회원으로 들어간다. 승인 관문 자체는 test_gate.js 가 본다.
+    window.SBUtil = { me: async () => ({ user: { id: 'u1' },
+      profile: { status: 'approved' } }) };
   });
   await page.goto(`${BASE}/app/`, { waitUntil: 'domcontentloaded' });
   // 탭을 눌러야 뷰가 보인다. 눌러서 여는 것까지가 이 화면의 동작이다.

@@ -45,11 +45,18 @@ function check(name, ok, detail) {
 }
 
 /* 로그인 상태를 흉내 낸다. 실제 Supabase 는 부르지 않는다. */
-function stub(page, user) {
-  return page.addInitScript((u) => {
+/* status 를 안 주면 승인된 회원으로 본다 — 기존 검사들의 뜻을 지킨다.
+   null 을 주면 프로필이 아직 없는 경우(가입 직후)를 흉내낸다. */
+function stub(page, user, status) {
+  return page.addInitScript((a) => {
     window.SB = {};                      // 초기화된 것처럼
-    window.SBUtil = { me: async () => (u ? { user: { id: 'u1' }, profile: null } : null) };
-  }, user);
+    window.SBUtil = {
+      me: async () => (a.user
+        ? { user: { id: 'u1' }, profile: a.hasProfile ? { status: a.status } : null }
+        : null),
+    };
+  }, { user: user, status: status === undefined ? 'approved' : status,
+       hasProfile: status !== null });
 }
 
 /* 진짜 supabase-init.js 가 스텁을 덮어쓰지 않게 막는다. CDN 도 막는다. */
@@ -96,6 +103,32 @@ async function blockAuthScripts(page) {
       check('회원에게는 app.js 를 붙인다', hasApp);
       check('회원에게는 화면을 보여준다', visible);
       check('회원은 로그인 화면으로 안 넘어간다', !/\/account/.test(page.url()), page.url());
+      await page.close();
+    }
+
+    // 2-b) 승인 전 회원 — 지도를 열어주면 안 된다
+    //
+    // 진짜 자물쇠는 데이터베이스의 RLS 다. 그런데 /app/data 의 JSON 은
+    // 주소만 알면 받을 수 있으므로, 화면까지 열어주면 승인 제도가 사실상
+    // 없는 것이 된다. 그래서 여기서도 막는다.
+    for (const [label, status] of [['대기(pending)', 'pending'],
+                                   ['거절(rejected)', 'rejected'],
+                                   ['프로필 없음', null]]) {
+      const page = await browser.newPage();
+      await blockAuthScripts(page);
+      await stub(page, true, status);
+      await page.goto(`${BASE}/app/`, { waitUntil: 'domcontentloaded' });
+      await page.waitForTimeout(400);
+      const hasApp = await page.evaluate(
+        () => !!document.querySelector('script[src^="/app/app.js"]'));
+      const text = await page.evaluate(() => document.body.innerText);
+      const visible = await page.evaluate(
+        () => document.documentElement.style.visibility !== 'hidden');
+      check(`${label} — 지도를 안 붙인다`, !hasApp);
+      check(`${label} — 왜 못 들어가는지 말해준다`,
+            /승인/.test(text), text.slice(0, 60));
+      // 하얀 화면으로 끝내면 고장난 것처럼 보인다. 안내는 보여야 한다.
+      check(`${label} — 화면이 보인다 (빈 화면이 아니다)`, visible);
       await page.close();
     }
 

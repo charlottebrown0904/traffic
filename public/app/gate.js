@@ -31,6 +31,25 @@
     location.replace(NEXT);
   }
 
+  /* 로그인은 됐는데 아직 승인 전인 경우.
+     로그인 화면으로 되돌리면 안 된다 — 다시 로그인해도 같은 자리로
+     돌아오므로, 사람은 무엇이 문제인지 모른 채 같은 고리를 돈다. */
+  function pending(status) {
+    show();
+    var rejected = status === "rejected";
+    document.body.innerHTML =
+      '<div style="max-width:34rem;margin:18vh auto;padding:0 1.5rem;' +
+      'font:400 15px/1.7 system-ui,sans-serif;color:#3d3227">' +
+      "<h1 style='font-size:1.3rem;margin:0 0 .75rem'>" +
+      (rejected ? "가입이 승인되지 않았습니다" : "가입 승인을 기다리고 있습니다") +
+      "</h1><p style='color:#7a6a58;margin:0 0 1.25rem'>" +
+      (rejected
+        ? "문의가 필요하시면 관리자에게 연락해 주세요."
+        : "관리자가 확인한 뒤 이용하실 수 있습니다. 승인되면 이 화면 대신 지도가 열립니다.") +
+      "</p><p><a href=\"/account\" style=\"color:#8A6547\">내 계정</a>" +
+      ' &nbsp;·&nbsp; <a href="/" style="color:#8A6547">홈으로</a></p></div>';
+  }
+
   /* 로그인 여부를 확인할 수 없을 때. 들여보내는 것도 막는 것도 틀렸다 —
      둘 다 사실이 아닌 것을 사실인 양 처리하는 것이다. 무엇이 안 되는지
      말하고 사람이 판단하게 둔다. */
@@ -52,8 +71,23 @@
     }
     try {
       var me = await window.SBUtil.me();
-      if (me && me.user) enter();
-      else toLogin();
+      if (!me || !me.user) {
+        toLogin();
+        return;
+      }
+      /* 승인 상태를 화면에서도 본다.
+         진짜 자물쇠는 데이터베이스의 RLS 다 — 승인 안 된 계정은 글도
+         댓글도 못 읽는다. 여기서 막는 것은 '왜 화면이 비었는지' 를
+         사람이 알 수 있게 하기 위해서지, 이것이 보안은 아니다.
+
+         profile 이 아직 없을 수도 있다(가입 직후 트리거 시차). 그때는
+         승인 전으로 본다 — 모르는 것을 통과로 처리하면 안 된다. */
+      var status = me.profile && me.profile.status;
+      if (status !== "approved") {
+        pending(status);
+        return;
+      }
+      enter();
     } catch (err) {
       broken("확인 중 오류가 났습니다 — " + (err && err.message ? err.message : err));
     }

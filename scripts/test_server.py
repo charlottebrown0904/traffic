@@ -17,13 +17,13 @@ from redt.server import store  # noqa: E402
 BROKER_A = {
     "email": "a@example.com", "password": "verysecret123",
     "office_name": "한길공인중개사사무소", "office_address": "경기도 화성시 향남읍 1",
-    "license_no": "41590-2024-00001", "agent_name": "김중개", "phone": "031-355-0001",
+    "license_no": "41590-2024-00001", "agent_name": "김중개", "phone": "031-0000-0000",
 }
 BROKER_B = {**BROKER_A, "email": "b@example.com", "office_name": "두번째공인중개사",
             "license_no": "41590-2024-00002", "agent_name": "이중개"}
 LISTING = {
     "kind": "land", "deal_type": "sale", "address": "경기도 화성시 양감면 정문리 1-2",
-    "area_m2": 3305.0, "price_manwon": 48000, "contact_phone": "031-355-0001",
+    "area_m2": 3305.0, "price_manwon": 48000, "contact_phone": "031-0000-0000",
     "lat": 37.05, "lon": 126.95, "memo": "6m 도로 접함",
 }
 

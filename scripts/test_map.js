@@ -135,7 +135,9 @@ const FAKE_LEAFLET = () => {
     }
     await page.addInitScript(() => {
       window.SB = {};
-      window.SBUtil = { me: async () => ({ user: { id: 'u1' }, profile: null }) };
+      // 승인된 회원으로 들어간다. 승인 관문 자체는 test_gate.js 가 본다.
+      window.SBUtil = { me: async () => ({ user: { id: 'u1' },
+        profile: { status: 'approved' } }) };
     });
     await page.addInitScript(FAKE_LEAFLET);
     const errs = [];

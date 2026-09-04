@@ -214,6 +214,21 @@
     me = await window.SBUtil.me();
     var nav = document.getElementById("nav-me");
     if (me && nav) nav.textContent = (me.profile && me.profile.nickname) || "내 계정";
+
+    /* 승인 전이면 목록이 **빈 채로** 뜬다. RLS 가 글을 안 내주기 때문에
+       오류도 안 난다. 빈 게시판은 '글이 없구나' 로 읽히므로, 왜 비었는지를
+       말해준다. 막는 것은 여기가 아니라 데이터베이스다. */
+    var status = me && me.profile && me.profile.status;
+    if (me && status !== "approved") {
+      root.innerHTML =
+        '<div class="note block"><b>' +
+        (status === "rejected" ? "가입이 승인되지 않았습니다."
+                               : "가입 승인을 기다리고 있습니다.") +
+        "</b><br>관리자 승인 후 게시판을 이용하실 수 있습니다. " +
+        '<a href="/account">내 계정</a></div>';
+      return;
+    }
+
     window.addEventListener("hashchange", route);
     route();
   })();

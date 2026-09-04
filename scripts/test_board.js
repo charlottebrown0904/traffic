@@ -65,6 +65,7 @@ const PORT = 8199;
     ];
     // 새로고침해도 유지되도록 주소에서 읽는다
     window.__role = new URLSearchParams(location.search).get('role') || 'user';
+    window.__status = new URLSearchParams(location.search).get('status') || 'approved';
 
     function result(table, filters) {
       if (table === 'post') {
@@ -96,7 +97,11 @@ const PORT = 8199;
       esc: s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
       when: () => '방금',
       guard: () => true,
-      me: async () => ({ user: { id: 'u-me', email: 'me@x.com' }, profile: { nickname: '나', role: window.__role } }),
+      // status 를 밖에서 바꿀 수 있게 둔다. 기본은 승인된 회원이라
+      // 기존 검사들의 뜻이 그대로 유지된다.
+      me: async () => ({ user: { id: 'u-me', email: 'me@x.com' },
+        profile: { nickname: '나', role: window.__role,
+                   status: window.__status || 'approved' } }),
     };
   });
 
@@ -135,6 +140,20 @@ const PORT = 8199;
   html = await page.evaluate(() => document.getElementById('root').innerHTML);
   checks.push(['관리자: 남의 글 삭제 버튼 있음', /id="del"/.test(html)]);
   checks.push(['관리자: 모든 댓글 삭제 가능 (2개)', (html.match(/data-c=/g) || []).length === 2]);
+
+  // 승인 전 회원 — 목록이 **빈 채로** 뜨면 '글이 없구나' 로 읽힌다.
+  // 진짜로 막는 것은 데이터베이스의 RLS 이고, 여기서는 왜 비었는지를
+  // 말해주는지만 본다.
+  for (const [label, status] of [['대기(pending)', 'pending'],
+                                 ['거절(rejected)', 'rejected']]) {
+    await page.goto(`http://127.0.0.1:${PORT}/board/?status=${status}`,
+                    { waitUntil: 'domcontentloaded' });
+    await page.waitForTimeout(400);
+    const text = await page.evaluate(() => document.getElementById('root').innerText);
+    checks.push([`${label}: 왜 못 쓰는지 말해준다`, /승인/.test(text)]);
+    checks.push([`${label}: 글 목록을 안 보여준다`,
+                 !(await page.evaluate(() => !!document.querySelector('.post-list')))]);
+  }
 
   console.log('');
   let bad = 0;

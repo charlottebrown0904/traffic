@@ -48,27 +48,102 @@
     });
   }
 
+  var STATUS_LABEL = {
+    pending: "승인 대기 중",
+    approved: "이용 중",
+    rejected: "승인되지 않음",
+  };
+
+  /* 관리자 승인 화면.
+
+     대시보드를 열지 않고 휴대폰에서 처리하실 수 있어야 한다. 그래서
+     대기자 목록을 여기에 둔다. 실제 권한은 RLS 가 정하므로, 관리자가
+     아닌 사람에게 이 화면이 보이더라도 승인은 서버에서 거부된다 —
+     화면은 편의이지 자물쇠가 아니다. */
+  async function renderPending(box) {
+    box.innerHTML = '<p class="note">대기자를 불러오는 중…</p>';
+    var r = await window.SB.from("profile")
+      .select("id,nickname,email,role,status,created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: true });
+
+    if (r.error) {
+      box.innerHTML = '<div class="note block">대기자 목록을 못 읽었습니다 — ' +
+        window.SBUtil.esc(r.error.message) + "</div>";
+      return;
+    }
+    var rows = r.data || [];
+    if (!rows.length) {
+      box.innerHTML = '<p class="note">승인을 기다리는 가입자가 없습니다.</p>';
+      return;
+    }
+
+    box.innerHTML =
+      '<h2 style="font-size:1rem;margin:0 0 .5rem">가입 승인 대기 ' +
+      rows.length + "명</h2><ul id=\"pend\" style=\"list-style:none;padding:0;margin:0\">" +
+      rows.map(function (u) {
+        return '<li data-id="' + window.SBUtil.esc(u.id) + '" ' +
+          'style="border-top:1px solid #e7ded2;padding:.75rem 0">' +
+          "<b>" + window.SBUtil.esc(u.nickname || "(이름 없음)") + "</b> " +
+          '<span class="note">' + window.SBUtil.esc(u.email || "") + "</span><br>" +
+          '<span class="note">신청 ' + window.SBUtil.when(u.created_at) + "</span>" +
+          '<span style="display:inline-flex;gap:.4rem;margin-left:.75rem">' +
+          '<button class="btn" data-act="approved">승인</button>' +
+          '<button class="btn ghost" data-act="rejected">거절</button></span></li>';
+      }).join("") + "</ul>";
+
+    Array.prototype.forEach.call(box.querySelectorAll("[data-act]"), function (btn) {
+      btn.addEventListener("click", async function () {
+        var li = btn.closest("li");
+        var id = li.getAttribute("data-id");
+        btn.disabled = true;
+        var r2 = await window.SB.from("profile")
+          .update({ status: btn.dataset.act }).eq("id", id);
+        if (r2.error) {
+          btn.disabled = false;
+          alert("처리하지 못했습니다 — " + r2.error.message);
+          return;
+        }
+        renderPending(box);
+      });
+    });
+  }
+
   function accountView(me) {
     var u = me.user;
     var p = me.profile || {};
     var name = p.nickname || u.email || "이용자";
     var role = { user: "일반 회원", broker: "중개사", admin: "관리자" }[p.role] || p.role;
+    // profile 이 아직 없으면 승인 전으로 본다. 모르는 것을 통과로
+    // 처리하면 안 된다 — gate.js 와 같은 판단이다.
+    var status = p.status || "pending";
+    var ok = status === "approved";
 
     root.innerHTML =
       '<div class="auth-card">' +
       "<h1>" + window.SBUtil.esc(name) + "</h1>" +
       '<p class="lead">' + window.SBUtil.esc(u.email || "") + " · " + role + "</p>" +
       '<div class="note" style="margin-bottom:1.25rem">가입일 ' +
-      new Date(u.created_at).toLocaleDateString("ko-KR") + "</div>" +
+      new Date(u.created_at).toLocaleDateString("ko-KR") +
+      " · 상태 " + (STATUS_LABEL[status] || status) + "</div>" +
+      (ok ? "" :
+        '<div class="note block" style="margin-bottom:1rem">' +
+        (status === "rejected"
+          ? "가입이 승인되지 않았습니다. 문의가 필요하시면 관리자에게 연락해 주세요."
+          : "관리자 승인 후 지도와 게시판을 이용하실 수 있습니다.") + "</div>") +
       '<p style="display:flex;gap:.5rem;flex-wrap:wrap">' +
-      '<a class="btn" href="/board">게시판 가기</a>' +
+      (ok ? '<a class="btn" href="/app">지도 보기</a>' +
+            '<a class="btn ghost" href="/board">게시판 가기</a>' : "") +
       '<button class="btn ghost" id="out">로그아웃</button></p>' +
+      '<div id="admin" style="margin-top:1.5rem"></div>' +
       "</div>";
 
     document.getElementById("out").addEventListener("click", async function () {
       await window.SBUtil.signOut();
       location.reload();
     });
+
+    if (p.role === "admin") renderPending(document.getElementById("admin"));
   }
 
   (async function () {

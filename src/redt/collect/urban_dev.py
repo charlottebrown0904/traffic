@@ -31,6 +31,16 @@ URL = "https://api.data.go.kr/openapi/tn_pubr_public_urban_dev_proj_api"
 PAGE_ROWS = 500          # 표준데이터는 보통 1000 까지 받는다. 보수적으로 둔다.
 MAX_PAGES = 60           # 사업 건수가 3만을 넘지는 않는다. 폭주 방지.
 
+# 받자마자 버리는 칸 — 연락처.
+#
+# 표준데이터가 주는 telno 는 사업시행자 연락처인데, 시행자가 조합이면
+# 조합장 개인 휴대폰인 경우가 있다. 정부가 공개한 자료라 받는 것 자체는
+# 문제가 없지만, **우리는 이 칸을 한 번도 쓰지 않는다.** 안 쓰는
+# 개인정보를 저장소에 커밋해 두는 것은 얻는 것 없이 위험만 지는 일이다.
+#
+# 저장한 뒤에 지우면 커밋 이력에 남는다. 받는 자리에서 버린다.
+PERSONAL_COLS = ("telno", "telNo", "phone", "전화번호", "연락처")
+
 
 def _body(payload: dict) -> dict:
     """표준데이터 응답에서 body 를 꺼낸다. 껍데기 모양이 두 가지다."""
@@ -87,6 +97,10 @@ def fetch_all(max_pages: int = MAX_PAGES) -> pd.DataFrame:
 
     df = pd.DataFrame(rows)
     if len(df):
+        drop = [c for c in df.columns if c in PERSONAL_COLS]
+        if drop:
+            print(f"  연락처 칸 {drop} 는 저장하지 않습니다 (쓰지 않는 개인정보)")
+            df = df.drop(columns=drop)
         # 표준데이터는 빈 값을 빈 문자열로 준다. 전부 빈 칸은 버린다 —
         # 남겨두면 '있는데 비었다' 와 '아예 없다' 가 섞인다.
         empty = [c for c in df.columns
