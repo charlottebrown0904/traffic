@@ -170,7 +170,28 @@ const FAKE_LEAFLET = () => {
         }));
       }
     }
+    // 매물 핀도 IC 아래 판에 들어가는지 본다. 정적 배포에는 매물 API 가
+    // 없어 화면에 매물이 한 건도 안 뜨는데, 그러면 이 경로는 영영 검사
+    // 밖에 남는다. API 를 흉내내 한 건 내려준다 — 검사가 자료의 우연에
+    // 기대면 안 된다.
+    const FAKE_LISTING = {
+      id: 1, kind: 'land', title: '검사용 매물', price_manwon: 12000,
+      lat: 37.2, lon: 127.05, status: 'active', memo: '', broker_name: '검사',
+      address: '경기도 어딘가', area_m2: 1000,
+    };
+    await page.route('**/api/fees*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ listing_fee_krw: 50000, listing_days: 30,
+                             payment_connected: false, notice: '검사' }),
+    }));
+    await page.route('**/api/listings*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify([FAKE_LISTING]),
+    }));
     await page.addInitScript(() => {
+      // 정적 배포는 apiBase 가 비어 있어 매물 탭이 통째로 꺼진다.
+      // 검사에서는 켜 두고 위에서 막아 둔 응답을 받게 한다.
+      window.REDT_CONFIG = { apiBase: '/api', homeUrl: '/' };
       window.SB = {};
       // 승인된 회원으로 들어간다. 승인 관문 자체는 test_gate.js 가 본다.
       window.SBUtil = { me: async () => ({ user: { id: 'u1' },
@@ -329,7 +350,21 @@ const FAKE_LEAFLET = () => {
       check('모든 밴드가 점선이다',
             circles.every((c) => !!c.dashArray),
             circles.map((c) => c.dashArray || '실선').join(' / '));
-
+      // 사장님 지적(2026-09-04): "IC 선택 후 범위가 표시되면 범위 내로
+      // 들어가는 인근 IC가 클릭 불가."
+      //
+      // fill:false 로는 안 막힌다. canvas 방식에서 Leaflet 은 원의 누름
+      // 판정을 **중심에서의 거리**로만 한다(Circle._containsPoint) —
+      // 채웠는지는 안 본다. 그래서 속이 빈 5km 밴드가 그 원판 전체의
+      // 누름을 가로챈다. 게다가 겹치면 **나중에 그린 것**이 이기는데,
+      // 영업소는 처음 한 번, 밴드는 IC 를 고를 때마다 다시 그리므로
+      // 밴드가 항상 나중이다. 판정 대상에서 빼는 것 말고는 길이 없다.
+      check('밴드는 누름을 가로채지 않는다 (안쪽 IC를 고를 수 있다)',
+            circles.every((c) => c.interactive === false),
+            `${circles.filter((c) => c.interactive === false).length}/${circles.length}`);
+      const tgClickable = await page.evaluate(() =>
+        window.__map.markers.every((o) => o.interactive !== false));
+      check('영업소는 그대로 누를 수 있다', tgClickable);
     }
 
     console.log();
@@ -410,6 +445,11 @@ const FAKE_LEAFLET = () => {
       check('거래 표식을 전부 그 판에 그린다',
             tradeStyle.every((o) => o.pane === 'tradePane'),
             `${tradeStyle.filter((o) => o.pane === 'tradePane').length}/${tradeStyle.length}`);
+      const listStyle = await page.evaluate(() => window.__listingStyles || []);
+      check('매물 핀도 그려진다', listStyle.length >= 1, `${listStyle.length}개`);
+      check('매물 핀도 같은 판에 그린다 (IC 아래)',
+            listStyle.length >= 1 && listStyle.every((o) => o.pane === 'tradePane'),
+            listStyle.map((o) => `${o.className}:${o.pane}`).join(' '));
     } else {
       console.log('  건너뜀 — 그려진 거래 점이 없습니다.');
     }

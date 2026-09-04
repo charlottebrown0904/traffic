@@ -1154,6 +1154,20 @@ function bandRing(lat, lon, hi, i, isControl, faint) {
     // (주거 노랑·상업 빨강·공업 보라·녹지 초록)처럼 읽힌다 — 우리 밴드는
     // 용도와 아무 상관이 없는데 그렇게 오해된다. 점선만 남긴다.
     fill: false,
+    // 밴드는 **누를 수 없어야 한다.** 사장님 지적(2026-09-04):
+    // "IC 선택 후 범위가 표시되면 범위 내로 들어가는 인근 IC가 클릭 불가."
+    //
+    // fill:false 로 그려도 소용없다. 지도가 canvas 방식이라(preferCanvas)
+    // Leaflet 은 원을 누를 수 있는지 판정할 때 **중심에서의 거리만** 본다
+    // (Circle._containsPoint: 거리 ≤ 반지름). 채웠는지 안 채웠는지는 안
+    // 본다. 그래서 5km 밴드는 속이 빈 것처럼 보여도 그 원판 전체가
+    // 누름을 가로챈다.
+    //
+    // 게다가 캔버스는 겹칠 때 **나중에 그린 것**을 누른 것으로 친다.
+    // 영업소는 처음 한 번 그리고 밴드는 IC 를 고를 때마다 다시 그리므로,
+    // 밴드가 항상 나중이 된다 — 즉 밴드가 늘 이긴다. 그리는 순서로는
+    // 못 고치고, 판정 대상에서 빼야 한다. 밴드에 붙은 동작은 없다.
+    interactive: false,
   });
 }
 
@@ -1817,6 +1831,14 @@ function renderListingMarkers() {
       { direction: 'top' });
     listingLayer.addLayer(marker);
   });
+  // 검사용 들여다보기 창 — window.__tradeStyles 와 같은 취지다.
+  window.__listingStyles = listingLayer.getLayers
+    ? listingLayer.getLayers().map((l) => ({
+        pane: l.options.pane,
+        className: (l.options.icon && l.options.icon.options
+                    && l.options.icon.options.className) || '',
+      }))
+    : undefined;
 }
 
 function startPick() {
