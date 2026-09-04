@@ -42,21 +42,35 @@ private 으로 바꿔도 그 복제본은 사라지지 않습니다.
 
 3번까지 끝나기 전에 4번을 하면, 살아 있는 키가 공개된 채로 남습니다.
 
-### 새 키를 넣는 곳 — 두 군데뿐입니다
+### 새 키를 넣는 곳 — **Vercel 한 곳뿐입니다**
 
-키는 **파일에 쓰지 않습니다.** 아래 두 곳에만 넣습니다.
+| 넣는 곳 | 이름 | 쓰는 쪽 |
+|---|---|---|
+| Vercel → 프로젝트 → **Settings → Environment Variables** | `DATA_GO_KR_KEY` | 중계기 `api/relay.js` |
 
-| 넣는 곳 | 주소 | 이름 | 쓰는 쪽 |
-|---|---|---|---|
-| GitHub Secrets | `github.com/<사용자>/traffic/settings/secrets/actions` → **New repository secret** | `DATA_GO_KR_KEY` | 수집 워크플로 |
-| Vercel 환경변수 | Vercel → 프로젝트 → **Settings → Environment Variables** | `DATA_GO_KR_KEY` | 중계기(`api/relay.js`) |
+GitHub Secrets 에는 **넣지 않습니다.** 러너(미국)는 한국 공공 API 에
+직접 못 붙어서 서울 중계기를 거치는데, 키를 끼워 넣는 것은 그 중계기가
+합니다(`api/relay.js` 의 `ALLOW`). 러너는 키 없이 중계기 주소와 토큰만
+갖고 돕니다 — 수집 워크플로의 `env` 에 `DATA_GO_KR_KEY` 가 없는 것이
+그 증거입니다.
 
-두 곳 다 필요합니다. 러너는 미국이라 한국 공공 API 가 막히므로
-중계기(서울)를 거치는데, 그 중계기는 Vercel 에서 돕니다
-(`docs/finding-geoblock.md`).
+키를 안 쓰는 곳에 넣어 두면 지켜야 할 자리만 하나 늘어납니다.
 
-Vercel 은 값을 넣은 뒤 **재배포해야 반영됩니다.** Deployments 에서
-가장 최근 것을 **Redeploy** 하시면 됩니다.
+**넣는 순서 (휴대폰에서 가능합니다)**
+
+1. Vercel → 프로젝트 `sado-toji` → **Settings → Environment Variables**
+2. 기존 `DATA_GO_KR_KEY` 를 **Edit** 해서 새 값으로 바꿉니다
+   (없으면 Add New. Name 은 정확히 `DATA_GO_KR_KEY`)
+3. 적용 대상은 **Production·Preview·Development 모두** 체크
+4. Save
+5. **Deployments → 맨 위 것 → ⋯ → Redeploy** — 환경변수는 재배포해야
+   반영됩니다. 이걸 빠뜨리면 옛 키로 계속 돕니다.
+
+**확인**
+
+수집 워크플로를 `stage=analyze` 로 한 번 돌리면 `doctor` 단계가
+실거래가 API 를 실제로 불러봅니다. 거기서 통과하면 새 키가 살아 있는
+것입니다.
 
 ### 절대 하지 마세요
 
