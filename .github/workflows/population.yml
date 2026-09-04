@@ -1,0 +1,123 @@
+# 시군구 연도별 인구를 받아 저장소에 넣는다 (2003~).
+#
+# 왜 필요한가
+#   가설3 의 통제 변수다. 지금 판정표의 H1·H2 계수는 이것이 없어서
+#   'IC 효과' 라고 부를 수 없다 — IC 가 뚫린 그 해에 사람이 늘어난
+#   것인지 IC 때문인지 가를 수가 없다.
+#
+# 왜 워크플로인가
+#   KOSIS 는 해외 IP 를 막는다. 러너는 미국이라 서울 중계기를 거쳐야 하고,
+#   인증키(KOSIS_KEY)는 중계기 쪽에만 있다.
+#
+# 왜 커밋하는가
+#   컨테이너는 사라진다. 아티팩트로만 남기면 90일 뒤 없어지고, 그 사이에도
+#   내려받아 풀어야 볼 수 있다. 저장소에 두면 분석이 매 실행 그대로 읽는다
+#   (.gitignore 에 !data/raw/region_*.csv 로 이미 열어 뒀다).
+name: 시군구 인구 받기 (가설3 통제)
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "시작 연도"
+        default: "2003"
+      end:
+        description: "끝 연도"
+        default: "2025"
+      commit:
+        description: "받은 파일을 저장소에 커밋할지"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: population
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 얕은 클론이면 아래 reset --hard 가 기준을 못 잡는다.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: 패키지 설치
+        run: pip install -r requirements.txt
+
+      # 받은 것을 그대로 찍는다. 코드 체계가 법정동인지 KOSIS 자체
+      # 코드인지가 여기서 갈리고, 그것을 모르면 조인이 절반만 붙는다.
+      - name: 인구 받기
+        run: |
+          python -m redt.cli kosis-fetch --table population \
+            --start "${{ inputs.start }}" --end "${{ inputs.end }}" \
+            --out region_population.csv 2>&1 | tee /tmp/fetch.log
+
+      - name: 실행 요약
+        if: always()
+        run: |
+          {
+            echo "## 시군구 인구 (${{ inputs.start }}~${{ inputs.end }})"
+            echo
+            echo '```'
+            tail -n 60 /tmp/fetch.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # collect.yml 과 같은 방식이다 — 만든 것을 옆에 치워 두고 브랜치
+      # 최신으로 깨끗이 맞춘 뒤 되돌려 놓는다. rebase 로 합치려 들면
+      # 같은 파일을 양쪽이 새로 쓰기 때문에 반드시 충돌한다.
+      - name: 저장소에 넣기
+        if: inputs.commit
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -e
+          FILE=data/raw/region_population.csv
+          test -s "$FILE" || { echo "::error::$FILE 이 비었습니다"; exit 1; }
+          SAVE="$(mktemp -d)"
+          cp "$FILE" "$SAVE/"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          for i in 1 2 3 4; do
+            git fetch origin "$BRANCH"
+            git reset --hard "origin/$BRANCH"
+            mkdir -p data/raw
+            cp "$SAVE/region_population.csv" "$FILE"
+            git add "$FILE"
+            if git diff --cached --quiet; then
+              echo "바뀐 것이 없습니다."
+              exit 0
+            fi
+            git commit -m "data: 시군구 연도별 인구 ${{ inputs.start }}~${{ inputs.end }} (KOSIS DT_1B040A3)"
+            if git push origin "HEAD:$BRANCH"; then
+              exit 0
+            fi
+            echo "푸시가 거절됐습니다. 다시 맞춰 봅니다 ($i/4)"
+            sleep $((i * 3))
+          done
+          echo "::error::네 번 시도했지만 푸시하지 못했습니다."
+          exit 1
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: population-${{ github.run_number }}
+          path: data/raw/region_population.csv
+          if-no-files-found: warn
