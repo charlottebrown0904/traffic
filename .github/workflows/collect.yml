@@ -415,45 +415,7 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          python - <<'PY'
-          import json, os, urllib.request
-          repo = os.environ["GITHUB_REPOSITORY"]
-          run_id = os.environ["GITHUB_RUN_ID"]
-          KEEP = 3                      # 최근 몇 개를 남길지
-          GB = 2 ** 30
-
-          def api(path, method="GET"):
-              r = urllib.request.Request(
-                  f"https://api.github.com/repos/{repo}{path}", method=method,
-                  headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
-                           "Accept": "application/vnd.github+json"})
-              body = urllib.request.urlopen(r, timeout=20).read()
-              return json.loads(body) if body else None
-
-          caches = api("/actions/caches?per_page=100")["actions_caches"]
-          ours = [c for c in caches if c["key"].startswith("redt-data-")]
-          # 이번 실행이 만든 것은 목록에서 뺀다 — 지우면 안 된다.
-          mine = [c for c in ours if run_id in c["key"]]
-          others = [c for c in ours if run_id not in c["key"]]
-          others.sort(key=lambda c: c["last_accessed_at"], reverse=True)
-
-          keep = others[:max(0, KEEP - len(mine))]
-          drop = others[len(keep):]
-          total = sum(c["size_in_bytes"] for c in caches)
-          print(f"캐시 {len(caches)}개 · {total / GB:.2f} GB")
-          print(f"  이번 실행 것 {len(mine)}개 (안 건드림) · 남길 것 {len(keep)}개 "
-                f"· 지울 것 {len(drop)}개")
-          freed = 0
-          for c in drop:
-              try:
-                  api(f"/actions/caches/{c['id']}", method="DELETE")
-                  freed += c["size_in_bytes"]
-                  print(f"    지움  {c['size_in_bytes'] / GB:5.2f} GB  {c['key']}")
-              except Exception as exc:            # noqa: BLE001
-                  print(f"    실패  {c['key']} — {type(exc).__name__}: {exc}")
-          print(f"  확보 {freed / GB:.2f} GB → 남은 {(total - freed) / GB:.2f} GB")
-          PY
+        run: python scripts/prune_caches.py --keep 3
 
       - name: 용량 (캐시·실행시간)
         if: always()

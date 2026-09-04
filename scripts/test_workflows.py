@@ -268,27 +268,47 @@ print()
 print("8. 캐시가 한도를 넘으면 스스로 줄인다")
 
 # run 23 이 12.35GB / 10GB (124%) 를 찍었다. 넘치면 GitHub 이 **오래된
-# 것부터 조용히 지운다.** 무엇이 지워졌는지는 다음 실행이 처음부터 다시
-# 받기 시작할 때에야 드러난다. 우연에 맡기지 않고 우리가 고른다.
+# 것부터 조용히 지운다.** 무엇이 지워졌는지는 어디에도 안 남고, 다음
+# 실행이 처음부터 다시 받기 시작할 때에야 드러난다. 우연에 맡기지 않고
+# 우리가 고른다.
 _prune = next((s for n, s in _named.items() if "오래된 캐시 정리" in n), None)
-check(_prune is not None, "오래된 캐시를 지우는 단계가 있다")
+check(_prune is not None, "수집이 끝에서 오래된 캐시를 지운다")
+check(str(_y["permissions"].get("actions")) == "write",
+      f"캐시를 지울 권한이 있다 (actions: {_y['permissions'].get('actions')})")
+
+# 같은 로직을 두 군데 두면 한 곳만 고치게 된다. 이 저장소에서 이미 두 번
+# 났던 사고라(_analysis_inputs, upsert preserve) 한 파일로 묶는다.
+_script = ROOT / "scripts/prune_caches.py"
+check(_script.exists(), "지우는 로직이 스크립트 한 곳에 있다")
+_manual = WF / "cache-prune.yml"
+check(_manual.exists(), "수집을 기다리지 않고 지금 돌릴 버튼이 있다")
+
+_callers = [f.name for f in sorted(WF.glob("*.yml"))
+            if "prune_caches.py" in f.read_text(encoding="utf-8")]
+check(len(_callers) >= 2,
+      f"두 워크플로가 같은 스크립트를 부른다 ({_callers})")
 if _prune is not None:
-    _pr = str(_prune.get("run", ""))
-    check(str(_y["permissions"].get("actions")) == "write",
-          f"캐시를 지울 권한이 있다 (actions: {_y['permissions'].get('actions')})")
-    check("DELETE" in _pr, "실제로 지운다")
+    check("prune_caches.py" in str(_prune.get("run", "")),
+          "수집도 그 스크립트를 부른다 (복사본이 아니다)")
+
+if _script.exists():
+    _src = _script.read_text(encoding="utf-8")
+    check('method="DELETE"' in _src, "실제로 지운다")
     # 같은 실행의 캐시를 지우면 그 실행이 이어받을 것을 스스로 없앤다.
-    check("GITHUB_RUN_ID" in _pr and "run_id in c" in _pr,
+    check("GITHUB_RUN_ID" in _src and "run_id in c" in _src,
           "이번 실행이 만든 캐시는 건드리지 않는다")
-    check("redt-data-" in _pr,
-          "우리 캐시만 본다 (pip 캐시 같은 것을 지우지 않는다)")
-    check("last_accessed_at" in _pr,
+    # pip 캐시 같은 남의 것을 지우면 매 실행이 다시 받는다.
+    check('PREFIX = "redt-data-"' in _src and 'startswith(PREFIX)' in _src,
+          "우리 캐시만 본다")
+    check("last_accessed_at" in _src,
           "최근 쓴 것부터 남긴다 (지오코딩이 든 캐시를 지키기 위해)")
-    _prune_i = next(i for i, n in enumerate(_names) if "오래된 캐시 정리" in n)
-    _report_i = next((i for i, n in enumerate(_names) if "용량 (캐시" in n), None)
-    if _report_i is not None:
-        check(_prune_i < _report_i,
-              f"정리한 뒤에 용량을 찍는다 ({_prune_i} < {_report_i})")
+    check("--dry-run" in _src, "지우기 전에 무엇을 지울지 볼 수 있다")
+
+_prune_i = next((i for i, n in enumerate(_names) if "오래된 캐시 정리" in n), None)
+_report_i = next((i for i, n in enumerate(_names) if "용량 (캐시" in n), None)
+if None not in (_prune_i, _report_i):
+    check(_prune_i < _report_i,
+          f"정리한 뒤에 용량을 찍는다 ({_prune_i} < {_report_i})")
 
 print()
 if fail:

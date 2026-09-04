@@ -1,0 +1,41 @@
+# 캐시를 지금 줄인다.
+#
+# 같은 일을 수집 워크플로가 매 실행 끝에서 자동으로 한다. 이 버튼은
+# **수집을 기다리지 않고** 지금 줄여야 할 때를 위한 것이다 — 한도를
+# 넘긴 것을 알았는데 다음 수집이 몇 시간 뒤라면, 그 사이에 GitHub 이
+# 무엇을 지울지 우리가 못 고른다.
+#
+# 로직은 scripts/prune_caches.py 한 곳에만 둔다. 두 군데에 같은 코드를
+# 두면 한 곳만 고치게 되고, 그 사고는 이 저장소에서 이미 두 번 났다.
+name: 캐시 정리 (10GB 한도)
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: "최근 몇 개를 남길지"
+        default: "3"
+      dry_run:
+        description: "지우지 않고 무엇을 지울지만 본다"
+        type: boolean
+        default: false
+
+# 캐시를 지우려면 쓰기 권한이 필요하다.
+permissions:
+  actions: write
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/prune_caches.py \
+            --keep "${{ inputs.keep }}" \
+            ${{ inputs.dry_run && '--dry-run' || '' }}
