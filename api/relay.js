@@ -27,6 +27,12 @@ const ALLOW = {
                        referer: process.env.VWORLD_REFERER || "https://sado-toji.vercel.app/" },
   "data.ex.co.kr":   { param: "key",        env: "EX_API_KEY" },
   "www.data.go.kr":  {},
+  // 경매·공매 원천 확인용. 둘 다 키가 없는 공개 페이지라 통과만 시킨다.
+  // 러너는 미국이고 두 곳 다 해외 IP 에서 응답이 없어(1차 탐침에서 전부
+  // ConnectTimeout) 서울을 거치지 않으면 열려 있는지조차 알 수 없다.
+  "openapi.onbid.co.kr":    {},
+  "www.onbid.co.kr":        {},
+  "www.courtauction.go.kr": {},
   // 표준지공시지가는 포털이 아니라 브이월드가 제공한다(링크 API). 어떤
   // 레이어 이름으로 열려 있는지는 목록 페이지에만 적혀 있다. 읽기만 하므로
   // 키를 붙이지 않는다.

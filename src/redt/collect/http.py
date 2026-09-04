@@ -69,6 +69,10 @@ RELAYED_HOSTS = {
     "api.data.go.kr",
     "api.odcloud.kr",
     "www.data.go.kr",
+    # 경매·공매 원천 확인용 (api/relay.js 의 ALLOW 와 짝).
+    "openapi.onbid.co.kr",
+    "www.onbid.co.kr",
+    "www.courtauction.go.kr",
     "api.vworld.kr",
     "www.vworld.kr",
     "data.ex.co.kr",
