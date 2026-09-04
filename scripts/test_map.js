@@ -46,7 +46,7 @@ const check = (label, ok, note = '') => {
 };
 
 const FAKE_LEAFLET = () => {
-  const rec = { circles: [], markers: [], tiles: [], tradeOpts: [] };
+  const rec = { circles: [], markers: [], tiles: [], tradeOpts: [], panes: {} };
   window.__map = rec;
   // 무리(layerGroup)마다 자기가 담은 것을 따로 들고 있어야 한다.
   // 예전에는 모두가 rec 하나에 밀어 넣어서, 밴드 무리가 clearLayers 를
@@ -83,6 +83,15 @@ const FAKE_LEAFLET = () => {
       setView() { return this; }, fitBounds() { return this; },
       panTo() { return this; }, invalidateSize() { return this; },
       getZoom() { return 7; },
+      // 진짜 Leaflet 의 판(pane). 없으면 createPane 이 undefined 를 돌려
+      // .style 에서 터지고, 지도 전체가 안 그려진다.
+      createPane(name) {
+        const el = document.createElement('div');
+        el.className = 'leaflet-pane leaflet-' + name;
+        document.body.appendChild(el);
+        rec.panes[name] = el;
+        return el;
+      },
     }),
     tileLayer: (url) => { rec.tiles.push(url); return chain(); },
     layerGroup: grp,
@@ -384,6 +393,23 @@ const FAKE_LEAFLET = () => {
       check('거친 좌표는 옅게 찍는다',
             coarse.every((o) => /trade-coarse/.test(o.html)),
             `거친 것 ${coarse.length}개`);
+      // 사장님 지적(2026-09-04): "실거래 및 매물 표시는 IC 아래로."
+      // 무리를 붙이는 순서로는 못 고친다 — Leaflet 은 divIcon 마커를
+      // markerPane(600)에, 원을 overlayPane(400)에 그려서 거래가 항상
+      // 위로 온다. 판을 따로 파서 400 아래에 두는 것이 유일한 길이다.
+      const pane = await page.evaluate(() => {
+        const el = window.__map.panes && window.__map.panes.tradePane;
+        return el ? { z: Number(el.style.zIndex) } : null;
+      });
+      check('거래·매물 전용 판을 판다', !!pane, pane ? `z-index ${pane.z}` : '없음');
+      if (pane) {
+        // Leaflet 기본값: 타일 200 · 오버레이(밴드·영업소) 400 · 마커 600.
+        check('그 판이 영업소보다 아래다 (200 < z < 400)',
+              pane.z > 200 && pane.z < 400, `z-index ${pane.z}`);
+      }
+      check('거래 표식을 전부 그 판에 그린다',
+            tradeStyle.every((o) => o.pane === 'tradePane'),
+            `${tradeStyle.filter((o) => o.pane === 'tradePane').length}/${tradeStyle.length}`);
     } else {
       console.log('  건너뜀 — 그려진 거래 점이 없습니다.');
     }
@@ -491,6 +517,20 @@ const FAKE_LEAFLET = () => {
               String(hollow.one.fillColor));
         check('테두리가 굵어 작은 배율에서도 보인다',
               hollow.one.weight >= 2, String(hollow.one.weight));
+        // 사장님 지적(2026-09-04): "통행량 정보 없음(민자)는 사이즈 최소로."
+        // 크기는 이 지도에서 **교통량의 크기**를 말한다. 미공개를 크게
+        // 그리면 값이 큰 곳처럼 눈에 먼저 드는데, 값이 큰 곳이 아니라
+        // 값을 모르는 곳이다. 가장 작은 칸(1만대 이하)과 같게 둔다.
+        const smallest = await page.evaluate(() => {
+          const c1 = getComputedStyle(document.documentElement)
+            .getPropertyValue('--tg-1').trim().toLowerCase();
+          const m = window.__map.markers.find((o) =>
+            String(o.fillColor).trim().toLowerCase() === c1);
+          return m ? m.radius : null;
+        });
+        check('미공개가 가장 작다 (1만대 이하와 같은 크기)',
+              smallest !== null && hollow.one.radius === smallest,
+              `미공개 ${hollow.one.radius} vs 1만대 이하 ${smallest}`);
       }
       const label = await page.evaluate(() => {
         const b = [...document.querySelectorAll('#tier-filters .quad-btn')]

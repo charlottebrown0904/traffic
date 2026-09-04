@@ -1011,7 +1011,11 @@ function styleTollgate(marker, t, tier, vol) {
   const isNone = tier === 'none';
   const q = (isNew || isNone) ? 0 : tier;
   marker.setStyle({
-    radius: isNew ? 7 : isNone ? 5.5 : (known ? 4.5 + q * 1.4 : 3.5),
+    // 미공개는 **가장 작게** 그린다. 크게 그리면 눈이 먼저 가는데,
+    // 이것은 값이 큰 곳이 아니라 값을 모르는 곳이다. 크기는 교통량을
+    // 말하는 자리라 '모른다' 가 그 자리를 차지하면 안 된다.
+    // 1만대 이하(q=0)와 같은 4.5 를 쓴다.
+    radius: isNew ? 7 : isNone ? 4.5 : (known ? 4.5 + q * 1.4 : 3.5),
     // 신설은 링이 굵고 거의 검정이다. 네 구간은 흰 링이라 **테두리
     // 색만 봐도** 갈린다 — 채움 색이 비슷해 보이는 작은 배율에서도.
     // 미공개는 **속이 비어 있다** — 색을 하나 더 만들지 않은 이유는,
@@ -1067,6 +1071,14 @@ function buildMap() {
   const withCoords = state.tollgates.filter((t) => t.lat && t.lon);
   map = L.map('map', { zoomControl: true, preferCanvas: true })
     .setView([36.5, 127.8], 7);
+  // 거래·매물은 **영업소 아래**에 깐다.
+  //
+  // Leaflet 은 divIcon 마커를 markerPane(z-index 600)에, 원(circleMarker)을
+  // overlayPane(400)에 그린다. 그래서 무리를 어떤 순서로 지도에 붙이든
+  // 거래 네모가 영업소 원을 덮었다 — 거래가 2천 개, 영업소가 4백 개라
+  // 화면이 온통 초록 네모가 됐다. 순서로는 못 고치고 **판을 따로 파야**
+  // 한다. 380 은 배경 타일(200)보다 위, 밴드·영업소(400)보다 아래다.
+  map.createPane('tradePane').style.zIndex = 380;
   // 배경 지도는 물러나야 한다. OSM 기본 타일은 도로가 노랑·주황, 녹지가
   // 초록, 물이 파랑이라 그 위에 얹은 밴드 색과 경쟁한다 — 밴드 파랑이
   // 강물 파랑과 겹치면 색을 아무리 잘 골라도 안 보인다.
@@ -1204,6 +1216,9 @@ function refreshMap() {
     ? tradeLayer.getLayers().map((l) => ({
         kind: l.options.kind,
         geocodeLevel: l.options.geocodeLevel,
+        // 어느 판에 그렸는가. 판이 곧 위아래 순서다 — 영업소를 덮는지
+        // 아닌지가 여기서 갈린다.
+        pane: l.options.pane,
         // 모양과 색은 CSS 클래스가 정한다. 무엇이 붙었는지를 그대로
         // 내보내야 검사가 '네모인가 마름모인가' 를 볼 수 있다.
         html: (l.options.icon && l.options.icon.options
@@ -1347,6 +1362,7 @@ function tradeMarker(t) {
       iconSize: [TRADE_PX, TRADE_PX],
       iconAnchor: [TRADE_PX / 2, TRADE_PX / 2],
     }),
+    pane: 'tradePane',
     // 표식을 눌러도 용도지역 말풍선이 뜨게 둔다. 거래 점 위가 곧
     // 그 땅이므로 막을 이유가 없다.
     interactive: false,
@@ -1794,6 +1810,7 @@ function renderListingMarkers() {
   state.listings.filter((l) => l.lat && l.lon).forEach((l) => {
     const marker = L.marker([l.lat, l.lon], {
       icon: L.divIcon({ className: 'listing-pin', iconSize: [14, 14] }),
+      pane: 'tradePane',
     });
     marker.bindTooltip(
       `${KIND_LABEL[l.kind] || l.kind} · ${l.price_manwon.toLocaleString('ko-KR')}만원`,
