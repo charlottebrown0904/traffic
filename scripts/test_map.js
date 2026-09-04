@@ -204,15 +204,15 @@ const FAKE_LEAFLET = () => {
           verdict: '기각', why: '계수가 0 과 구분되지 않습니다.', rows: [] },
       ],
     };
-    // 행정구역 인구. 크기가 곧 값이라 **큰 것과 작은 것**을 같이 넣어
-    // 원 넓이가 인구에 비례하는지(반지름이 √인구인지) 볼 수 있게 한다.
+    // 행정구역 인구. 크기를 세 단으로 끊었으므로 **세 단에 하나씩** 넣는다.
+    // 한 단이라도 비면 그 단이 제 크기로 그려지는지 볼 수 없다.
     const FAKE_REGIONS = [
       { sigungu_cd: '41110', name: '수원시', lat: 37.263, lon: 127.028,
-        n_umd: 40, pop: { '2024': 1200000, '2025': 1000000 } },
+        n_umd: 40, pop: { '2024': 1200000, '2025': 1000000 } },   // 20만 초과
       { sigungu_cd: '41220', name: '평택시', lat: 36.992, lon: 127.112,
-        n_umd: 30, pop: { '2024': 300000, '2025': 250000 } },
+        n_umd: 30, pop: { '2024': 120000, '2025': 118000 } },     // 5만~20만
       { sigungu_cd: '47940', name: '울릉군', lat: 37.484, lon: 130.905,
-        n_umd: 3, pop: { '2024': 10000, '2025': 10000 } },
+        n_umd: 3, pop: { '2024': 10000, '2025': 10000 } },        // 5만 이하
     ];
     await page.route('**/app/data/regions.json*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
@@ -609,21 +609,29 @@ const FAKE_LEAFLET = () => {
           pop.pane !== null && pop.pane > 200 && pop.pane < 400,
           `z-index ${pop.pane}`);
     if (pop.marks.length === 3) {
-      // 반지름이 √인구에 비례해야 원의 **넓이**가 인구에 비례한다.
-      // 반지름을 인구에 그대로 비례시키면 4배 인구가 넓이로는 16배가 된다.
+      // 크기는 **세 단**이다. 235가지 크기를 눈으로 가를 수는 없다.
       const R = pop.marks.map((m) => m.radius).sort((a, b) => b - a);
-      const big = R[0], mid = R[1];
-      // 가장 큰 곳 1,200,000 · 가운데 300,000 → √비 = 0.5
-      const inner = (r) => r - 4;      // POP_R_MIN 을 뺀 나머지가 √에 비례
-      const ratio = inner(mid) / inner(big);
-      check('원 넓이가 인구에 비례한다 (반지름은 √인구)',
-            Math.abs(ratio - 0.5) < .05,
-            `가운데/최대 반지름비 ${ratio.toFixed(3)} (기대 0.500)`);
-      check('가장 작은 곳도 보인다 (최소 크기가 있다)',
-            R[2] >= 4, `가장 작은 반지름 ${R[2].toFixed(1)}`);
+      check('크기가 세 단으로 끊긴다', new Set(R).size === 3, R.join(' / '));
+      check('인구가 많을수록 크다', R[0] > R[1] && R[1] > R[2], R.join(' > '));
+      // 120,000 은 '20만 이하' 단이다. 경계를 잘못 잡으면 여기서 갈린다.
+      const byName = {};
+      pop.marks.forEach((m) => { byName[m.radius] = (byName[m.radius] || 0) + 1; });
+      check('한 단에 하나씩 들어간다 (경계가 맞다)',
+            Object.values(byName).every((n) => n === 1), JSON.stringify(byName));
     }
-    check('범례가 크기와 인구를 짝지어 보여준다',
-          /행정구역 인구/.test(pop.legend) && /명/.test(pop.legend));
+    // 범례 원은 지도 원과 **같은 크기**여야 한다. 크기가 곧 값이라
+    // 그것이 유일한 단서인데, 둘이 다르면 짝을 못 맞춘다.
+    const legendSizes = await page.evaluate(() =>
+      [...document.querySelectorAll('#map-legend .sw-pop')]
+        .map((el) => Math.round(el.getBoundingClientRect().width)));
+    check('범례에 단이 세 개 있다', legendSizes.length === 3, legendSizes.join('/'));
+    check('범례 원 크기가 지도와 같다',
+          legendSizes.length === 3
+          && legendSizes.every((w) => pop.marks.some((m) => Math.abs(m.radius * 2 - w) <= 1)),
+          `범례 ${legendSizes.join('/')} vs 지도 ${pop.marks.map((m) => m.radius * 2).sort().join('/')}`);
+    check('범례가 크기와 인구를 짝지어 말한다',
+          /행정구역 인구/.test(pop.legend) && /5만 이하/.test(pop.legend)
+          && /20만 이하/.test(pop.legend) && /20만 초과/.test(pop.legend));
     check('어느 해 인구인지 적는다',
           !!pop.peek.year && pop.legend.includes(String(pop.peek.year)),
           String(pop.peek.year));

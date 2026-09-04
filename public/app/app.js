@@ -1596,16 +1596,13 @@ function buildBoardTable() {
    실제 크기 비율로 그려 둔다 — 큰 것·중간·작은 것이 각각 몇 명인지. */
 function popLegendRows() {
   const info = window.__pop || {};
-  if (!state.showPop || !info.year || !info.max) return '';
-  const steps = [1, .25, .04];      // 넓이 비율 1 : 1/4 : 1/25 → 반지름 1 : .5 : .2
+  if (!state.showPop || !info.year) return '';
+  // 지도와 **같은 크기**로 그린다. 범례 원이 지도 원보다 크거나 작으면
+  // 짝을 못 맞춘다 — 크기가 곧 값인 표시라 그것이 유일한 단서다.
   return '<div class="grp">행정구역 인구 · ' + info.year + '년</div>' +
-    steps.map((frac) => {
-      const r = POP_R_MIN + (POP_R_MAX - POP_R_MIN) * Math.sqrt(frac);
-      const v = Math.round(info.max * frac);
-      return `<div class="row"><span class="sw sw-pop" style="width:${(r * 2).toFixed(0)}px;`
-        + `height:${(r * 2).toFixed(0)}px"></span>`
-        + `약 ${v.toLocaleString('ko-KR')}명</div>`;
-    }).join('');
+    POP_TIERS.map((t) =>
+      `<div class="row"><span class="sw sw-pop" style="width:${t.r * 2}px;`
+      + `height:${t.r * 2}px"></span>${t.label}</div>`).join('');
 }
 
 /* ─────────── 행정구역 인구 ─────────── */
@@ -1619,8 +1616,21 @@ function popLegendRows() {
  * 중심점의 중앙값이다(webexport._regions). 몇 km 어긋날 수 있어서
  * 말풍선에도 그렇게 적는다.
  */
-const POP_R_MIN = 4;
-const POP_R_MAX = 30;
+/* 크기를 **세 단**으로 끊는다 (2026-09-04 사장님 지시: "간단하게").
+ *
+ * 원 넓이를 인구에 그대로 비례시키면 크기가 235가지가 된다. 그러면 두 원을
+ * 나란히 놓고도 어느 쪽이 큰지 눈으로 못 가른다 — 크기는 순서를 말할 때는
+ * 좋지만 값을 읽는 데는 나쁘다. 세 단이면 한눈에 갈린다.
+ *
+ * 자르는 자리는 5만·20만이다. 2025년 기준 49곳 / 75곳 / 111곳으로 나뉜다.
+ * 70만에서 한 단 더 나누는 것은 두지 않았다 — 70만이 넘는 곳이 남양주
+ * 한 곳뿐이라 단 하나에 시군구 하나가 든다. */
+const POP_TIERS = [
+  { max: 50000, r: 6, label: '5만 이하' },
+  { max: 200000, r: 12, label: '20만 이하' },
+  { max: Infinity, r: 20, label: '20만 초과' },
+];
+const popTier = (v) => POP_TIERS.find((t) => v <= t.max) || POP_TIERS[POP_TIERS.length - 1];
 
 function popYear() {
   if (!Array.isArray(state.regions) || !state.regions.length) return null;
@@ -1658,10 +1668,9 @@ function drawPopulation() {
   state.regions.forEach((r) => {
     const v = (r.pop || {})[year];
     if (!(typeof v === 'number' && v > 0)) return;
-    const radius = POP_R_MIN + (POP_R_MAX - POP_R_MIN) * Math.sqrt(v / max);
     const marker = L.circleMarker([r.lat, r.lon], {
       pane: 'popPane',
-      radius,
+      radius: popTier(v).r,
       color: cssVar('--pop-ring'),
       weight: 1,
       fillColor: cssVar('--pop-fill'),
