@@ -25,7 +25,7 @@ const state = {
   activeKinds: new Set(),
   parcelOnly: false, selected: null, showAllBands: false, tiers: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
-  apiAvailable: false,
+  apiAvailable: false, verdicts: null,
 };
 
 let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer;
@@ -112,6 +112,13 @@ async function boot() {
   } catch (err) {
     state.chart = null;
   }
+  // 판정은 분석이 한 번이라도 돈 뒤에야 생긴다. 없으면 그 탭만 비운다.
+  try {
+    const r = await fetch('/app/data/verdicts.json');
+    if (r.ok) state.verdicts = await r.json();
+  } catch (err) {
+    state.verdicts = null;
+  }
 
   // 4분위는 지도와 무관하게 미리 잡는다. buildMap 안에서 잡으면 Leaflet 이
   // 없을 때(CDN 차단·오프라인) 계산 자체를 건너뛰고, 범례가 실제 교통량
@@ -132,6 +139,7 @@ async function boot() {
   buildLegend();
   buildMatrix();
   buildBoardTable();
+  buildVerdict();
   wireTabs();
   initListings();
 }
@@ -1561,6 +1569,108 @@ function buildBoardTable() {
     const row = e.target.closest('tr[data-id]');
     if (row) focusOnMap(row.dataset.id);
   });
+}
+
+/* ─────────── 세 가설 판정 ─────────── */
+/* 이 화면은 숫자를 하나 더 보여주는 곳이 아니다. **그 숫자로 무엇을 주장할
+   수 있는가** 를 적는 곳이다. 계수가 유의해도 위약 밴드가 같이 유의하면
+   IC 효과가 아니고, 표본이 모자라면 '효과 없음' 이 아니라 '아직 모름' 이다.
+   이 구분이 화면에서 사라지면 사람은 스스로 결론을 채워 넣는다. */
+const VERDICT_TONE = {
+  '지지': 'ok',
+  '기각': 'no',
+};
+function verdictTone(v) {
+  if (VERDICT_TONE[v]) return VERDICT_TONE[v];
+  return String(v || '').startsWith('교란') ? 'warn' : 'unknown';
+}
+
+const fixed = (v, d = 3) => (v == null ? '—' : Number(v).toFixed(d));
+
+function buildVerdict() {
+  const cards = $('#verdict-cards');
+  const flags = $('#verdict-flags');
+  const stamp = $('#verdict-stamp');
+  if (!cards) return;
+  const data = state.verdicts;
+  if (!data || !Array.isArray(data.hypotheses) || !data.hypotheses.length) {
+    flags.innerHTML = '';
+    stamp.textContent = '';
+    cards.innerHTML =
+      '<p class="empty">아직 판정이 계산되지 않았습니다. ' +
+      '분석이 한 번 돌면 여기에 표가 생깁니다.</p>';
+    return;
+  }
+
+  stamp.textContent =
+    `${data.kind === 'factory' ? '공장·창고' : '토지'} · ` +
+    `${data.volume_col === 'volume_freight' ? '화물 교통량' : '전체 교통량'} · ` +
+    (data.generated_at || '').slice(0, 10);
+
+  // 경고를 카드 위에 둔다. 표를 먼저 읽고 나서 '사실은 통제가 없었습니다'
+  // 를 만나면 이미 늦다 — 사람은 먼저 본 숫자를 기억한다.
+  const notes = [];
+  if (data.synthetic) {
+    notes.push(['no',
+      '<b>합성(연습용) 자료로 돌린 결과입니다.</b> 판정이 아닙니다.']);
+  }
+  if (!data.controlled) {
+    notes.push(['warn',
+      '<b>H3 통제 변수가 하나도 없습니다.</b> 아래 계수는 인구·산단 같은 ' +
+      '교란을 빼지 않은 값이라, 유의하게 나와도 ‘IC 효과’ 라고 부를 수 없습니다.']);
+  } else {
+    notes.push(['ok', `H3 통제: ${data.controls.map(escapeHtml).join(', ')}`]);
+  }
+  if (data.pre_trend_ok === false) {
+    notes.push(['no',
+      '<b>평행추세가 깨졌습니다.</b> 개통 전부터 이미 다르게 움직이고 있었다는 ' +
+      '뜻이라, H1 계수는 개통 효과로 읽을 수 없습니다.']);
+  }
+  flags.innerHTML = notes
+    .map(([tone, html]) => `<p class="verdict-flag is-${tone}">${html}</p>`)
+    .join('');
+
+  cards.innerHTML = data.hypotheses.map((h) => {
+    const tone = verdictTone(h.verdict);
+    const rows = (h.rows || []).map((r) => {
+      // 95% 구간이 0 을 품으면 '말할 수 없다' 이다. 계수 부호만 보고
+      // 읽지 않도록 그 사실을 글자로 적는다.
+      const has = r.ci_lo != null;
+      const crosses = has && r.ci_lo <= 0 && r.ci_hi >= 0;
+      const ci = has
+        ? `<span class="${crosses ? 'ci-null' : 'ci-away'}">` +
+          `${r.ci_lo >= 0 ? '+' : ''}${fixed(r.ci_lo)} ~ ` +
+          `${r.ci_hi >= 0 ? '+' : ''}${fixed(r.ci_hi)}</span>`
+        : '—';
+      return `<tr>
+        <td>${escapeHtml(r.label)}${r.note
+          ? ` <em class="hint">${escapeHtml(r.note)}</em>` : ''}</td>
+        <td class="num">${r.n == null ? '—' : r.n.toLocaleString('ko-KR')}</td>
+        <td class="num">${r.clusters == null ? '—' : r.clusters}</td>
+        <td class="num">${fixed(r.beta)}</td>
+        <td class="num">${fixed(r.p)}</td>
+        <td>${ci}</td></tr>`;
+    }).join('');
+
+    return `<article class="verdict-card is-${tone}">
+      <header>
+        <span class="verdict-badge is-${tone}">${escapeHtml(h.verdict)}</span>
+        <b>${escapeHtml(h.name)}</b>
+      </header>
+      <p class="claim">${escapeHtml(h.claim)}</p>
+      <p class="why">${escapeHtml(h.why)}</p>
+      ${rows ? `<div class="scroller"><table class="vt-table">
+        <thead><tr><th>항</th><th class="num">n</th><th class="num">영업소</th>
+          <th class="num">β</th><th class="num">p</th><th>95% 구간</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>` : ''}
+    </article>`;
+  }).join('');
+
+  // 검사가 화면과 같은 것을 보게 열어 둔다.
+  window.__verdicts = data.hypotheses.map((h) => ({
+    key: h.key, verdict: h.verdict, tone: verdictTone(h.verdict),
+    rows: (h.rows || []).length,
+  }));
 }
 
 function focusOnMap(id) {

@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260904e">
+<link rel="stylesheet" href="/app/style.css?v=20260904f">
 </head>
 <body>
 
@@ -38,6 +38,7 @@
     <button class="tab" role="tab" data-view="rank" aria-selected="false">교통량 순위</button>
     <button class="tab" role="tab" data-view="trend" aria-selected="false">추이 비교</button>
     <button class="tab" role="tab" data-view="board" aria-selected="false">스코어보드</button>
+    <button class="tab" role="tab" data-view="verdict" aria-selected="false">가설 판정</button>
     <button class="tab" role="tab" data-view="listings" aria-selected="false">매물</button>
   </nav>
   <a class="guide-link" href="/guide">토지·건축 가이드</a>
@@ -243,6 +244,53 @@
 </main>
 
 <!-- ══ 매물 ══ -->
+<!-- 세 가설 판정 — 이 제품이 무엇을 말할 수 있고 무엇을 말할 수 없는지.
+     숫자를 보여주는 화면은 이미 넷이다. 여기는 그 숫자로 **무엇을 주장할
+     수 있는가** 를 적는 자리다. 근거 없이 '오른다' 고 말하지 않기 위해서
+     둔다. -->
+<main class="view" id="view-verdict">
+  <div class="verdict-wrap">
+    <section class="panel">
+      <div class="panel-head">
+        <h2>세 가설 판정</h2>
+        <span class="hint" id="verdict-stamp"></span>
+      </div>
+      <p class="hint" id="verdict-sub">
+        가설마다 <b>무엇을 보면 참이라고 할 수 있는가</b>를 미리 정해 두고,
+        그 기준으로만 판정합니다. 결과를 보고 기준을 고르면 무엇이든 증명할 수 있습니다.
+      </p>
+      <div id="verdict-flags"></div>
+      <div id="verdict-cards" class="verdict-cards"></div>
+    </section>
+
+    <section class="panel">
+      <h2>판정 기준 (미리 정해 둔 것)</h2>
+      <table class="vt-table">
+        <tbody>
+          <tr><th>H1 · IC 개통</th><td>
+            이중차분 교차항이 유의(p&lt;0.05)하고 양수 · 개통 <b>전</b> 계수는
+            유의하지 않을 것(평행추세) · H3 통제 후에도 살아남을 것</td></tr>
+          <tr><th>H2 · 교통량</th><td>
+            영향범위 밴드에서 β 가 유의하고 양수 · <b>위약 밴드(5-10km)에서는
+            유의하지 않을 것</b> · H3 통제 후에도 살아남을 것</td></tr>
+          <tr><th>H3 · 인구·산단</th><td>
+            산단 지정 이벤트의 교차항 또는 인구 증가율 계수가 유의하고 양수일 것</td></tr>
+        </tbody>
+      </table>
+      <p class="hint" style="margin-top:.9rem">
+        <b>‘아직 모름’ 은 ‘효과가 없다’ 가 아닙니다.</b> 표본이 모자라 판정하지
+        못했다는 뜻입니다. 둘을 섞으면 투자 판단이 정반대로 뒤집힙니다.
+      </p>
+      <p class="hint">
+        H3 는 세 번째 질문이면서 동시에 <b>H1·H2 의 교란</b>입니다. IC 가 뚫린
+        그 해에 옆에 산업단지가 지정됐다면, 산단이 만든 상승을 IC 공으로
+        돌리게 됩니다. 그래서 H1·H2 를 H3 통제 전/후로 나란히 봅니다 —
+        통제를 넣자 계수가 사라지면 그건 IC 효과가 아니었다는 뜻입니다.
+      </p>
+    </section>
+  </div>
+</main>
+
 <main class="view" id="view-listings">
   <div class="offline-notice" id="listings-offline" hidden>
     <h2>매물 기능은 준비 중입니다</h2>
@@ -374,12 +422,12 @@
 <footer class="disclaimer" id="disclaimer"></footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="/app/config.js?v=20260904e"></script>
+<script src="/app/config.js?v=20260904f"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/app/supabase.js?v=20260904e"></script>
-<script src="/lib/supabase-init.js?v=20260904e"></script>
+<script src="/app/supabase.js?v=20260904f"></script>
+<script src="/lib/supabase-init.js?v=20260904f"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
-<script src="/app/gate.js?v=20260904e"></script>
+<script src="/app/gate.js?v=20260904f"></script>
 </body>
 </html>

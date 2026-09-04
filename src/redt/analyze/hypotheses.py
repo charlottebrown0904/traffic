@@ -393,10 +393,92 @@ def judge_h3(table: pd.DataFrame) -> tuple[str, str]:
 
 # ────────────────────────────────────────────────────────────────
 
+# 판정을 화면·요약으로 옮길 때 쓰는 이름. 코드 안의 'H1' 은 사람에게
+# 아무 말도 안 한다.
+NAMES = {
+    "H1": ("H1 IC 개통", "IC 가 새로 뚫리면 주변 지가는 오른다"),
+    "H2": ("H2 교통량", "IC 통행량(특히 화물)이 늘면 주변 지가는 오른다"),
+    "H3": ("H3 인구·산단", "주변 인구·산업단지·택지지구가 늘면 지가는 오른다"),
+}
+
+
+def _rows(table: pd.DataFrame) -> list[dict]:
+    """추정 표를 JSON 으로 옮긴다. 신뢰구간을 여기서 만들어 붙인다.
+
+    계수 하나만 보면 '0.03' 이 큰지 작은지 알 수 없다. 구간이 있어야
+    '0 을 품고 있다(=말할 수 없다)' 와 '0 위에 있다' 가 갈린다. 화면에서
+    이것을 계산하게 두면 화면과 로그가 다른 말을 하게 된다."""
+    def num(v, cast=float):
+        return None if v is None or pd.isna(v) else cast(v)
+
+    out = []
+    for r in table.to_dict("records") if len(table) else []:
+        beta, se = num(r.get("beta")), num(r.get("se"))
+        ok = beta is not None and se is not None
+        # 세 가설의 표는 첫 칸 이름이 다르다 — H1 은 '모형', H2 는 '밴드'+
+        # '모형', H3 은 '변수'. 하나로 뭉개면 화면에서 어느 줄인지 못
+        # 읽으므로 각각 그대로 넘기고, 사람이 읽을 한 줄도 같이 만든다.
+        band = r.get("밴드")
+        model = r.get("모형")
+        var = r.get("변수")
+        parts = [f"{band}km" if band else None, model, var]
+        out.append({
+            "label": " · ".join(x for x in parts if x) or "—",
+            "band": band, "model": model, "var": var,
+            "note": r.get("비고") or "",
+            "n": num(r.get("n"), int),
+            "clusters": num(r.get("영업소"), int),
+            "beta": beta, "se": se, "p": num(r.get("p")),
+            # 95% 구간. 군집표준오차라 정규근사를 쓴다.
+            "ci_lo": None if not ok else beta - 1.96 * se,
+            "ci_hi": None if not ok else beta + 1.96 * se,
+        })
+    return out
+
+
+def payload(verdicts: pd.DataFrame, tables: dict[str, pd.DataFrame],
+            *, kind: str, volume_col: str, controls: list[str],
+            pre_trend_ok: bool | None, synthetic: bool = False) -> dict:
+    """판정 결과를 파일로 남길 수 있는 모양으로.
+
+    지금까지 이 숫자들은 러너 로그에만 있었다. 실행이 끝나고 로그가
+    지워지면 무엇이 나왔는지 아무도 모른다 — 사장님께 결과를 물어보실
+    때마다 내가 로그를 다시 뒤져야 했던 이유다. 파일로 남긴다."""
+    from datetime import datetime, timezone
+    return {
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "kind": kind,
+        "volume_col": volume_col,
+        # 합성 자료로 돌린 판정은 **판정이 아니다.** 화면이 이것을 못
+        # 읽으면 연습용 숫자를 사실로 내보내게 된다.
+        "synthetic": bool(synthetic),
+        "controls": list(controls),
+        # 통제가 없으면 아래 계수는 교란을 빼지 않은 값이다. 화면이 이
+        # 사실을 숨기면 안 되므로 값으로 넘긴다.
+        "controlled": bool(controls),
+        "pre_trend_ok": pre_trend_ok,
+        "alpha": ALPHA,
+        "min_obs": MIN_OBS,
+        "min_clusters": MIN_CLUSTERS,
+        "hypotheses": [
+            {
+                "key": key,
+                "name": NAMES[key][0],
+                "claim": NAMES[key][1],
+                "verdict": str(row["판정"]),
+                "why": str(row["근거"]),
+                "rows": _rows(tables.get(key, pd.DataFrame())),
+            }
+            for key, (_, row) in zip(NAMES, verdicts.iterrows())
+        ],
+    }
+
+
 def report(panel: pd.DataFrame, event_df: pd.DataFrame | None,
            region: pd.DataFrame | None, pressure: pd.DataFrame | None,
            volume_col: str = "volume_total", kind: str = "land",
-           pre_trend_ok: bool | None = None) -> pd.DataFrame:
+           pre_trend_ok: bool | None = None,
+           synthetic: bool = False) -> tuple[pd.DataFrame, dict]:
     print(f"\n{'='*66}")
     print(f"세 가설 판정 ({kind}, {volume_col})")
     print(f"{'='*66}")
@@ -435,4 +517,7 @@ def report(panel: pd.DataFrame, event_df: pd.DataFrame | None,
         print(f"                 {r.근거}")
     print("\n  '아직 모름' 은 '효과가 없다' 가 아닙니다. 표본이 모자라 판정하지")
     print("  못했다는 뜻입니다. 둘을 섞으면 투자 판단이 뒤집힙니다.")
-    return verdicts
+    return verdicts, payload(
+        verdicts, {"H1": t1, "H2": t2, "H3": t3},
+        kind=kind, volume_col=volume_col, controls=usable,
+        pre_trend_ok=pre_trend_ok, synthetic=synthetic)

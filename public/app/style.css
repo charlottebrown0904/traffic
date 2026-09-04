@@ -737,3 +737,53 @@ body.picking .leaflet-container{cursor:crosshair}
 .map-legend .sw.sw-trade.trade-factory {
   background: var(--kind-factory); transform: rotate(45deg) scale(.82);
 }
+
+/* ── 세 가설 판정 ──
+   판정 딱지에 색을 준다. 다만 색만으로 뜻을 말하지 않는다 — 딱지에
+   '지지'·'아직 모름' 이라는 **글자**가 그대로 들어 있다. 색약이거나
+   흑백으로 인쇄해도 뜻이 살아야 한다. */
+#view-verdict.is-active{display:block; overflow:auto}
+.verdict-wrap{
+  max-width:64rem; margin:0 auto; padding:1.5rem 1.1rem 3rem;
+  display:grid; gap:1.1rem;
+}
+.verdict-cards{display:grid; gap:.85rem; margin-top:.9rem}
+.verdict-card{
+  border:1px solid var(--border); border-left:4px solid var(--c, var(--border-strong));
+  border-radius:.5rem; padding:.85rem 1rem; background:var(--surface);
+}
+.verdict-card.is-ok{--c:var(--q-rising)}
+.verdict-card.is-no{--c:var(--danger)}
+.verdict-card.is-warn{--c:var(--q-over)}
+.verdict-card.is-unknown{--c:var(--q-quiet)}
+.verdict-card header{display:flex; align-items:center; gap:.6rem; flex-wrap:wrap}
+.verdict-card header b{font-size:.95rem}
+.verdict-badge{
+  font-size:.74rem; font-weight:700; white-space:nowrap;
+  padding:.14rem .55rem; border-radius:999px;
+  color:var(--on-accent); background:var(--c, var(--q-quiet));
+}
+.verdict-badge.is-ok{--c:var(--q-rising)}
+.verdict-badge.is-no{--c:var(--danger)}
+.verdict-badge.is-warn{--c:var(--q-over)}
+.verdict-badge.is-unknown{--c:var(--q-quiet)}
+.verdict-card .claim{margin:.45rem 0 .2rem; font-size:.86rem; color:var(--muted)}
+.verdict-card .why{margin:.2rem 0 .6rem; font-size:.86rem; color:var(--ink)}
+.verdict-card .vt-table{margin-top:.2rem}
+
+/* 경고는 표보다 위에 둔다. 사람은 먼저 본 숫자를 기억한다. */
+.verdict-flag{
+  margin:.5rem 0; padding:.55rem .75rem; border-radius:.4rem;
+  font-size:.82rem; line-height:1.55;
+  border:1px solid var(--c); color:var(--ink);
+  background:color-mix(in srgb, var(--c) 10%, transparent);
+}
+.verdict-flag.is-ok{--c:var(--q-rising)}
+.verdict-flag.is-no{--c:var(--danger)}
+.verdict-flag.is-warn{--c:var(--q-over)}
+
+/* 95% 구간이 0 을 품으면 '말할 수 없다' 다. 계수 부호만 보고 읽지
+   않도록 두 경우를 눈으로 갈라 둔다. */
+.ci-away{font-variant-numeric:tabular-nums; font-weight:600}
+.ci-null{font-variant-numeric:tabular-nums; color:var(--faint)}
+.ci-null::after{content:' (0 포함)'; font-size:.72rem}

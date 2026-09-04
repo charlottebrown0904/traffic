@@ -260,6 +260,14 @@ jobs:
           python -m redt.cli rank --volume total
           python -m redt.cli rank --volume freight
 
+      # 지시13 — 세 가설을 한 자리에서 판정한다. 계수가 로그에만 남으면
+      # 실행이 끝나는 순간 무엇이 나왔는지 아무도 모른다. 이 단계는
+      # public/app/data/verdicts.json 으로 남기고(아래 '결과 커밋' 이
+      # 가져간다) 실행 요약 칸에도 표를 적는다.
+      - name: 세 가설 판정
+        continue-on-error: true
+        run: python -m redt.cli hypotheses
+
       - name: 스코어 산출
         continue-on-error: true
         run: python -m redt.cli score

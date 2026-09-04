@@ -179,6 +179,35 @@ const FAKE_LEAFLET = () => {
       lat: 37.2, lon: 127.05, status: 'active', memo: '', broker_name: '검사',
       address: '경기도 어딘가', area_m2: 1000,
     };
+    // 세 가설 판정. 세 가지 판정 색과, 95% 구간이 0 을 품는 줄과 안 품는
+    // 줄을 한꺼번에 넣는다 — 화면이 이 둘을 갈라 보여주는지가 이 탭의
+    // 존재 이유다.
+    const FAKE_VERDICTS = {
+      generated_at: '2026-09-04T00:00:00+00:00',
+      kind: 'land', volume_col: 'volume_freight',
+      synthetic: false, controlled: false, controls: [],
+      pre_trend_ok: false, alpha: 0.05, min_obs: 50, min_clusters: 10,
+      hypotheses: [
+        { key: 'H1', name: 'H1 IC 개통', claim: '개통하면 오른다',
+          verdict: '아직 모름', why: '표본이 없습니다.', rows: [] },
+        { key: 'H2', name: 'H2 교통량', claim: '교통량이 늘면 오른다',
+          verdict: '지지', why: '3-5km 에서 유의, 위약은 깨끗합니다.',
+          rows: [
+            { label: '3-5km · 통제 전', band: '3-5', model: '통제 전', var: null,
+              note: '', n: 2356, clusters: 210, beta: 0.387, se: 0.129,
+              p: 0.003, ci_lo: 0.135, ci_hi: 0.639 },
+            { label: '5-10km · 통제 전', band: '5-10', model: '통제 전', var: null,
+              note: '위약', n: 2356, clusters: 210, beta: 0.102, se: 0.105,
+              p: 0.332, ci_lo: -0.104, ci_hi: 0.308 },
+          ] },
+        { key: 'H3', name: 'H3 인구·산단', claim: '인구가 늘면 오른다',
+          verdict: '기각', why: '계수가 0 과 구분되지 않습니다.', rows: [] },
+      ],
+    };
+    await page.route('**/app/data/verdicts.json*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify(FAKE_VERDICTS),
+    }));
     await page.route('**/api/fees*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({ listing_fee_krw: 50000, listing_days: 30,
@@ -529,6 +558,64 @@ const FAKE_LEAFLET = () => {
     const satHit = /saturate\(([\d.]+)\)/.exec(sat);
     check('배경 지도가 도로 색을 지우지 않는다',
           satHit && Number(satHit[1]) >= .5, sat || '(필터 없음)');
+
+    console.log();
+    console.log('8. 세 가설 판정 — 무엇을 말할 수 있고 없는지');
+    // 이 탭은 숫자를 하나 더 보여주는 곳이 아니다. 계수가 유의해도 위약
+    // 밴드가 같이 유의하면 IC 효과가 아니고, 표본이 모자라면 '효과 없음'
+    // 이 아니라 '아직 모름' 이다. 그 구분이 화면에서 사라지면 사람은
+    // 스스로 결론을 채워 넣는다 — 그래서 화면에 실제로 남아 있는지 본다.
+    const vTab = await page.$('.tab[data-view="verdict"]');
+    check('가설 판정 탭이 있다', !!vTab);
+    if (vTab) {
+      await vTab.click();
+      await page.waitForTimeout(300);
+      const v = await page.evaluate(() => {
+        const cards = [...document.querySelectorAll('#verdict-card' + 's .verdict-card')];
+        return {
+          shown: !!document.querySelector('#view-verdict.is-active'),
+          n: cards.length,
+          badges: cards.map((c) => ({
+            text: c.querySelector('.verdict-badge').textContent.trim(),
+            cls: c.className,
+          })),
+          flags: [...document.querySelectorAll('.verdict-flag')]
+            .map((f) => ({ cls: f.className, text: f.textContent.trim() })),
+          nullCI: document.querySelectorAll('#verdict-cards .ci-null').length,
+          awayCI: document.querySelectorAll('#verdict-cards .ci-away').length,
+          stamp: (document.querySelector('#verdict-stamp') || {}).textContent || '',
+          peek: window.__verdicts || [],
+        };
+      });
+      check('누르면 판정 화면이 열린다', v.shown);
+      check('가설 셋을 다 보여준다', v.n === 3, `${v.n}개`);
+      // 색만으로 뜻을 말하면 색약·흑백에서 무너진다. 딱지에 글자가 있어야 한다.
+      check('판정이 글자로 적혀 있다 (색만이 아니다)',
+            v.badges.map((b) => b.text).join('·') === '아직 모름·지지·기각',
+            v.badges.map((b) => b.text).join('·'));
+      check('판정마다 색이 다르다',
+            /is-unknown/.test(v.badges[0].cls) && /is-ok/.test(v.badges[1].cls)
+            && /is-no/.test(v.badges[2].cls),
+            v.badges.map((b) => b.cls.replace('verdict-card ', '')).join(' / '));
+      // 통제가 없는데 계수를 그냥 보여주면 'IC 효과' 로 읽힌다.
+      check('통제가 없으면 표 위에서 먼저 경고한다',
+            v.flags.some((f) => /is-warn/.test(f.cls) && /통제/.test(f.text)),
+            v.flags.map((f) => f.text.slice(0, 24)).join(' | ') || '경고 없음');
+      check('평행추세가 깨진 것도 알린다',
+            v.flags.some((f) => /평행추세/.test(f.text)));
+      // 95% 구간이 0 을 품으면 '말할 수 없다' 다. 부호만 보고 읽으면 안 된다.
+      check('0 을 품는 구간을 따로 표시한다', v.nullCI === 1 && v.awayCI === 1,
+            `0 포함 ${v.nullCI} · 0 밖 ${v.awayCI}`);
+      // 색과 굵기만으로 갈라 두면 흑백·색약에서 무너진다. ::after 로
+      // 글자를 붙였는지 **그려진 결과**로 확인한다.
+      const after = await page.evaluate(() => {
+        const el = document.querySelector('#verdict-cards .ci-null');
+        return el ? getComputedStyle(el, '::after').content : '';
+      });
+      check('그 줄에 글자로도 적는다 (0 포함)', /0 포함/.test(after), after);
+      check('무엇으로 돌린 판정인지 적는다',
+            /토지/.test(v.stamp) && /화물/.test(v.stamp), v.stamp);
+    }
 
     console.log();
     console.log('6. 통행량 미공개 = 속이 빈 점');

@@ -41,6 +41,23 @@ TOLLGATE_FILLED = ["lat", "lon", "sido", "sigungu", "operator_cd",
                    "route_no", "name"]
 
 
+def _step_summary(markdown: str) -> None:
+    """GitHub Actions 의 '실행 요약' 칸에 남긴다.
+
+    로그는 90일 뒤 지워지고, 그 전에도 수천 줄 안에서 계수를 찾아야 한다.
+    요약 칸은 실행 화면 맨 위에 그대로 뜨므로, 사장님이 폰에서 결과를
+    보시는 유일한 자리다. 로컬에서는 환경변수가 없으니 조용히 지나간다."""
+    import os
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(markdown.rstrip() + "\n\n")
+    except OSError as exc:                              # noqa: BLE001
+        print(f"  실행 요약을 못 남겼습니다: {exc}")
+
+
 def _months(start: str, end: str) -> list[str]:
     rng = pd.period_range(start=start, end=end, freq="M")
     return [p.strftime("%Y%m") for p in rng]
@@ -1418,10 +1435,58 @@ def cmd_hypotheses(args):
     years = sorted(int(y) for y in panel["year"].dropna().unique())
     pressure = hypotheses.zone_pressure(zones, zlinks, years)
 
-    verdicts = hypotheses.report(
+    verdicts, data = hypotheses.report(
         panel, event_df, region, pressure,
-        volume_col=f"volume_{args.volume}", kind=args.kind, pre_trend_ok=pre_ok)
+        volume_col=f"volume_{args.volume}", kind=args.kind, pre_trend_ok=pre_ok,
+        synthetic=(PROCESSED / ".synthetic").exists())
     verdicts.to_csv(PROCESSED / "verdicts.csv", index=False)
+
+    # 숫자를 남긴다. 지금까지 이 결과는 러너 로그에만 있어서, 실행이
+    # 끝나면 무엇이 나왔는지 아무도 알 수 없었다.
+    (PROCESSED / "verdicts.json").write_text(
+        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    web = ROOT / "public" / "app" / "data" / "verdicts.json"
+    web.parent.mkdir(parents=True, exist_ok=True)
+    web.write_text(json.dumps(data, ensure_ascii=False, indent=2),
+                   encoding="utf-8")
+    print(f"\n  저장: {web.relative_to(ROOT)}")
+    _step_summary(_verdict_markdown(data))
+
+
+def _verdict_markdown(data: dict) -> str:
+    """판정을 실행 요약 칸에 넣을 표로.
+
+    계수만 늘어놓지 않는다. 95% 구간이 0 을 품는지가 '말할 수 있다/없다'
+    를 가르는 자리라 그것을 같이 적는다."""
+    def fmt(v, digits=3):
+        return "–" if v is None else f"{v:.{digits}f}"
+
+    out = [f"## 세 가설 판정 ({data['kind']}, {data['volume_col']})", ""]
+    if data.get("synthetic"):
+        out += ["> ⛔ **합성(연습용) 자료로 돌린 결과입니다. 판정이 아닙니다.**", ""]
+    if not data["controlled"]:
+        out += ["> ⚠ H3 통제 변수가 하나도 없습니다. 아래 계수는 교란을 "
+                "빼지 않은 값이라, 유의해도 'IC 효과' 라고 부를 수 없습니다.", ""]
+    out += ["| 가설 | 판정 | 근거 |", "|---|---|---|"]
+    for h in data["hypotheses"]:
+        out.append(f"| {h['name']} | **{h['verdict']}** | {h['why']} |")
+    for h in data["hypotheses"]:
+        if not h["rows"]:
+            continue
+        out += ["", f"### {h['name']}", "",
+                "| 항 | n | 영업소 | β | se | p | 95% 구간 | 비고 |",
+                "|---|---:|---:|---:|---:|---:|---|---|"]
+        for r in h["rows"]:
+            ci = "–" if r["ci_lo"] is None else \
+                f"{r['ci_lo']:+.3f} ~ {r['ci_hi']:+.3f}"
+            out.append(
+                f"| {r['label']} | {r['n'] if r['n'] is not None else '–'} | "
+                f"{r['clusters'] if r['clusters'] is not None else '–'} | "
+                f"{fmt(r['beta'])} | {fmt(r['se'])} | {fmt(r['p'])} | {ci} | "
+                f"{r['note'] or ''} |")
+    out += ["", "'아직 모름' 은 '효과가 없다' 가 아닙니다 — 표본이 모자라 "
+            "판정하지 못했다는 뜻입니다."]
+    return "\n".join(out)
 
 
 def cmd_gaps(args):
