@@ -70,10 +70,10 @@ on:
 # 결과를 저장소에 다시 커밋해야 하므로 쓰기 권한이 필요합니다.
 permissions:
   contents: write
-  # 캐시 사용량을 스스로 읽어 찍기 위해서다 (마지막 단계). 사장님이
-  # 휴대폰으로 일하시므로, 한도에 얼마나 다가갔는지를 찾아다니지 않고
-  # 실행 로그에서 바로 보이게 한다.
-  actions: read
+  # 캐시 사용량을 스스로 읽어 찍고, 넘친 만큼 **스스로 지우기** 위해서다.
+  # 사장님이 휴대폰으로 일하시므로, 한도에 얼마나 다가갔는지를 찾아다니지
+  # 않고 실행 로그에서 바로 보이게 한다.
+  actions: write
 
 # 같은 워크플로가 겹쳐 돌면 커밋이 충돌하므로 한 번에 하나만.
 concurrency:
@@ -397,6 +397,64 @@ jobs:
       #
       # 찾아가 봐야 아는 숫자는 아무도 안 본다. 여기 찍어 두면 실행
       # 로그를 열 때마다 눈에 들어온다.
+      # 오래된 캐시를 지운다.
+      #
+      # run 23 이 12.35GB / 10GB (124%) 를 찍었다. 넘치면 GitHub 이
+      # **오래된 것부터 조용히 지운다** — 그 사실은 다음 실행이 처음부터
+      # 다시 받기 시작할 때에야 드러난다. 지오코딩이 든 캐시가 그렇게
+      # 밀려나면 몇 시간을 다시 쓴다.
+      #
+      # 우연에 맡기지 않고 **우리가 고른다.** 최근 것 KEEP 개만 남기고
+      # 나머지를 지운다. 방금 저장한 것이 가장 최근이므로 안전하다.
+      #
+      # 지우기 전에 반드시 확인하는 것 하나: **지금 도는 실행이 만든
+      # 캐시는 건드리지 않는다.** 같은 실행의 캐시를 지우면 그 실행이
+      # 이어받을 것을 스스로 없애는 셈이다.
+      - name: 오래된 캐시 정리 (10GB 한도)
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          repo = os.environ["GITHUB_REPOSITORY"]
+          run_id = os.environ["GITHUB_RUN_ID"]
+          KEEP = 3                      # 최근 몇 개를 남길지
+          GB = 2 ** 30
+
+          def api(path, method="GET"):
+              r = urllib.request.Request(
+                  f"https://api.github.com/repos/{repo}{path}", method=method,
+                  headers={"Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                           "Accept": "application/vnd.github+json"})
+              body = urllib.request.urlopen(r, timeout=20).read()
+              return json.loads(body) if body else None
+
+          caches = api("/actions/caches?per_page=100")["actions_caches"]
+          ours = [c for c in caches if c["key"].startswith("redt-data-")]
+          # 이번 실행이 만든 것은 목록에서 뺀다 — 지우면 안 된다.
+          mine = [c for c in ours if run_id in c["key"]]
+          others = [c for c in ours if run_id not in c["key"]]
+          others.sort(key=lambda c: c["last_accessed_at"], reverse=True)
+
+          keep = others[:max(0, KEEP - len(mine))]
+          drop = others[len(keep):]
+          total = sum(c["size_in_bytes"] for c in caches)
+          print(f"캐시 {len(caches)}개 · {total / GB:.2f} GB")
+          print(f"  이번 실행 것 {len(mine)}개 (안 건드림) · 남길 것 {len(keep)}개 "
+                f"· 지울 것 {len(drop)}개")
+          freed = 0
+          for c in drop:
+              try:
+                  api(f"/actions/caches/{c['id']}", method="DELETE")
+                  freed += c["size_in_bytes"]
+                  print(f"    지움  {c['size_in_bytes'] / GB:5.2f} GB  {c['key']}")
+              except Exception as exc:            # noqa: BLE001
+                  print(f"    실패  {c['key']} — {type(exc).__name__}: {exc}")
+          print(f"  확보 {freed / GB:.2f} GB → 남은 {(total - freed) / GB:.2f} GB")
+          PY
+
       - name: 용량 (캐시·실행시간)
         if: always()
         continue-on-error: true

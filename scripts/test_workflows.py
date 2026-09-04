@@ -265,6 +265,32 @@ if _ff is not None:
               f"결과 커밋 뒤에 민다 ({_commit_i} < {_ff_i})")
 
 print()
+print("8. 캐시가 한도를 넘으면 스스로 줄인다")
+
+# run 23 이 12.35GB / 10GB (124%) 를 찍었다. 넘치면 GitHub 이 **오래된
+# 것부터 조용히 지운다.** 무엇이 지워졌는지는 다음 실행이 처음부터 다시
+# 받기 시작할 때에야 드러난다. 우연에 맡기지 않고 우리가 고른다.
+_prune = next((s for n, s in _named.items() if "오래된 캐시 정리" in n), None)
+check(_prune is not None, "오래된 캐시를 지우는 단계가 있다")
+if _prune is not None:
+    _pr = str(_prune.get("run", ""))
+    check(str(_y["permissions"].get("actions")) == "write",
+          f"캐시를 지울 권한이 있다 (actions: {_y['permissions'].get('actions')})")
+    check("DELETE" in _pr, "실제로 지운다")
+    # 같은 실행의 캐시를 지우면 그 실행이 이어받을 것을 스스로 없앤다.
+    check("GITHUB_RUN_ID" in _pr and "run_id in c" in _pr,
+          "이번 실행이 만든 캐시는 건드리지 않는다")
+    check("redt-data-" in _pr,
+          "우리 캐시만 본다 (pip 캐시 같은 것을 지우지 않는다)")
+    check("last_accessed_at" in _pr,
+          "최근 쓴 것부터 남긴다 (지오코딩이 든 캐시를 지키기 위해)")
+    _prune_i = next(i for i, n in enumerate(_names) if "오래된 캐시 정리" in n)
+    _report_i = next((i for i, n in enumerate(_names) if "용량 (캐시" in n), None)
+    if _report_i is not None:
+        check(_prune_i < _report_i,
+              f"정리한 뒤에 용량을 찍는다 ({_prune_i} < {_report_i})")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
