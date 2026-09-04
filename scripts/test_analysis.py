@@ -835,7 +835,7 @@ from redt.collect import geocode as _gc
 from redt.transform.spatial import umd_near_tollgates as _near
 
 _orig_one = _gc.geocode_one
-_orig_sleep = _gc.polite_sleep
+_orig_pace = _gc._PACE
 _calls = []
 
 class _Cache(_gc.GeocodeCache):
@@ -847,7 +847,7 @@ class _Cache(_gc.GeocodeCache):
                             "source": source, "level": level}
 
 try:
-    _gc.polite_sleep = lambda *a, **k: None
+    _gc._PACE = _gc._Pace(0)          # 검사에서는 속도 상한을 끈다
     _gc.geocode_one = lambda addr, kind="PARCEL": (_calls.append(addr),
                                                    (37.0, 127.0))[1]
     # 같은 법정동의 거래 100건 → 법정동 호출은 한 번이어야 한다.
@@ -877,7 +877,7 @@ try:
     check(len(_calls) == 0, "지번이 없으면 부르지 않는다")
 finally:
     _gc.geocode_one = _orig_one
-    _gc.polite_sleep = _orig_sleep
+    _gc._PACE = _orig_pace
 
 # 반경 밖 법정동은 지번 대상에서 빠진다 — 지번 좌표가 있어도 어느 밴드에도
 # 못 들어가므로 부르는 만큼 손해다.

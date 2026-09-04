@@ -2,10 +2,14 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from ..config import GEOCODE_CACHE, ensure_dirs, keys
-from .http import get, polite_sleep
+from ..config import GEOCODE_CACHE, ensure_dirs, keys, settings
+from .http import get
 
 VWORLD_URL = "https://api.vworld.kr/req/address"
 
@@ -14,6 +18,10 @@ class GeocodeCache:
     def __init__(self, path: Path | None = None):
         self.path = path or GEOCODE_CACHE
         self._data: dict[str, dict] = {}
+        # 워커 여러 개가 동시에 적는다. 잠그지 않으면 한 줄이 다른 줄
+        # 가운데로 끼어들어 그 두 줄이 다음 실행에서 못 읽히는 JSON 이 된다.
+        # 그러면 좌표를 이미 산 주소를 **돈 주고 다시 산다**.
+        self._lock = threading.Lock()
         self._load()
 
     def _load(self) -> None:
@@ -33,10 +41,11 @@ class GeocodeCache:
     def put(self, addr: str, lat: float | None, lon: float | None, source: str,
             level: str | None = None) -> None:
         row = {"addr_key": addr, "lat": lat, "lon": lon, "source": source, "level": level}
-        self._data[addr] = row
         ensure_dirs()
-        with open(self.path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+        with self._lock:
+            self._data[addr] = row
+            with open(self.path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     def __len__(self) -> int:
         return len(self._data)
@@ -73,6 +82,119 @@ class QuotaExhausted(RuntimeError):
     """브이월드가 주소를 못 찾은 것이 아니라, 우리 쪽 문제로 못 준 경우."""
 
 
+# ── 병렬 호출 ────────────────────────────────────────────────────────
+#
+# run 21 의 지오코딩이 2시간 58분 걸렸다. 호출 3만 건을 한 줄로 세워
+# 한 건씩 부른 결과다. 한 건에 0.36초, 그중 대부분이 응답을 기다리는
+# 시간이다 — CPU 는 놀고 있었다.
+#
+# 브이월드의 진짜 제약은 **하루 호출 수**(3만~4만)지 초당 속도가 아니다.
+# 어차피 하루치를 다 쓰고 멈출 것이라면, 그것을 3시간에 걸쳐 쓸 이유가
+# 없다. 워커를 여러 개 두고 전체 속도만 예의 있게 묶는다.
+#
+#   워커 8 · 초당 12건 → 3만 건에 42분  (기존 2시간 58분)
+#
+# 속도를 워커 수로만 정하면 안 된다. 응답이 빨라지는 날 초당 20건씩
+# 때리게 되고, 그건 우리가 통제하지 못하는 값이다. 그래서 워커와 별개로
+# **전체 속도 상한**을 둔다.
+
+
+class _Pace:
+    """호출 사이 간격을 전역으로 지킨다. 워커가 몇 개든 합쳐서 초당 N건."""
+
+    def __init__(self, per_sec: float):
+        self._gap = 1.0 / per_sec if per_sec > 0 else 0.0
+        self._lock = threading.Lock()
+        self._next = 0.0
+
+    def wait(self) -> None:
+        if not self._gap:
+            return
+        with self._lock:
+            now = time.monotonic()
+            at = max(now, self._next)
+            self._next = at + self._gap
+        delay = at - now
+        if delay > 0:
+            time.sleep(delay)
+
+
+def _geo_cfg() -> dict:
+    cfg = settings().get("geocode") or {}
+    return {"workers": int(cfg.get("workers", 8) or 1),
+            "calls_per_sec": float(cfg.get("calls_per_sec", 12) or 0)}
+
+
+_PACE = None
+_PACE_LOCK = threading.Lock()
+
+
+def _pace() -> _Pace:
+    global _PACE
+    with _PACE_LOCK:
+        if _PACE is None:
+            _PACE = _Pace(_geo_cfg()["calls_per_sec"])
+    return _PACE
+
+
+def _drive(pending: list, work, label: str = "확보"
+           ) -> tuple[int, Counter, str | None]:
+    """pending 을 워커 여러 개로 처리한다.
+
+    work(item) -> str | None    얻은 정밀도('parcel'·'umd') 또는 None.
+                                캐시 쓰기까지 work 안에서 한다.
+                                QuotaExhausted 를 올리면 **전체가 멈춘다**.
+    반환 (처리한 수, 정밀도별 개수, 멈춘 이유 or None)
+
+    한도에 걸린 뒤 새 호출을 시작하지 않는 것이 이 함수의 존재 이유다.
+    순차 코드에서는 break 하나로 되던 일인데, 워커가 여럿이면 깃발을
+    들어야 한다. 이것이 없으면 남은 주소가 전부 '좌표 없는 주소' 로
+    캐시에 박히고, 한도가 풀려도 다시 물어보지 않는다.
+    """
+    counts: Counter = Counter()
+    if not pending:
+        return 0, counts, None
+
+    cfg = _geo_cfg()
+    workers = max(1, cfg["workers"])
+    cps = cfg["calls_per_sec"]
+    if workers > 1:
+        # 실행 로그에서 '몇 개로 돌고 있나' 를 바로 보게 한다. 설정을
+        # 바꿔놓고 안 먹은 것을 나중에 알면 한 판을 통째로 버린다.
+        eta = f" · 예상 {len(pending) / cps / 60:.0f}분" if cps > 0 else ""
+        print(f"  워커 {workers}개 · 전체 상한 초당 {cps:g}건{eta}", flush=True)
+    stop = threading.Event()
+    lock = threading.Lock()
+    state = {"done": 0, "why": None}
+    total = len(pending)
+
+    def one(item):
+        if stop.is_set():
+            return                      # 아직 안 부른 것은 안 부른 채로 남긴다
+        try:
+            level = work(item)
+        except QuotaExhausted as exc:
+            stop.set()
+            with lock:
+                if state["why"] is None:
+                    state["why"] = str(exc)
+            return
+        with lock:
+            state["done"] += 1
+            counts[level] += 1
+            done, got = state["done"], state["done"] - counts[None]
+        if done % 500 == 0:
+            print(f"  {done:,}/{total:,}  {label} {got:,}", flush=True)
+
+    if workers == 1:
+        for item in pending:            # 검사에서 순서를 보고 싶을 때
+            one(item)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(one, pending))
+    return state["done"], counts, state["why"]
+
+
 def geocode_one(address: str, kind: str = "PARCEL"
                 ) -> tuple[float | None, float | None]:
     """좌표를 찾는다. 못 찾으면 (None, None).
@@ -86,6 +208,9 @@ def geocode_one(address: str, kind: str = "PARCEL"
     그래서 시스템 오류는 예외로 올려 보낸다. 부르는 쪽이 멈추고,
     캐시에 아무것도 안 쓴다.
     """
+    # 주소 하나가 호출 두 번이 되기도 한다(지번 실패 → 법정동). 속도는
+    # **호출** 단위로 묶어야 실제로 지켜진다.
+    _pace().wait()
     resp = get(
         VWORLD_URL,
         {
@@ -157,7 +282,9 @@ def _say_stopped(stopped: str | None, done: int, total: int) -> None:
     print(f"  ⛔ {done:,}건째에서 멈췄습니다 — {stopped}")
     print(f"     남은 {total - done:,}건은 캐시에 아무것도 쓰지 않았습니다.")
     print(f"     다음 실행이 그대로 이어받습니다.")
-    print(f"     **{done:,} 이 오늘 쓸 수 있었던 실제 한도입니다.**")
+    workers = _geo_cfg()["workers"]
+    about = "" if workers <= 1 else f" (워커 {workers}개 — ±{workers} 오차)"
+    print(f"     **{done:,} 이 오늘 쓸 수 있었던 실제 한도입니다{about}.**")
 
 
 def geocode_many(rows: list[tuple[str, str, str]], cache: GeocodeCache | None = None,
@@ -184,28 +311,20 @@ def geocode_many(rows: list[tuple[str, str, str]], cache: GeocodeCache | None = 
         pending = pending[:limit]
 
     print(f"지오코딩: 캐시 적중 {len(result):,} / 신규 요청 {len(pending):,}")
-    levels = {"parcel": 0, "umd": 0, "fail": 0}
-    stopped = None
-    for i, row in enumerate(pending, 1):
-        try:
-            lat, lon, level = geocode_with_fallback(*row)
-        except QuotaExhausted as exc:
-            # 여기서 계속 돌면 남은 주소를 전부 '좌표 없음' 으로 캐시에
-            # 박아 영구 오염시킨다. 멈추는 것이 옳다.
-            stopped = str(exc)
-            break
-        cache.put(build_address(None, *row), lat, lon, "vworld", level)
-        result[row] = (lat, lon, level)
-        levels[level or "fail"] += 1
-        polite_sleep(0.05)
-        if i % 500 == 0:
-            print(f"  {i:,}/{len(pending):,}  parcel={levels['parcel']:,} "
-                  f"umd={levels['umd']:,} fail={levels['fail']:,}")
 
+    def work(row):
+        # 한도에 걸리면 QuotaExhausted 가 여기서 올라가고, _drive 가
+        # 남은 주소를 부르지 않는다. 캐시에는 아무것도 안 쓴다.
+        lat, lon, level = geocode_with_fallback(*row)
+        cache.put(build_address(None, *row), lat, lon, "vworld", level)
+        # dict 한 칸 쓰기는 스레드 사이에서 쪼개지지 않는다 (CPython).
+        result[row] = (lat, lon, level)
+        return level
+
+    done, counts, stopped = _drive(pending, work)
     if pending:
-        done = levels["parcel"] + levels["umd"] + levels["fail"]
-        print(f"  결과: 지번단위 {levels['parcel']:,} / 법정동단위 {levels['umd']:,} "
-              f"/ 주소 없음 {levels['fail']:,}")
+        print(f"  결과: 지번단위 {counts['parcel']:,} / 법정동단위 {counts['umd']:,} "
+              f"/ 주소 없음 {counts[None]:,}")
         _say_stopped(stopped, done, len(pending))
     return result
 
@@ -262,24 +381,18 @@ def geocode_umd(pairs: list[tuple[str, str]], cache: GeocodeCache | None = None,
 
     print(f"법정동 중심점: 캐시 적중 {len(result):,} / 신규 {len(pending):,} "
           f"(법정동 단위라 거래 건수와 무관합니다)")
-    ok, done, stopped = 0, 0, None
-    for i, pair in enumerate(pending, 1):
+    def work(pair):
         key = coarse_key(*pair)
-        try:
-            lat, lon = geocode_one(key, "PARCEL")
-        except QuotaExhausted as exc:
-            stopped = str(exc)
-            break
+        lat, lon = geocode_one(key, "PARCEL")
         cache.put(key, lat, lon, "vworld", "umd")
-        done += 1
-        if lat is not None:
-            result[pair] = (lat, lon, "umd")
-            ok += 1
-        polite_sleep(0.05)
-        if i % 500 == 0:
-            print(f"  {i:,}/{len(pending):,}  확보 {ok:,}")
+        if lat is None:
+            return None
+        result[pair] = (lat, lon, "umd")
+        return "umd"
+
+    done, counts, stopped = _drive(pending, work)
     if pending:
-        print(f"  결과: 확보 {ok:,} / 주소 없음 {done - ok:,}")
+        print(f"  결과: 확보 {done - counts[None]:,} / 주소 없음 {counts[None]:,}")
         _say_stopped(stopped, done, len(pending))
     return result
 
@@ -314,23 +427,19 @@ def geocode_parcel(rows: list[tuple[str, str, str]],
         pending = pending[:limit]
 
     print(f"지번 단위: 캐시 적중 {len(result):,} / 신규 {len(pending):,}")
-    ok, done, stopped = 0, 0, None
-    for i, row in enumerate(pending, 1):
-        try:
-            lat, lon = geocode_one(build_address(None, *row), "PARCEL")
-        except QuotaExhausted as exc:
-            stopped = str(exc)
-            break
-        cache.put(build_address(None, *row), lat, lon, "vworld",
+    def work(row):
+        key = build_address(None, *row)
+        lat, lon = geocode_one(key, "PARCEL")
+        cache.put(key, lat, lon, "vworld",
                   "parcel" if lat is not None else None)
-        done += 1
-        if lat is not None:
-            result[row] = (lat, lon, "parcel")
-            ok += 1
-        polite_sleep(0.05)
-        if i % 500 == 0:
-            print(f"  {i:,}/{len(pending):,}  확보 {ok:,}")
+        if lat is None:
+            return None
+        result[row] = (lat, lon, "parcel")
+        return "parcel"
+
+    done, counts, stopped = _drive(pending, work)
     if pending:
-        print(f"  결과: 지번단위 확보 {ok:,} / 주소 없음 {done - ok:,}")
+        print(f"  결과: 지번단위 확보 {done - counts[None]:,} "
+              f"/ 주소 없음 {counts[None]:,}")
         _say_stopped(stopped, done, len(pending))
     return result

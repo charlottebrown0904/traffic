@@ -17,6 +17,8 @@
 import pathlib
 import sys
 import tempfile
+import threading
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -62,7 +64,12 @@ OVER_LIMIT = {"response": {"status": "ERROR",
                                      "text": "일일 요청 건수 초과"}}}
 
 gc.keys = lambda: type("K", (), {"require": staticmethod(lambda n: "k")})()
-gc.polite_sleep = lambda *a, **k: None
+gc._PACE = gc._Pace(0)          # 검사에서는 속도 상한을 끈다
+
+# 1~7 은 '몇 번째 호출에서 멈추는가' 를 세는 검사라 순서가 정해져야 한다.
+# 병렬 자체는 8·9 에서 따로 본다.
+_SEQ = {"workers": 1, "calls_per_sec": 0}
+gc._geo_cfg = lambda: _SEQ
 
 
 print("1. 세 가지 응답을 구분한다")
@@ -264,6 +271,94 @@ try:
     check(len(got) == 0, f"한도면 한 곳도 안 채운다 (채운 것 {len(got)}건)")
 finally:
     tf.keys = _real_keys
+
+print()
+print("8. 병렬 — 워커를 여럿 두어도 캐시가 오염되지 않는가")
+
+# 한 건씩 부르면 3만 건에 2시간 58분이었다(run 21). 병렬로 바꾸면서
+# **멈추는 규칙이 살아 있는지**가 이 검사의 요점이다. 순차 코드에서는
+# break 하나면 됐지만, 워커가 여럿이면 깃발을 들어야 한다.
+_PAR = {"workers": 8, "calls_per_sec": 0}
+gc._geo_cfg = lambda: _PAR
+
+_OK_UNTIL = 40
+_lk = threading.Lock()
+_st = {"now": 0, "max": 0, "n": 0}
+
+
+def _get_par(url, params):
+    with _lk:
+        _st["now"] += 1
+        _st["max"] = max(_st["max"], _st["now"])
+        _st["n"] += 1
+        n = _st["n"]
+    try:
+        time.sleep(0.02)                    # 응답 기다리는 시간을 흉내낸다
+        return FakeResp(OK_BODY if n <= _OK_UNTIL else OVER_LIMIT)
+    finally:
+        with _lk:
+            _st["now"] -= 1
+
+
+gc.get = _get_par
+cache5 = fresh_cache()
+rows_many = [("41111", "가", f"{i}-1") for i in range(200)]
+_t0 = time.monotonic()
+got5 = gc.geocode_many(rows_many, cache=cache5)
+_elapsed = time.monotonic() - _t0
+
+check(_st["max"] >= 4, f"실제로 동시에 부른다 (최대 동시 {_st['max']}건)")
+
+# 순차라면 호출 한 건에 0.02초 × {_st['n']}회가 그대로 벽시계 시간이 된다.
+_seq_est = _st["n"] * 0.02
+check(_elapsed < _seq_est / 2,
+      f"순차보다 빠르다 ({_elapsed:.2f}초 < 순차 추정 {_seq_est:.2f}초의 절반)")
+
+# OK 를 준 것이 정확히 40건이므로, 캐시도 정확히 40건이어야 한다.
+# 41번째 이후는 전부 한도 오류라 아무것도 안 쓴다 — 워커가 몇 개든.
+check(len(cache5) == _OK_UNTIL,
+      f"한도 뒤로는 캐시에 한 줄도 안 쓴다 (캐시 {len(cache5)}건 / OK {_OK_UNTIL}건)")
+check(len(got5) == _OK_UNTIL, f"돌려준 값도 {_OK_UNTIL}건 (받은 값 {len(got5)})")
+check(all(v["lat"] is not None for v in cache5._data.values()),
+      "좌표 없는 항목이 캐시에 하나도 없다")
+
+# 깃발을 안 들면 200건을 전부 부른다. 실제로는 한도 직후 떠 있던 것만 더 간다.
+check(_st["n"] <= _OK_UNTIL + _PAR["workers"],
+      f"한도 직후 떠 있던 것만 더 간다 (호출 {_st['n']}회 ≤ "
+      f"{_OK_UNTIL + _PAR['workers']}회, 대기 {len(rows_many)}건)")
+
+# 동시에 적은 파일이 다음 실행에서 읽히는가 — 잠그지 않으면 여기서 깨진다.
+_reloaded = gc.GeocodeCache(cache5.path)
+check(len(_reloaded) == len(cache5),
+      f"동시에 적어도 파일이 안 깨진다 (다시 읽어 {len(_reloaded)}건)")
+
+print()
+print("9. 전체 속도 상한 — 워커가 몇 개든 합쳐서 초당 N건")
+
+# 워커 수로만 속도를 정하면, 응답이 빨라지는 날 우리가 통제 못 하는
+# 속도가 나온다. 상한은 워커와 별개로 지켜져야 한다.
+_pace = gc._Pace(50)                        # 초당 50건 = 20ms 간격
+_t0 = time.monotonic()
+for _ in range(10):
+    _pace.wait()
+_el = time.monotonic() - _t0
+check(_el >= 0.17, f"순차로 10건에 최소 0.18초 (걸린 시간 {_el:.3f}초)")
+
+_pace2 = gc._Pace(50)
+_t0 = time.monotonic()
+_ths = [threading.Thread(target=_pace2.wait) for _ in range(20)]
+for _t in _ths:
+    _t.start()
+for _t in _ths:
+    _t.join()
+_el2 = time.monotonic() - _t0
+check(_el2 >= 0.35,
+      f"스레드 20개가 동시에 와도 상한을 지킨다 (걸린 시간 {_el2:.3f}초)")
+
+_t0 = time.monotonic()
+for _ in range(100):
+    gc._Pace(0).wait()
+check(time.monotonic() - _t0 < 0.05, "상한을 0 으로 두면 안 쉰다")
 
 print()
 if fail:
