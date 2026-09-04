@@ -50,6 +50,49 @@ const pngReply = {
   headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'image/png' : null) },
   arrayBuffer: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer,
 };
+// GetFeatureInfo 의 실제 응답 모양 (2026-09-04 탐침, 화성 향남).
+// 지어낸 것이 아니라 서버가 준 것을 그대로 줄인 것이다.
+const INFO_TEXT = [
+  "Results for FeatureType 'https://www.vworld.kr:lt_c_uq112':",
+  "--------------------------------------------",
+  "mnum = 64100004159020080001UQB3000530023",
+  "alias = null",
+  "remark = null",
+  "std_sggcd = 41590",
+  "sido_cd = 41",
+  "dyear = 2008",
+  "ucode = UQB300",
+  "bon_bun = 0530",
+  "bu_bun = 023",
+  "sido_name = 경기도",
+  "sigg_name = 화성시",
+  "uname = 보전관리지역",
+  "ag_geom = [GEOMETRY (MultiPolygon) with 123 points]",
+  "--------------------------------------------",
+  "",
+].join("\n");
+
+const infoReply = {
+  ok: true, status: 200,
+  headers: { get: (k) => (k.toLowerCase() === 'content-type'
+    ? 'text/plain; charset=utf-8' : null) },
+  text: async () => INFO_TEXT,
+};
+const emptyInfoReply = {
+  ok: true, status: 200,
+  headers: { get: (k) => (k.toLowerCase() === 'content-type'
+    ? 'text/plain; charset=utf-8' : null) },
+  text: async () => 'no features were found\n',
+};
+// 한도 초과·키 오류는 XML 로 온다. 본문에 우리가 보낸 요청 URL 이
+// 실려 오는 경우가 있고, 거기에는 인증키가 붙어 있다.
+const infoXmlReply = {
+  ok: true, status: 200,
+  headers: { get: (k) => (k.toLowerCase() === 'content-type'
+    ? 'application/xml; charset=utf-8' : null) },
+  text: async () => `<ServiceException>한도 초과 ... key=${KEY}</ServiceException>`,
+};
+
 const jsonReply = {
   ok: true, status: 200,
   headers: { get: (k) => (k.toLowerCase() === 'content-type' ? 'application/json' : null) },
@@ -201,6 +244,76 @@ const call = async (query, method = 'GET') => {
   check('연속지적도를 부른다', cad.code === 200
         && new URL(calls[0].url).searchParams.get('LAYERS') === 'lp_pa_cbnd_bubun',
         String(cad.code));
+
+  console.log();
+  console.log('11. 누르면 용도지역 이름이 온다 (GetFeatureInfo)');
+
+  // 색면만 깔면 지적편집도가 아니라 색칠이다. 그 색이 무슨 뜻인지
+  // 알 방법이 이 경로 하나뿐이다 — 브이월드는 GetLegendGraphic 을
+  // 주지 않는다("유효한 범위 : [GetMap, GetFeatureInfo, GetCapabilities]").
+  stubFetch(infoReply);
+  const info = await call({ layer: 'zoning', mode: 'info',
+                            lat: '37.100000', lon: '126.930000' });
+  const iq = calls.length ? new URL(calls[0].url).searchParams : null;
+  check('GetFeatureInfo 로 부른다', !!iq && iq.get('REQUEST') === 'GetFeatureInfo',
+        iq && iq.get('REQUEST'));
+  check('네 장을 함께 묻는다 (QUERY_LAYERS)',
+        !!iq && iq.get('QUERY_LAYERS') === handler.LAYERS.zoning);
+  check('CRS 로 보낸다 (SRS 는 빈 응답이 온다)',
+        !!iq && iq.get('CRS') === 'EPSG:3857' && iq.get('SRS') === null);
+  check('가장 작은 형식을 쓴다 (json 5.5KB → plain 466B)',
+        !!iq && iq.get('INFO_FORMAT') === 'text/plain', iq && iq.get('INFO_FORMAT'));
+  check('사각형 한가운데를 찍는다',
+        !!iq && iq.get('I') === '50' && iq.get('J') === '50');
+  check('용도지역 이름을 준다', info.body && info.json_.zoning
+        && info.json_.zoning.uname === '보전관리지역',
+        JSON.stringify(info.json_));
+  check('시군구·지번·코드도 함께 준다',
+        info.json_.zoning.sigg_name === '화성시'
+        && info.json_.zoning.bon_bun === '0530'
+        && info.json_.zoning.ucode === 'UQB300');
+  // 도형은 5,571B 짜리 좌표 뭉치다. 화면이 쓰지 않으므로 실어 보내지 않는다.
+  check('도형(ag_geom)은 안 싣는다', !('ag_geom' in info.json_.zoning));
+  check('인증키가 응답에 안 섞인다', !info.body.includes(KEY));
+
+  console.log();
+  console.log('12. 빈 땅·오류·엉뚱한 좌표');
+
+  stubFetch(emptyInfoReply);
+  const none = await call({ layer: 'zoning', mode: 'info',
+                            lat: '37.1', lon: '126.9' });
+  // 빈 땅을 누른 것은 오류가 아니다. 200 에 null 로 답해야 화면이
+  // "여기는 지정돼 있지 않습니다" 라고 말할 수 있다.
+  check('아무것도 없으면 200 에 null', none.code === 200
+        && none.json_ && none.json_.zoning === null, String(none.code));
+
+  stubFetch(infoXmlReply);
+  const xml = await call({ layer: 'zoning', mode: 'info',
+                           lat: '37.1', lon: '126.9' });
+  check('XML(한도 초과)은 502 로 알린다', xml.code === 502, String(xml.code));
+  check('그 본문을 그대로 돌려주지 않는다 (키가 실려 있다)',
+        !xml.body.includes(KEY));
+
+  stubFetch(infoReply);
+  const far = await call({ layer: 'zoning', mode: 'info',
+                           lat: '48.85', lon: '2.35' });   // 파리
+  check('한반도 밖은 부르지 않는다', far.code === 400 && calls.length === 0,
+        `${far.code} · 호출 ${calls.length}회`);
+
+  stubFetch(infoReply);
+  const nan = await call({ layer: 'zoning', mode: 'info', lat: 'NaN', lon: '1e3' });
+  check('숫자가 아니면 부르지 않는다', nan.code === 400 && calls.length === 0,
+        `${nan.code} · 호출 ${calls.length}회`);
+
+  console.log();
+  console.log('13. 응답 모양이 바뀌면 검사가 먼저 안다');
+  // 이 파서가 조용히 빈 값을 내면 화면에는 이름이 안 뜨는데 오류는
+  // 안 난다. 그래서 파서를 직접 본다.
+  check('덩어리가 여럿이면 이름 있는 것을 고른다',
+        handler.parseInfo(
+          "Results for FeatureType 'x:lt_c_uq111':\n--------\nalias = null\n"
+          + INFO_TEXT).uname === '보전관리지역');
+  check('아무것도 없으면 null', handler.parseInfo('no features were found') === null);
 
   console.log();
   console.log('7. GET 만 받는다');

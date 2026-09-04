@@ -1107,7 +1107,17 @@ function buildMap() {
   // 글자가 서로 덮여 아무것도 못 읽는다.
   map.on('zoomend', syncTollgateLabels);
 
-  map.on('click', (e) => { if (state.pickMode) endPick(e.latlng); });
+  map.on('click', (e) => {
+    if (state.pickMode) { endPick(e.latlng); return; }
+    // 영업소·거래 점을 누른 것이면 그쪽이 할 일을 한다. Leaflet 은 레이어
+    // 클릭을 지도까지 올려보내므로, 막지 않으면 영업소를 누를 때마다
+    // 상세 패널과 용도지역 말풍선이 함께 뜬다.
+    const t = e.originalEvent && e.originalEvent.target;
+    if (t && t.closest && t.closest('.leaflet-interactive')) return;
+    // 용도지역을 켜 놓았을 때만. 꺼 놓았으면 색면이 없으니 누를 이유도
+    // 없고, 누를 때마다 브이월드를 부르는 것은 한도를 태우는 일이다.
+    if (state.zoning && map.getZoom() >= ZONING_MIN_ZOOM) askZoning(e.latlng);
+  });
 
   if (withCoords.length) {
     map.fitBounds(L.latLngBounds(withCoords.map((t) => [t.lat, t.lon])).pad(0.15));
@@ -1256,6 +1266,57 @@ function addZoningLayer() {
     opacity: .55,
   }).addTo(zoningLayer);
   if (state.zoning) zoningLayer.addTo(map);
+}
+
+/* 눌러서 이름을 본다.
+ *
+ * 색면만 깔면 지적편집도가 아니라 색칠이다. 색이 스무 가지인데 그것을
+ * 외우게 하는 것보다, 궁금한 자리를 눌러 이름을 보여주는 편이 낫다 —
+ * 특히 휴대폰에서는 범례를 띄우면 지도를 가린다.
+ *
+ * 이름은 서버가 브이월드에 물어서 준다(api/tile.js 의 mode=info).
+ * 브라우저가 직접 부르면 인증키를 페이지에 적어야 한다.
+ */
+async function askZoning(latlng) {
+  const lat = latlng.lat.toFixed(6);
+  const lon = latlng.lng.toFixed(6);
+  const popup = L.popup({ maxWidth: 260 })
+    .setLatLng(latlng)
+    .setContent('<div class="zone-pop">용도지역을 확인하는 중…</div>')
+    .openOn(map);
+
+  let body;
+  try {
+    const resp = await fetch(`/api/tile?layer=zoning&mode=info&lat=${lat}&lon=${lon}`);
+    body = await resp.json();
+  } catch (err) {
+    popup.setContent('<div class="zone-pop">확인하지 못했습니다.</div>');
+    return;
+  }
+  // 사람이 그 사이 다른 곳을 눌렀으면 덮어쓰지 않는다.
+  if (!map.hasLayer(popup)) return;
+
+  if (body && body.tileError) {
+    popup.setContent('<div class="zone-pop">확인하지 못했습니다 — '
+      + escapeHtml(body.tileError) + '</div>');
+    return;
+  }
+  const z = body && body.zoning;
+  if (!z) {
+    popup.setContent('<div class="zone-pop"><b>용도지역 미지정</b><br>'
+      + '<span class="muted">이 자리에는 지정된 용도지역이 없습니다.</span></div>');
+    return;
+  }
+  const where = [z.sido_name, z.sigg_name].filter(Boolean).join(' ');
+  const jibun = z.bon_bun
+    ? String(Number(z.bon_bun)) + (Number(z.bu_bun) ? '-' + Number(z.bu_bun) : '')
+    : '';
+  popup.setContent(
+    '<div class="zone-pop"><b>' + escapeHtml(z.uname) + '</b>'
+    + (where ? '<br><span class="muted">' + escapeHtml(where)
+               + (jibun ? ' ' + escapeHtml(jibun) : '') + '</span>' : '')
+    + (z.ucode ? '<br><span class="muted">코드 ' + escapeHtml(z.ucode) + '</span>' : '')
+    + '</div>');
 }
 
 /* 끌 수 있어야 한다. 용도지역을 깔면 지도가 확 복잡해지는데, 거래 점

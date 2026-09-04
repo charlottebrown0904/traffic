@@ -693,3 +693,9 @@ body.picking .leaflet-container{cursor:crosshair}
   .quad-filters{grid-template-columns:1fr}
   .tab{font-size:.76rem}
 }
+
+/* 누른 자리의 용도지역 말풍선.
+   지도 위에 뜨는 것이라 좁게 잡는다 — 넓으면 정작 보려던 땅을 가린다. */
+.zone-pop { font-size: .9rem; line-height: 1.5; }
+.zone-pop b { font-size: 1rem; }
+.zone-pop .muted { color: var(--muted, #7a6a58); font-size: .82rem; }

@@ -101,6 +101,26 @@ const FAKE_LEAFLET = () => {
     },
     marker: () => chain(), divIcon: () => ({}),
     latLngBounds: () => ({ pad: () => ({}) }),
+    // 말풍선. 진짜 Leaflet 은 .leaflet-popup-content 안에 내용을 그리고
+    // map.hasLayer(popup) 으로 아직 열려 있는지 알 수 있다. 그 두 가지가
+    // 없으면 askZoning 이 조용히 아무것도 안 하고 끝난다 —
+    // **검사가 초록인데 화면은 비는** 그 모양이 된다.
+    popup: () => {
+      const el = document.createElement('div');
+      el.className = 'leaflet-popup-content';
+      const p = {
+        __popup: true, __open: false,
+        setLatLng() { return p; },
+        setContent(html) { el.innerHTML = html; return p; },
+        openOn(m) {
+          p.__open = true;
+          document.body.appendChild(el);
+          if (m && !m.hasLayer) m.hasLayer = (x) => !!(x && x.__open);
+          return p;
+        },
+      };
+      return p;
+    },
   };
 };
 
@@ -219,6 +239,40 @@ const FAKE_LEAFLET = () => {
     });
     check('용도지역 스위치가 있다', toggled !== null,
           toggled === null ? '#zoning-bg 가 없음' : '');
+
+    // 색면만 깔면 지적편집도가 아니라 색칠이다. 눌렀을 때 이름이 떠야
+    // 색이 뜻을 갖는다. 브이월드는 GetLegendGraphic 을 안 주므로
+    // (2026-09-04 탐침) 이 경로가 유일하다.
+    const asked = await page.evaluate(async () => {
+      if (typeof window.askZoning !== 'function') return { missing: true };
+      const seen = [];
+      const realFetch = window.fetch;
+      window.fetch = async (u) => {
+        seen.push(String(u));
+        return { json: async () => ({ zoning: {
+          uname: '계획관리지역', ucode: 'UQB200',
+          sido_name: '경기도', sigg_name: '용인시',
+          bon_bun: '0052', bu_bun: '000' } }) };
+      };
+      try {
+        await window.askZoning({ lat: 37.132, lng: 127.353 });
+      } finally {
+        window.fetch = realFetch;
+      }
+      const pop = document.querySelector('.leaflet-popup-content');
+      return { seen, text: pop ? pop.innerText : null };
+    });
+
+    check('누르면 서버에 이름을 묻는다',
+          !asked.missing && asked.seen.some((u) => /mode=info/.test(u)),
+          asked.missing ? 'askZoning 이 없음' : asked.seen.join(' '));
+    check('브이월드를 브라우저가 직접 부르지 않는다',
+          !asked.missing && !asked.seen.some((u) => /vworld/i.test(u)));
+    check('용도지역 이름을 화면에 띄운다',
+          !!asked.text && /계획관리지역/.test(asked.text),
+          asked.text || '말풍선 없음');
+    check('어디인지도 함께 보여준다',
+          !!asked.text && /용인시/.test(asked.text), asked.text || '');
 
     console.log();
     console.log('3. 밴드 = 선 + 음영, 큰 원부터');
