@@ -712,21 +712,28 @@ body.picking .leaflet-container{cursor:crosshair}
 
    흰 테두리는 그대로 둔다. 배경이 어떤 색이든 표식을 배경에서 끊어주는
    것은 색이 아니라 테두리다. */
-.trade-mark { width: 100%; height: 100%; box-sizing: border-box;
+/* <i> 는 기본이 inline 이라 width/height 가 무시된다 — 그러면 테두리만
+   남아 지도에 흰 막대가 선다. display:block 이 이 규칙의 핵심이다. */
+.trade-mark { display: block; width: 100%; height: 100%; box-sizing: border-box;
               border: 1.2px solid #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.35); }
-.trade-land { background: var(--kind-land); }
-.trade-factory { background: var(--kind-factory); transform: rotate(45deg); }
+.trade-mark.trade-land { background: var(--kind-land); }
+.trade-mark.trade-factory { background: var(--kind-factory); transform: rotate(45deg); }
 /* 법정동 중심점 좌표는 ±1~2km 라 '그 자리' 가 아니다. 옅게 찍어 지번
    좌표와 구별한다 — 테두리가 있어 옅어도 보인다. */
-.trade-coarse { opacity: .55; }
-
-/* 범례 스와치도 지도와 같은 모양이어야 한다. 지도에서는 네모인데
-   범례에서는 동그라미면 눈으로 짝을 못 맞춘다. 마름모는 회전 때문에
-   자리를 더 먹으므로 감싸는 칸을 하나 둔다. */
-.sw-trade { width: 11px; height: 11px; border-radius: 0; background: none;
-            border: 0; box-shadow: none; display: inline-block; }
-.sw-trade.trade-land, .sw-trade.trade-factory {
-  border: 1.2px solid #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.35); }
-.sw-trade.trade-factory { transform: rotate(45deg) scale(.82); }
+.trade-mark.trade-coarse { opacity: .55; }
 /* Leaflet 이 divIcon 에 주는 기본 배경·테두리를 지운다. */
 .trade-icon { background: none; border: 0; }
+
+/* 범례 스와치도 지도와 같은 모양이어야 한다. 지도에서는 네모인데
+   범례에서는 동그라미면 눈으로 짝을 못 맞춘다.
+
+   셀렉터를 '.map-legend .sw' 에 맞춘다. 위쪽에 .map-legend .sw{border-radius:50%}
+   가 있어서, 클래스 하나짜리 규칙으로는 그것을 못 이기고 동그라미가 된다. */
+.map-legend .sw.sw-trade {
+  width: 11px; height: 11px; border-radius: 0; display: inline-block;
+  border: 1.2px solid #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.35);
+}
+.map-legend .sw.sw-trade.trade-land { background: var(--kind-land); }
+.map-legend .sw.sw-trade.trade-factory {
+  background: var(--kind-factory); transform: rotate(45deg) scale(.82);
+}

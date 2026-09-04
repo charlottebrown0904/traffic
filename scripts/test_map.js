@@ -387,15 +387,69 @@ const FAKE_LEAFLET = () => {
     } else {
       console.log('  건너뜀 — 그려진 거래 점이 없습니다.');
     }
-    // 흰 테두리는 그대로 둔다. 배경이 어떤 색이든 표식을 배경에서
-    // 끊어주는 것은 색이 아니라 테두리다.
-    const markCss = await page.evaluate(async () => {
-      const css = await (await fetch('/app/style.css')).text();
-      const hit = /\.trade-mark\s*\{([^}]*)\}/.exec(css);
-      return hit ? hit[1] : '';
+    // 여기까지는 **글자**만 봤다 — html 에 어떤 클래스가 붙었는가.
+    // 그래서 클래스는 다 맞는데 화면에는 흰 막대가 서는 것을 통과시켰다
+    // (<i> 는 inline 이라 width/height 가 무시돼 테두리만 남았다).
+    // 클래스 이름이 맞는 것과 그려진 것이 맞는 것은 다른 일이다.
+    // 아래는 진짜 브라우저에 실제 마크업을 넣고 **그려진 크기와 색**을 잰다.
+    const drawn = await page.evaluate(() => {
+      const box = document.createElement('div');
+      box.style.cssText = 'position:absolute;left:-9999px;top:0';
+      box.innerHTML =
+        '<div class="trade-icon" style="width:9px;height:9px">' +
+        '<i class="trade-mark trade-land"></i></div>' +
+        '<div class="trade-icon" style="width:9px;height:9px">' +
+        '<i class="trade-mark trade-factory"></i></div>' +
+        '<div class="map-legend"><div class="legend-rows">' +
+        '<div class="row"><span class="sw sw-trade trade-land"></span>토지</div>' +
+        '<div class="row"><span class="sw sw-trade trade-factory"></span>공장</div>' +
+        '</div></div>';
+      document.body.appendChild(box);
+      // 크기는 offsetWidth 로 잰다. getBoundingClientRect 는 **회전된 뒤의
+      // 외접 사각형**이라, 45° 돌린 9px 마름모가 12.7px(=9×√2) 로 나온다.
+      // 그러면 마름모는 영영 크기 검사를 통과하지 못한다.
+      const read = (sel) => {
+        const el = box.querySelector(sel);
+        const cs = getComputedStyle(el);
+        return { w: el.offsetWidth, h: el.offsetHeight,
+                 bg: cs.backgroundColor, border: cs.borderTopColor,
+                 bw: cs.borderTopWidth, radius: cs.borderTopLeftRadius,
+                 transform: cs.transform };
+      };
+      const out = {
+        land: read('.trade-mark.trade-land'),
+        factory: read('.trade-mark.trade-factory'),
+        swLand: read('.sw.sw-trade.trade-land'),
+        swFactory: read('.sw.sw-trade.trade-factory'),
+      };
+      box.remove();
+      return out;
     });
-    check('거래 표식에 흰 테두리가 있다', /border:[^;]*#fff/.test(markCss),
-          markCss.replace(/\s+/g, ' ').trim().slice(0, 70));
+    const solid = (c) => c && c !== 'transparent' && !/rgba\(0, 0, 0, 0\)/.test(c);
+    // 9px 칸을 꽉 채워야 한다. 0 이나 1~2px 이면 테두리만 그려진 것이다.
+    for (const [name, o] of [['토지', drawn.land], ['공장', drawn.factory]]) {
+      check(`지도 ${name} 표식이 9×9 로 그려진다`,
+            Math.abs(o.w - 9) < .6 && Math.abs(o.h - 9) < .6, `${o.w}×${o.h}`);
+      check(`지도 ${name} 표식에 속이 차 있다`, solid(o.bg), o.bg);
+      check(`지도 ${name} 표식에 흰 테두리가 있다`,
+            /rgb\(255, 255, 255\)/.test(o.border) && parseFloat(o.bw) >= 1,
+            `${o.border} ${o.bw}`);
+    }
+    check('지도에서 토지와 공장의 색이 다르다', drawn.land.bg !== drawn.factory.bg,
+          `${drawn.land.bg} vs ${drawn.factory.bg}`);
+    check('공장은 마름모다 (회전이 걸린다)',
+          drawn.factory.transform !== 'none' && drawn.land.transform === 'none',
+          `공장 ${drawn.factory.transform}`);
+    // 범례가 동그라미로 나온 것도 같은 부류의 실수였다 —
+    // .map-legend .sw{border-radius:50%} 를 클래스 하나짜리 규칙으로 이기려 했다.
+    for (const [name, o] of [['토지', drawn.swLand], ['공장', drawn.swFactory]]) {
+      check(`범례 ${name} 스와치에 속이 차 있다`, solid(o.bg), o.bg);
+      check(`범례 ${name} 스와치가 동그라미가 아니다`,
+            parseFloat(o.radius) <= o.w / 4, `반지름 ${o.radius} / 폭 ${o.w}px`);
+    }
+    check('범례 색이 지도 색과 같다',
+          drawn.swLand.bg === drawn.land.bg && drawn.swFactory.bg === drawn.factory.bg,
+          `${drawn.swLand.bg} · ${drawn.swFactory.bg}`);
     // 가짜 Leaflet 은 .leaflet-tile-pane 을 만들지 않으므로 계산된
     // 스타일로는 볼 수 없다. 규칙 자체를 읽는다.
     const sat = await page.evaluate(async () => {
