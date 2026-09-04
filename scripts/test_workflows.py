@@ -265,6 +265,29 @@ if _ff is not None:
               f"결과 커밋 뒤에 민다 ({_commit_i} < {_ff_i})")
 
 print()
+print("7-2. 결과를 되돌려 놓을 때 생성물이 충돌하지 않는다")
+
+# run 24 가 여기서 실패했다. 실행이 도는 동안 브랜치에 새 커밋이 올라가면
+# 데이터 커밋을 그 위로 rebase 하게 되는데, 양쪽이 고치는 파일이 똑같다 —
+# public/app/data/*.json 은 매 실행이 통째로 다시 쓴다.
+#
+# 충돌하면 그냥 실패로 끝나지 않는다. **작업 트리가 rebase 중간 상태로
+# 남는다.** run 24 에서는 chart.json 이 빈 파일이 됐고, 뒤따르는 라이브
+# 반영이 그것을 잡아냈다. 안전장치가 없었으면 빈 파일이 프로덕션에 나갔다.
+_commit = next((s for n, s in _named.items() if n == "결과 커밋"), None)
+check(_commit is not None, "결과 커밋 단계가 있다")
+if _commit is not None:
+    _cr = str(_commit.get("run", ""))
+    check("--rebase" not in _cr,
+          "생성물을 rebase 로 합치지 않는다 (충돌이 날 수밖에 없다)")
+    check("reset --hard" in _cr,
+          "브랜치 최신에 맞춘 뒤 생성물을 다시 놓는다")
+    # 치워 두지 않고 reset --hard 하면 방금 만든 결과가 통째로 날아간다.
+    check("mktemp -d" in _cr and "cp -r" in _cr,
+          "reset 전에 생성물을 옆에 치워 둔다")
+    check("git fetch origin" in _cr, "매 시도마다 브랜치를 다시 받는다")
+
+print()
 print("8. 캐시가 한도를 넘으면 스스로 줄인다")
 
 # run 23 이 12.35GB / 10GB (124%) 를 찍었다. 넘치면 GitHub 이 **오래된
