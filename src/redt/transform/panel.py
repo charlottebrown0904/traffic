@@ -17,6 +17,43 @@ def winsorize(series: pd.Series, pct: float) -> pd.Series:
     return series.clip(lo, hi)
 
 
+def _fit_sample(group: pd.DataFrame, cat_cols: list[str],
+                fit_max: int, seed: int) -> pd.DataFrame:
+    """모든 범주 수준이 최소 몇 행씩 들어간 적합 표본을 뽑는다.
+
+    그냥 무작위로 뽑으면 안 된다. 거래가 몇 건뿐인 시군구는 30만 행 표본에
+    안 들어갈 수 있고, 그 계수를 모르는 채로 전수를 예측하면 patsy 가
+    죽는다 — run 21 이 정확히 그렇게 죽었다:
+
+        PatsyError: observation with value '11290' does not match
+                    any of the expected levels
+
+    적합은 표본으로, 예측은 전수로 하기로 한 이상 **표본이 전수의 모든
+    수준을 덮는 것**은 선택이 아니라 요건이다. 그래서 수준마다 먼저
+    per_level 행을 확보하고, 남은 자리만 무작위로 채운다.
+    """
+    if len(group) <= fit_max:
+        return group
+
+    per_level = 20
+    keep = pd.Index([], dtype=group.index.dtype)
+    for col in cat_cols:
+        keep = keep.union(group.groupby(col, observed=True).head(per_level).index)
+
+    # 수준이 너무 많아 의무 표본만으로 상한을 넘으면 그대로 쓴다. 수준을
+    # 버려서 상한을 맞추면 예측이 다시 죽으므로, 상한이 양보한다.
+    if len(keep) >= fit_max:
+        return group.loc[keep]
+
+    rest = group.index.difference(keep)
+    fill = fit_max - len(keep)
+    if len(rest) > fill:
+        rest = pd.Index(
+            pd.Series(rest).sample(fill, random_state=seed).to_numpy(),
+            dtype=group.index.dtype)
+    return group.loc[keep.union(rest)]
+
+
 def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
     """물건 특성(면적·지목)이 설명하는 가격 변동만 제거한다.
 
@@ -74,19 +111,23 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
             continue
 
         terms = ["ln_area"]
+        cat_cols: list[str] = []
         for col in ("jimok", "land_use", "building_use"):
             if col in group and group[col].nunique() > 1:
                 terms.append(f"C({col})")
+                cat_cols.append(col)
         if "has_building" in group and group["has_building"].nunique() > 1:
             terms += ["has_building", "ln_building_area"]
-        fe = [f"C({c})" for c in ("sigungu_cd", "deal_year")
-              if c in group and group[c].nunique() > 1]
+        fe = []
+        for col in ("sigungu_cd", "deal_year"):
+            if col in group and group[col].nunique() > 1:
+                fe.append(f"C({col})")
+                cat_cols.append(col)
         formula = f"ln_price ~ {' + '.join(terms + fe)}"
         # 적합은 표본으로, 예측은 전수로. 표본을 뽑을 때 씨앗을 고정한다 —
         # 실행할 때마다 계수가 흔들리면 화면 값이 이유 없이 달라진다.
-        fit_on = group
-        if len(group) > fit_max:
-            fit_on = group.sample(fit_max, random_state=20260903)
+        # 층화해서 뽑는 이유는 _fit_sample 주석에 있다.
+        fit_on = _fit_sample(group, cat_cols, fit_max, seed=20260903)
         model = smf.ols(formula, data=fit_on).fit()
 
         # 반사실: 모든 물건이 '평균 면적 · 최빈 지목'이었다면?

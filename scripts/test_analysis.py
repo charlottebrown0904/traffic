@@ -1288,6 +1288,71 @@ check("PANEL_TRADE_COLS" in _body,
 check("distance_km" in _body,
       "events 가 쓰는 distance_km 을 빠뜨리지 않는다")
 
+# ────────────────────────────────────────────────────────────────
+print("30. 헤도닉 — 표본에 없는 시군구를 예측해도 죽지 않는가")
+
+# run 21 이 여기서 죽었다. 적합은 30만 표본, 예측은 789만 전수로 바꿨더니
+# 표본에 안 들어간 희귀 시군구(11290)를 예측할 때 patsy 가 터졌다:
+#   PatsyError: observation with value '11290' does not match expected levels
+# 무작위 표본이면 반드시 다시 터진다. 층화해서 뽑는지 확인한다.
+from redt.transform import panel as _panel          # noqa: E402
+
+RARE = "11029"          # run 21 을 죽인 11290 과 같은 역할
+_rng30 = np.random.default_rng(30)
+_rows = []
+for i in range(50):
+    _sgg = f"{11000 + i}"
+    # 한 곳만 딱 1건. 무작위 표본(상한 2,000/4,901)에 들어갈 확률은 41%다.
+    _n = 1 if _sgg == RARE else 100
+    for _ in range(_n):
+        _rows.append({
+            "kind": "land",
+            "sigungu_cd": _sgg,
+            "deal_year": int(_rng30.integers(2015, 2025)),
+            "area_m2": float(_rng30.uniform(100, 2000)),
+            "price_per_m2": float(_rng30.uniform(1e5, 1e6)),
+            "jimok": "전",
+            "land_use": "계획관리지역",
+            "building_use": "NA",
+            "building_area_m2": 0.0,
+        })
+_df30 = pd.DataFrame(_rows)
+assert (_df30["sigungu_cd"] == RARE).sum() == 1
+
+_real_settings = _panel.settings
+_panel.settings = lambda: {
+    **_real_settings(),
+    "panel": {**_real_settings()["panel"], "hedonic_fit_max": 2_000},
+}
+try:
+    _err = None
+    try:
+        _out30 = _panel.hedonic_adjust(_df30)
+    except Exception as exc:                        # noqa: BLE001
+        _err = f"{type(exc).__name__}: {exc}"[:160]
+        _out30 = None
+finally:
+    _panel.settings = _real_settings
+
+check(_err is None, f"희귀 시군구가 있어도 헤도닉이 끝난다 ({_err or 'ok'})")
+if _out30 is not None:
+    check(len(_out30) == len(_df30),
+          f"전수를 다 보정한다 ({len(_out30):,}/{len(_df30):,}행)")
+    check(_out30["adj_ln_price"].notna().all(),
+          "보정값에 결측이 없다")
+
+# 표본 자체가 모든 수준을 덮는지도 직접 본다 — 위 검사만으로는 상한이
+# 우연히 안 걸렸을 때도 통과해버린다.
+_samp = _panel._fit_sample(_df30, ["sigungu_cd", "deal_year"], 2_000, seed=1)
+check(_samp["sigungu_cd"].nunique() == _df30["sigungu_cd"].nunique(),
+      f"적합 표본이 시군구 전 수준을 덮는다 "
+      f"({_samp['sigungu_cd'].nunique()}/{_df30['sigungu_cd'].nunique()})")
+check(len(_samp) <= 2_000 and len(_samp) < len(_df30),
+      f"덮고 남은 자리만 무작위로 채운다 (표본 {len(_samp):,}/{len(_df30):,})")
+check(_panel._fit_sample(_df30, ["sigungu_cd"], 10 ** 9, seed=1) is _df30,
+      "상한보다 작으면 표본을 뽑지 않고 전수를 쓴다")
+
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
