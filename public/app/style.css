@@ -80,12 +80,19 @@
      계획관리를 #D97706 로 두면 영업소 2~3만(#E2571E)과 ΔE 7.0 이라
      작은 배율에서 헷갈립니다. #92400E 로 낮춰 15.0 을 확보했습니다.
      거래끼리는 최소 20.2, 배경과는 최소 32.7 입니다. */
-  --use-plan:#92400E;       /* 계획관리 */
-  --use-prod:#65A30D;       /* 생산관리 */
-  --use-green:#047857;      /* 자연녹지 */
-  --use-other:#57534E;      /* 그 밖 / 용도지역 미상 토지 */
-  --kind-land:#92400E;      /* 용도지역을 모를 때의 토지 기본값 */
-  --kind-factory:#7E22CE;   /* 공장·창고 — 보라(공업지역 관행) */
+  /* 거래는 **종류 둘**로만 나눈다. 예전에는 용도지역별로 다섯 색을
+     썼는데, 화면에 영업소 6색 + 밴드 3색이 이미 있어서 점이 열 몇 가지
+     색의 원으로 뒤덮였다 — 사장님 지적대로 어느 것이 IC 이고 어느 것이
+     거래인지 구분이 안 됐다.
+
+     색을 고르기 전에 **모양으로 갈랐다.** 영업소는 원, 거래는 네모(토지)
+     와 마름모(공장)다. 모양이 먼저 갈라주므로 색은 두 가지면 된다.
+
+     두 색은 눈으로 고르지 않고 쟀다(OKLab ΔE). 영업소 6색·밴드 3색·
+     배경 5색 전부와 최소 16.0, 둘끼리 44.8 이다. 채도도 높다(.186/.255)
+     — 원색으로 해달라는 요구가 그것이다. */
+  --kind-land:#00A63E;      /* 토지 — 초록. 네모 */
+  --kind-factory:#1414CC;   /* 공장·창고 — 진파랑. 마름모 */
   --listing:#111827;        /* 매물 — 짙은 먹, 마름모로 따로 구별 */
 
   /* ── 분면 (스코어보드 전용) ── */
@@ -104,14 +111,13 @@
     --ink:#EDF0F4; --muted:#9AA4B2; --faint:#7E8794;
     --border:#2A313A; --border-strong:#3D4753;
     --accent:#9FC0DE; --accent-soft:#1C242E; --on-accent:#0E1319;
+    --kind-land:#22D36A; --kind-factory:#6B7BFF;
     --tg-1:#4FD8CD; --tg-2:#6BA6F0; --tg-3:#F2703A; --tg-4:#E8558F;
     --tg-new:#FDE047; --tg-new-ring:#FEF9C3;
     --tg-none:#DCE3EC;
     --band-1:#A78BFA; --band-2:#F472B6; --band-3:#22D3EE;
     --band-4:#9CA3AF; --band-5:#D1D5DB;
-    --kind-land:#FB923C; --kind-factory:#C084FC;
-  --use-plan:#FB923C; --use-prod:#A3E635;
-  --use-green:#34D399; --use-other:#A8A29E; --listing:#F3F4F6;
+  --listing:#F3F4F6;
     --q-under:#6BA8F5; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#8E97A4;
     --traffic-1:#EDF0F4; --traffic-2:#F5A24E; --traffic-3:#E8558F; --traffic-4:#6BA6F0;
     --danger:#F0837A;
@@ -128,9 +134,8 @@
     --tg-none:#DCE3EC;
   --band-1:#E5E7EB; --band-2:#9CA3AF; --band-3:#6B7280;
   --band-4:#D1D5DB; --band-5:#F3F4F6;
-  --kind-land:#FB923C; --kind-factory:#C084FC;
-  --use-plan:#FB923C; --use-prod:#A3E635;
-  --use-green:#34D399; --use-other:#A8A29E; --listing:#F3F4F6;
+  --kind-land:#22D36A; --kind-factory:#6B7BFF;
+  --listing:#F3F4F6;
   --q-under:#6BA8F5; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#8E97A4;
   --traffic-1:#EDF0F4; --traffic-2:#F5A24E; --traffic-3:#E8558F; --traffic-4:#6BA6F0;
   --danger:#F0837A;
@@ -699,3 +704,29 @@ body.picking .leaflet-container{cursor:crosshair}
 .zone-pop { font-size: .9rem; line-height: 1.5; }
 .zone-pop b { font-size: 1rem; }
 .zone-pop .muted { color: var(--muted, #7a6a58); font-size: .82rem; }
+
+
+/* 거래 표식 — 영업소(원)와 **모양으로** 가른다.
+   색만으로 가르면 화면에 색이 열 몇 가지가 되고, 그러면 색이 뜻을
+   잃는다. 모양이 먼저 종류를 말하고 색이 토지·공장을 말한다.
+
+   흰 테두리는 그대로 둔다. 배경이 어떤 색이든 표식을 배경에서 끊어주는
+   것은 색이 아니라 테두리다. */
+.trade-mark { width: 100%; height: 100%; box-sizing: border-box;
+              border: 1.2px solid #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.35); }
+.trade-land { background: var(--kind-land); }
+.trade-factory { background: var(--kind-factory); transform: rotate(45deg); }
+/* 법정동 중심점 좌표는 ±1~2km 라 '그 자리' 가 아니다. 옅게 찍어 지번
+   좌표와 구별한다 — 테두리가 있어 옅어도 보인다. */
+.trade-coarse { opacity: .55; }
+
+/* 범례 스와치도 지도와 같은 모양이어야 한다. 지도에서는 네모인데
+   범례에서는 동그라미면 눈으로 짝을 못 맞춘다. 마름모는 회전 때문에
+   자리를 더 먹으므로 감싸는 칸을 하나 둔다. */
+.sw-trade { width: 11px; height: 11px; border-radius: 0; background: none;
+            border: 0; box-shadow: none; display: inline-block; }
+.sw-trade.trade-land, .sw-trade.trade-factory {
+  border: 1.2px solid #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.35); }
+.sw-trade.trade-factory { transform: rotate(45deg) scale(.82); }
+/* Leaflet 이 divIcon 에 주는 기본 배경·테두리를 지운다. */
+.trade-icon { background: none; border: 0; }

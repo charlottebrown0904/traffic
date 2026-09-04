@@ -108,11 +108,32 @@ if (tg.every(Boolean)) {
 }
 
 console.log();
-console.log('3. 거래 두 종류가 서로 구별된다');
+console.log('3. 거래 두 종류가 서로 구별되고, 영업소 색과도 안 붙는다');
 const land = token('kind-land'), fac = token('kind-factory');
 check('토지·공장이 정의돼 있다', !!land && !!fac, `${land} ${fac}`);
 if (land && fac) {
   check('토지↔공장 ΔE ≥ 15', dE(land, fac) >= 15, dE(land, fac).toFixed(1));
+
+  // 사장님 지적(2026-09-04): "어느게 IC이고 어느게 거래건인지 구분이
+  // 안됩니다." 모양으로 먼저 가르지만(원 vs 네모·마름모), 색까지 붙으면
+  // 축소 배율에서 다시 뭉친다. 화면에 함께 있는 모든 색과 재 둔다.
+  const ONSCREEN = {
+    'tg-1': token('tg-1'), 'tg-2': token('tg-2'),
+    'tg-3': token('tg-3'), 'tg-4': token('tg-4'),
+    '신설': token('tg-new'), '미공개': token('tg-none'),
+    'band-1': token('band-1'), 'band-2': token('band-2'), 'band-3': token('band-3'),
+  };
+  for (const [name, hex] of Object.entries(ONSCREEN)) {
+    if (!hex) continue;
+    const dl = dE(land, hex), df = dE(fac, hex);
+    check(`토지·공장이 ${name} 과 안 붙는다 (ΔE ≥ 15)`,
+          dl >= 15 && df >= 15, `토지 ${dl.toFixed(1)} · 공장 ${df.toFixed(1)}`);
+  }
+
+  // 원색으로 해달라는 요구였다. 채도가 낮으면 회색빛이 되어 배경에 묻힌다.
+  check('토지·공장이 원색이다 (채도 ≥ .15)',
+        chroma(land) >= .15 && chroma(fac) >= .15,
+        `토지 ${chroma(land).toFixed(3)} · 공장 ${chroma(fac).toFixed(3)}`);
 }
 
 console.log();

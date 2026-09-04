@@ -99,7 +99,15 @@ const FAKE_LEAFLET = () => {
       rec.markers.push(m.__opts);
       return m;
     },
-    marker: () => chain(), divIcon: () => ({}),
+    // 거래는 이제 원이 아니라 divIcon 표식이다. 옵션을 안 들고 있으면
+    // 검사가 '무슨 모양인지' 를 볼 수 없고, 그러면 초록으로 통과하면서
+    // 화면은 예전 그대로일 수 있다.
+    marker: (ll, opts) => {
+      const m = chain();
+      m.options = Object.assign({}, opts);
+      return m;
+    },
+    divIcon: (opts) => ({ options: Object.assign({}, opts) }),
     latLngBounds: () => ({ pad: () => ({}) }),
     // 말풍선. 진짜 Leaflet 은 .leaflet-popup-content 안에 내용을 그리고
     // map.hasLayer(popup) 으로 아직 열려 있는지 알 수 있다. 그 두 가지가
@@ -358,18 +366,36 @@ const FAKE_LEAFLET = () => {
     // 배경에서 끊어주는 것이 핵심이라 그것을 못박는다.
     const tradeStyle = await page.evaluate(() => window.__tradeStyles || []);
     if (tradeStyle.length) {
-      check('거래 점에 테두리가 있다 (배경과 끊긴다)',
-            tradeStyle.every((o) => o.weight >= 1 && o.color === '#fff'),
-            `${tradeStyle.length}개 · 예: weight=${tradeStyle[0].weight} color=${tradeStyle[0].color}`);
-      check('지번 좌표 점은 거의 불투명하다',
-            tradeStyle.some((o) => o.fillOpacity >= .9),
-            `최대 ${Math.max(...tradeStyle.map((o) => o.fillOpacity))}`);
-      const fills = new Set(tradeStyle.map((o) => o.fillColor));
-      check('용도지역 색을 쓴다 (한 가지 갈색이 아니다)', fills.size >= 2,
-            [...fills].join(' '));
+      // 사장님 지적(2026-09-04): "어느게 IC이고 어느게 거래건인지 구분이
+      // 안됩니다." 색을 더 늘려 푸는 문제가 아니다 — **모양이 먼저
+      // 종류를 말해야 한다.** 영업소는 원, 거래는 네모·마름모다.
+      check('거래는 원이 아니다 (영업소와 모양으로 갈린다)',
+            tradeStyle.every((o) => /trade-mark/.test(o.html)),
+            `${tradeStyle.length}개 · 예: ${tradeStyle[0].html.slice(0, 60)}`);
+      const land = tradeStyle.filter((o) => /trade-land/.test(o.html));
+      const fac = tradeStyle.filter((o) => /trade-factory/.test(o.html));
+      check('토지와 공장이 다른 모양이다', land.length + fac.length === tradeStyle.length
+            && tradeStyle.every((o) => !(/trade-land/.test(o.html) && /trade-factory/.test(o.html))),
+            `토지 ${land.length} · 공장 ${fac.length}`);
+      check('종류대로 붙는다 (용도지역이 아니라)',
+            land.every((o) => o.kind === 'land') && fac.every((o) => o.kind === 'factory'));
+      // 법정동 중심점은 ±1~2km 라 '그 자리' 가 아니다. 옅게 찍어 구별한다.
+      const coarse = tradeStyle.filter((o) => o.geocodeLevel !== 'parcel');
+      check('거친 좌표는 옅게 찍는다',
+            coarse.every((o) => /trade-coarse/.test(o.html)),
+            `거친 것 ${coarse.length}개`);
     } else {
       console.log('  건너뜀 — 그려진 거래 점이 없습니다.');
     }
+    // 흰 테두리는 그대로 둔다. 배경이 어떤 색이든 표식을 배경에서
+    // 끊어주는 것은 색이 아니라 테두리다.
+    const markCss = await page.evaluate(async () => {
+      const css = await (await fetch('/app/style.css')).text();
+      const hit = /\.trade-mark\s*\{([^}]*)\}/.exec(css);
+      return hit ? hit[1] : '';
+    });
+    check('거래 표식에 흰 테두리가 있다', /border:[^;]*#fff/.test(markCss),
+          markCss.replace(/\s+/g, ' ').trim().slice(0, 70));
     // 가짜 Leaflet 은 .leaflet-tile-pane 을 만들지 않으므로 계산된
     // 스타일로는 볼 수 없다. 규칙 자체를 읽는다.
     const sat = await page.evaluate(async () => {

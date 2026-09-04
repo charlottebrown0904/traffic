@@ -300,10 +300,6 @@ function buildLegend() {
       `<span class="ring"></span>${lo}–${hi} km</div>`)
     .join('');
 
-  // 지도의 점과 같은 모양이어야 한다 — 흰 테두리까지 포함해서.
-  // 범례 스와치가 지도와 다르게 생기면 눈으로 짝을 못 맞춘다.
-  const useRow = (token, label) =>
-    `<div class="row"><span class="sw sw-dot" style="background:var(${token})"></span>${label}</div>`;
   // 범례는 좁은 화면에서 접힌다(CSS). 여는 단추와 내용을 나눠 둔다 —
   // 지도를 키워 놓고 그 위를 12줄짜리 범례로 다시 덮으면 의미가 없다.
   const legend = $('#map-legend');
@@ -317,14 +313,11 @@ function buildLegend() {
     '<span aria-hidden="true">◍</span>범례</button>' +
     '<div class="legend-rows">' +
     // 지도에서 먼저 찾는 것은 거래와 매물이다. 그것을 위에 둔다.
-    // 색이 곧 용도지역이다. 지적편집도를 읽어온 분들에게는 설명이
-    // 필요 없는 관행이라, 그것을 그대로 쓴다.
-    '<div class="grp">실거래 · 용도지역</div>' +
-    useRow('--use-plan', '계획관리') +
-    useRow('--use-prod', '생산관리') +
-    useRow('--use-green', '자연녹지') +
-    useRow('--kind-factory', '공장·창고') +
-    useRow('--use-other', '그 밖 토지') +
+    // 범례 스와치는 지도의 표식과 **같은 모양**이어야 한다. 지도에서는
+    // 네모인데 범례에서는 동그라미면 눈으로 짝을 못 맞춘다.
+    '<div class="grp">실거래</div>' +
+    '<div class="row"><span class="sw sw-trade trade-land"></span>토지</div>' +
+    '<div class="row"><span class="sw sw-trade trade-factory"></span>공장·창고</div>' +
     '<div class="grp">매물</div>' +
     '<div class="row"><span class="sw sw-listing"></span>등록 매물</div>' +
     `<div class="grp">영업소 · ${state.tgYear}년 교통량</div>` +
@@ -1203,26 +1196,19 @@ function refreshMap() {
   }
 
   tradeLayer.clearLayers();
-  visibleTrades().forEach((t) => {
-    tradeLayer.addLayer(L.circleMarker([t.lat, t.lon], {
-      // 예전에는 반경 2.5 · 테두리 없음 · 불투명도 0.3~0.6 이었다.
-      // 배경 지도 위에서 사실상 안 보였다.
-      //
-      // 색을 더 진하게 하는 것으로는 못 이긴다 — 배경이 어떤 색이든
-      // **흰 테두리가 점을 배경에서 끊어준다.** 그래서 배경 채도를
-      // 살려 도로를 되살리면서도 점이 살아 있다.
-      radius: 3.6, weight: 1.1, color: '#fff', opacity: .95,
-      fillColor: tradeColor(t),
-      // 법정동 중심점 좌표는 ±1~2km 라 '그 자리' 가 아니다. 옅게 찍어
-      // 지번 좌표와 구별한다 — 다만 이제는 옅어도 테두리가 있어 보인다.
-      fillOpacity: t.geocode_level === 'parcel' ? .95 : .55,
-    }));
-  });
+  visibleTrades().forEach((t) => tradeLayer.addLayer(tradeMarker(t)));
   // 검사용 들여다보기 창. window.__bands 와 같은 취지다 — 지도는 CDN
   // 의 Leaflet 이 있어야 그려져서, 그리는 값 자체를 밖에서 볼 길이
   // 없으면 '색이 안 보인다' 같은 지적을 검사로 못 옮긴다.
   window.__tradeStyles = tradeLayer.getLayers
-    ? tradeLayer.getLayers().map((l) => l.options)
+    ? tradeLayer.getLayers().map((l) => ({
+        kind: l.options.kind,
+        geocodeLevel: l.options.geocodeLevel,
+        // 모양과 색은 CSS 클래스가 정한다. 무엇이 붙었는지를 그대로
+        // 내보내야 검사가 '네모인가 마름모인가' 를 볼 수 있다.
+        html: (l.options.icon && l.options.icon.options
+               && l.options.icon.options.html) || '',
+      }))
     : undefined;
 }
 
@@ -1327,23 +1313,48 @@ function toggleZoning(on) {
   on ? zoningLayer.addTo(map) : zoningLayer.remove();
 }
 
-/* 거래 점 색 = 용도지역.
+/* 거래 표식 — 영업소와 **모양으로** 가른다.
  *
- * 한국 지적편집도를 읽어온 분들에게 이 색은 곧 뜻이다 — 초록이면
- * 녹지, 보라면 공업. 그 관행을 그대로 쓰는 편이 새 범례를 외우게
- * 하는 것보다 낫다.
+ * 예전에는 거래도 원이었고 색을 용도지역별로 다섯 가지 썼다. 화면에는
+ * 영업소 6색 + 밴드 3색이 이미 있어서, 전국을 보면 열 몇 가지 색의
+ * 원이 뒤덮여 어느 것이 IC 이고 어느 것이 거래인지 구분이 안 됐다
+ * (2026-09-04 지적).
  *
- * 공장·창고는 용도지역 칸이 비어 있다(그 API 가 주지 않는다). 그런데
- * 공장은 그 자체가 공업 용도이므로 보라로 칠하면 관행과 어긋나지
- * 않는다 — 모르는 것을 아는 척하는 것이 아니라, 물건 종류가 이미
- * 답을 말해준다. */
-function tradeColor(t) {
-  if (t.kind === 'factory') return cssVar('--kind-factory');
-  const u = t.land_use || '';
-  if (u.includes('계획관리')) return cssVar('--use-plan');
-  if (u.includes('생산관리')) return cssVar('--use-prod');
-  if (u.includes('자연녹지') || u.includes('녹지')) return cssVar('--use-green');
-  return cssVar(u ? '--use-other' : '--kind-land');
+ * 색을 더 늘려 푸는 문제가 아니다. **모양이 먼저 종류를 말해야 한다.**
+ *
+ *   영업소   원
+ *   토지     네모   초록  #00A63E
+ *   공장     마름모 진파랑 #1414CC
+ *
+ * 두 색은 눈으로 고르지 않고 쟀다. 영업소 6색·밴드 3색·배경 5색
+ * 전부와 최소 ΔE 16.0, 둘끼리 44.8 이다 (scripts/test_palette.js 3절).
+ *
+ * 용도지역은 이제 색이 아니라 **배경 색면과 눌러서 뜨는 이름**으로
+ * 본다(askZoning). 같은 것을 두 군데서 말하면 화면만 복잡해진다.
+ */
+const TRADE_PX = 9;              // 표식 한 변(px). 원 반경 3.6 과 비슷한 무게.
+
+function tradeMarker(t) {
+  const factory = t.kind === 'factory';
+  const coarse = t.geocode_level !== 'parcel';
+  return L.marker([t.lat, t.lon], {
+    // divIcon 을 쓰는 이유는 하나다 — Leaflet 의 circleMarker 는 원밖에
+    // 못 그린다. 모양으로 가르려면 이 길뿐이다.
+    icon: L.divIcon({
+      className: 'trade-icon',
+      html: '<i class="trade-mark ' + (factory ? 'trade-factory' : 'trade-land')
+            + (coarse ? ' trade-coarse' : '') + '"></i>',
+      iconSize: [TRADE_PX, TRADE_PX],
+      iconAnchor: [TRADE_PX / 2, TRADE_PX / 2],
+    }),
+    // 표식을 눌러도 용도지역 말풍선이 뜨게 둔다. 거래 점 위가 곧
+    // 그 땅이므로 막을 이유가 없다.
+    interactive: false,
+    keyboard: false,
+    // 검사와 화면 양쪽이 같은 값을 본다.
+    kind: t.kind,
+    geocodeLevel: t.geocode_level || '',
+  });
 }
 
 function selectTollgate(id) {
