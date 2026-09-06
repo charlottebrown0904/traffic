@@ -1446,7 +1446,11 @@ _h3in = pd.DataFrame({
     "tollgate_id": ["tg%02d" % i for i in _rng.integers(0, 40, _n)],
 })
 _t3 = H.h3(_h3in, ["d_pop"], kind="land")
-check(list(_t3.columns) == ["변수", "n", "영업소", "beta", "se", "p"],
+# 칸 목록을 통째로 박아 두면 칸 하나 늘 때마다 멀쩡한 검사가 빨개진다
+# (mde 를 더했을 때 실제로 그랬다). 지켜야 할 것은 **첫 칸이 '변수' 이고
+# 필요한 칸이 다 있다**는 것이지 목록이 똑같다는 것이 아니다.
+_want3 = ["변수", "n", "영업소", "beta", "se", "p"]
+check(list(_t3.columns)[0] == "변수" and set(_want3) <= set(_t3.columns),
       f"추정 성공 줄도 '변수' 칸을 갖는다 ({list(_t3.columns)})")
 check(len(_t3) == 1 and _t3["변수"].iloc[0] == "d_pop"
       and not pd.isna(_t3["beta"].iloc[0]),
@@ -1455,8 +1459,7 @@ check(len(_t3) == 1 and _t3["변수"].iloc[0] == "d_pop"
 # 표본이 모자란 줄과 성공한 줄이 **섞여도** 칸이 어긋나지 않아야 한다.
 _h3in["d_thin"] = np.where(_h3in.index < 20, _rng.normal(0, .05, _n), np.nan)
 _mixed = H.h3(_h3in, ["d_pop", "d_thin"], kind="land")
-check(list(_mixed.columns) == ["변수", "n", "영업소", "beta", "se", "p"]
-      and len(_mixed) == 2,
+check(list(_mixed.columns) == list(_t3.columns) and len(_mixed) == 2,
       f"모자란 줄과 성공한 줄이 섞여도 칸이 같다 ({len(_mixed)}줄)")
 check(bool(_mixed["beta"].isna().any()) and bool(_mixed["beta"].notna().any()),
       "모자란 줄은 비고, 성공한 줄은 값이 든다")
@@ -1471,6 +1474,143 @@ _h3rows = [h for h in _pay["hypotheses"] if h["key"] == "H3"][0]["rows"]
 check(len(_h3rows) == 1 and _h3rows[0]["var"] == "d_pop"
       and _h3rows[0]["label"] == "d_pop",
       f"판정 파일에 변수 이름이 실린다 ({_h3rows[0]['label'] if _h3rows else '없음'})")
+
+# ────────────────────────────────────────────────────────────────
+print("\n33. 공장 헤도닉이 건물 나이를 뺀다")
+
+from redt.transform import panel as pn                   # noqa: E402
+
+# 설계서(docs/hypotheses-design.md 6절)에서 확인한 구멍이다. 공장 실거래에는
+# 건물이 붙어 있고 건물은 낡는데, 헤도닉이 건물 유무와 면적만 통제하고
+# **건축연도를 안 썼다.** 도시 근처 공장이 더 오래됐다면 낡은 정도가
+# 교통량과 얽혀 계수를 밀어버린다.
+_rng2 = np.random.default_rng(20260905)
+_n2 = 900
+_age = _rng2.integers(0, 40, _n2)
+_fac = pd.DataFrame({
+    "kind": "factory",
+    "sigungu_cd": _rng2.integers(41000, 41010, _n2).astype(str),
+    "deal_year": 2020,
+    "build_year": 2020 - _age,
+    "area_m2": _rng2.uniform(500, 5000, _n2),
+    "building_area_m2": _rng2.uniform(200, 2000, _n2),
+    "jimok": "공장용지",
+    "land_use": "공업지역",
+    "building_use": "공장",
+    # 값은 나이가 들수록 떨어진다. 이걸 안 빼면 그대로 남는다.
+    "price_per_m2": np.exp(13 - 0.02 * _age + _rng2.normal(0, .05, _n2)),
+})
+_out = pn.hedonic_adjust(_fac.copy())
+check("bldg_age" in _out.columns and "has_age" in _out.columns,
+      "건물 나이 칸을 만든다")
+
+# 보정 뒤에는 나이와 값의 관계가 남아 있으면 안 된다.
+import numpy as _np2                                    # noqa: E402
+_before = _np2.corrcoef(_age, _out["ln_price"])[0, 1]
+_after = _np2.corrcoef(_age, _out["adj_ln_price"])[0, 1]
+check(abs(_before) > 0.4, f"보정 전에는 나이와 값이 얽혀 있다 (r={_before:+.2f})")
+check(abs(_after) < abs(_before) / 2,
+      f"보정 뒤에는 그 얽힘이 크게 준다 (r={_before:+.2f} → {_after:+.2f})")
+
+# 미래에 지어진 건물·200년 된 공장은 입력 오류다. 그런 값 하나가 제곱항을
+# 통해 계수를 통째로 끌고 간다.
+_bad = _fac.copy()
+_bad.loc[_bad.index[:3], "build_year"] = [2050, 1700, 1800]
+_outb = pn.hedonic_adjust(_bad)
+check(bool((_outb["bldg_age"].between(0, 100)).all()),
+      f"말이 안 되는 나이는 안 쓴다 (최대 {_outb['bldg_age'].max():.0f}년)")
+check(int(_outb.loc[_outb.index[:3], "has_age"].sum()) == 0,
+      "그 건들은 '나이 모름' 으로 표시한다")
+
+# 토지는 건물이 없다. 이 변경이 토지 결과를 건드리면 안 된다.
+_land = _fac.copy()
+_land["kind"] = "land"
+_land["build_year"] = np.nan
+_land["building_area_m2"] = 0.0
+_land["jimok"] = "전"
+_outl = pn.hedonic_adjust(_land)
+check(int(_outl["has_age"].sum()) == 0,
+      "토지는 나이가 전부 '모름' 이라 식에 안 들어간다")
+
+# ────────────────────────────────────────────────────────────────
+print("\n34. H4·H5 — 수준 비교가 진실을 되찾는가")
+
+# 이 두 가설은 실제 자료에서 아직 한 번도 안 돌았다(cross.build 가 비어
+# 있었다). 만들어 놓고 안 돌린 코드가 어떻게 되는지는 run 27 에서 봤다.
+# 그래서 **진실을 아는 자료**를 만들어 넣고 되찾는지 본다.
+_r3 = np.random.default_rng(20260905)
+_nic = 220
+# 서울에서 멀수록 교통량이 적고 값도 싸다 — 실제 자료의 모양이다.
+# 교통량 자체의 효과는 **0 으로** 넣는다. 즉 통제를 제대로 넣으면
+# 계수가 사라져야 맞다.
+_km = _r3.uniform(20, 300, _nic)
+_lv = pd.DataFrame({
+    "tollgate_id": [f"t{i}" for i in range(_nic)],
+    "year": 2024,
+    "sido": _r3.choice(["경기", "충남", "경북"], _nic),
+    "ln_km_seoul": np.log(_km),
+    "ln_traffic": 12 - 0.8 * np.log(_km) + _r3.normal(0, .25, _nic),
+})
+_lv["ln_price"] = 15 - 1.2 * np.log(_km) + _r3.normal(0, .3, _nic)
+
+_t4 = H.h4(_lv)
+check(len(_t4) == 3 and list(_t4.columns)[:3] == ["모형", "n", "영업소"],
+      f"세 모형을 나란히 낸다 ({list(_t4['모형'])})")
+_raw = _t4.iloc[0]
+_ctl = _t4[_t4["모형"] == "+서울거리"].iloc[0]
+check(_raw["beta"] > 0.5 and _raw["p"] < 0.05,
+      f"통제 전에는 크게 유의하다 (β={_raw['beta']:+.2f}, p={_raw['p']:.4f})")
+check(abs(_ctl["beta"]) < abs(_raw["beta"]) / 3,
+      f"서울거리를 넣자 계수가 무너진다 (β={_raw['beta']:+.2f} → {_ctl['beta']:+.2f})"
+      " ← 진실이 0 이므로 이게 맞다")
+check(bool((_t4["mde"] > 0).all()), "줄마다 최소 탐지 가능 효과가 붙는다")
+check(abs(_t4.iloc[0]["mde"] / _t4.iloc[0]["se"] - 2.80) < 0.01,
+      "MDE 는 표준오차의 2.80배다")
+
+# 판정 — 유의한 양수라도 '지지' 가 아니라 '상관' 이어야 한다.
+_v4, _w4 = H.judge_h4(_t4.iloc[[0]])
+check(_v4 == H.Verdict.CORRELATED,
+      f"수준 비교는 유의해도 '지지' 가 아니라 '상관' 이다 ({_v4})")
+check("상관" in _w4, "근거에도 상관이라고 적는다")
+
+# ── H5 · 곱셈항 ──
+# 인구가 많을수록 교통량의 효과가 커지는 자료를 만든다 (곱셈항 진실 = +0.5).
+_pop = _r3.uniform(9.5, 13.5, _nic)
+_ct = _lv["ln_traffic"] - _lv["ln_traffic"].mean()
+_cp = _pop - _pop.mean()
+_lv2 = _lv.assign(
+    ln_pop=_pop,
+    ln_price=10 + 0.3 * _ct + 0.2 * _cp + 0.5 * _ct * _cp + _r3.normal(0, .2, _nic))
+_t5 = H.h5(_lv2)
+check(len(_t5) == 4, f"따로·같이 네 줄을 낸다 ({len(_t5)}줄)")
+_inter = _t5[_t5["모형"] == "같이 · 곱셈항"].iloc[0]
+check(abs(_inter["beta"] - 0.5) < 0.15,
+      f"곱셈항을 되찾는다 (넣은 값 +0.500 → {_inter['beta']:+.3f})")
+_main = _t5[_t5["모형"] == "같이 · 교통량(평균 인구에서)"].iloc[0]
+check(abs(_main["beta"] - 0.3) < 0.15,
+      f"중심화 덕에 주효과가 '평균 인구에서의 효과' 다 (넣은 값 +0.300 →"
+      f" {_main['beta']:+.3f})")
+_v5, _w5 = H.judge_h5(_t5)
+check(_v5 == H.Verdict.CORRELATED, f"판정도 상관이다 ({_v5})")
+
+# 곱셈항만 서고 주효과가 없으면 믿지 않는다.
+_t5b = _t5.copy()
+_t5b.loc[_t5b["모형"].isin(["따로 · 교통량", "따로 · 인구"]), "p"] = 0.9
+_v5b, _w5b = H.judge_h5(_t5b)
+check(_v5b == H.Verdict.UNKNOWN,
+      f"주효과 없이 곱셈항만 서면 그대로 안 믿는다 ({_v5b})")
+
+# 자료가 없을 때 조용히 넘어가지 않는다.
+check(H.judge_h4(H.h4(pd.DataFrame()))[0] == H.Verdict.UNKNOWN,
+      "수준 비교표가 비면 '아직 모름' 으로 남긴다")
+check(H.judge_h5(H.h5(_lv))[0] == H.Verdict.UNKNOWN,
+      "인구가 없으면 H5 는 '아직 모름' 이다 (H4 는 그대로 돈다)")
+
+# 주 가설과 탐색을 미리 갈라 둔다.
+check(H.is_primary("land", "volume_total") is True
+      and H.is_primary("factory", "volume_total") is False
+      and H.is_primary("land", "volume_freight") is False,
+      "주 가설은 토지·전체 교통량 하나뿐이다")
 
 print()
 if fail:

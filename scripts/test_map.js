@@ -187,21 +187,29 @@ const FAKE_LEAFLET = () => {
       kind: 'land', volume_col: 'volume_freight',
       synthetic: false, controlled: false, controls: [],
       pre_trend_ok: false, alpha: 0.05, min_obs: 50, min_clusters: 10,
+      primary: true, primary_kind: 'land', primary_volume: 'volume_total',
       hypotheses: [
         { key: 'H1', name: 'H1 IC 개통', claim: '개통하면 오른다',
           verdict: '아직 모름', why: '표본이 없습니다.', rows: [] },
-        { key: 'H2', name: 'H2 교통량', claim: '교통량이 늘면 오른다',
+        { key: 'H2', name: 'H2 교통량 변화', claim: '교통량이 늘면 오른다',
           verdict: '지지', why: '3-5km 에서 유의, 위약은 깨끗합니다.',
           rows: [
+            // 계수가 '잡을 수 있는 최소' 보다 큰 줄 — 크기를 읽어도 되는 줄
             { label: '3-5km · 통제 전', band: '3-5', model: '통제 전', var: null,
               note: '', n: 2356, clusters: 210, beta: 0.387, se: 0.129,
-              p: 0.003, ci_lo: 0.135, ci_hi: 0.639 },
+              p: 0.003, ci_lo: 0.135, ci_hi: 0.639, mde: 0.361 },
+            // 계수가 그보다 작은 줄 — 크기를 읽으면 안 되는 줄
             { label: '5-10km · 통제 전', band: '5-10', model: '통제 전', var: null,
               note: '위약', n: 2356, clusters: 210, beta: 0.102, se: 0.105,
-              p: 0.332, ci_lo: -0.104, ci_hi: 0.308 },
+              p: 0.332, ci_lo: -0.104, ci_hi: 0.308, mde: 0.294 },
           ] },
         { key: 'H3', name: 'H3 인구·산단', claim: '인구가 늘면 오른다',
           verdict: '기각', why: '계수가 0 과 구분되지 않습니다.', rows: [] },
+        { key: 'H4', name: 'H4 교통량 수준', claim: '교통량 많은 곳이 비싸다',
+          verdict: '관계 있음 (상관 · 인과 아님)',
+          why: '서울거리를 통제해도 남습니다. 다만 상관입니다.', rows: [] },
+        { key: 'H5', name: 'H5 인구 × 교통량', claim: '둘 다 많으면 더 비싸다',
+          verdict: '아직 모름', why: '곱셈항을 판정할 수 없습니다.', rows: [] },
       ],
     };
     // 행정구역 인구. 크기를 세 단으로 끊었으므로 **세 단에 하나씩** 넣는다.
@@ -223,6 +231,15 @@ const FAKE_LEAFLET = () => {
     await page.route('**/app/data/verdicts.json*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify(FAKE_VERDICTS),
+    }));
+    // 공장은 따로 낸다. 한 파일에 덮어쓰면 나중에 돈 쪽만 남아, 공장을
+    // 돌렸는데 화면에는 토지가 떠 있게 된다.
+    await page.route('**/app/data/verdicts_factory.json*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        ...FAKE_VERDICTS, kind: 'factory', primary: false,
+        hypotheses: FAKE_VERDICTS.hypotheses.map((h) => ({ ...h, rows: [] })),
+      }),
     }));
     await page.route('**/api/fees*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
@@ -668,15 +685,23 @@ const FAKE_LEAFLET = () => {
         };
       });
       check('누르면 판정 화면이 열린다', v.shown);
-      check('가설 셋을 다 보여준다', v.n === 3, `${v.n}개`);
+      check('가설 다섯을 다 보여준다', v.n === 5, `${v.n}개`);
       // 색만으로 뜻을 말하면 색약·흑백에서 무너진다. 딱지에 글자가 있어야 한다.
       check('판정이 글자로 적혀 있다 (색만이 아니다)',
-            v.badges.map((b) => b.text).join('·') === '아직 모름·지지·기각',
+            v.badges.slice(0, 3).map((b) => b.text).join('·')
+              === '아직 모름·지지·기각',
             v.badges.map((b) => b.text).join('·'));
       check('판정마다 색이 다르다',
             /is-unknown/.test(v.badges[0].cls) && /is-ok/.test(v.badges[1].cls)
             && /is-no/.test(v.badges[2].cls),
             v.badges.map((b) => b.cls.replace('verdict-card ', '')).join(' / '));
+      // '관계 있음(상관)' 은 '지지' 와 색이 달라야 한다. 있는 것은 맞지만
+      // 인과가 아니라서, 같은 초록을 주면 구별할 방법이 없다.
+      check('상관 판정은 지지와 다른 색이다',
+            /is-corr/.test(v.badges[3].cls) && !/is-ok/.test(v.badges[3].cls),
+            v.badges[3].cls.replace('verdict-card ', ''));
+      check('상관이라는 것이 딱지 글자에도 있다',
+            /상관/.test(v.badges[3].text), v.badges[3].text);
       // 통제가 없는데 계수를 그냥 보여주면 'IC 효과' 로 읽힌다.
       check('통제가 없으면 표 위에서 먼저 경고한다',
             v.flags.some((f) => /is-warn/.test(f.cls) && /통제/.test(f.text)),
@@ -695,6 +720,61 @@ const FAKE_LEAFLET = () => {
       check('그 줄에 글자로도 적는다 (0 포함)', /0 포함/.test(after), after);
       check('무엇으로 돌린 판정인지 적는다',
             /토지/.test(v.stamp) && /화물/.test(v.stamp), v.stamp);
+
+      // '잡을 수 있는 최소'(MDE) — 계수가 그보다 작으면 크기를 읽으면
+      // 안 된다. 표에 숫자만 있으면 아무도 그 뜻을 모르므로 갈라 둔다.
+      const mde = await page.evaluate(() => ({
+        head: [...document.querySelectorAll('#verdict-cards th')]
+          .map((th) => th.textContent.trim()),
+        weak: [...document.querySelectorAll('#verdict-cards .mde-weak')]
+          .map((td) => td.textContent.trim()),
+        color: (() => {
+          const el = document.querySelector('#verdict-cards .mde-weak');
+          return el ? getComputedStyle(el).color : '';
+        })(),
+        // 기대색은 토큰에서 읽는다. 색값을 검사에 박아 두면 밝은/어두운
+        // 화면 중 한쪽에서만 맞는 검사가 된다.
+        danger: (() => {
+          const probe = document.createElement('span');
+          probe.style.color = 'var(--danger)';
+          document.body.appendChild(probe);
+          const c = getComputedStyle(probe).color;
+          probe.remove();
+          return c;
+        })(),
+      }));
+      check('표에 잡을 수 있는 최소 칸이 있다',
+            mde.head.some((h) => /최소/.test(h)), mde.head.join(' | '));
+      // 넣은 두 줄 중 하나만 계수가 최소보다 작다 (0.102 < 0.294).
+      check('계수가 그보다 작은 줄만 표시한다', mde.weak.length === 1,
+            `${mde.weak.length}줄 (${mde.weak.join(',')})`);
+      // '검정만 아니면 통과' 로 두었더니 회색으로 그려지는데도 지나갔다.
+      // 무슨 색이어야 하는지를 정확히 재야 한다.
+      check('그 표시가 경고색(--danger)으로 그려진다',
+            mde.color === mde.danger, `${mde.color} (기대 ${mde.danger})`);
+
+      // 토지와 공장을 갈아 끼울 수 있어야 한다. 지금까지 토지만 저장돼서
+      // 공장은 '표본이 작아 못 봤다' 는 것조차 화면에 안 남았다.
+      const swap = await page.evaluate(async () => {
+        const box = document.getElementById('verdict-kind');
+        const shown = box && !box.hidden;
+        const btn = box && box.querySelector('button[data-kind="factory"]');
+        if (btn) btn.click();
+        await new Promise((r) => setTimeout(r, 150));
+        return {
+          shown,
+          stamp: document.getElementById('verdict-stamp').textContent,
+          flags: [...document.querySelectorAll('.verdict-flag')]
+            .map((f) => f.textContent.trim()),
+        };
+      });
+      check('토지·공장 전환 단추가 있다', swap.shown === true);
+      check('공장으로 바꾸면 그 판정이 뜬다', /공장/.test(swap.stamp), swap.stamp);
+      // 계수를 여럿 던지면 그중 몇은 우연히 유의하다. 탐색을 결론으로
+      // 읽지 않도록 표 위에서 먼저 말해야 한다.
+      check('탐색이라는 것을 표 위에서 먼저 말한다',
+            swap.flags.some((f) => /탐색입니다/.test(f)),
+            swap.flags.map((f) => f.slice(0, 20)).join(' | '));
     }
 
     console.log();

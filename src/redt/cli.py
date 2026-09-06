@@ -15,6 +15,7 @@ import argparse
 import json
 import sys
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -1541,17 +1542,37 @@ def cmd_hypotheses(args):
     years = sorted(int(y) for y in panel["year"].dropna().unique())
     pressure = hypotheses.zone_pressure(zones, zlinks, years)
 
+    # H4·H5 용 수준 비교표. IC 한 곳이 한 행이고, 거기에 그 해 시군구
+    # 인구를 붙인다. 인구가 없으면 H5 만 '자료 없음' 이 되고 H4 는 돈다.
+    from .analyze import cross
+    with db.connect(read_only=True) as con:
+        tgs = con.execute(
+            "SELECT tollgate_id, name, sido, sigungu, lat, lon "
+            "FROM tollgate WHERE lat IS NOT NULL").fetchdf()
+    level = cross.build(panel, tgs, kind=args.kind,
+                        volume_col=f"volume_{args.volume}")
+    if len(level) and not region.empty:
+        pop = region[region["metric"] == "population"][
+            ["sigungu_cd", "year", "value"]].rename(columns={"value": "population"})
+        level = level.merge(pop, on=["sigungu_cd", "year"], how="left")
+        got = int(level["population"].notna().sum())
+        print(f"\n수준 비교표 IC {len(level)}개 · 인구 붙은 곳 {got}개")
+        if got:
+            level["ln_pop"] = np.log(level["population"].where(level["population"] > 0))
+    elif len(level):
+        print(f"\n수준 비교표 IC {len(level)}개 · 인구 자료 없음 (H5 는 못 돕니다)")
+
     verdicts, data = hypotheses.report(
-        panel, event_df, region, pressure,
+        panel, event_df, region, pressure, level=level,
         volume_col=f"volume_{args.volume}", kind=args.kind, pre_trend_ok=pre_ok,
         synthetic=(PROCESSED / ".synthetic").exists())
-    verdicts.to_csv(PROCESSED / "verdicts.csv", index=False)
+    verdicts.to_csv(PROCESSED / args.out.replace(".json", ".csv"), index=False)
 
     # 숫자를 남긴다. 지금까지 이 결과는 러너 로그에만 있어서, 실행이
     # 끝나면 무엇이 나왔는지 아무도 알 수 없었다.
-    (PROCESSED / "verdicts.json").write_text(
+    (PROCESSED / args.out).write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    web = ROOT / "public" / "app" / "data" / "verdicts.json"
+    web = ROOT / "public" / "app" / "data" / args.out
     web.parent.mkdir(parents=True, exist_ok=True)
     web.write_text(json.dumps(data, ensure_ascii=False, indent=2),
                    encoding="utf-8")
@@ -1876,10 +1897,14 @@ def main(argv=None):
     p.set_defaults(func=cmd_load_h3)
 
     p = sub.add_parser("hypotheses",
-                       help="세 가설 판정 (H1 개통 · H2 교통량 · H3 인구·산단)")
+                       help="다섯 가설 판정 (H1 개통 · H2 교통량 변화 · "
+                            "H3 인구·산단 · H4 교통량 수준 · H5 인구×교통량)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])
     p.add_argument("--volume", default="total",
                    choices=["total", "freight", "passenger", "mid"])
+    # 종류마다 다른 파일로 낸다. 한 파일에 덮어쓰면 나중에 돈 쪽만 남아,
+    # 공장을 돌렸는데 화면에는 토지가 떠 있는 일이 생긴다.
+    p.add_argument("--out", default="verdicts.json")
     p.set_defaults(func=cmd_hypotheses)
 
     p = sub.add_parser("score", help="영업소별 투자 스크리닝 스코어")

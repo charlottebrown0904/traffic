@@ -804,3 +804,17 @@ body.picking .leaflet-container{cursor:crosshair}
   border:1px solid var(--pop-ring);
 }
 .map-legend .row:has(> .sw-pop){align-items:center}
+
+/* 판정 '관계 있음(상관)' — 초록(지지)과 반드시 달라야 한다. 있는 것은
+   맞지만 인과가 아니라서, 같은 색을 주면 읽는 사람이 구별할 방법이 없다. */
+.verdict-card.is-corr{--c:var(--accent)}
+.verdict-badge.is-corr{--c:var(--accent); color:var(--ink)}
+.verdict-flag.is-corr{--c:var(--accent)}
+/* 계수가 '잡을 수 있는 최소' 보다 작은 줄. 이 줄의 계수는 크기를 읽으면
+   안 된다 — 표본이 그만큼을 못 가른다.
+
+   셀렉터를 '.vt-table td' 에 맞춘다. 위에 .vt-table td{color:var(--muted)}
+   가 있어서, 클래스 하나짜리로는 그것을 못 이기고 회색으로 남는다.
+   검사가 '검정만 아니면 통과' 라 이걸 놓칠 뻔했다 — 그래서 검사도
+   --danger 와 같은 색인지 재도록 고쳤다. */
+.vt-table td.mde-weak{color:var(--danger); font-weight:700}

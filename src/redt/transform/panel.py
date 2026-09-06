@@ -82,6 +82,28 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
         df["has_building"] = has_bldg.astype(int)
         df["ln_building_area"] = np.log(df["building_area_m2"].where(has_bldg)).fillna(0)
 
+    # 건물 나이 — 공장에만 걸리는 통제다.
+    #
+    # 공장 실거래에는 건물이 붙어 있고 건물은 낡는다. 그것을 안 빼면
+    # 교통량 계수에 감가상각이 섞인다. 도시 근처 공장이 더 오래됐다면
+    # '낡은 정도' 가 '교통량이 많은 정도' 와 얽혀, 계수를 어느 쪽으로든
+    # 밀어버린다. 미리 어느 쪽인지 알 수 없으므로 빼 두어야 한다.
+    #
+    # 나이는 제곱항까지 넣는다. 새 건물은 처음 몇 해에 빠르게 값이
+    # 떨어지고 그 뒤로는 완만하다 — 직선 하나로는 그 굽이를 못 따라간다.
+    #
+    # 토지는 건물이 없어 나이가 전부 결측이고, 아래 nunique() > 1 검사에
+    # 걸려 식에 안 들어간다. 즉 토지 결과는 이 변경 전과 **똑같다.**
+    if "build_year" in df and "deal_year" in df:
+        age = pd.to_numeric(df["deal_year"], errors="coerce") - \
+            pd.to_numeric(df["build_year"], errors="coerce")
+        # 미래에 지어진 건물, 200년 된 공장은 입력 오류다. 그런 값 하나가
+        # 제곱항을 통해 계수를 통째로 끌고 간다.
+        age = age.where(age.between(0, 100))
+        df["has_age"] = age.notna().astype(int)
+        df["bldg_age"] = age.fillna(0)
+        df["bldg_age2"] = df["bldg_age"] ** 2
+
     # 회귀에 쓸 표본 상한. 이것이 없으면 러너가 죽는다.
     #
     # 이 회귀는 C(jimok)·C(sigungu_cd)·C(deal_year) 을 넣는다. patsy 가
@@ -118,6 +140,19 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
                 cat_cols.append(col)
         if "has_building" in group and group["has_building"].nunique() > 1:
             terms += ["has_building", "ln_building_area"]
+        # 나이가 실제로 다양할 때 넣는다.
+        #
+        # 두 조건을 따로 본다. 처음에는 has_age 하나만 보고 둘 다 넣었는데,
+        # **모든 건이 나이를 알면** has_age 가 전부 1 이라 값이 하나뿐이고,
+        # 그 검사에 걸려 bldg_age 까지 통째로 빠졌다. 나이를 가장 잘 아는
+        # 경우에 나이를 안 쓰는 셈이었다 (검사 33절이 잡았다).
+        #
+        # has_age 는 나이를 아는 건과 모르는 건이 **섞여 있을 때만** 쓴다.
+        # 그것이 없으면 0 으로 채운 '모름' 이 '새 건물' 로 읽힌다.
+        if "bldg_age" in group and group["bldg_age"].nunique() > 1:
+            terms += ["bldg_age", "bldg_age2"]
+            if group["has_age"].nunique() > 1:
+                terms.append("has_age")
         fe = []
         for col in ("sigungu_cd", "deal_year"):
             if col in group and group[col].nunique() > 1:
@@ -138,7 +173,8 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
         for col in ("jimok", "land_use", "building_use"):
             if col in group:
                 overrides[col] = fit_on[col].mode().iat[0]
-        for col in ("has_building", "ln_building_area"):
+        for col in ("has_building", "ln_building_area",
+                    "has_age", "bldg_age", "bldg_age2"):
             if col in group:
                 overrides[col] = fit_on[col].mean()
 

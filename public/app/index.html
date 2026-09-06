@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260904i">
+<link rel="stylesheet" href="/app/style.css?v=20260905a">
 </head>
 <body>
 
@@ -258,8 +258,12 @@
   <div class="verdict-wrap">
     <section class="panel">
       <div class="panel-head">
-        <h2>세 가설 판정</h2>
+        <h2>다섯 가설 판정</h2>
         <span class="hint" id="verdict-stamp"></span>
+      </div>
+      <div class="seg" id="verdict-kind" hidden>
+        <button type="button" class="seg-btn is-on" data-kind="land">토지</button>
+        <button type="button" class="seg-btn" data-kind="factory">공장·창고</button>
       </div>
       <p class="hint" id="verdict-sub">
         가설마다 <b>무엇을 보면 참이라고 할 수 있는가</b>를 미리 정해 두고,
@@ -276,16 +280,28 @@
           <tr><th>H1 · IC 개통</th><td>
             이중차분 교차항이 유의(p&lt;0.05)하고 양수 · 개통 <b>전</b> 계수는
             유의하지 않을 것(평행추세) · H3 통제 후에도 살아남을 것</td></tr>
-          <tr><th>H2 · 교통량</th><td>
+          <tr><th>H2 · 교통량 변화</th><td>
             영향범위 밴드에서 β 가 유의하고 양수 · <b>위약 밴드(5-10km)에서는
             유의하지 않을 것</b> · H3 통제 후에도 살아남을 것</td></tr>
           <tr><th>H3 · 인구·산단</th><td>
             산단 지정 이벤트의 교차항 또는 인구 증가율 계수가 유의하고 양수일 것</td></tr>
+          <tr><th>H4 · 교통량 수준</th><td>
+            서울 거리와 시도를 <b>통제한 뒤에도</b> β 가 유의하고 양수일 것.
+            통과해도 판정은 <b>‘관계 있음(상관)’</b> 까지입니다 — 서로 다른
+            장소를 견준 것이라 인과가 아닙니다</td></tr>
+          <tr><th>H5 · 인구 × 교통량</th><td>
+            곱셈항이 유의하고 양수일 것 · <b>교통량·인구 각각도 유의할 것</b>.
+            곱셈항만 서는 것은 대개 표본 가장자리 몇 점이 만듭니다</td></tr>
         </tbody>
       </table>
       <p class="hint" style="margin-top:.9rem">
         <b>‘아직 모름’ 은 ‘효과가 없다’ 가 아닙니다.</b> 표본이 모자라 판정하지
         못했다는 뜻입니다. 둘을 섞으면 투자 판단이 정반대로 뒤집힙니다.
+      </p>
+      <p class="hint">
+        <b>‘잡을 수 있는 최소’</b> 는 이 표본으로 찾아낼 수 있는 가장 작은
+        효과입니다. 계수가 그보다 작으면(빨간 숫자) 그 크기를 읽으면 안 됩니다 —
+        표본이 그만큼을 못 가릅니다. ‘안 나왔다’ 가 ‘없다’ 가 아닌 이유입니다.
       </p>
       <p class="hint">
         H3 는 세 번째 질문이면서 동시에 <b>H1·H2 의 교란</b>입니다. IC 가 뚫린
@@ -428,12 +444,12 @@
 <footer class="disclaimer" id="disclaimer"></footer>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="/app/config.js?v=20260904i"></script>
+<script src="/app/config.js?v=20260905a"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/app/supabase.js?v=20260904i"></script>
-<script src="/lib/supabase-init.js?v=20260904i"></script>
+<script src="/app/supabase.js?v=20260905a"></script>
+<script src="/lib/supabase-init.js?v=20260905a"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
-<script src="/app/gate.js?v=20260904i"></script>
+<script src="/app/gate.js?v=20260905a"></script>
 </body>
 </html>

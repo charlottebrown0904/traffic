@@ -26,6 +26,7 @@ const state = {
   parcelOnly: false, selected: null, showAllBands: false, tiers: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
   apiAvailable: false, verdicts: null,
+  verdictSets: {}, verdictKind: 'land',
   regions: null, showPop: true, popYear: null,
 };
 
@@ -123,12 +124,18 @@ async function boot() {
     state.regions = null;
   }
   // 판정은 분석이 한 번이라도 돈 뒤에야 생긴다. 없으면 그 탭만 비운다.
-  try {
-    const r = await fetch('/app/data/verdicts.json');
-    if (r.ok) state.verdicts = await r.json();
-  } catch (err) {
-    state.verdicts = null;
-  }
+  // 토지와 공장을 따로 낸다 — 한 파일에 덮어쓰면 나중에 돈 쪽만 남아,
+  // 공장을 돌렸는데 화면에는 토지가 떠 있는 일이 생긴다.
+  state.verdictSets = {};
+  await Promise.all([['land', 'verdicts'], ['factory', 'verdicts_factory']]
+    .map(async ([k, name]) => {
+      try {
+        const r = await fetch(`/app/data/${name}.json`);
+        if (r.ok) state.verdictSets[k] = await r.json();
+      } catch (err) { /* 없으면 그 종류만 안 보인다 */ }
+    }));
+  state.verdictKind = state.verdictSets.land ? 'land' : 'factory';
+  state.verdicts = state.verdictSets[state.verdictKind] || null;
 
   // 4분위는 지도와 무관하게 미리 잡는다. buildMap 안에서 잡으면 Leaflet 이
   // 없을 때(CDN 차단·오프라인) 계산 자체를 건너뛰고, 범례가 실제 교통량
@@ -1698,8 +1705,12 @@ const VERDICT_TONE = {
   '기각': 'no',
 };
 function verdictTone(v) {
-  if (VERDICT_TONE[v]) return VERDICT_TONE[v];
-  return String(v || '').startsWith('교란') ? 'warn' : 'unknown';
+  const t = String(v || '');
+  if (VERDICT_TONE[t]) return VERDICT_TONE[t];
+  // '관계 있음 (상관 · 인과 아님)' — 있는 것은 맞지만 인과가 아니다.
+  // '지지' 와 같은 초록을 주면 읽는 사람이 구별할 방법이 없다.
+  if (t.startsWith('관계 있음')) return 'corr';
+  return t.startsWith('교란') ? 'warn' : 'unknown';
 }
 
 const fixed = (v, d = 3) => (v == null ? '—' : Number(v).toFixed(d));
@@ -1713,20 +1724,54 @@ function buildVerdict() {
   if (!data || !Array.isArray(data.hypotheses) || !data.hypotheses.length) {
     flags.innerHTML = '';
     stamp.textContent = '';
+    const empty = $('#verdict-kind');
+    if (empty) empty.hidden = true;
     cards.innerHTML =
       '<p class="empty">아직 판정이 계산되지 않았습니다. ' +
       '분석이 한 번 돌면 여기에 표가 생깁니다.</p>';
     return;
   }
 
+  // 종류 전환. 있는 것만 보여준다 — 눌러도 아무 일 없는 단추는 고장으로 읽힌다.
+  const picker = $('#verdict-kind');
+  if (picker) {
+    const have = Object.keys(state.verdictSets || {});
+    picker.hidden = have.length < 2;
+    if (!picker.dataset.wired) {
+      picker.dataset.wired = '1';
+      picker.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-kind]');
+        if (!btn) return;
+        state.verdictKind = btn.dataset.kind;
+        state.verdicts = state.verdictSets[state.verdictKind] || null;
+        buildVerdict();
+      });
+    }
+    picker.querySelectorAll('button[data-kind]').forEach((b) => {
+      b.hidden = !state.verdictSets[b.dataset.kind];
+      b.classList.toggle('is-on', b.dataset.kind === state.verdictKind);
+    });
+  }
+
   stamp.textContent =
     `${data.kind === 'factory' ? '공장·창고' : '토지'} · ` +
     `${data.volume_col === 'volume_freight' ? '화물 교통량' : '전체 교통량'} · ` +
-    (data.generated_at || '').slice(0, 10);
+    (data.generated_at || '').slice(0, 10) +
+    (data.primary === false ? ' · 탐색(참고용)' : '');
 
   // 경고를 카드 위에 둔다. 표를 먼저 읽고 나서 '사실은 통제가 없었습니다'
   // 를 만나면 이미 늦다 — 사람은 먼저 본 숫자를 기억한다.
   const notes = [];
+  // 계수를 여럿 던지면 그중 몇은 우연히 유의하다. 그래서 판정은 미리 정한
+  // 한 조합에서만 하고, 나머지는 참고로만 본다. 화면이 이 구분을 안 보이면
+  // 탐색에서 우연히 나온 것을 결론으로 읽게 된다.
+  if (data.primary === false) {
+    notes.push(['warn',
+      '<b>이 표는 탐색입니다 — 판정이 아닙니다.</b> 판정은 ' +
+      `${data.primary_kind === 'factory' ? '공장' : '토지'}·` +
+      `${data.primary_volume === 'volume_freight' ? '화물' : '전체'} 교통량` +
+      ' 조합에서만 합니다. 계수를 여럿 던지면 그중 몇은 우연히 유의합니다.']);
+  }
   if (data.synthetic) {
     notes.push(['no',
       '<b>합성(연습용) 자료로 돌린 결과입니다.</b> 판정이 아닙니다.']);
@@ -1759,6 +1804,10 @@ function buildVerdict() {
           `${r.ci_lo >= 0 ? '+' : ''}${fixed(r.ci_lo)} ~ ` +
           `${r.ci_hi >= 0 ? '+' : ''}${fixed(r.ci_hi)}</span>`
         : '—';
+      // 최소 탐지 가능 효과. 계수가 0 근처일 때 '효과가 없다' 와
+      // '작아서 못 봤다' 를 가르는 유일한 단서다.
+      const weak = r.mde != null && r.beta != null
+        && Math.abs(r.beta) < r.mde;
       return `<tr>
         <td>${escapeHtml(r.label)}${r.note
           ? ` <em class="hint">${escapeHtml(r.note)}</em>` : ''}</td>
@@ -1766,7 +1815,8 @@ function buildVerdict() {
         <td class="num">${r.clusters == null ? '—' : r.clusters}</td>
         <td class="num">${fixed(r.beta)}</td>
         <td class="num">${fixed(r.p)}</td>
-        <td>${ci}</td></tr>`;
+        <td>${ci}</td>
+        <td class="num${weak ? ' mde-weak' : ''}">${fixed(r.mde)}</td></tr>`;
     }).join('');
 
     return `<article class="verdict-card is-${tone}">
@@ -1778,7 +1828,8 @@ function buildVerdict() {
       <p class="why">${escapeHtml(h.why)}</p>
       ${rows ? `<div class="scroller"><table class="vt-table">
         <thead><tr><th>항</th><th class="num">n</th><th class="num">영업소</th>
-          <th class="num">β</th><th class="num">p</th><th>95% 구간</th></tr></thead>
+          <th class="num">β</th><th class="num">p</th><th>95% 구간</th>
+          <th class="num" title="이 표본으로 잡을 수 있는 최소 효과">잡을 수 있는 최소</th></tr></thead>
         <tbody>${rows}</tbody></table></div>` : ''}
     </article>`;
   }).join('');

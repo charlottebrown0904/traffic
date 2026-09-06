@@ -271,9 +271,17 @@ jobs:
       # 실행이 끝나는 순간 무엇이 나왔는지 아무도 모른다. 이 단계는
       # public/app/data/verdicts.json 으로 남기고(아래 '결과 커밋' 이
       # 가져간다) 실행 요약 칸에도 표를 적는다.
-      - name: 세 가설 판정
+      # 토지와 공장을 나란히 낸다. 지금까지 토지만 저장돼서, 공장은
+      # '표본이 작아 못 봤다' 는 것조차 화면에 안 남았다.
+      #
+      # 판정은 토지·전체 교통량에서만 한다(주 가설). 공장은 탐색이고 표에
+      # 그렇게 적힌다 — 계수를 여럿 던지면 그중 몇은 우연히 유의하다.
+      - name: 다섯 가설 판정
         continue-on-error: true
-        run: python -m redt.cli hypotheses
+        run: |
+          python -m redt.cli hypotheses --kind land
+          python -m redt.cli hypotheses --kind factory \
+            --out verdicts_factory.json
 
       - name: 스코어 산출
         continue-on-error: true
