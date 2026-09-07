@@ -199,3 +199,86 @@ def land_stage(jimok) -> str:
     if text in RAW_JIMOK:
         return RAW
     return OTHER_LAND
+
+
+# ────────────────────────────────────────────────────────────────
+# 도로 접함 — 토지 값을 정하는 첫 번째 조건
+# ────────────────────────────────────────────────────────────────
+#
+# 사장님 지시(2026-09-07): "부정형이 무조건 좋지 않은 건 아닙니다.
+# 도로를 접하는 가가 제일 중요합니다."
+#
+# 맞는 지적이고, 두 변수를 **다르게 다뤄야 한다**는 뜻이기도 하다.
+#
+#   형상    부정형·사다리형·세로장방… 은 **순서가 없다.** 부정형이라도
+#           넓고 도로에 붙었으면 쓸 수 있고, 반듯해도 맹지면 못 쓴다.
+#           그래서 그냥 종류로 두고 더미로 넣는다.
+#   도로접  **순서가 있다.** 광대로 > 중로 > 소로 > 세로(가) >
+#           세로(불) > 맹지. 도로 폭이 곧 무엇을 지을 수 있는가다.
+#
+# 순서가 있는 것을 종류로만 넣으면 '맹지가 소로보다 비쌀 수도 있다' 는
+# 가능성을 열어 두는 셈이라 계수가 흔들린다. 등급으로 넣는다.
+#
+# 값은 개별공시지가 토지특성의 도로접면 코드다 (실측으로 확인한 값:
+# 세로한면(가) · 맹지 · 소로한면 · 세로한면(불) · 지정되지않음).
+
+# 도로 폭 등급. 클수록 넓은 길에 접한다.
+ROAD_GRADE = {
+    "광대": 5,     # 광대로한면·광대소각·광대세각 (폭 25m 이상)
+    "중로": 4,     # 중로한면·중로각지 (12~25m)
+    "소로": 3,     # 소로한면·소로각지 (8~12m)
+}
+ROAD_NARROW_OK = 2      # 세로(가) — 8m 미만, 자동차 통행 가능
+ROAD_NARROW_NO = 1      # 세로(불) — 자동차 통행 불가
+ROAD_NONE = 0           # 맹지
+
+
+def road_grade(road_side) -> int | None:
+    """도로접면 → 0(맹지)~5(광대로). 모르면 None.
+
+    '지정되지않음' 은 **0 이 아니다.** 맹지와 같이 두면 도로가 없는 땅과
+    조사가 안 된 땅이 한 칸에 섞인다. 모르는 것은 모른다고 둔다.
+    """
+    if not isinstance(road_side, str) or not road_side.strip():
+        return None
+    text = road_side.strip()
+    if "지정되지" in text or "미상" in text:
+        return None
+    if "맹지" in text:
+        return ROAD_NONE
+    for key, grade in ROAD_GRADE.items():
+        if key in text:
+            return grade
+    if "세로" in text or "세각" in text:
+        # (가)=자동차 통행 가능, (불)=불가. 이 한 글자가 땅의 쓸모를 가른다 —
+        # 차가 못 들어가면 공장도 창고도 못 짓는다.
+        if "불" in text:
+            return ROAD_NARROW_NO
+        return ROAD_NARROW_OK
+    return None
+
+
+def road_car_ok(road_side) -> int | None:
+    """자동차가 들어갈 수 있는가. 1/0, 모르면 None.
+
+    등급과 따로 두는 이유. 값이 등급을 따라 고르게 오르지 않고 **여기서
+    한 번 크게 꺾인다.** 차가 들어가느냐 마느냐가 건축 가능 여부를
+    가르기 때문이다. 등급만 넣으면 그 꺾임이 직선에 묻힌다.
+    """
+    grade = road_grade(road_side)
+    if grade is None:
+        return None
+    return int(grade >= ROAD_NARROW_OK)
+
+
+def is_corner(road_side) -> int | None:
+    """각지(두 면 이상이 도로에 접함)인가.
+
+    같은 폭이라도 각지는 진출입이 자유롭고 건축 배치가 유리해 값이 다르다.
+    """
+    if not isinstance(road_side, str) or not road_side.strip():
+        return None
+    text = road_side.strip()
+    if "지정되지" in text:
+        return None
+    return int("각지" in text or "각" in text and "한면" not in text)

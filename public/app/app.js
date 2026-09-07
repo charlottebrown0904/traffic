@@ -10,6 +10,12 @@ const QUADRANTS = {
   quiet:       { label: '관망',        color: 'var(--q-quiet)' },
 };
 const KIND_LABEL = { land: '토지', factory: '공장·창고', house: '단독·다가구', commercial: '상업업무용' };
+
+/* 분석이 실제로 쓰는 용도지역. settings.yaml 의 land_use_filter 와 같다.
+ * 사장님 지시(2026-09-07): "자연녹지, 계획관리, 생산관리 지역만 보면
+ * 됩니다." 한 곳에 적어 두고 기본값과 '분석 대상만' 단추가 같이 쓴다 —
+ * 두 군데 적으면 언젠가 하나만 고쳐 놓고 서로 다른 것을 가리킨다. */
+const CORE_LAND_USE = /계획관리|생산관리|자연녹지/;
 const TOKEN_KEY = 'redt.token.v1';
 const CONFIG = window.REDT_CONFIG || {};
 const API = CONFIG.apiBase || '';
@@ -389,9 +395,16 @@ function buildFilters() {
   state.hasStageFilter = state.activeStages.size > 0;
 
   // 용도지역 — 25종이라 많은 것부터 늘어놓는다.
+  //
+  // **처음에는 세 지역만 켠다.** 사장님 지시(2026-09-07): "자연녹지,
+  // 계획관리, 생산관리 지역만 보면 됩니다." 분석이 쓰는 것도 이 셋이라
+  // (settings.yaml 의 land_use_filter) 화면과 판정표가 같은 표본을
+  // 보게 된다. 나머지 22종은 칸을 만들어 두되 꺼 둔다 — 지우지 않는
+  // 이유는 '농림지역은 왜 안 보이나' 를 스스로 확인하실 수 있어야
+  // 하기 때문이다.
   const luNames = Object.keys(luMix).sort((a, b) => luMix[b] - luMix[a]);
   luNames.forEach((name) => {
-    state.activeLandUse.add(name);
+    if (CORE_LAND_USE.test(name)) state.activeLandUse.add(name);
     checkRow(luBox, name, name, luMix[name], state.activeLandUse);
   });
   state.hasLandUseFilter = luNames.length > 0;
@@ -415,7 +428,7 @@ function buildFilters() {
   $('#lu-core').addEventListener('click', () => {
     state.activeLandUse.clear();
     luNames.forEach((n) => {
-      if (/계획관리|생산관리|자연녹지/.test(n)) state.activeLandUse.add(n);
+      if (CORE_LAND_USE.test(n)) state.activeLandUse.add(n);
     });
     syncLuBoxes();
   });

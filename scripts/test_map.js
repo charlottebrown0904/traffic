@@ -1075,6 +1075,19 @@ const FAKE_LEAFLET = () => {
             landUi.uses[0].startsWith('계획관리지역')
             && landUi.uses.length === 4,
             landUi.uses.join(' | '));
+      // 처음에는 세 지역만 켜져 있어야 한다 (2026-09-07 지시).
+      const luOn = await page2.evaluate(() =>
+        [...document.querySelectorAll('#land-use-filters input')]
+          .filter((i) => i.checked).map((i) => i.dataset.key));
+      check('처음에 계획관리·자연녹지만 켜져 있다',
+            luOn.includes('계획관리지역') && luOn.includes('자연녹지지역')
+            && !luOn.includes('농림지역') && !luOn.includes('제2종일반주거지역'),
+            luOn.join(','));
+
+      // 아래 검사들은 토지가 다 보이는 상태를 가정한다. 기본값이
+      // 세 지역만이므로 먼저 전체를 켠다.
+      await page2.evaluate(() => document.getElementById('lu-all').click());
+      await page2.waitForTimeout(300);
 
       // 원지를 끄면 원지 토지만 빠진다. 공장·창고는 그대로여야 한다 —
       // 토지 칸을 만졌는데 공장이 사라지면 화면을 믿을 수 없다.

@@ -159,9 +159,15 @@ def main() -> None:
     trades["km"] = [hav_km(lat, lon, a, b)
                     for a, b in zip(trades["lat"], trades["lon"])]
     trades = trades[trades["km"] <= radius].copy()
+    # 사장님이 보시는 세 지역. 조인률도 이 기준으로 봐야 뜻이 있다.
+    keep = trades["land_use"].fillna("").str.contains("계획관리|생산관리|자연녹지")
+    trades_core = trades[keep]
     parcel = trades[trades["geocode_level"] == "parcel"]
+    parcel_core = trades_core[trades_core["geocode_level"] == "parcel"]
     print(f"  반경 안 토지 거래 {len(trades):,}건"
           f" (그중 지번 좌표 {len(parcel):,}건)")
+    print(f"    계획관리·생산관리·자연녹지 {len(trades_core):,}건"
+          f" (지번 좌표 {len(parcel_core):,}건)")
 
     # ── 받는다 ──
     dlat = radius / 111.0
@@ -208,22 +214,83 @@ def main() -> None:
     if not uniq:
         sys.exit("필지를 하나도 못 받았습니다. 여기서 멈춥니다.")
 
-    print(f"\n{'=' * 66}\n받은 것 — 도로접·형상\n{'=' * 66}")
-    for col, label in (("road_side_code_nm", "도로접면"),
-                       ("tpgrph_frm_code_nm", "형상"),
-                       ("tpgrph_hg_code_nm", "지세"),
-                       ("lndcgr_code_nm", "지목"),
-                       ("prpos_area_1_nm", "용도지역")):
-        mix: dict[str, int] = {}
-        for row in uniq:
-            mix[str(row.get(col) or "(빈 값)")] = mix.get(
+    # ── 사장님이 보시는 세 지역만 ──
+    # 지시(2026-09-07): "자연녹지, 계획관리, 생산관리 지역만 보면 됩니다."
+    # settings.yaml 의 land_use_filter 와 같다. 전체 분포도 함께 내되,
+    # **판단의 근거가 되는 숫자는 이 세 지역 것**이어야 한다.
+    def zone_of(row) -> str:
+        return str(row.get("prpos_area_1_nm") or "")
+
+    core = [r for r in uniq
+            if any(k in zone_of(r) for k in ("계획관리", "생산관리", "자연녹지"))]
+    print(f"\n{'=' * 66}\n받은 것\n{'=' * 66}")
+    print(f"  전체 {len(uniq):,}개 중 계획관리·생산관리·자연녹지"
+          f" **{len(core):,}개** ({len(core) / len(uniq):.0%})")
+
+    def mix_of(rows, col):
+        out: dict[str, int] = {}
+        for row in rows:
+            out[str(row.get(col) or "(빈 값)")] = out.get(
                 str(row.get(col) or "(빈 값)"), 0) + 1
-        top = sorted(mix.items(), key=lambda x: -x[1])[:6]
+        return out
+
+    for col, label in (("prpos_area_1_nm", "용도지역"),
+                       ("lndcgr_code_nm", "지목"),
+                       ("tpgrph_hg_code_nm", "지세"),
+                       ("tpgrph_frm_code_nm", "형상 (순서 없음 — 종류일 뿐)")):
+        mix = mix_of(core, col)
         filled = sum(v for k, v in mix.items() if k != "(빈 값)")
-        print(f"\n  {label} — 채워진 것 {filled:,}/{len(uniq):,}"
-              f" ({filled / len(uniq):.0%})")
-        for k, v in top:
+        print(f"\n  {label} — 채워진 것 {filled:,}/{len(core):,}"
+              f" ({filled / max(len(core), 1):.0%})")
+        for k, v in sorted(mix.items(), key=lambda x: -x[1])[:7]:
             print(f"      {k:<16} {v:>6,}")
+
+    # ── 도로접면. 이것만 등급으로 본다 ──
+    #
+    # 사장님 지시: "도로를 접하는 가가 제일 중요합니다." 형상과 달리
+    # 도로접면은 **순서가 있다** — 광대로 > 중로 > 소로 > 세로(가) >
+    # 세로(불) > 맹지. 순서를 버리고 종류로만 넣으면 '맹지가 소로보다
+    # 비쌀 수도 있다' 는 가능성을 열어 두는 셈이라 계수가 흔들린다.
+    from redt.usage import road_grade, road_car_ok, is_corner
+    GRADE_NAME = {5: "광대로", 4: "중로", 3: "소로",
+                  2: "세로(차 가능)", 1: "세로(차 불가)", 0: "맹지"}
+    print(f"\n  도로접면 — 원값")
+    for k, v in sorted(mix_of(core, "road_side_code_nm").items(),
+                       key=lambda x: -x[1])[:8]:
+        print(f"      {k:<16} {v:>6,}")
+
+    grades = [road_grade(r.get("road_side_code_nm")) for r in core]
+    known = [g for g in grades if g is not None]
+    print(f"\n  도로접면 — 등급 (아는 것 {len(known):,}/{len(core):,}"
+          f" · 모름 {len(grades) - len(known):,})")
+    for g in (5, 4, 3, 2, 1, 0):
+        n = sum(1 for x in known if x == g)
+        if n:
+            print(f"      {g} {GRADE_NAME[g]:<14} {n:>6,}"
+                  f"  ({n / max(len(known), 1):.0%})")
+    car = [road_car_ok(r.get("road_side_code_nm")) for r in core]
+    car_ok = sum(1 for x in car if x == 1)
+    car_kn = sum(1 for x in car if x is not None)
+    corner = sum(1 for r in core if is_corner(r.get("road_side_code_nm")) == 1)
+    print(f"\n      자동차 진입 가능 {car_ok:,}/{car_kn:,}"
+          f" ({car_ok / max(car_kn, 1):.0%})"
+          f" — 못 들어가면 공장도 창고도 못 짓습니다")
+    print(f"      각지(두 면 이상 접함) {corner:,}"
+          f" ({corner / max(len(core), 1):.0%})")
+
+    # 도로 등급이 값과 실제로 이어지는가. 공시지가로 바로 볼 수 있다 —
+    # 우리 거래에 붙이기 전에 **이 자료 안에서** 확인해 두면, 나중에
+    # 계수가 이상할 때 자료 탓인지 모형 탓인지 가릴 수 있다.
+    print(f"\n  도로 등급별 공시지가 (원/㎡, 중앙값) — 값과 이어지는가")
+    for g in (5, 4, 3, 2, 1, 0):
+        vals = sorted(float(r.get("pblntf_pclnd") or 0)
+                      for r in core
+                      if road_grade(r.get("road_side_code_nm")) == g
+                      and str(r.get("pblntf_pclnd") or "").strip())
+        vals = [v for v in vals if v > 0]
+        if len(vals) >= 10:
+            med = vals[len(vals) // 2]
+            print(f"      {g} {GRADE_NAME[g]:<14} {med:>10,.0f}  (n={len(vals):,})")
 
     # ── 붙는가 ──
     print(f"\n{'=' * 66}\n붙는가\n{'=' * 66}")
@@ -257,8 +324,20 @@ def main() -> None:
             else:
                 continue
             break
+    hit_core = 0
+    for t in parcel_core.itertuples():
+        for row in uniq:
+            for ring in polygons(row.get("__geom")):
+                if in_ring(t.lat, t.lon, ring):
+                    hit_core += 1
+                    break
+            else:
+                continue
+            break
     print(f"\n  (나) 좌표 조인  {hit:,}/{len(parcel):,}"
           f" ({hit / max(len(parcel), 1):.0%}) — 지번 좌표 거래만")
+    print(f"      그중 세 지역 {hit_core:,}/{len(parcel_core):,}"
+          f" ({hit_core / max(len(parcel_core), 1):.0%})")
     print("      점이 필지 도형 안에 드는지로 봅니다. 읍면동 코드가"
           " 없어도 되고 겹칠 일이 없습니다.")
 
