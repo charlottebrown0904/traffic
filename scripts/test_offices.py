@@ -90,7 +90,18 @@ check(dg and dg["name"] == "대구광역시동구청",
 # 낫다 — 빈 것은 화면이 '대표점에 찍었다' 고 말하지만 틀린 좌표는
 # 아무 말도 안 한다.
 far = of.pick(DONGGU, (37.60, 127.00))      # 서울 어딘가
-check(far is None, f"{of.MAX_KM:g}km 넘게 떨어지면 집지 않는다 — {far}")
+check(far is None, f"{of.MAX_KM['gu']:g}km 넘게 떨어지면 집지 않는다 — {far}")
+
+# **단위마다 자를 자리가 다르다.** 도청은 인구중심에서 멀리 있는 일이
+# 흔하다 — 경북도청 안동, 충남도청 홍성, 전남도청 무안. 구를 가르려고
+# 잡은 40km 를 시도에 그대로 쓰면 그런 도청이 통째로 걸러진다.
+GYEONGBUK = [{"name": "경상북도청", "category": "지방행정기관",
+              "road_addr": "경상북도 안동시 풍천면 도청대로 455",
+              "lat": 36.5760, "lon": 128.5056}]
+check(of.pick(GYEONGBUK, (37.4845, 130.9057), of.MAX_KM["gu"]) is None,
+      "구 기준(40km)이면 울릉군 앵커에서 경북도청이 걸러진다")
+check(of.pick(GYEONGBUK, (37.4845, 130.9057), of.MAX_KM["sido"]) is not None,
+      "시도 기준이면 잡힌다 (도청은 인구중심에서 멀다)")
 
 print("\n4. 시도 이름은 관청 주소에서 온다")
 # 실거래 API 응답에 시도가 없어서 trade.sido 는 늘 빈 값이다
@@ -159,6 +170,59 @@ check(ro.get("si", {}).get("수원시") == [37.2634, 127.0287],
 # 구 단위는 regions.json 의 각 행이 들고 있으므로 여기 실으면 두 번이다.
 check("gu" not in ro, "구 단위는 여기 안 싣는다 (행이 이미 들고 있다)")
 check(json.dumps(ro, ensure_ascii=False), "브라우저가 읽을 수 있는 JSON 이다")
+
+print("\n6. 수집기가 실제로 끝까지 도는가")
+# 워크플로 단계가 continue-on-error 라, 여기서 죽으면 **조용히 건너뛴다.**
+# SQL 한 줄이나 칸 순서가 틀려도 화면은 어제 그대로고 아무 말이 없다.
+# 그래서 검색만 흉내내고 나머지는 진짜로 돌린다.
+FAKE = {
+    "장안구청": (37.3040, 127.0101, "경기도 수원시 장안구 송원로 101"),
+    "권선구청": (37.2578, 126.9727, "경기도 수원시 권선구 권선로 1010"),
+    "울릉군청": (37.4845, 130.9057, "경상북도 울릉군 울릉읍 울릉순환로 326"),
+    "수원시청": (37.2634, 127.0287, "경기도 수원시 팔달구 효원로 241"),
+    "경기도청": (37.2750, 127.0092, "경기도 수원시 팔달구 효원로 1"),
+    "경상북도청": (36.5760, 128.5056, "경상북도 안동시 풍천면 도청대로 455"),
+}
+
+
+def fake_search(query, size=10):
+    hit = FAKE.get(query)
+    if not hit:
+        return []
+    lat, lon, addr = hit
+    return [{"name": query, "category": "지방행정기관",
+             "road_addr": addr, "lat": lat, "lon": lon}]
+
+
+of.search_place = fake_search
+
+with db.connect() as con:
+    con.execute("DELETE FROM office")
+
+import argparse                                     # noqa: E402
+from redt import cli                                # noqa: E402
+cli.cmd_offices(argparse.Namespace(refresh=True))
+
+with db.connect(read_only=True) as con:
+    rows = con.execute(
+        "SELECT level, key, label, name, sido, lat, lon FROM office"
+        " ORDER BY level, key").fetchdf()
+got = {(r.level, r.key): r for r in rows.itertuples(index=False)}
+check(("gu", "41111") in got, f"구 관청이 담긴다 — {sorted(got)}")
+check(("si", "수원시") in got, "묶은 시의 시청도 담긴다")
+check(("sido", "경기도") in got, "시도의 도청도 담긴다")
+# 경상북도는 울릉군 하나뿐이지만 시도 단위는 서야 한다 — 멀리서 볼 때
+# 그 도가 통째로 사라지면 안 된다.
+check(("sido", "경상북도") in got, "시군구가 하나뿐인 도도 선다")
+check(got[("gu", "41111")].sido == "경기도", "시도 이름이 주소에서 채워진다")
+check(got[("gu", "47940")].sido == "경상북도",
+      f"코드 앞 두 자리가 다르면 다른 시도 — {got[('gu', '47940')].sido}")
+# 다시 돌려도 늘어나지 않는다. 이미 담은 것은 건너뛴다.
+before = len(rows)
+cli.cmd_offices(argparse.Namespace(refresh=False))
+with db.connect(read_only=True) as con:
+    after = con.execute("SELECT count(*) FROM office").fetchone()[0]
+check(after == before, f"다시 돌려도 안 늘어난다 ({before} → {after})")
 
 print()
 if fail:

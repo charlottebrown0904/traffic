@@ -1352,7 +1352,7 @@ def cmd_offices(args):
     def take(level: str, key: str, label: str, anchor):
         if f"{level}|{key}" in done:
             return None
-        got = of.fetch_one(label, anchor)
+        got = of.fetch_one(label, anchor, level)
         if not got:
             fail.append(f"{level}:{label}")
             return None
@@ -1428,12 +1428,21 @@ def cmd_offices(args):
         print(tot.to_string(index=False) if len(tot) else "  (없음)")
         # 대표점에서 멀리 떨어진 것은 엉뚱한 도시의 같은 이름 관청일 수
         # 있다. 조용히 두면 원이 옆 도(道)에 가서 찍힌다.
+        #
+        # **자를 자리는 단위마다 다르다.** 도청은 인구중심에서 멀리 있는
+        # 일이 흔하다(경북 안동·충남 홍성·전남 무안). 그것까지 '확인
+        # 필요' 로 찍으면 매번 네댓 줄이 뜨고, 그러면 아무도 안 본다.
         far = con.execute("""
             SELECT level, label, name, road_addr, round(dist_km, 1) AS km
-            FROM office WHERE dist_km > 15 ORDER BY dist_km DESC LIMIT 15
+            FROM office
+            WHERE dist_km > CASE level WHEN 'gu' THEN 15
+                                       WHEN 'si' THEN 25
+                                       ELSE 150 END
+            ORDER BY dist_km DESC LIMIT 15
         """).fetchdf()
         if len(far):
-            print("\n  대표점에서 15km 넘게 떨어진 것 (확인 필요)")
+            print("\n  대표점에서 그 단위치고 멀리 떨어진 것"
+                  " (구 15km · 시 25km · 도 150km 넘음 — 확인 필요)")
             print(far.to_string(index=False))
 
 

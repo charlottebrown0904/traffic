@@ -42,11 +42,23 @@ SEARCH = "https://api.vworld.kr/req/search"
 # '지방행정기관 > 특별/광역시청'.
 GOV_CATEGORY = "지방행정기관"
 
-# 대표점에서 이만큼 넘게 떨어진 것은 다른 도시의 같은 이름 관청으로 본다.
-# 대표점 자체가 법정동 중심점들의 중앙값이라 몇 km 는 예사로 어긋난다.
-# 40km 는 '같은 시군구 안에서 있을 수 있는 오차' 와 '옆 도시' 를 가르는
-# 자리다 — 가장 넓은 시군구(홍천군)의 반지름이 그쯤이다.
-MAX_KM = 40.0
+# 대표점에서 이만큼 넘게 떨어진 것은 다른 곳의 같은 이름 관청으로 본다.
+#
+# **단위마다 다르다.** 이 검사는 같은 이름을 가른다는 목적 하나뿐인데,
+# 이름이 겹치는 정도가 단위마다 다르기 때문이다.
+#
+#   gu    동구·서구·남구·북구·중구가 전국에 흩어져 있다. 촘촘해야 한다.
+#         40km 는 '같은 시군구 안의 오차' 와 '옆 도시' 를 가르는 자리다 —
+#         가장 넓은 시군구(홍천군)의 반지름이 그쯤이다.
+#   si    겹치는 것이 몇 없다(고성군은 강원·경남에 둘). 그 둘은 200km
+#         떨어져 있어 60km 면 충분히 갈린다.
+#   sido  17개 이름이 다 다르다. 가를 것이 없다.
+#         **여기서 좁게 잡으면 안 된다** — 도청은 인구중심에서 멀리
+#         있는 일이 흔하다. 경북도청 안동, 충남도청 홍성, 전남도청 무안.
+#         검사 결과 울릉군만 있는 도에서 경북도청(215km)이 걸러졌다.
+#         그래도 완전히 끄지는 않는다. 엉뚱한 것을 집으면 알아야 한다.
+MAX_KM = {"gu": 40.0, "si": 60.0, "sido": 400.0}
+DEFAULT_MAX_KM = 40.0
 
 
 def km_between(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -89,7 +101,8 @@ def search_place(query: str, size: int = 10) -> list[dict]:
     return out
 
 
-def pick(cands: list[dict], anchor: tuple[float, float]) -> dict | None:
+def pick(cands: list[dict], anchor: tuple[float, float],
+         max_km: float = DEFAULT_MAX_KM) -> dict | None:
     """대표점에 가장 가까운 관청을 고른다.
 
     분류가 '지방행정기관' 인 것을 먼저 본다. 그런 것이 하나도 없으면
@@ -102,7 +115,7 @@ def pick(cands: list[dict], anchor: tuple[float, float]) -> dict | None:
             continue
         best = min(pool, key=lambda c: km_between(lat0, lon0, c["lat"], c["lon"]))
         d = km_between(lat0, lon0, best["lat"], best["lon"])
-        if d <= MAX_KM:
+        if d <= max_km:
             return dict(best, dist_km=round(d, 2))
     return None
 
@@ -117,15 +130,17 @@ def office_name(label: str) -> str:
     return label.split()[-1] + "청"
 
 
-def fetch_one(label: str, anchor: tuple[float, float]) -> dict | None:
+def fetch_one(label: str, anchor: tuple[float, float],
+              level: str = "gu") -> dict | None:
     """이름 하나에 대해 관청을 찾는다. 못 찾으면 None.
 
     두 번 묻는다. 짧은 이름('장안구청')이 먼저인 이유는 그것이 실제
     간판이기 때문이다. 그래도 없으면 붙여 쓴 이름을 시도한다 —
     '광주광역시동구청' 처럼 붙여 등록된 것이 있다.
     """
+    limit = MAX_KM.get(level, DEFAULT_MAX_KM)
     for query in (office_name(label), label.replace(" ", "") + "청"):
-        got = pick(search_place(query), anchor)
+        got = pick(search_place(query), anchor, limit)
         if got:
             return dict(got, label=label, query=query)
     return None
