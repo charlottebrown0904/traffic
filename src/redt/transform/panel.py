@@ -205,15 +205,30 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
         overrides = {"ln_area": fit_on["ln_area"].mean()}
         # 범주는 최빈값으로. 새로 붙은 도로접·형상·지세도 여기 든다 —
         # 빼먹으면 그 항의 기여분이 안 빠져서 '보정' 이 반쪽이 된다.
+        #
+        # 다만 **열이 있다고 값이 있는 건 아니다.** 필지 특성은 전국을
+        # 조금씩 나눠 모으는 중이라, 아직 안 훑은 지역만 들어온 kind 에서는
+        # road_side·형상·지세가 통째로 빈 값일 수 있다. 그때
+        # `.mode()` 는 빈 Series 를 돌려주고 `.iat[0]` 이 터진다
+        # (run 37 이 그렇게 죽었다). 그런 열은 위에서 항으로도 안 들어갔으니
+        # 기준값도 필요 없다 — 조용히 건너뛴다.
         for col in ("jimok", "land_use", "building_use",
                     "road_side", "parcel_shape", "parcel_slope"):
-            if col in group:
-                overrides[col] = fit_on[col].mode().iat[0]
+            if col not in group:
+                continue
+            mode = fit_on[col].mode()
+            if len(mode):
+                overrides[col] = mode.iat[0]
         for col in ("has_building", "ln_building_area",
                     "has_age", "bldg_age", "bldg_age2",
                     "road_car_ok", "has_road"):
-            if col in group:
-                overrides[col] = fit_on[col].mean()
+            if col not in group:
+                continue
+            mean = fit_on[col].mean()
+            # 전부 빈 값이면 평균도 NaN 이다. 그걸 기준값으로 넣으면
+            # 예측이 통째로 NaN 이 되어 보정가격이 사라진다.
+            if pd.notna(mean):
+                overrides[col] = mean
 
         # 나눠서 예측한다. 한 번에 하면 여기서 다시 600만 × 300 을 만든다.
         parts = []

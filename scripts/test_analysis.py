@@ -1926,6 +1926,24 @@ check(abs(_corr_with_car(_known, "adj_ln_price")) < 0.08,
       f"절반이 비어도 아는 쪽은 제대로 보정된다"
       f" (r={_corr_with_car(_known, 'adj_ln_price'):+.2f})")
 
+# **열은 있는데 값이 통째로 빈 경우.** 필지 특성은 전국을 나눠서 모으는
+# 중이라, 아직 안 훑은 지역만 들어온 kind 는 join 결과가 전부 NULL 이다.
+# run 37 이 여기서 죽었다 — `.mode()` 가 빈 Series 를 돌려주고
+# `.iat[0]` 이 IndexError 를 냈다. 열을 아예 뺀 경우와 다른 상황이다.
+_empty = _tr38.copy()
+for _c in ("road_side", "parcel_shape", "parcel_slope"):
+    _empty[_c] = None
+_adj_empty = pn.hedonic_adjust(_empty)
+check("adj_ln_price" in _adj_empty and _adj_empty["adj_ln_price"].notna().all(),
+      "필지 특성 열이 있어도 값이 전부 비면 그냥 건너뛴다 (run 37 회귀)")
+
+# 한 열만 비는 경우도 같다 — 도로는 붙었는데 형상만 안 붙는 식.
+_one_empty = _tr38.copy()
+_one_empty["parcel_slope"] = None
+_adj_one = pn.hedonic_adjust(_one_empty)
+check(abs(_corr_with_car(_adj_one, "adj_ln_price")) < 0.05,
+      "한 열만 비어도 나머지로 보정한다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
