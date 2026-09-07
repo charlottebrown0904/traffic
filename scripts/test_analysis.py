@@ -1612,6 +1612,118 @@ check(H.is_primary("land", "volume_total") is True
       and H.is_primary("land", "volume_freight") is False,
       "주 가설은 토지·전체 교통량 하나뿐이다")
 
+
+# ────────────────────────────────────────────────────────────────
+print("\n35. H1 통제 — 이름만 있고 붙지는 않던 것")
+# ────────────────────────────────────────────────────────────────
+# run 30 판정표의 H1 은 두 줄 다 '통제 없음' 이었다. attach_controls 는
+# **패널**에 붙이는데 h1() 은 **이벤트 표본**을 받는다. 열쇠가 달라
+# `[c for c in controls if c in base.columns]` 가 늘 빈 목록이었고,
+# H1 은 한 번도 통제를 받은 적이 없다.
+#
+# '통제 없음' 이라고 적히기는 했다. 하지만 그 줄을 읽는 사람은
+# '통제를 넣어도 안 변했다' 로 읽는다 — 정반대의 뜻이다.
+#
+# 진실을 아는 자료로 확인한다. IC 개통 자체의 효과는 **0** 으로 넣고,
+# 개통한 시군구가 마침 인구도 늘게 만든다. 통제가 진짜로 붙으면
+# 교차항이 무너져야 하고, 안 붙으면 인구 효과를 IC 효과로 착각한다.
+# 시군구 하나에 영업소 넷을 둔다. 하나씩 두면 시군구 고정효과가
+# 영업소를 통째로 흡수해 **군집 수가 모수 수보다 적어지고**, 군집
+# 표준오차 행렬의 대각이 음수가 되어 se 가 NaN 이 된다. 실제 자료는
+# 영업소 561곳에 시군구 235개라 그럴 일이 없다 — 검사 쪽이 실제
+# 자료의 모양을 따라가야 한다.
+_rng = np.random.default_rng(35)
+_N_SGG, _PER_SGG = 16, 4
+_N_TG = _N_SGG * _PER_SGG
+_YEARS = range(2014, 2024)
+
+# 개통 시점을 시군구마다 다르게 둔다. 전부 같은 해면 post 가 연도의
+# 함수가 되어 C(year) 와 완전히 겹치고, 설계행렬이 특이해져 군집
+# 표준오차가 NaN 이 된다. 실제 자료는 개통이 여러 해에 흩어져 있다.
+_open = {k: 2018 + (k % 4) for k in range(_N_SGG)}
+_growth, _reg = {}, []
+for k in range(_N_SGG):
+    sgg = f"{41000 + k:05d}"
+    # 인구 증가율은 시군구마다 다르다. 앞쪽 절반이 '크는 동네' 다.
+    # 처치 쪽이 평균적으로 높지만 **똑같지는 않다** — 똑같이 만들면
+    # 통제가 처치와 완전히 겹쳐 계수가 식별되지 않는다.
+    _growth[sgg] = (0.030 if k < _N_SGG // 2 else 0.008) + _rng.normal(0, .010)
+    level = 100000.0
+    for year in _YEARS:
+        level *= np.exp(_growth[sgg] if year >= _open[k] else 0.004)
+        _reg.append({"sigungu_cd": sgg, "year": year, "metric": "population",
+                     "value": level})
+
+# **처치는 시군구 안에서 갈린다.** 시군구 하나가 통째로 처치이면
+# treated 가 시군구 고정효과와 완전히 겹쳐 아무것도 식별되지 않는다.
+# 그러면서도 처치는 '크는 동네' 에 몰려 있다 (3:1 대 1:3) — 교란의
+# 모양이 바로 이것이다. 정부는 개발될 곳에 IC 를 놓는다.
+_rows = []
+for tg in range(_N_TG):
+    k = tg // _PER_SGG
+    sgg = f"{41000 + k:05d}"
+    treated = int((tg % _PER_SGG) < (3 if k < _N_SGG // 2 else 1))
+    for year in _YEARS:
+        d_pop = _growth[sgg] if year >= _open[k] else 0.004
+        for _ in range(12):
+            # 값은 인구 변화에만 반응한다. 개통에는 반응하지 않는다.
+            _rows.append({
+                "adj_ln_price": 10 + 3.0 * d_pop + _rng.normal(0, .05),
+                "treated": treated, "post": int(year >= _open[k]),
+                "year": year, "sigungu_cd": sgg, "tollgate_id": tg,
+            })
+_ev = pd.DataFrame(_rows)
+_region35 = pd.DataFrame(_reg)
+
+# 붙이기 전 — 지금까지의 동작.
+_t1_before = H.h1(_ev, ["d_ln_population", "d_zone_area"])
+_before = _t1_before[_t1_before["모형"] == "H3 통제 후"].iloc[0]
+check(_before["비고"] == "통제 없음" and pd.isna(_before["beta"]),
+      "이름만 넘기면 붙지 않는다 — 지금까지의 동작을 재현한다")
+
+_raw = _t1_before[_t1_before["모형"] == "통제 전"].iloc[0]
+check(_raw["beta"] > 0 and _raw["p"] < 0.05,
+      f"통제 없이는 IC 효과가 있는 것처럼 보인다 (넣은 값 0 → {_raw['beta']:+.3f},"
+      f" p={_raw['p']:.3f})")
+
+# 붙인 뒤 — 새 함수를 거친다.
+_ev2, _use2 = H.attach_event_controls(_ev, _region35, pd.DataFrame())
+check("d_ln_population" in _use2,
+      f"이벤트 표본에 인구 변화가 실제로 붙는다 ({_use2})")
+check(_ev2["d_ln_population"].notna().mean() > 0.7,
+      f"붙은 자리가 대부분이다 ({_ev2['d_ln_population'].notna().mean():.0%})")
+
+_t1_after = H.h1(_ev2, _use2)
+_after = _t1_after[_t1_after["모형"] == "H3 통제 후"].iloc[0]
+check(pd.notna(_after["beta"]) and _after["비고"] == "d_ln_population",
+      "통제 후 줄이 실제로 추정된다")
+check(abs(_after["beta"]) < abs(_raw["beta"]) / 2,
+      f"통제를 넣자 교차항이 무너진다 ({_raw['beta']:+.3f} → {_after['beta']:+.3f})")
+# 여기가 이 절의 요점이다. 거짓 양성이 통제 뒤에 사라져야 한다 —
+# 계수가 줄기만 하고 여전히 유의하면 통제가 일을 못 한 것이다.
+check(_after["p"] > 0.05,
+      f"거짓 양성이 사라진다 (p={_raw['p']:.3f} → {_after['p']:.2f})")
+
+# 판정이 통제 후 줄을 읽는가. 통제 전만 읽으면 위 계산이 무의미하다.
+_v1, _w1 = H.judge_h1(_t1_after, True)
+check("H3 통제 후" in _w1 or "통제 후" in _w1,
+      f"판정 설명이 통제 후 줄을 가리킨다 ({_w1[:60]})")
+
+# 산단 압력도 영업소·연도로 붙는가 (패널과 열쇠가 다른 쪽).
+_press = pd.DataFrame([{"tollgate_id": tg, "year": y,
+                        "zone_area_km2": float(max(0, y - 2016)), "zone_n": 1}
+                       for tg in range(_N_TG) for y in _YEARS])
+_ev3, _use3 = H.attach_event_controls(_ev, _region35, _press)
+check("d_zone_area" in _use3, f"산단 압력도 붙는다 ({_use3})")
+check(_ev3["d_zone_area"].notna().mean() > 0.7,
+      f"산단 압력이 붙은 자리도 대부분이다 ({_ev3['d_zone_area'].notna().mean():.0%})")
+
+# 자료가 없으면 조용히 죽지 않는다.
+_ne, _nu = H.attach_event_controls(pd.DataFrame(), _region35, _press)
+check(_ne.empty and _nu == [], "빈 표본을 넣으면 빈 표와 빈 목록이 나온다")
+_e0, _u0 = H.attach_event_controls(_ev, None, None)
+check(_u0 == [], "지역 자료가 없으면 통제 목록이 빈다 (거짓 통제를 만들지 않는다)")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

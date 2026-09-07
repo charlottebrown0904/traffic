@@ -67,12 +67,20 @@ MDE_K = 2.80
 
 
 def _row(model, term: str, label: str, n: int, clusters: int) -> dict:
+    blank = {"항": label, "n": n, "영업소": clusters, "beta": np.nan,
+             "se": np.nan, "p": np.nan, "mde": np.nan}
     if model is None or term not in model.params:
-        return {"항": label, "n": n, "영업소": clusters, "beta": np.nan,
-                "se": np.nan, "p": np.nan, "mde": np.nan}
+        return blank
     se = float(model.bse[term])
+    beta = float(model.params[term])
+    # 표준오차가 수가 아니면 그 계수는 **식별되지 않은 것**이다. 통제가
+    # 처치와 완전히 겹칠 때 그렇게 된다 — 그러면 beta 로 +22억 같은 값이
+    # 나오고, se 가 NaN 이라 MDE 도 못 만든다. 그런 줄을 그대로 내보내면
+    # 표에서는 '아주 큰 효과' 로 보인다. 빈 줄로 남기는 편이 정직하다.
+    if not (np.isfinite(se) and np.isfinite(beta)):
+        return blank
     return {"항": label, "n": n, "영업소": clusters,
-            "beta": float(model.params[term]), "se": se,
+            "beta": beta, "se": se,
             "p": float(model.pvalues[term]), "mde": MDE_K * se}
 
 
@@ -189,6 +197,74 @@ def attach_controls(panel: pd.DataFrame, region: pd.DataFrame | None,
             print("  통제 제외: d_zone_area — 관측이 모자랍니다")
 
     return out, usable
+
+
+def attach_event_controls(event_df: pd.DataFrame, region: pd.DataFrame | None,
+                          pressure: pd.DataFrame | None
+                          ) -> tuple[pd.DataFrame, list[str]]:
+    """개통 이벤트 표본에 H3 통제를 붙인다. H1 이 쓸 것이다.
+
+    **왜 따로 만드는가.** attach_controls 는 패널에 붙인다. 패널은
+    (영업소·밴드·종류·연도)로 묶인 표이고, 이벤트 표본은 거래 한 건이
+    한 행이다. 열쇠가 달라서 패널에 붙인 칸을 그대로 가져다 쓸 수 없다.
+
+    그래서 지금까지 h1() 은 `[c for c in controls if c in base.columns]`
+    에서 **늘 빈 목록**을 얻었고, H1 은 한 번도 통제를 받은 적이 없다.
+    표에는 '통제 없음' 이라고 정직하게 적혔지만, 그 줄을 읽는 사람은
+    '통제를 넣어도 안 변했다' 로 읽는다. 두 문장은 정반대다.
+
+    붙이는 방법이 패널과 다른 곳이 하나 있다. d_zone_area 를 패널은
+    (영업소·밴드·종류)마다 따로 차분하지만, 여기서는 **영업소·연도**
+    하나로 만든다 — 이벤트 표본에는 밴드 구분이 없고, 애초에 '그 IC
+    주변에 그 해 얼마가 새로 지정됐나' 가 알고 싶은 것이기 때문이다.
+    """
+    if event_df is None or event_df.empty:
+        return pd.DataFrame(), []
+
+    out = event_df.copy()
+    usable: list[str] = []
+
+    # 붙이는 열쇠는 **따로 만든다.** year 를 Int64(결측 허용)로 바꿔 놓으면
+    # 나중에 patsy 가 C(year) 를 만들 때 'Cannot interpret Int64Dtype()' 로
+    # 죽는다. 원본 칸의 자료형은 건드리지 않는다.
+    out["_yr"] = pd.to_numeric(out["year"], errors="coerce").astype("Int64")
+    out["_sgg"] = out["sigungu_cd"].astype(str) if "sigungu_cd" in out else ""
+
+    ctrl = region_controls(region) if region is not None else pd.DataFrame()
+    cols = [c for c in ctrl.columns if c.startswith("d_ln_")]
+    if cols and "sigungu_cd" in event_df:
+        c = ctrl[["sigungu_cd", "year"] + cols].copy()
+        c["_yr"] = pd.to_numeric(c["year"], errors="coerce").astype("Int64")
+        c["_sgg"] = c["sigungu_cd"].astype(str)
+        # 열쇠가 맞는지 붙이기 **전에** 본다. 안 맞으면 전부 결측이 되고,
+        # 그것은 '자료가 드물다' 가 아니라 '코드 체계가 다르다' 이다.
+        # 두 경우는 고치는 법이 전혀 다른데 겉모습이 똑같다.
+        share = float(out["_sgg"].isin(set(c["_sgg"])).mean()) if len(out) else 0.0
+        if share < 0.05:
+            print(f"  ⚠ H1 표본의 시군구 코드가 지역 자료와 안 맞습니다 "
+                  f"(겹침 {share:.1%}) — 자료가 없는 게 아니라 코드 체계가 다릅니다")
+        out = out.merge(c[["_sgg", "_yr"] + cols], on=["_sgg", "_yr"], how="left")
+        for col in cols:
+            miss = float(out[col].isna().mean())
+            if miss < 0.3:
+                usable.append(col)
+            else:
+                print(f"  H1 통제 제외: {col} — 결측 {miss:.0%}")
+
+    if pressure is not None and not pressure.empty and "tollgate_id" in out:
+        pr = (pressure[["tollgate_id", "year", "zone_area_km2"]]
+              .drop_duplicates(["tollgate_id", "year"]).copy())
+        pr["_yr"] = pd.to_numeric(pr["year"], errors="coerce").astype("Int64")
+        pr = pr.sort_values(["tollgate_id", "_yr"])
+        pr["d_zone_area"] = pr.groupby("tollgate_id")["zone_area_km2"].diff()
+        out = out.merge(pr[["tollgate_id", "_yr", "d_zone_area"]],
+                        on=["tollgate_id", "_yr"], how="left")
+        if int(out["d_zone_area"].notna().sum()) > MIN_OBS:
+            usable.append("d_zone_area")
+        else:
+            print("  H1 통제 제외: d_zone_area — 관측이 모자랍니다")
+
+    return out.drop(columns=["_yr", "_sgg"]), usable
 
 
 # ────────────────────────────────────────────────────────────────
@@ -699,7 +775,13 @@ def report(panel: pd.DataFrame, event_df: pd.DataFrame | None,
         print("    유의하게 나와도 'IC 효과' 라고 부를 수 없습니다.")
 
     print("\n── H1 · IC 개통 → 지가 ──")
-    t1 = h1(event_df, usable) if event_df is not None else pd.DataFrame()
+    # H1 은 패널이 아니라 이벤트 표본을 쓴다. 통제를 따로 붙여야 한다 —
+    # 안 그러면 usable 에 이름이 있어도 event_df 에 그 칸이 없어서
+    # 조용히 '통제 없음' 이 된다 (run 30 까지 계속 그랬다).
+    ev, ev_usable = attach_event_controls(event_df, region, pressure)
+    if event_df is not None and len(event_df):
+        print(f"  H1 통제로 쓸 수 있는 변수: {ev_usable or '없음'}")
+    t1 = h1(ev, ev_usable) if len(ev) else pd.DataFrame()
     print(t1.to_string(index=False) if len(t1) else "  표본 없음")
     v1, why1 = judge_h1(t1, pre_trend_ok)
 

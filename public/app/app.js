@@ -71,6 +71,12 @@ if (window.matchMedia) {
 
 /* ─────────── 부팅 ─────────── */
 async function boot() {
+  // 탭 배선을 **맨 먼저** 한다. 탭은 정적 HTML 이라 자료가 없어도 있다.
+  // 배선을 아래 자료 받기 뒤에 두면, 그 사이에 누른 클릭은 듣는 사람이
+  // 없어 그냥 사라진다 — 화면은 멀쩡한데 눌러도 안 넘어간다. 바깥
+  // CDN(Leaflet·폰트)이 느리거나 막히면 app.js 실행 자체가 몇 초 밀려서
+  // 이 틈이 눈에 띄게 벌어진다.
+  wireTabs();
   try {
     const [meta, tollgates, trades, series] = await Promise.all(
       ['meta', 'tollgates', 'trades', 'series'].map((n) =>
@@ -158,7 +164,6 @@ async function boot() {
   buildMatrix();
   buildBoardTable();
   buildVerdict();
-  wireTabs();
   initListings();
 }
 
