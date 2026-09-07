@@ -200,19 +200,35 @@ check(_col is not None and "stage == 'all'" in str(_col.get("if", "")),
 _saves = [s for s in _steps if "cache/save" in str(s.get("uses", ""))]
 check(len(_saves) == 1, f"캐시 저장은 실행당 한 번이다 ({len(_saves)}회)")
 if _saves:
-    check("stage == 'all'" in str(_saves[0].get("if", "")),
-          "분석만 도는 실행은 캐시를 저장하지 않는다 (값진 캐시를 밀어내지 않게)")
+    # **stage 로 가르지 않는다.** 예전에는 stage=all 일 때만 저장했다.
+    # "분석만 도는 실행은 새로 산 것이 없으므로" 라는 이유였고 그때는
+    # 맞았는데, 필지 특성과 관청 좌표가 파이프라인에 들어오면서 틀린
+    # 말이 됐다. run 37~40 이 3,000칸씩 훑고 네 번 다 버렸다.
+    check("stage" not in str(_saves[0].get("if", "")),
+          f"stage 와 무관하게 저장한다 (if: {_saves[0].get('if')})")
+    check("always()" in str(_saves[0].get("if", "")),
+          "뒤 단계가 죽어도 산 것은 지킨다 (always)")
 
-# 조인 결과는 매 실행 다시 만든다. 캐시에 이고 다닐 이유가 없다.
+# 저장 자리는 두 가지를 **동시에** 만족해야 한다.
+#   (1) 이번 실행이 산 것보다 뒤   — 안 그러면 산 것이 캐시에 안 들어간다
+#   (2) 조인 결과를 뺀 뒤          — 1,961만 행을 이고 다니면 4.7GB 가 된다
 _names = list(_named)
 _compact = next((i for i, n in enumerate(_names) if "캐시 앞 정리" in n), None)
 _save_i = next((i for i, n in enumerate(_names)
                 if "cache/save" in str(_named[n].get("uses", ""))), None)
-_link_i = next((i for i, n in enumerate(_names) if "공간 조인" in n), None)
 check(_compact is not None, "캐시 앞에 조인 결과를 빼는 단계가 있다")
-if None not in (_compact, _save_i, _link_i):
-    check(_compact < _save_i < _link_i,
-          f"정리 → 저장 → 조인 순이다 ({_compact} < {_save_i} < {_link_i})")
+if None not in (_compact, _save_i):
+    check(_compact < _save_i,
+          f"정리한 뒤에 저장한다 ({_compact} < {_save_i})")
+
+# (1) 이 검사가 run 37~40 의 헛수고를 막는다. 자료를 사는 단계가
+#     저장보다 앞에 있어야 한다 — 뒤에 있으면 산 것이 그대로 버려지고,
+#     로그는 다음 실행에서 '아직 안 훑은 것 6,677개' 라고만 말한다.
+for _buy in ("필지 특성", "관청 좌표 (", "지오코딩"):
+    _i = next((i for i, n in enumerate(_names) if n.startswith(_buy)
+               or _buy in n), None)
+    check(_i is not None and _save_i is not None and _i < _save_i,
+          f"'{_buy}' 로 산 것이 캐시에 들어간다 ({_i} < {_save_i})")
 
 print()
 print("7. 라이브 반영 — 브랜치에만 쌓이고 사이트는 그대로이던 것")

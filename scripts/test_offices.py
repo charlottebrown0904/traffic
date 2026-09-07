@@ -171,7 +171,42 @@ check(ro.get("si", {}).get("수원시") == [37.2634, 127.0287],
 check("gu" not in ro, "구 단위는 여기 안 싣는다 (행이 이미 들고 있다)")
 check(json.dumps(ro, ensure_ascii=False), "브라우저가 읽을 수 있는 JSON 이다")
 
-print("\n6. 수집기가 실제로 끝까지 도는가")
+print("\n6. 문자열 안에 줄바꿈이 든 응답도 읽는다")
+# **run 40 이 여기서 죽었다.** 브이월드 장소검색이 문자열 안에 제어문자를
+# 그대로 넣어 보냈고, 파이썬 기본 파서가 거부했다.
+#
+#   json.decoder.JSONDecodeError: Invalid control character at:
+#       line 1 column 1001 (char 1000)
+#
+# 첫 시군구에서 그대로 죽어서 관청을 한 곳도 못 받았는데, 단계가
+# continue-on-error 라 초록으로 지나갔다. 규격을 어긴 것은 저쪽이지만
+# 우리가 못 읽을 이유는 없다.
+import types                                        # noqa: E402
+from redt.collect import http as rhttp              # noqa: E402
+
+BAD_BODY = ('{"response":{"status":"OK","result":{"items":[{"title":"어떤'
+            '\n관청","point":{"x":"127.0","y":"37.0"}}]}}}')
+
+
+class FakeResp:
+    status_code = 200
+    text = BAD_BODY
+
+    def json(self):
+        return json.loads(self.text)          # 기본 파서 — 여기서 죽는다
+
+
+_real_get = rhttp.get
+rhttp.get = lambda url, params, timeout=30: FakeResp()
+try:
+    body = rhttp.get_json("https://example.invalid", {})
+    got_title = body["response"]["result"]["items"][0]["title"]
+finally:
+    rhttp.get = _real_get
+check(got_title.startswith("어떤"),
+      f"제어문자가 든 응답도 읽는다 — {got_title!r}")
+
+print("\n7. 수집기가 실제로 끝까지 도는가")
 # 워크플로 단계가 continue-on-error 라, 여기서 죽으면 **조용히 건너뛴다.**
 # SQL 한 줄이나 칸 순서가 틀려도 화면은 어제 그대로고 아무 말이 없다.
 # 그래서 검색만 흉내내고 나머지는 진짜로 돌린다.

@@ -207,38 +207,6 @@ jobs:
           python -m redt.cli geocode-staged \
             --limit "${{ inputs.geocode_limit }}"
 
-      # 캐시에서 조인 결과를 뺀다.
-      #
-      # trade_tollgate_link 는 1,961만 행인데 **매 실행 DELETE 하고 다시
-      # 만든다**(cmd_link). 캐시에 실어 봐야 다음 실행이 곧바로 버린다.
-      # 그런데 캐시 한 번이 2.36GB 이고 GitHub 한도는 저장소당 10GB 라,
-      # 지금은 실행 두 번치밖에 안 남는다. 오래된 것부터 지워지므로
-      # 중간 캐시가 밀려나면 지오코딩 3시간이 통째로 날아간다.
-      - name: 캐시 앞 정리 (조인 결과는 매번 다시 만든다)
-        if: always() && inputs.stage == 'all'
-        continue-on-error: true
-        run: python -m redt.cli compact-db
-
-      # 여기까지가 비싼 단계다 — 지오코딩이 run 21 에서 2시간 58분 걸렸다.
-      # 그 뒤에서 러너가 죽으면 `if: always()` 인 캐시 저장조차 안 돌아서
-      # 그 시간이 통째로 사라진다 (run 17). 비싼 것을 손에 넣은 **즉시**
-      # 저장한다.
-      #
-      # 실행당 한 번만 저장한다. 예전에는 여기와 맨 끝에서 두 번 저장해
-      # 4.73GB 를 썼는데, 뒤엣것은 앞엣것에 조인 결과와 parquet 몇 개를
-      # 더한 것뿐이다. 조인은 위에서 뺐고 parquet 은 3분이면 다시 만든다.
-      #
-      # 분석만 도는 실행(stage=analyze)은 새로 산 것이 없으므로 저장하지
-      # 않는다 — 저장하면 값진 캐시를 밀어내기만 한다.
-      - name: 수집분 보관 (지오코딩 직후, 실행당 한 번)
-        if: always() && inputs.stage == 'all'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            data/processed
-            data/interim
-          key: redt-data-${{ github.run_id }}-mid
-
       - name: 거래 ↔ 영업소 공간 조인
         continue-on-error: true
         run: python -m redt.cli link
@@ -429,6 +397,46 @@ jobs:
       #
       # 충돌이 원천적으로 없다. 경합이 나면(그 사이 또 누가 올리면) 푸시가
       # 거절되므로 처음부터 다시 한다.
+      # ── 산 것을 보관한다 ──
+      #
+      # **자리가 이 두 가지를 동시에 만족해야 한다.**
+      #
+      #   (1) 이번 실행이 산 것보다 뒤   필지 특성·관청 좌표가 들어가야 한다
+      #   (2) 조인 결과를 뺀 뒤          1,961만 행을 캐시에 이고 다니면
+      #                                 한 번이 4.7GB 가 되고, 한도 10GB
+      #                                 안에서 실행 두 번치도 안 남는다
+      #
+      # 조인은 분석이 끝날 때까지 필요하므로, 두 조건을 함께 만족하는
+      # 자리는 여기뿐이다.
+      #
+      # 예전에는 지오코딩 직후에, 그것도 stage=all 일 때만 저장했다.
+      # "분석만 도는 실행은 새로 산 것이 없으므로" 라는 이유였고 그때는
+      # 맞는 말이었다. 필지 특성과 관청 좌표를 파이프라인에 넣은 순간
+      # 틀린 말이 됐는데 주석만 남고 아무도 안 고쳤다.
+      #
+      # 그 대가가 run 37~40 이다. 네 번 다 3,000칸씩 훑고 네 번 다
+      # 버렸다. 로그가 매번 이렇게 말하고 있었는데 그냥 지나쳤다:
+      #
+      #     칸 6,677개 중 아직 안 훑은 것 6,677개
+      #
+      # 15분짜리 수집이 네 번 헛돌았다.
+      - name: 캐시 앞 정리 (조인 결과는 매번 다시 만든다)
+        if: always()
+        continue-on-error: true
+        run: python -m redt.cli compact-db
+
+      # always() 인 이유 — 뒤 단계가 죽어도 산 것은 지켜야 한다.
+      # 지오코딩이 run 21 에서 2시간 58분 걸렸고, 러너가 죽어 그 시간이
+      # 통째로 사라진 적이 있다(run 17).
+      - name: 수집분 보관 (산 뒤에, 실행당 한 번)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/processed
+            data/interim
+          key: redt-data-${{ github.run_id }}-mid
+
       - name: 결과 커밋
         if: always()
         run: |

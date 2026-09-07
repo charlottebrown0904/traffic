@@ -1,6 +1,7 @@
 """공공 API 호출 공통 유틸 — 재시도, 레이트리밋, XML/JSON 파싱."""
 from __future__ import annotations
 
+import json
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -125,6 +126,17 @@ def get_json(url: str, params: dict, timeout: int = 60) -> dict:
     resp = get(url, params, timeout)
     try:
         return resp.json()
+    except ValueError:
+        pass
+    # **줄바꿈이 문자열 안에 그대로 든 응답이 온다.** 파이썬 기본 파서는
+    # 그것을 거부한다(JSONDecodeError: Invalid control character). 브이월드
+    # 장소검색이 실제로 그랬다 — run 40 이 첫 시군구에서 그대로 죽었고,
+    # 자료는 멀쩡했는데 관청 좌표를 한 곳도 못 받았다.
+    #
+    # 규격을 어긴 것은 저쪽이지만, 우리가 못 읽을 이유는 없다. 다시 한 번
+    # 느슨하게 읽어 본다. 그래도 안 되면 그때 무엇이 왔는지 말하고 죽는다.
+    try:
+        return json.loads(resp.text, strict=False)
     except ValueError:
         raise ApiError(
             f"JSON 이 아닙니다 (HTTP {resp.status_code}): {scrub(resp.text[:200])}")
