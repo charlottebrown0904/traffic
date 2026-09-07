@@ -853,3 +853,19 @@ body.picking .leaflet-container{cursor:crosshair}
   margin: 8px 0 0; padding-top: 7px; border-top: 1px solid var(--line);
   color: var(--danger); font-size: 11.5px; line-height: 1.45;
 }
+
+/* ── 토지 필터 (개발단계 · 용도지역) ── */
+.rail-sub {
+  font-size: 12px; font-weight: 800; letter-spacing: .02em;
+  margin: 16px 0 6px; color: var(--ink);
+}
+.mini-btn {
+  font: inherit; font-size: 11.5px; padding: 3px 9px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--muted); cursor: pointer;
+}
+.mini-btn:hover { border-color: var(--border-strong); color: var(--ink); }
+/* 용도지역이 25종이라 그대로 늘어놓으면 옆판이 통째로 밀린다.
+   접어 두고 안에서 굴린다. */
+.scroll-box { max-height: 190px; overflow-y: auto; padding-right: 4px; }
+.checks .n { color: var(--muted); font-weight: 400; font-size: 11.5px; }

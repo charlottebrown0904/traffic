@@ -138,6 +138,11 @@ def _with_usage(df: pd.DataFrame) -> pd.DataFrame:
     jimok = out["jimok"].tolist() if "jimok" in out else blank
     out["usage"] = [label(u, j) if k == "factory" else ""
                     for k, u, j in zip(out["kind"].tolist(), use, jimok)]
+    # 토지는 개발이 끝났는지를 붙인다. 지목이 실거래 자료에 있는
+    # 유일한 단서다 — 도로접·형상은 이 API 가 주지 않는다.
+    from .usage import land_stage
+    out["stage"] = [land_stage(j) if k == "land" else ""
+                    for k, j in zip(out["kind"].tolist(), jimok)]
     # 원값은 내보내지 않는다. 판정에만 쓰고, 파일에는 결과만 싣는다.
     return out.drop(columns=["building_use"], errors="ignore")
 
@@ -547,6 +552,27 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         _k = _usage_of(_r.use, _r.jimok) or "구분 없음"
         usage_mix[_k] = usage_mix.get(_k, 0) + int(_r.n)
 
+    # 토지는 용도지역과 개발단계로 가른다. 사장님 지시(2026-09-07):
+    # "토지의 경우 용도지역을 선택하게" · "개발 완료된 물건에 더 비중".
+    #
+    # 표본이 아니라 **전수**를 센다. 화면이 '계획관리 576건' 이라고
+    # 말하면 그것이 표본 수인지 실제 수인지 읽는 사람은 알 수 없다.
+    from .usage import land_stage as _stage_of
+    with db.connect(read_only=True) as con:
+        _lrows = con.execute(f"""
+            SELECT coalesce(land_use, '') AS land_use,
+                   coalesce(jimok, '') AS jimok, count(*) AS n
+            FROM trade WHERE kind = 'land' AND {TRADE_WHERE}
+            GROUP BY 1, 2
+        """).fetchdf()
+    land_use_mix: dict[str, int] = {}
+    stage_mix: dict[str, int] = {}
+    for _r in _lrows.itertuples(index=False):
+        _u = _r.land_use.strip() or "용도 미상"
+        land_use_mix[_u] = land_use_mix.get(_u, 0) + int(_r.n)
+        _s = _stage_of(_r.jimok) or "지목 미상"
+        stage_mix[_s] = stage_mix.get(_s, 0) + int(_r.n)
+
     meta = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "is_synthetic": SYNTHETIC_MARK.exists(),
@@ -569,6 +595,10 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         # '창고 거래가 없다' 로 말할지 '가를 칸이 비어 있다' 로 말할지가
         # 여기서 갈린다.
         "usage_mix": usage_mix,
+        # 토지 쪽. land_use_mix 는 용도지역별, stage_mix 는 개발단계별
+        # 전체 건수다.
+        "land_use_mix": land_use_mix,
+        "stage_mix": stage_mix,
         "trade_years": [
             {"year": int(r.deal_year), "total": int(r.n),
              "sample": int(len(by_year.get(int(r.deal_year), [])))}

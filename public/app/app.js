@@ -23,6 +23,8 @@ const state = {
   zoning: true,
   tgYear: null, tgVehicle: 'total',
   dealYear: 'all', tradeCache: {}, tradesShown: null,
+  activeStages: new Set(), activeLandUse: new Set(),
+  hasStageFilter: false, hasLandUseFilter: false,
   activeKinds: new Set(),
   parcelOnly: false, selected: null, showAllBands: false, tiers: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
@@ -331,6 +333,91 @@ function buildFilters() {
     span.innerHTML = text + suffix;
     label.append(input, span);
     kinds.append(label);
+  });
+
+  /* ── 토지: 개발단계 · 용도지역 ──
+   *
+   * 사장님 지시(2026-09-07). 토지 표본의 78% 가 전·답·임야인데, 그
+   * 값은 개발 가능 여부·도로접·모양이 정한다. 실거래 자료는 그 셋을
+   * 하나도 안 준다(scripts/land_shape_probe.py 가 확인 중). 우리가 쥔
+   * 유일한 단서가 지목이라, 지목으로 개발단계를 갈라 놓고 고르게 한다.
+   *
+   * 칸은 자료에서 만든다. 없는 것은 칸도 안 생긴다. */
+  const stageBox = $('#stage-filters');
+  const luBox = $('#land-use-filters');
+  const landBox = document.getElementById('land-box');
+  const stageMix = state.meta.stage_mix || {};
+  const luMix = state.meta.land_use_mix || {};
+  // 토지가 아예 없으면 이 묶음을 통째로 숨긴다.
+  if (landBox) landBox.hidden = !Object.keys(stageMix).length;
+
+  const nfmt = (v) => v.toLocaleString('ko-KR');
+  const checkRow = (box, key, text, n, set, title) => {
+    const label = el('label', 'check');
+    if (title) label.title = title;
+    const input = el('input');
+    input.type = 'checkbox';
+    input.checked = set.has(key);
+    input.dataset.key = key;
+    input.addEventListener('change', () => {
+      input.checked ? set.add(key) : set.delete(key);
+      refreshMap();
+    });
+    const span = el('span');
+    span.innerHTML = text + (typeof n === 'number'
+      ? ` <span class="n">${nfmt(n)}건</span>` : '');
+    label.append(input, span);
+    box.append(label);
+    return input;
+  };
+
+  // 개발단계 — 처음부터 다 켠다. 켜져 있어야 '토지' 를 켰을 때
+  // 예전과 같은 것이 보인다. 끄는 것은 사용자가 정한다.
+  const STAGE_HINT = {
+    '개발완료': '대·공장용지·창고용지·잡종지 등. 건축이 가능하고 도로가'
+              + ' 붙어 있는 것이 지목의 전제라 값이 덜 흔들립니다.',
+    '원지': '전·답·임야·과수원 등. 개발 가능 여부·도로접·모양에 따라'
+          + ' 같은 동네에서도 값이 몇 배 벌어집니다.',
+    '그 밖': '도로·구거·하천·묘지 등. 거래는 되지만 성격이 다릅니다.',
+  };
+  ['개발완료', '원지', '그 밖', '지목 미상'].forEach((name) => {
+    if (!stageMix[name]) return;
+    state.activeStages.add(name);
+    checkRow(stageBox, name, name, stageMix[name], state.activeStages,
+             STAGE_HINT[name]);
+  });
+  state.hasStageFilter = state.activeStages.size > 0;
+
+  // 용도지역 — 25종이라 많은 것부터 늘어놓는다.
+  const luNames = Object.keys(luMix).sort((a, b) => luMix[b] - luMix[a]);
+  luNames.forEach((name) => {
+    state.activeLandUse.add(name);
+    checkRow(luBox, name, name, luMix[name], state.activeLandUse);
+  });
+  state.hasLandUseFilter = luNames.length > 0;
+  const syncLuBoxes = () => {
+    luBox.querySelectorAll('input').forEach((i) => {
+      i.checked = state.activeLandUse.has(i.dataset.key);
+    });
+    refreshMap();
+  };
+  $('#lu-all').addEventListener('click', () => {
+    luNames.forEach((n) => state.activeLandUse.add(n));
+    syncLuBoxes();
+  });
+  $('#lu-none').addEventListener('click', () => {
+    state.activeLandUse.clear();
+    syncLuBoxes();
+  });
+  // 분석이 실제로 쓰는 세 가지. settings.yaml 의 land_use_filter 와 같다 —
+  // 화면에서 '분석과 같은 것' 을 한 번에 고를 수 있어야, 지도에서 본
+  // 것과 판정표의 숫자가 같은 표본인지 확인할 수 있다.
+  $('#lu-core').addEventListener('click', () => {
+    state.activeLandUse.clear();
+    luNames.forEach((n) => {
+      if (/계획관리|생산관리|자연녹지/.test(n)) state.activeLandUse.add(n);
+    });
+    syncLuBoxes();
   });
 
   // ── 실거래 연도 ──
@@ -1332,9 +1419,24 @@ function tradeFilterKey(t) {
 function visibleTrades() {
   const rows = state.tradesShown || state.trades || [];
   // 연도는 파일을 고를 때 이미 갈렸다. 여기서 또 자르지 않는다.
-  return rows.filter((t) =>
-    state.activeKinds.has(tradeFilterKey(t)) &&
-    (!state.parcelOnly || t.geocode_level === 'parcel'));
+  return rows.filter((t) => {
+    if (!state.activeKinds.has(tradeFilterKey(t))) return false;
+    if (state.parcelOnly && t.geocode_level !== 'parcel') return false;
+    // 개발단계·용도지역은 **토지에만** 건다. 공장·창고에 걸면
+    // 토지 칸을 만질 때마다 공장이 같이 사라진다.
+    //
+    // 그리고 **칸이 만들어졌을 때만** 건다. meta 에 stage_mix 가 없으면
+    // (수집이 아직 새 코드로 안 돈 상태) 집합이 비는데, 그것을 그대로
+    // 거르면 토지가 통째로 사라진다. 필터가 없는 것과 전부 끈 것은
+    // 다른 상황이다 — 검사가 이것을 잡았다.
+    if (t.kind === 'land') {
+      if (state.hasStageFilter
+          && !state.activeStages.has(t.stage || '지목 미상')) return false;
+      if (state.hasLandUseFilter
+          && !state.activeLandUse.has(t.land_use || '용도 미상')) return false;
+    }
+    return true;
+  });
 }
 
 /* 지금 보이는 영역의 거래만 그린다.
@@ -1578,7 +1680,10 @@ function tradePopup(t) {
 
   // 지번·지목·용도지역·거래유형은 자료에서 그대로 온다. HTML 에
   // 넣기 전에 막는다.
-  add('지목', t.jimok && escapeHtml(t.jimok));
+  // 지목 옆에 개발단계를 적는다. '답' 이라는 두 글자만으로는 그 땅이
+  // 왜 싼지가 안 보인다.
+  add('지목', t.jimok && (escapeHtml(t.jimok)
+      + (t.stage ? ` <span class="mut">(${escapeHtml(t.stage)})</span>` : '')));
   add('용도지역', t.land_use && escapeHtml(t.land_use));
   if (t.building_area_m2) {
     add('건물면적', `${popNum(t.building_area_m2, 0)}㎡ ` +

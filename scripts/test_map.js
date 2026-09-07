@@ -502,7 +502,10 @@ const FAKE_LEAFLET = () => {
             tradeStyle.every((o) => /trade-mark/.test(o.html)),
             `${tradeStyle.length}개 · 예: ${tradeStyle[0].html.slice(0, 60)}`);
       const land = tradeStyle.filter((o) => /trade-land/.test(o.html));
-      const fac = tradeStyle.filter((o) => /trade-factory/.test(o.html));
+      // 공장 계열은 색이 셋으로 갈렸다 (공장·창고·그 밖 산업시설).
+      // 모양은 셋 다 마름모라 토지의 네모와는 여전히 갈린다.
+      const fac = tradeStyle.filter(
+        (o) => /trade-factory|trade-warehouse|trade-etc/.test(o.html));
       check('토지와 공장이 다른 모양이다', land.length + fac.length === tradeStyle.length
             && tradeStyle.every((o) => !(/trade-land/.test(o.html) && /trade-factory/.test(o.html))),
             `토지 ${land.length} · 공장 ${fac.length}`);
@@ -870,6 +873,10 @@ const FAKE_LEAFLET = () => {
       // run 33 이 알려준 실제 값과 같은 모양으로 둔다.
       meta.usage_mix = { '공장': 143159, '창고시설': 30833,
                          '동물 및 식물 관련시설': 20111, '구분 없음': 1200 };
+      // 토지 쪽. 실제 자료의 모양대로 원지가 압도적이다.
+      meta.stage_mix = { '원지': 9100000, '개발완료': 1500000, '그 밖': 700000 };
+      meta.land_use_mix = { '계획관리지역': 2600000, '농림지역': 2100000,
+                            '자연녹지지역': 1200000, '제2종일반주거지역': 640000 };
       await page2.route('**/app/data/meta.json*', (r) => r.fulfill({
         status: 200, contentType: 'application/json', body: JSON.stringify(meta) }));
 
@@ -878,8 +885,8 @@ const FAKE_LEAFLET = () => {
         { kind: 'land', lat: 37.1, lon: 127.1, deal_year: 2025, deal_month: 3,
           price_per_m2: 500000, price_krw: 370000000, area_m2: 740,
           sido: '경기도', sigungu: '화성시', umd: '동탄면', jibun: '123-4',
-          jimok: '전', land_use: '계획관리', deal_type: '중개거래',
-          geocode_level: 'parcel' },
+          jimok: '전', land_use: '계획관리지역', deal_type: '중개거래',
+          geocode_level: 'parcel', stage: '원지' },
         { kind: 'factory', lat: 37.2, lon: 127.2, deal_year: 2025, deal_month: 7,
           price_per_m2: 900000, price_krw: 1500000000, area_m2: 1660,
           sido: '경기도', sigungu: '평택시', umd: '청북읍', jibun: '55',
@@ -902,8 +909,8 @@ const FAKE_LEAFLET = () => {
         { kind: 'land', lat: 34.8, lon: 126.4, deal_year: 2025, deal_month: 1,
           price_per_m2: 30000, price_krw: 45000000, area_m2: 1500,
           sido: '전라남도', sigungu: '무안군', umd: '삼향읍', jibun: '901',
-          jimok: '답', land_use: '생산관리', deal_type: '중개거래',
-          geocode_level: 'umd' },
+          jimok: '대', land_use: '자연녹지지역', deal_type: '중개거래',
+          geocode_level: 'umd', stage: '개발완료' },
       ];
       const Y2024 = Y2025.slice(0, 2).map((t) =>
         Object.assign({}, t, { deal_year: 2024 }));
@@ -1049,6 +1056,77 @@ const FAKE_LEAFLET = () => {
           if (!i.checked) i.click();
         });
       });
+      await page2.waitForTimeout(300);
+
+      /* ── 토지: 개발단계 · 용도지역 (2026-09-07 지시) ── */
+      const landUi = await page2.evaluate(() => ({
+        hidden: document.getElementById('land-box').hidden,
+        stages: [...document.querySelectorAll('#stage-filters label')]
+          .map((l) => l.textContent.replace(/\s+/g, ' ').trim()),
+        uses: [...document.querySelectorAll('#land-use-filters label')]
+          .map((l) => l.textContent.replace(/\s+/g, ' ').trim()),
+      }));
+      check('토지 필터 묶음이 보인다', landUi.hidden === false);
+      check('개발단계 칸이 건수와 함께 선다',
+            landUi.stages.some((t) => /개발완료/.test(t) && /1,500,000건/.test(t))
+            && landUi.stages.some((t) => /원지/.test(t) && /9,100,000건/.test(t)),
+            landUi.stages.join(' | '));
+      check('용도지역이 많은 것부터 늘어선다',
+            landUi.uses[0].startsWith('계획관리지역')
+            && landUi.uses.length === 4,
+            landUi.uses.join(' | '));
+
+      // 원지를 끄면 원지 토지만 빠진다. 공장·창고는 그대로여야 한다 —
+      // 토지 칸을 만졌는데 공장이 사라지면 화면을 믿을 수 없다.
+      const before = await page2.evaluate(() => (window.__tradeStyles || []).length);
+      await page2.evaluate(() => {
+        [...document.querySelectorAll('#stage-filters label')]
+          .find((l) => /원지/.test(l.textContent))
+          .querySelector('input').click();
+      });
+      await page2.waitForTimeout(300);
+      const afterRaw = await page2.evaluate(() => (window.__tradeStyles || []) .slice());
+      check('원지를 끄면 원지 토지만 빠진다',
+            afterRaw.length === before - 1
+            && afterRaw.filter((x) => x.kind === 'factory').length === 3,
+            `${before} → ${afterRaw.length}, 공장계 ${afterRaw.filter((x) => x.kind === 'factory').length}`);
+
+      // 되돌리고 용도지역으로 걸러 본다.
+      await page2.evaluate(() => {
+        [...document.querySelectorAll('#stage-filters label')]
+          .find((l) => /원지/.test(l.textContent))
+          .querySelector('input').click();
+        document.getElementById('lu-none').click();
+      });
+      await page2.waitForTimeout(300);
+      const noLu = await page2.evaluate(() => (window.__tradeStyles || []).slice());
+      check('용도지역을 모두 끄면 토지가 사라진다',
+            noLu.filter((x) => x.kind === 'land').length === 0
+            && noLu.filter((x) => x.kind === 'factory').length === 3,
+            `토지 ${noLu.filter((x) => x.kind === 'land').length} · 공장계 ${noLu.filter((x) => x.kind === 'factory').length}`);
+
+      // '분석 대상만' 은 settings.yaml 의 계획관리·생산관리·자연녹지다.
+      await page2.evaluate(() => document.getElementById('lu-core').click());
+      await page2.waitForTimeout(300);
+      const core = await page2.evaluate(() => ({
+        on: [...document.querySelectorAll('#land-use-filters input')]
+          .filter((i) => i.checked).map((i) => i.dataset.key),
+        land: (window.__tradeStyles || []).filter((x) => x.kind === 'land').length,
+      }));
+      check("'분석 대상만' 이 계획관리·자연녹지를 고른다",
+            core.on.includes('계획관리지역') && core.on.includes('자연녹지지역')
+            && !core.on.includes('농림지역'),
+            core.on.join(','));
+      check('그 선택이 지도에 반영된다', core.land === 2, `토지 ${core.land}건`);
+
+      // 말풍선이 개발단계를 적는가.
+      const landPop = await page2.evaluate(() =>
+        (window.__tradeStyles || []).find((x) => x.kind === 'land'));
+      check('말풍선이 지목 옆에 개발단계를 적는다',
+            !!landPop && /\(원지\)|\(개발완료\)/.test(landPop.popup),
+            landPop ? (landPop.popup.match(/지목[^<]*<[^>]*>[^<]*</) || [''])[0] : '없음');
+
+      await page2.evaluate(() => document.getElementById('lu-all').click());
       await page2.waitForTimeout(300);
 
       // 연도를 바꾸면 그 해 파일을 받아 다시 그린다.

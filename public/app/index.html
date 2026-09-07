@@ -81,6 +81,23 @@
         <select id="deal-year"></select>
       </label>
       <p class="hint" id="deal-year-note"></p>
+
+      <div id="land-box">
+        <h3 class="rail-sub">토지 — 개발단계</h3>
+        <p class="hint">전·답·임야는 개발 가능 여부·도로접·모양에 따라
+          같은 동네에서도 값이 몇 배 벌어집니다. 그 셋을 실거래 자료는
+          알려주지 않으므로, <strong>개발이 끝난 지목</strong>(대·공장용지·
+          창고용지 등)을 따로 봅니다.</p>
+        <div class="checks" id="stage-filters"></div>
+
+        <h3 class="rail-sub">토지 — 용도지역</h3>
+        <div class="field-row">
+          <button type="button" class="mini-btn" id="lu-all">전체</button>
+          <button type="button" class="mini-btn" id="lu-none">해제</button>
+          <button type="button" class="mini-btn" id="lu-core">분석 대상만</button>
+        </div>
+        <div class="checks scroll-box" id="land-use-filters"></div>
+      </div>
       <label class="check">
         <input type="checkbox" id="parcel-only">
         <span>지번단위 좌표만 <em>정밀도 높은 거래</em></span>
