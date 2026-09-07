@@ -1,0 +1,42 @@
+# 토지의 도로접·모양을 알 수 있는 자료가 있는가.
+#
+# 사장님 지시(2026-09-07). 기억으로 답하지 않는다 — 이 저장소는 레이어
+# 이름을 세 번 틀렸고(api/tile.js) 공시지가 원천도 추측으로 시작했다가
+# 헛돌았다. 실거래 API 와 브이월드 토지특성 WFS 에서 오는 칸을 통째로
+# 받아 찍는다.
+#
+# 러너는 미국이라 한국 공공 API 가 막힌다. 서울 중계기를 거치고, 키는
+# 중계기 쪽에만 있다 (api/relay.js 가 넣어 준다).
+name: 토지 도로접·모양 원천 탐침
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+      # vworld_landprice.py 가 이 이름으로 읽는다.
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 탐침
+        run: python scripts/land_shape_probe.py 2>&1 | tee /tmp/probe.log
+      - name: 실행 요약
+        if: always()
+        run: |
+          {
+            echo "## 토지 도로접·모양 원천 탐침"
+            echo
+            echo '```'
+            cat /tmp/probe.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
