@@ -551,6 +551,21 @@ def _regions() -> list[dict]:
         """).fetchdf()
 
     centers = {str(r.sigungu_cd): r for r in pts.itertuples(index=False)}
+
+    # 관청을 못 찾은 시군구는 시도 이름도 비어 있다. 그대로 두면 멀리서
+    # 볼 때 그 시군구가 자기 이름으로 홀로 원을 그린다 — 강화군·옹진군이
+    # 인천에서 떨어져 나오는 식이다.
+    #
+    # 시군구 코드 앞 두 자리가 같으면 같은 시도다. 이웃이 아는 이름을
+    # 빌려 온다. **추측이 아니라 우리 자료 안의 다수결**이다.
+    vote: dict[str, dict[str, int]] = {}
+    for code, c in centers.items():
+        name = _text(getattr(c, "sido", ""))
+        if name:
+            vote.setdefault(code[:2], {})
+            vote[code[:2]][name] = vote[code[:2]].get(name, 0) + 1
+    prefix_sido = {p: max(v, key=v.get) for p, v in vote.items()}
+
     out = []
     for code, group in pop.groupby("sigungu_cd"):
         c = centers.get(str(code))
@@ -567,7 +582,7 @@ def _regions() -> list[dict]:
             # 전라남도가 '12' 라는 한 접두사에 함께 들어 있다
             # (12210 동구 … 12870 신안군). 코드로 갈랐으면 광주 다섯 구가
             # 전남 아래로 들어갔을 것이다.
-            "sido": _text(c.sido),
+            "sido": _text(c.sido) or prefix_sido.get(str(code)[:2], ""),
             # 관청 좌표. 있으면 원의 중심이 여기가 된다 (사장님 지시
             # 2026-09-07). 아직 못 받은 시군구는 빈 값이고, 그때는
             # 화면이 대표점으로 물러난다.
@@ -580,8 +595,11 @@ def _regions() -> list[dict]:
             "pop": {str(int(r.year)): int(r.value)
                     for r in group.itertuples(index=False)},
         })
+    n_office = sum(1 for r in out if "office_lat" in r)
+    n_sido = sum(1 for r in out if r["sido"])
     print(f"  행정구역 인구 {len(out)}개 시군구"
           f" (좌표 없어 빠진 것 {pop['sigungu_cd'].nunique() - len(out)}개)")
+    print(f"    관청 좌표 {n_office}곳 · 시도 이름 {n_sido}곳")
     return out
 
 

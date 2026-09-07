@@ -1400,6 +1400,52 @@ def cmd_offices(args):
     for r in rows:
         sido_of_cd[r["cd"]] = prefix_sido.get(r["cd"][:2], "")
 
+    # ── 못 찾은 것 다시. 이번엔 **시도 이름을 붙여서** ──
+    #
+    # '북구청' 만으로는 전국에 흩어진 북구가 다 걸리고, 우리 대표점에서
+    # 40km 안에 하나도 안 들어오면 빈손으로 끝난다. 시도 이름을 앞에
+    # 붙이면 후보가 하나로 좁혀진다 — 탐침에서 '광주광역시동구청' 이
+    # 그렇게 걸렸다.
+    #
+    # 1차를 다 돌기 전에는 시도 이름을 모르므로, 이 시도는 두 번째
+    # 바퀴가 될 수밖에 없다.
+    retry = [r for r in rows
+             if r["cd"] not in got_by_cd and sido_of_cd.get(r["cd"])]
+    if retry:
+        print(f"  못 찾은 {len(retry)}곳을 시도 이름을 붙여 다시 찾습니다")
+        found = 0
+        for r in retry:
+            sd = sido_of_cd[r["cd"]]
+            try:
+                cands = of.search_place(f"{sd}{r['name'].split()[-1]}청")
+                got = of.pick(cands, (r["lat"], r["lon"]), of.MAX_KM["gu"])
+            except Exception as exc:                   # noqa: BLE001
+                errs.append(f"gu:{r['name']} (재시도) — {type(exc).__name__}: {exc}")
+                continue
+            if not got:
+                continue
+            rec = {
+                "level": "gu", "key": r["cd"], "label": r["name"],
+                "name": got["name"], "category": got["category"],
+                "sido": of.sido_of(got["road_addr"]) or sd,
+                "road_addr": got["road_addr"],
+                "lat": got["lat"], "lon": got["lon"],
+                "dist_km": got["dist_km"], "source": "vworld:search+sido",
+                "fetched_at": of.now(),
+            }
+            out.append(rec)
+            got_by_cd[r["cd"]] = rec
+            if f"gu:{r['name']}" in fail:
+                fail.remove(f"gu:{r['name']}")
+            found += 1
+        print(f"    다시 찾아 담은 것 {found}곳")
+
+    # 시도 이름은 **다수결로 채운 것**을 담는다. 관청 주소가 비어 있어도
+    # (이천시·창원시 마산회원구가 그랬다) 이웃이 아는 이름을 물려받는다.
+    for rec in out:
+        if rec["level"] == "gu" and not rec["sido"]:
+            rec["sido"] = sido_of_cd.get(rec["key"], "")
+
     # ── ② 시·군 (도 아래 구를 그 시로 묶은 단위) ──
     from .webexport import _parent_si
     si_members: dict[str, list[dict]] = {}

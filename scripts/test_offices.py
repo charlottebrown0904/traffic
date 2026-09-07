@@ -159,7 +159,15 @@ check("울릉군" in by_name and "office_lat" not in by_name["울릉군"],
       "관청을 못 받은 시군구도 남고, 빈 칸은 안 싣는다")
 # 시도 이름은 여기서만 온다 — trade.sido 는 늘 비어 있다.
 check(by_name["수원시 장안구"]["sido"] == "경기도", "시도 이름이 관청에서 온다")
-check(by_name["울릉군"]["sido"] == "", "관청이 없으면 시도 이름도 빈 값")
+# **이웃이 아는 이름을 빌린다.** 관청을 못 찾은 시군구는 시도 이름도
+# 비는데, 그대로 두면 멀리서 볼 때 그 시군구가 자기 이름으로 홀로
+# 원을 그린다 — 강화군·옹진군이 인천에서 떨어져 나오는 식이다.
+# 코드 앞 두 자리가 같으면 같은 시도이므로 다수결로 채운다.
+check(by_name["울릉군"]["sido"] == "",
+      "빌릴 이웃이 없으면 그대로 빈 값 (47 접두사에 울릉군뿐이다)")
+_nb = [r for r in regions if r["sigungu_cd"] == "41113"]
+check(_nb and _nb[0]["sido"] == "경기도",
+      f"관청이 없어도 같은 접두사의 이름을 빌린다 — {_nb and _nb[0]['sido']!r}")
 check(by_name["수원시 장안구"]["parent"] == "수원시", "시 아래 구는 parent 를 갖는다")
 
 ro = wx._region_offices()
@@ -280,6 +288,46 @@ with db.connect(read_only=True) as con:
     n = con.execute("SELECT count(*) FROM office").fetchone()[0]
 # 첫 곳이 죽었지만 나머지는 담겼어야 한다.
 check(n >= 4, f"첫 호출이 죽어도 나머지를 받는다 ({n}곳)")
+
+# **못 찾은 것은 시도 이름을 붙여 다시 찾는다.**
+# '북구청' 만으로는 전국에 흩어진 북구가 다 걸리고, 우리 대표점에서
+# 40km 안에 하나도 안 들어오면 빈손으로 끝난다. run 41 에서 북구·동구·
+# 서구·강화군·옹진군·고성군이 그렇게 빠졌다. 시도 이름을 앞에 붙이면
+# 후보가 하나로 좁혀진다.
+#
+# 1차를 다 돌기 전에는 시도 이름을 모르므로 두 번째 바퀴여야 한다.
+asked = []
+
+
+def two_round_search(query, size=10):
+    asked.append(query)
+    if query == "권선구청":
+        return []                      # 1차에서는 못 찾는다
+    if query == "경기도권선구청":
+        return [{"name": "권선구청", "category": "지방행정기관 > 구청",
+                 "road_addr": "경기도 수원시 권선구 권선로 1010",
+                 "lat": 37.2578, "lon": 126.9727}]
+    return fake_search(query, size)
+
+
+of.search_place = two_round_search
+with db.connect() as con:
+    con.execute("DELETE FROM office")
+cli.cmd_offices(argparse.Namespace(refresh=True))
+with db.connect(read_only=True) as con:
+    got2 = con.execute(
+        "SELECT sido, source FROM office WHERE level='gu' AND key='41113'"
+    ).fetchall()
+check("경기도권선구청" in asked, "시도 이름을 붙여 다시 묻는다")
+check(len(got2) == 1, f"1차에서 못 찾은 곳을 2차가 담는다 ({len(got2)}곳)")
+if got2:
+    check(got2[0][1] == "vworld:search+sido",
+          f"어느 바퀴에서 왔는지 남긴다 — {got2[0][1]}")
+
+# **시도 이름이 하나도 없는 접두사는 다시 묻지 않는다.** 붙일 이름이
+# 없으므로 같은 질의를 한 번 더 하는 헛수고가 된다.
+check(asked.count("울릉군청") == 1,
+      f"빌릴 이름이 없으면 다시 묻지 않는다 ({asked.count('울릉군청')}회)")
 
 print()
 if fail:
