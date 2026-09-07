@@ -53,6 +53,10 @@ const FAKE_LEAFLET = () => {
   // 부르면 거래 점 기록까지 같이 지워졌다. 그러면 '거래가 안 그려진다'
   // 와 '다른 무리가 지웠다' 를 구분할 수 없다.
   const groups = [];
+  // 무리를 그대로 내보낸다. rec.markers 는 **만든 것을 쌓기만** 하므로
+  // 다시 그리면 옛 것이 남는다 — 배율을 흔들어 가며 '지금 몇 개인가'
+  // 를 세려면 무리가 지금 들고 있는 것을 봐야 한다.
+  rec.groups = groups;
   const sync = () => {
     rec.circles.length = 0;
     rec.tradeOpts.length = 0;
@@ -75,14 +79,25 @@ const FAKE_LEAFLET = () => {
   };
   const chain = (extra) => Object.assign({
     addTo() { return this; }, on() { return this; },
-    bindTooltip() { return this; }, setStyle() { return this; },
+    // 말풍선 글을 남긴다. 인구 원이 '몇 곳을 합친 값인지' 를 말하는지
+    // 확인하려면 이 글을 읽어야 한다.
+    bindTooltip(html) { this.__tooltip = html; return this; },
+    setStyle() { return this; },
     getLatLng() { return { lat: 0, lng: 0 }; },
   }, extra);
   window.L = {
     map: () => chain({
       setView() { return this; }, fitBounds() { return this; },
       panTo() { return this; }, invalidateSize() { return this; },
-      getZoom() { return 7; },
+      // **배율을 바꿀 수 있어야 한다.** 인구를 묶는 단위가 배율에 따라
+      // 달라지는데(시도 → 시군 → 구), 7 로 고정해 두면 그 셋 중 하나만
+      // 보고 통과라고 말하게 된다. window.__setZoom 으로 흔든다.
+      getZoom() { return window.__zoom == null ? 7 : window.__zoom; },
+      on(ev, fn) {
+        (window.__mapOn = window.__mapOn || {});
+        (window.__mapOn[ev] = window.__mapOn[ev] || []).push(fn);
+        return this;
+      },
       // 거래를 '보이는 영역만' 그리므로 경계가 없으면 한 점도 안 그려진다.
       // 전국이 다 보이는 셈으로 둔다 — 잘라내기 자체는 아래에서 따로 본다.
       getBounds() { return { contains: () => true, pad: () => ({}) }; },
@@ -222,14 +237,31 @@ const FAKE_LEAFLET = () => {
     // 행정구역 인구. 크기를 세 단으로 끊었으므로 **세 단에 하나씩** 넣는다.
     // 한 단이라도 비면 그 단이 제 크기로 그려지는지 볼 수 없다.
     const FAKE_REGIONS = [
-      { sigungu_cd: '41110', name: '수원시', lat: 37.263, lon: 127.028,
-        n_umd: 40, pop: { '2024': 1200000, '2025': 1000000 } },   // 50만 초과
-      { sigungu_cd: '41460', name: '용인시', lat: 37.241, lon: 127.178,
-        n_umd: 35, pop: { '2024': 350000, '2025': 340000 } },     // 20만~50만
-      { sigungu_cd: '41220', name: '평택시', lat: 36.992, lon: 127.112,
-        n_umd: 30, pop: { '2024': 120000, '2025': 118000 } },     // 5만~20만
-      { sigungu_cd: '47940', name: '울릉군', lat: 37.484, lon: 130.905,
-        n_umd: 3, pop: { '2024': 10000, '2025': 10000 } },        // 5만 이하
+      // 배율에 따라 세 단위로 묶인다 (2026-09-07 지시). 그 셋이 다
+      // 실제로 갈리도록 계층을 넣어 둔다 — 도 아래 시, 시 아래 구,
+      // 광역시의 구, 그리고 도 아래 군.
+      { sigungu_cd: '41111', name: '수원시 장안구', sido: '경기도',
+        parent: '수원시', lat: 37.304, lon: 127.011,
+        n_umd: 10, pop: { '2024': 300000, '2025': 280000 } },
+      { sigungu_cd: '41113', name: '수원시 권선구', sido: '경기도',
+        parent: '수원시', lat: 37.241, lon: 126.971,
+        n_umd: 12, pop: { '2024': 380000, '2025': 370000 } },
+      { sigungu_cd: '41460', name: '용인시', sido: '경기도', parent: '',
+        lat: 37.241, lon: 127.178,
+        n_umd: 35, pop: { '2024': 350000, '2025': 340000 } },
+      { sigungu_cd: '41220', name: '평택시', sido: '경기도', parent: '',
+        lat: 36.992, lon: 127.112,
+        n_umd: 30, pop: { '2024': 120000, '2025': 118000 } },
+      // 광역시의 구. '시·군' 단위에서는 서울특별시 하나로 묶여야 한다.
+      { sigungu_cd: '11110', name: '종로구', sido: '서울특별시', parent: '',
+        lat: 37.595, lon: 126.975,
+        n_umd: 8, pop: { '2024': 140000, '2025': 137000 } },
+      { sigungu_cd: '11680', name: '강남구', sido: '서울특별시', parent: '',
+        lat: 37.517, lon: 127.047,
+        n_umd: 14, pop: { '2024': 560000, '2025': 550000 } },
+      { sigungu_cd: '47940', name: '울릉군', sido: '경상북도', parent: '',
+        lat: 37.484, lon: 130.905,
+        n_umd: 3, pop: { '2024': 10000, '2025': 10000 } },
     ];
     await page.route('**/app/data/regions.json*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
@@ -619,36 +651,84 @@ const FAKE_LEAFLET = () => {
           satHit && Number(satHit[1]) >= .5, sat || '(필터 없음)');
 
     console.log();
-    console.log('9. 행정구역 인구 — 중심에 크기별로');
-    const pop = await page.evaluate(() => {
-      const circles = window.__map.circles || [];
+    console.log('9. 행정구역 인구 — 배율에 따라 도 → 시·군 → 구');
+    /* 사장님 지시(2026-09-07): "지도 화면 축적/크기에 따라 도/광역시
+     * 기준, 시(광역시 포함)/군 기준, 구 기준으로 반영이 가능할까요?"
+     *
+     * 전국을 볼 때 247개 원이 겹쳐 있으면 아무것도 안 읽힌다. 그때
+     * 필요한 것은 17개다. 세 배율을 실제로 흔들어 본다 — 하나만 보고
+     * 통과라고 말하면 나머지 둘은 안 본 것이다. */
+    const popAt = async (z) => page.evaluate((zoom) => {
+      window.__zoom = zoom;
+      (((window.__mapOn || {}).zoomend) || []).forEach((fn) => fn());
+      const marks = (window.__map.groups || [])
+        .flatMap((g) => g._items)
+        .filter((m) => m.__opts && m.__opts.pane === 'popPane');
       return {
         peek: window.__pop || {},
-        pane: (window.__map.panes && window.__map.panes.popPane)
-          ? Number(window.__map.panes.popPane.style.zIndex) : null,
-        marks: (window.__map.markers || []).filter((o) => o.pane === 'popPane'),
-        switchShown: !(document.getElementById('pop-switch') || {}).hidden,
+        n: marks.length,
+        radii: marks.map((m) => m.__opts.radius),
+        tips: marks.map((m) => m.__tooltip || ''),
         legend: document.querySelector('#map-legend').textContent,
       };
-    });
-    check('인구 스위치가 보인다 (자료가 있을 때만)', pop.switchShown);
-    check('시군구마다 원을 하나씩 그린다', pop.marks.length === 4,
-          `${pop.marks.length}개`);
+    }, z);
+
+    const base = await page.evaluate(() => ({
+      pane: (window.__map.panes && window.__map.panes.popPane)
+        ? Number(window.__map.panes.popPane.style.zIndex) : null,
+      switchShown: !(document.getElementById('pop-switch') || {}).hidden,
+    }));
+    check('인구 스위치가 보인다 (자료가 있을 때만)', base.switchShown);
     check('인구 원을 IC 아래 판에 그린다 (200 < z < 400)',
-          pop.pane !== null && pop.pane > 200 && pop.pane < 400,
-          `z-index ${pop.pane}`);
-    if (pop.marks.length === 4) {
-      // 크기는 **네 단**이다. 235가지 크기를 눈으로 가를 수는 없다.
-      const R = pop.marks.map((m) => m.radius).sort((a, b) => b - a);
-      check('크기가 네 단으로 끊긴다', new Set(R).size === 4, R.join(' / '));
-      check('인구가 많을수록 크다',
-            R.every((r, i) => i === 0 || R[i - 1] > r), R.join(' > '));
-      // 넣은 넷이 각각 다른 단에 든다 — 경계(5만·20만·50만)가 맞다는 뜻이다.
-      const bySize = {};
-      pop.marks.forEach((m) => { bySize[m.radius] = (bySize[m.radius] || 0) + 1; });
-      check('한 단에 하나씩 들어간다 (경계가 맞다)',
-            Object.values(bySize).every((n) => n === 1), JSON.stringify(bySize));
-    }
+          base.pane !== null && base.pane > 200 && base.pane < 400,
+          `z-index ${base.pane}`);
+
+    // ① 전국이 보이는 배율 — 도·광역시 하나에 원 하나.
+    const wide = await popAt(7);
+    check('멀리서는 도·광역시로 묶는다',
+          wide.n === 3 && wide.peek.level === 'sido',
+          `${wide.n}개 · ${wide.peek.level}`);
+    check('도 하나가 그 안의 시군구를 합친 값이다',
+          wide.tips.some((t) => /경기도/.test(t) && /1,108,000명/.test(t)),
+          wide.tips.join(' | ').slice(0, 200));
+    check('몇 곳을 합친 것인지 말한다',
+          wide.tips.some((t) => /4개 시군구를 합친/.test(t)),
+          wide.tips.find((t) => /경기도/.test(t)) || '없음');
+
+    // ② 중간 배율 — 시(광역시 포함)·군.
+    const mid = await popAt(10);
+    check('가까이 가면 시·군으로 나뉜다',
+          mid.n === 5 && mid.peek.level === 'si', `${mid.n}개 · ${mid.peek.level}`);
+    check('시 아래 구는 그 시로 묶인다 (수원시 장안구 + 권선구)',
+          mid.tips.some((t) => /^수원시 ·/.test(t) && /650,000명/.test(t)),
+          mid.tips.join(' | ').slice(0, 200));
+    // "시(광역시 포함)" — 서울을 25개 구로 흩어 놓으면 부산·대구와
+    // 나란히 못 본다.
+    check('광역시는 하나로 묶는다',
+          mid.tips.some((t) => /^서울특별시 ·/.test(t) && /687,000명/.test(t))
+          && !mid.tips.some((t) => /^종로구/.test(t)),
+          mid.tips.join(' | ').slice(0, 200));
+
+    // ③ 가장 가까운 배율 — 자치구까지.
+    const near = await popAt(12);
+    check('더 가까이 가면 구까지 나뉜다',
+          near.n === 7 && near.peek.level === 'gu',
+          `${near.n}개 · ${near.peek.level}`);
+    check('그때는 종로구·강남구가 따로 선다',
+          near.tips.some((t) => /^종로구/.test(t))
+          && near.tips.some((t) => /^강남구/.test(t)),
+          near.tips.join(' | ').slice(0, 200));
+
+    // 크기는 **네 단**이다. 235가지 크기를 눈으로 가를 수는 없다.
+    // 구 단위에서 넷이 다 나오도록 자료를 넣어 두었다.
+    const R = [...new Set(near.radii)].sort((a, b) => b - a);
+    check('크기가 네 단으로 끊긴다', R.length === 4, near.radii.join(' / '));
+    // 단위가 바뀌면 자르는 자리도 바뀐다. 시군구 기준 5만·20만·50만을
+    // 시도에 그대로 쓰면 17곳이 전부 맨 위 칸에 들어가 원이 다 같아진다.
+    check('묶음 단위가 바뀌면 자르는 자리도 바뀐다',
+          new Set(wide.radii).size > 1,
+          `시도 반지름 ${wide.radii.join('/')}`);
+
     // 범례 원은 지도 원과 **같은 크기**여야 한다. 크기가 곧 값이라
     // 그것이 유일한 단서인데, 둘이 다르면 짝을 못 맞춘다.
     const legendSizes = await page.evaluate(() =>
@@ -657,14 +737,22 @@ const FAKE_LEAFLET = () => {
     check('범례에 단이 네 개 있다', legendSizes.length === 4, legendSizes.join('/'));
     check('범례 원 크기가 지도와 같다',
           legendSizes.length === 4
-          && legendSizes.every((w) => pop.marks.some((m) => Math.abs(m.radius * 2 - w) <= 1)),
-          `범례 ${legendSizes.join('/')} vs 지도 ${pop.marks.map((m) => m.radius * 2).sort().join('/')}`);
+          && near.radii.every((r) => legendSizes.some((w) => Math.abs(r * 2 - w) <= 1)),
+          `범례 ${legendSizes.join('/')} vs 지도 ${near.radii.map((r) => r * 2).join('/')}`);
     check('범례가 크기와 인구를 짝지어 말한다',
           ['행정구역 인구', '5만 이하', '20만 이하', '50만 이하', '50만 초과']
-            .every((t) => pop.legend.includes(t)));
+            .every((t) => near.legend.includes(t)), near.legend.slice(0, 160));
+    // 확대만 했는데 원 크기가 달라진 이유를 범례가 말해야 한다.
+    check('범례가 지금 어느 단위인지 말한다',
+          near.legend.includes('구·시·군 기준')
+          && wide.legend.includes('시·도 기준'),
+          `${wide.legend.slice(0, 60)} || ${near.legend.slice(0, 60)}`);
     check('어느 해 인구인지 적는다',
-          !!pop.peek.year && pop.legend.includes(String(pop.peek.year)),
-          String(pop.peek.year));
+          !!near.peek.year && near.legend.includes(String(near.peek.year)),
+          String(near.peek.year));
+
+    // 다음 절이 기본 배율을 가정하므로 되돌린다.
+    await popAt(7);
 
     console.log();
     console.log('8. 세 가설 판정 — 무엇을 말할 수 있고 없는지');

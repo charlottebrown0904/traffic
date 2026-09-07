@@ -63,6 +63,17 @@ on:
         # 실측(남이천·안성): 칸 하나에 4~5초. 2,000칸이면 세 시간쯤이다.
         description: "필지 특성을 훑을 최대 칸 수 (0=건너뜀)"
         default: "0"
+      probe:
+        # 원천 탐침. **기억으로 답하지 않기 위한 입력이다.** 새 자료를
+        # 붙이기 전에 "그 API 가 정말 그것을 주는가" 를 한 번 받아서
+        # 찍어 본다. 수집을 건드리지 않으므로 아무 때나 켜도 안전하다.
+        #
+        #   none    아무것도 안 한다 (기본)
+        #   office  도청·시청·군청·구청 좌표를 어디서 받을 수 있는가
+        description: "원천 탐침 (없으면 none)"
+        type: choice
+        options: [none, office]
+        default: none
       geocode_limit:
         # 4,000 은 근거 없이 박아둔 숫자였다. 브이월드 안내는 하루 3만건이고
         # 초과신청도 받는다. 예전에는 한도에 걸려도 '주소 없음' 과 구별이
@@ -286,6 +297,23 @@ jobs:
             echo
             echo '```'
             tail -n 40 /tmp/landchar.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 관청 좌표 원천 탐침. 인구 원의 중심을 도청·시청·군청·구청으로
+      # 옮기려면 그 좌표가 있어야 하는데 우리에게 없다. 어디서 받을지를
+      # 추측으로 정하지 않기 위해, 실제로 받아서 무엇이 오는지 찍는다.
+      # 사장님 지시(2026-09-07).
+      - name: 관청 좌표 탐침
+        if: inputs.probe == 'office'
+        continue-on-error: true
+        run: |
+          python scripts/office_probe.py 2>&1 | tee /tmp/office.log
+          {
+            echo "## 관청 좌표 원천 탐침"
+            echo
+            echo '```'
+            tail -n 120 /tmp/office.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 

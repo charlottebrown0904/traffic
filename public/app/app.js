@@ -1283,6 +1283,14 @@ function buildMap() {
   // 보이는 영역만 그리므로, 움직이면 다시 그려야 한다. moveend 는
   // 확대·축소 뒤에도 온다.
   map.on('moveend', () => drawTrades());
+  // 배율이 바뀌면 인구를 묶는 단위가 바뀐다 (시도 → 시군 → 구).
+  // 다시 그리지 않으면 확대해 들어가도 전국 원 17개가 그대로 남는다.
+  map.on('zoomend', () => {
+    drawPopulation();
+    // 범례의 원 크기와 '몇 만 이하' 도 단위에 맞춰 다시 그린다.
+    // 자료가 오기 전이면 그릴 것이 없다.
+    if (state.meta) buildLegend();
+  });
   // 거래·매물은 **영업소 아래**에 깐다.
   //
   // Leaflet 은 divIcon 마커를 markerPane(z-index 600)에, 원(circleMarker)을
@@ -2026,8 +2034,13 @@ function popLegendRows() {
   if (!state.showPop || !info.year) return '';
   // 지도와 **같은 크기**로 그린다. 범례 원이 지도 원보다 크거나 작으면
   // 짝을 못 맞춘다 — 크기가 곧 값인 표시라 그것이 유일한 단서다.
-  return '<div class="grp">행정구역 인구 · ' + info.year + '년</div>' +
-    POP_TIERS.map((t) =>
+  // 묶음 단위가 배율에 따라 바뀌므로 **자르는 자리도 함께 바뀐다.**
+  // 범례가 지금 어느 단위를 보고 있는지 말하지 않으면, 원 크기가
+  // 확대만 했는데 달라진 이유를 알 수 없다.
+  const level = POP_LEVELS.find((lv) => lv.key === info.level) || POP_LEVELS[0];
+  return `<div class="grp">행정구역 인구 · ${info.year}년`
+    + ` <span class="mut">${level.label} 기준</span></div>` +
+    level.tiers.map((t) =>
       `<div class="row"><span class="sw sw-pop" style="width:${t.r * 2}px;`
       + `height:${t.r * 2}px"></span>${t.label}</div>`).join('');
 }
@@ -2043,23 +2056,71 @@ function popLegendRows() {
  * 중심점의 중앙값이다(webexport._regions). 몇 km 어긋날 수 있어서
  * 말풍선에도 그렇게 적는다.
  */
-/* 크기를 **세 단**으로 끊는다 (2026-09-04 사장님 지시: "간단하게").
+/* 크기를 **네 단**으로 끊는다 (2026-09-04 사장님 지시: "간단하게").
  *
  * 원 넓이를 인구에 그대로 비례시키면 크기가 235가지가 된다. 그러면 두 원을
  * 나란히 놓고도 어느 쪽이 큰지 눈으로 못 가른다 — 크기는 순서를 말할 때는
- * 좋지만 값을 읽는 데는 나쁘다. 세 단이면 한눈에 갈린다.
+ * 좋지만 값을 읽는 데는 나쁘다. 몇 단이면 한눈에 갈린다.
  *
- * 자르는 자리는 5만·20만·50만이다. 2025년 기준 49 / 75 / 102 / 9 곳으로
- * 나뉜다. 마지막 자리를 70만이 아니라 50만에 둔 이유 — 70만을 넘는 곳이
- * 남양주 한 곳뿐이라(729,754명) 단 하나에 시군구 하나만 든다. 50만이면
- * 9곳이라 '가장 큰 무리' 라고 부를 만하다. */
-const POP_TIERS = [
-  { max: 50000, r: 6, label: '5만 이하' },
-  { max: 200000, r: 11, label: '20만 이하' },
-  { max: 500000, r: 16, label: '50만 이하' },
-  { max: Infinity, r: 22, label: '50만 초과' },
+ * **단은 묶음 단위마다 다르다.** 시군구 기준으로 잡은 5만·20만·50만을
+ * 시도에 그대로 쓰면 17곳이 전부 맨 위 칸에 들어가 원이 다 같아진다
+ * (가장 작은 세종이 39만, 가장 큰 경기가 1,360만이다). 단위가 바뀌면
+ * 자르는 자리도 같이 바뀌어야 한다. */
+const POP_LEVELS = [
+  { key: 'sido', label: '시·도', minZoom: 0,
+    hint: '도 · 광역시 단위',
+    tiers: [
+      { max: 1000000, r: 9, label: '100만 이하' },
+      { max: 3000000, r: 14, label: '300만 이하' },
+      { max: 6000000, r: 19, label: '600만 이하' },
+      { max: Infinity, r: 25, label: '600만 초과' },
+    ] },
+  { key: 'si', label: '시·군', minZoom: 9,
+    hint: '시(광역시 포함) · 군 단위',
+    tiers: [
+      { max: 100000, r: 7, label: '10만 이하' },
+      { max: 300000, r: 12, label: '30만 이하' },
+      { max: 1000000, r: 17, label: '100만 이하' },
+      { max: Infinity, r: 23, label: '100만 초과' },
+    ] },
+  { key: 'gu', label: '구·시·군', minZoom: 11,
+    hint: '자치구까지 나눈 단위',
+    tiers: [
+      { max: 50000, r: 6, label: '5만 이하' },
+      { max: 200000, r: 11, label: '20만 이하' },
+      { max: 500000, r: 16, label: '50만 이하' },
+      { max: Infinity, r: 22, label: '50만 초과' },
+    ] },
 ];
-const popTier = (v) => POP_TIERS.find((t) => v <= t.max) || POP_TIERS[POP_TIERS.length - 1];
+
+/* 지금 배율에서 어느 단위로 묶을 것인가.
+ *
+ * 사장님 지시(2026-09-07): "지도 화면 축적/크기에 따라 도/광역시 기준,
+ * 시(광역시 포함)/군 기준, 구 기준으로." 전국을 볼 때 247개 원이 서로
+ * 겹쳐 있으면 아무것도 안 읽힌다 — 그때 필요한 것은 17개다. */
+function popLevel(zoom) {
+  let out = POP_LEVELS[0];
+  POP_LEVELS.forEach((lv) => { if (zoom >= lv.minZoom) out = lv; });
+  return out;
+}
+
+const popTier = (v, level) =>
+  level.tiers.find((t) => v <= t.max) || level.tiers[level.tiers.length - 1];
+
+/* 특별시·광역시·특별자치시. '시·군' 단위에서 이들은 **하나로 묶는다** —
+ * 사장님 지시의 "시(광역시 포함)" 가 그 뜻이다. 서울을 25개 구로 흩어
+ * 놓으면 부산·대구와 나란히 못 본다. */
+const METRO = /(특별시|광역시|특별자치시)$/;
+
+function popGroupKey(r, levelKey) {
+  if (levelKey === 'sido') return r.sido || r.parent || r.name;
+  if (levelKey === 'si') {
+    if (METRO.test(r.sido || '')) return r.sido;
+    // '수원시 장안구' 는 '수원시' 로. 내보내기가 parent 에 넣어 준다.
+    return r.parent || r.name;
+  }
+  return r.name;
+}
 
 function popYear() {
   if (!Array.isArray(state.regions) || !state.regions.length) return null;
@@ -2070,6 +2131,27 @@ function popYear() {
   // 교통량 화면이 보고 있는 해와 맞춘다. 그 해 인구가 없으면 가장 최근 해.
   const want = String(state.popYear || state.tgYear || '');
   return years.has(want) ? want : sorted[sorted.length - 1];
+}
+
+/* 묶은 단위 하나의 중심.
+ *
+ * **아직 관청 좌표가 아니다.** 사장님 지시(2026-09-07)는 도청·시청·
+ * 군청·구청 소재지를 중심으로 하라는 것이고, 그 좌표는 우리에게 없다
+ * (scripts/office_probe.py 가 어디서 받을 수 있는지 확인하는 중이다).
+ * 그때까지는 **인구로 가중한 평균**을 쓴다. 시군구 대표점을 그냥
+ * 평균내면 인구 3만인 군과 60만인 시가 같은 무게로 잡아당겨, 도 하나의
+ * 중심이 사람이 안 사는 산으로 간다.
+ *
+ * 관청 좌표가 들어오면 **이 함수 하나만** 바꾸면 된다. */
+function popCenter(members, year) {
+  const own = members.find((r) => r.office_lat && r.office_lon);
+  if (own && members.length === 1) return [own.office_lat, own.office_lon];
+  let wsum = 0, lat = 0, lon = 0;
+  members.forEach((r) => {
+    const w = (r.pop || {})[year] || 1;
+    wsum += w; lat += r.lat * w; lon += r.lon * w;
+  });
+  return wsum ? [lat / wsum, lon / wsum] : [members[0].lat, members[0].lon];
 }
 
 function drawPopulation() {
@@ -2083,36 +2165,55 @@ function drawPopulation() {
 
   if (!map || !popLayer) return;
   popLayer.clearLayers();
-  window.__pop = { year: null, n: 0, max: 0 };
+  window.__pop = { year: null, n: 0, max: 0, level: null };
   if (!state.showPop || !have) return;
 
   const year = popYear();
   if (!year) return;
-  const vals = state.regions
-    .map((r) => (r.pop || {})[year])
-    .filter((v) => typeof v === 'number' && v > 0);
-  if (!vals.length) return;
-  const max = Math.max(...vals);
+  const level = popLevel(map.getZoom());
 
+  // 묶는다. 같은 열쇠를 가진 시군구가 한 원이 된다.
+  const groups = new Map();
   state.regions.forEach((r) => {
     const v = (r.pop || {})[year];
     if (!(typeof v === 'number' && v > 0)) return;
-    const marker = L.circleMarker([r.lat, r.lon], {
+    const key = popGroupKey(r, level.key);
+    if (!groups.has(key)) groups.set(key, { name: key, pop: 0, members: [] });
+    const g = groups.get(key);
+    g.pop += v;
+    g.members.push(r);
+  });
+  if (!groups.size) return;
+
+  let max = 0;
+  groups.forEach((g) => {
+    const [lat, lon] = popCenter(g.members, year);
+    max = Math.max(max, g.pop);
+    const marker = L.circleMarker([lat, lon], {
       pane: 'popPane',
-      radius: popTier(v).r,
+      radius: popTier(g.pop, level).r,
       color: cssVar('--pop-ring'),
       weight: 1,
       fillColor: cssVar('--pop-fill'),
       fillOpacity: .22,
       opacity: .55,
     });
+    // 몇 곳을 묶은 것인지 말한다. '경기도 1,360만' 만 적어 두면 그것이
+    // 한 시군구인지 43곳의 합인지 읽는 사람은 알 수 없다.
+    const rolled = g.members.length > 1
+      ? `<br>${g.members.length}개 시군구를 합친 값입니다`
+      : '';
     marker.bindTooltip(
-      `${r.name} · ${year}년 인구 ${v.toLocaleString('ko-KR')}명`
-      + '<br><em>점 위치는 법정동 중심점의 중앙값(대표점)입니다</em>',
+      `${escapeHtml(g.name)} · ${year}년 인구 ${g.pop.toLocaleString('ko-KR')}명`
+      + rolled
+      + '<br><em>점 위치는 인구로 가중한 대표점입니다 (관청 좌표 준비 중)</em>',
       { direction: 'top' });
     popLayer.addLayer(marker);
   });
-  window.__pop = { year, n: popLayer.getLayers ? popLayer.getLayers().length : 0, max };
+  window.__pop = {
+    year, level: level.key, levelLabel: level.label,
+    n: popLayer.getLayers ? popLayer.getLayers().length : 0, max,
+  };
 }
 
 /* ─────────── 세 가설 판정 ─────────── */

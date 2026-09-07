@@ -455,6 +455,21 @@ def _landprice_series() -> dict:
     return {"rows": rows, "available": bool(rows)}
 
 
+def _parent_si(name: str) -> str:
+    """'수원시 장안구' → '수원시'. 아니면 빈 문자열.
+
+    화면에서 축척에 따라 시·군 단위로 묶기 위한 값이다.
+
+    **광역시의 구에는 붙이지 않는다.** '종로구' 는 한 마디로 오므로
+    자연히 걸리지 않고, 그것이 맞다 — 서울의 구를 묶을 상위 시는
+    서울특별시 자신이고 그것은 시도 단위에서 처리한다.
+    """
+    parts = name.split()
+    if len(parts) == 2 and parts[0].endswith("시") and parts[1].endswith("구"):
+        return parts[0]
+    return ""
+
+
 def _regions() -> list[dict]:
     """시군구별 인구와 **대표점**.
 
@@ -489,10 +504,12 @@ def _regions() -> list[dict]:
         pts = con.execute("""
             SELECT sigungu_cd,
                    any_value(sigungu) AS name,
+                   any_value(sido) AS sido,
                    median(lat) AS lat, median(lon) AS lon,
                    count(*) AS n_umd
             FROM (
                 SELECT sigungu_cd, any_value(sigungu) AS sigungu,
+                       any_value(sido) AS sido,
                        avg(lat) AS lat, avg(lon) AS lon
                 FROM trade
                 WHERE lat IS NOT NULL AND umd IS NOT NULL AND umd <> ''
@@ -514,6 +531,15 @@ def _regions() -> list[dict]:
             "lat": round(float(c.lat), 6),
             "lon": round(float(c.lon), 6),
             "n_umd": int(c.n_umd),
+            # 시도 이름은 **실거래 자료에서 그대로** 가져온다. 코드
+            # 앞 두 자리로 짐작하면 안 된다 — 우리 자료에는 광주광역시와
+            # 전라남도가 '12' 라는 한 접두사에 함께 들어 있다
+            # (12210 동구 … 12870 신안군). 코드로 갈랐으면 광주 다섯 구가
+            # 전남 아래로 들어갔을 것이다.
+            "sido": _text(c.sido),
+            # 시 아래 구는 그 시로 묶을 수 있어야 한다 ('수원시 장안구'
+            # → '수원시'). 이름이 두 마디로 오는 것이 유일한 단서다.
+            "parent": _parent_si(_text(c.name)),
             "pop": {str(int(r.year)): int(r.value)
                     for r in group.itertuples(index=False)},
         })
