@@ -297,15 +297,22 @@ function buildFilters() {
   const mix = state.meta.usage_mix || {};
   const options = [];
   (state.meta.kinds || []).forEach((kind) => {
-    if (kind !== 'factory') { options.push({ key: kind, label: KIND_LABEL[kind] || kind }); return; }
-    options.push({ key: 'factory:공장', label: '공장', n: mix['공장'] || 0 });
-    options.push({ key: 'factory:창고', label: '창고', n: mix['창고'] || 0 });
-    const rest = (mix['기타'] || 0) + (mix['미상'] || 0);
-    if (rest) {
-      options.push({ key: 'factory:기타', label: '그 밖·구분 미상', n: rest,
-        title: '공장·창고 자료에 들어 있으나 건물주용도·지목으로 어느 쪽인지'
-             + ' 가리지 못한 거래입니다. 빼놓지 않으려고 따로 둡니다.' });
+    if (kind !== 'factory') {
+      options.push({ key: kind, label: KIND_LABEL[kind] || kind });
+      return;
     }
+    // 건물주용도를 **그대로** 늘어놓는다. 처음에는 공장/창고/기타 셋으로
+    // 줄였는데, 실제 자료(run 33)에서 그 '기타' 41,588건이 축사·온실
+    // (동물 및 식물 관련시설), 정비소(자동차 관련시설), 주유소(위험물
+    // 저장 및 처리시설)로 **또렷이 갈려 있었다.** 모르는 것이 아니라
+    // 아는 것들을 한 칸에 뭉쳐 놓고 '미상' 이라고 부르고 있었던 셈이다.
+    // 값이 7종뿐이라 뭉갤 이유가 없다.
+    Object.keys(mix)
+      .sort((a, b) => (mix[b] || 0) - (mix[a] || 0))
+      .forEach((name) => {
+        if (!mix[name]) return;
+        options.push({ key: `factory:${name}`, label: name, n: mix[name] });
+      });
   });
   options.forEach(({ key, label: text, n, title }) => {
     const label = el('label', 'check');
@@ -385,6 +392,7 @@ function buildLegend() {
     '<div class="row"><span class="sw sw-trade trade-land"></span>토지</div>' +
     '<div class="row"><span class="sw sw-trade trade-factory"></span>공장</div>' +
     '<div class="row"><span class="sw sw-trade trade-warehouse"></span>창고</div>' +
+    '<div class="row"><span class="sw sw-trade trade-etc"></span>그 밖 산업시설</div>' +
     '<div class="grp">매물</div>' +
     '<div class="row"><span class="sw sw-listing"></span>등록 매물</div>' +
     `<div class="grp">영업소 · ${state.tgYear}년 교통량</div>` +
@@ -1318,8 +1326,7 @@ function updateYearNote() {
  * 통째로 사라지고, 사라진 줄도 모른다. */
 function tradeFilterKey(t) {
   if (t.kind !== 'factory') return t.kind;
-  return (t.usage === '공장' || t.usage === '창고')
-    ? `factory:${t.usage}` : 'factory:기타';
+  return `factory:${t.usage || '구분 없음'}`;
 }
 
 function visibleTrades() {
@@ -1594,11 +1601,13 @@ function tradePopup(t) {
       + ' 실제 필지 위치가 아닙니다 (오차 ±1~2km).</p>'
     : '';
 
+  // 말풍선 머리말은 건물주용도를 그대로 적는다. '공장·창고' 로 뭉치면
+  // 축사인지 주유소인지가 사라진다.
+  const shape = tradeShape(t);
   const head = !factory ? { cls: 'is-land', text: '토지' }
-    : t.usage === '창고' ? { cls: 'is-warehouse', text: '창고' }
-    : t.usage === '공장' ? { cls: 'is-factory', text: '공장' }
-    // 가를 칸이 없었던 것. '공장' 이라고 단정하지 않는다.
-    : { cls: 'is-factory', text: '공장·창고 (구분 미상)' };
+    : { cls: shape === 'trade-warehouse' ? 'is-warehouse'
+           : shape === 'trade-factory' ? 'is-factory' : 'is-etc',
+        text: escapeHtml(t.usage || '공장·창고 (구분 없음)') };
   return `<div class="trade-pop">`
     + `<p class="pop-kind ${head.cls}">${head.text}</p>`
     + (addr ? `<p class="pop-addr">${escapeHtml(addr)}</p>` : '')
@@ -1606,11 +1615,16 @@ function tradePopup(t) {
     + warn + `</div>`;
 }
 
-// 창고는 공장과 색을 달리한다. 같은 색이면 필터를 갈라 놓아도
-// 지도에서는 여전히 한 덩어리로 보인다.
+/* 색은 셋으로 묶는다 — 공장 계열 / 창고 계열 / 그 밖.
+ *
+ * 필터는 7종을 다 갈라 놓지만 색까지 7가지로 나누면 지도에서 서로
+ * 구별이 안 된다. 사람 눈이 점 색을 대여섯 개까지밖에 못 가른다. */
 function tradeShape(t) {
   if (t.kind !== 'factory') return 'trade-land';
-  return t.usage === '창고' ? 'trade-warehouse' : 'trade-factory';
+  const u = t.usage || '';
+  if (u.includes('창고')) return 'trade-warehouse';
+  if (u.includes('공장')) return 'trade-factory';
+  return 'trade-etc';
 }
 
 function tradeMarker(t) {

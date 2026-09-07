@@ -129,14 +129,14 @@ def _with_usage(df: pd.DataFrame) -> pd.DataFrame:
     토지는 가를 것이 없으므로 빈 값이고, _trade_records 가 빈 값을
     싣지 않으므로 파일이 무거워지지도 않는다.
     """
-    from .usage import classify
+    from .usage import label
     out = df.copy()
     if "kind" not in out or out.empty:
         return out
     blank = [""] * len(out)
     use = out["building_use"].tolist() if "building_use" in out else blank
     jimok = out["jimok"].tolist() if "jimok" in out else blank
-    out["usage"] = [classify(u, j) if k == "factory" else ""
+    out["usage"] = [label(u, j) if k == "factory" else ""
                     for k, u, j in zip(out["kind"].tolist(), use, jimok)]
     # 원값은 내보내지 않는다. 판정에만 쓰고, 파일에는 결과만 싣는다.
     return out.drop(columns=["building_use"], errors="ignore")
@@ -535,7 +535,7 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
 
     # 공장·창고 구분이 전체 자료에서 실제로 몇 건씩인가. 표본이 아니라
     # **전수**를 세야 화면이 '창고가 원래 적다' 와 '못 가른다' 를 가른다.
-    from .usage import classify as _usage_of
+    from .usage import label as _usage_of
     with db.connect(read_only=True) as con:
         _rows = con.execute("""
             SELECT coalesce(building_use, '') AS use,
@@ -544,7 +544,7 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         """).fetchdf()
     usage_mix: dict[str, int] = {}
     for _r in _rows.itertuples(index=False):
-        _k = _usage_of(_r.use, _r.jimok) or "미상"
+        _k = _usage_of(_r.use, _r.jimok) or "구분 없음"
         usage_mix[_k] = usage_mix.get(_k, 0) + int(_r.n)
 
     meta = {

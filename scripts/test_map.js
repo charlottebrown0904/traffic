@@ -867,7 +867,9 @@ const FAKE_LEAFLET = () => {
       meta.counts = Object.assign({}, meta.counts, { trades_mapped: 9000000 });
       // 공장·창고 구분. 가르지 못한 것도 섞어 둔다 — 실제 자료가 그럴 수 있고,
       // 그때 그 거래가 지도에서 조용히 사라지면 안 된다.
-      meta.usage_mix = { '공장': 30000, '창고': 8000, '기타': 500, '미상': 1200 };
+      // run 33 이 알려준 실제 값과 같은 모양으로 둔다.
+      meta.usage_mix = { '공장': 143159, '창고시설': 30833,
+                         '동물 및 식물 관련시설': 20111, '구분 없음': 1200 };
       await page2.route('**/app/data/meta.json*', (r) => r.fulfill({
         status: 200, contentType: 'application/json', body: JSON.stringify(meta) }));
 
@@ -889,7 +891,7 @@ const FAKE_LEAFLET = () => {
           sido: '경기도', sigungu: '이천시', umd: '마장면', jibun: '77',
           jimok: '창고용지', land_use: '계획관리', building_area_m2: 900,
           build_year: 2015, deal_type: '중개거래', geocode_level: 'parcel',
-          usage: '창고' },
+          usage: '창고시설' },
         // 가를 칸이 없던 거래. 어느 칸에도 안 들어가면 지도에서 사라진다.
         { kind: 'factory', lat: 37.4, lon: 127.4, deal_year: 2025, deal_month: 2,
           price_per_m2: 400000, price_krw: 300000000, area_m2: 750,
@@ -990,15 +992,19 @@ const FAKE_LEAFLET = () => {
         })));
       const names = filters.map((f) => f.text);
       check('필터에 공장과 창고가 따로 있다',
-            names.some((t) => /^공장/.test(t)) && names.some((t) => /^창고/.test(t)),
+            names.some((t) => /^공장/.test(t)) && names.some((t) => /^창고시설/.test(t)),
             names.join(' | '));
-      check('필터가 각 구분의 건수를 적는다',
-            names.some((t) => /30,000건/.test(t)) && names.some((t) => /8,000건/.test(t)),
+      check('필터가 각 용도의 건수를 적는다',
+            names.some((t) => /143,159건/.test(t)) && names.some((t) => /30,833건/.test(t)),
             names.join(' | '));
-      // 가르지 못한 것도 칸을 만들어야 한다. 안 그러면 그만큼이 지도에서
-      // 조용히 사라지고, 사라진 줄도 모른다.
-      check('가르지 못한 거래도 칸이 있다',
-            names.some((t) => /구분 미상/.test(t) && /1,700건/.test(t)),
+      // '기타' 로 뭉개지 않는다. run 33 에서 그 41,588건이 축사·정비소·
+      // 주유소로 또렷이 갈려 있었다 — 모르는 것이 아니라 아는 것이다.
+      check('그 밖 용도도 이름 그대로 칸이 된다',
+            names.some((t) => /동물 및 식물 관련시설/.test(t) && /20,111건/.test(t)),
+            names.join(' | '));
+      check('많은 것부터 늘어놓는다',
+            names.indexOf(names.find((t) => /^공장/.test(t)))
+              < names.indexOf(names.find((t) => /동물 및 식물/.test(t))),
             names.join(' | '));
 
       // 창고만 켜면 창고만 남는가.
@@ -1007,34 +1013,34 @@ const FAKE_LEAFLET = () => {
           if (i.checked) i.click();
         });
         const only = [...document.querySelectorAll('#kind-filters label')]
-          .find((l) => /^창고/.test(l.textContent.trim()));
+          .find((l) => /^창고시설/.test(l.textContent.trim()));
         only.querySelector('input').click();
       });
       await page2.waitForTimeout(300);
       const onlyWh = await page2.evaluate(() => window.__tradeStyles || []);
-      check('창고만 켜면 창고만 남는다', onlyWh.length === 1,
-            `${onlyWh.length}개`);
+      check('창고만 켜면 창고만 남는다', onlyWh.length === 1, `${onlyWh.length}개`);
       check('창고는 색이 공장과 다르다',
             onlyWh.length === 1 && /trade-warehouse/.test(onlyWh[0].html),
             onlyWh.length ? onlyWh[0].html : '없음');
-      check('창고 말풍선이 창고라고 말한다',
-            onlyWh.length === 1 && />창고</.test(onlyWh[0].popup));
+      check('창고 말풍선이 용도 이름을 그대로 적는다',
+            onlyWh.length === 1 && />창고시설</.test(onlyWh[0].popup));
 
-      // 구분 미상만 켜면 그 한 건이 나온다 — 어디에도 안 속해 사라지지 않는다.
+      // 구분 없는 거래도 칸이 있어야 한다 — 어디에도 안 넣으면 지도에서
+      // 조용히 사라지고, 사라진 줄도 모른다.
       await page2.evaluate(() => {
         document.querySelectorAll('#kind-filters input').forEach((i) => {
           if (i.checked) i.click();
         });
         const only = [...document.querySelectorAll('#kind-filters label')]
-          .find((l) => /구분 미상/.test(l.textContent));
+          .find((l) => /구분 없음/.test(l.textContent));
         only.querySelector('input').click();
       });
       await page2.waitForTimeout(300);
       const unknown = await page2.evaluate(() => window.__tradeStyles || []);
-      check('가르지 못한 거래도 지도에 남는다', unknown.length === 1,
+      check('용도를 모르는 거래도 지도에 남는다', unknown.length === 1,
             `${unknown.length}개`);
-      check("가르지 못한 것을 '공장' 이라고 단정하지 않는다",
-            unknown.length === 1 && /구분 미상/.test(unknown[0].popup),
+      check("모르는 것을 '공장' 이라고 단정하지 않는다",
+            unknown.length === 1 && /구분 없음/.test(unknown[0].popup),
             unknown.length ? unknown[0].popup.slice(0, 80) : '없음');
 
       // 다시 전부 켜 둔다 (아래 연도 검사가 개수를 센다).

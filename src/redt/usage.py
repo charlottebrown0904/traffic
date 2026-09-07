@@ -37,8 +37,37 @@ def _look(text) -> str:
     return OTHER
 
 
+def label(building_use, jimok=None) -> str:
+    """화면에 그대로 쓸 용도 이름.
+
+    **뭉개지 않는다.** 처음에는 공장/창고/기타 셋으로 줄였는데, 실제
+    자료(run 33)를 보니 건물주용도가 100% 채워져 오고 값이 딱 7종이었다.
+
+      공장 143,159 · 창고시설 30,833 · 동물 및 식물 관련시설 20,111 ·
+      자동차 관련시설 10,829 · 위험물 저장 및 처리시설 7,133 ·
+      자원순환 관련시설 1,804 · 운수시설 1,711
+
+    '기타 41,588건' 은 **모르는 것이 아니라 아는 것들**이었다. 축사·온실과
+    정비소와 주유소를 한 칸에 넣어 두면, 그 셋을 가려 보려던 사람에게는
+    없는 것과 같다. 7종이면 필터에 그대로 늘어놓을 수 있다.
+
+    가를 수 없을 때만 지목으로 넘어간다(지목은 이 자료에 0% 로 안 오지만,
+    안 오는 날이 오면 그때 이 줄이 받는다).
+    """
+    if isinstance(building_use, str) and building_use.strip():
+        return building_use.strip()
+    if isinstance(jimok, str) and jimok.strip():
+        got = _look(jimok)
+        if got in (FACTORY, WAREHOUSE):
+            return got
+    return UNKNOWN
+
+
 def classify(building_use, jimok=None) -> str:
-    """공장 / 창고 / 기타 / 미상.
+    """공장 / 창고 / 기타 / 미상 — **색과 묶음**에만 쓴다.
+
+    화면에 적는 이름은 label() 이 준다. 이쪽은 '창고 계열은 황토색' 처럼
+    묶어서 다룰 때만 쓴다.
 
     근거를 **둘** 본다.
 
