@@ -98,12 +98,27 @@ def probe_rtms() -> None:
     우리 파서(collect/rtms.py)는 아는 이름만 골라 담는다. 그래서 API 가
     도로접·형상을 주고 있어도 조용히 버려졌을 수 있다.
     """
-    body = fetch(RTMS, {
-        "serviceKey": os.environ.get("DATA_GO_KR_KEY", ""),
-        "LAWD_CD": "41590",          # 화성시
-        "DEAL_YMD": "202406",
-        "pageNo": "1", "numOfRows": "3",
-    })
+    # 한 조합만 시도했다가 'OK · totalCount 0' 을 받고 아무것도 못 봤다.
+    # 그 시군구·그 달에 거래가 없었을 뿐인데 'API 에 없다' 로 읽힐 뻔했다.
+    # 거래가 실제로 있을 만한 곳·달을 몇 개 돌려 **하나라도 걸리게** 한다.
+    combos = [("41500", "202405"),   # 이천시 (남이천 IC 가 있는 곳)
+              ("41500", "202310"),
+              ("41590", "202305"),   # 화성시
+              ("41220", "202404"),   # 평택시
+              ("11680", "202404")]   # 서울 강남 — 거래가 없을 리 없다
+    body, used = "", None
+    for code, ym in combos:
+        body = fetch(RTMS, {
+            "serviceKey": os.environ.get("DATA_GO_KR_KEY", ""),
+            "LAWD_CD": code, "DEAL_YMD": ym,
+            "pageNo": "1", "numOfRows": "3",
+        })
+        if "<item>" in body:
+            used = (code, ym)
+            break
+        print(f"    {code}/{ym} — 거래 0건, 다음 조합을 봅니다")
+    if used:
+        print(f"\n  {used[0]}/{used[1]} 에서 받았습니다")
     reason = why(body)
     if reason:
         print(f"\n  ⚠ 실거래 API 응답: {reason}")
