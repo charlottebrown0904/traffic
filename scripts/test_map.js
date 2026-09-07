@@ -83,6 +83,9 @@ const FAKE_LEAFLET = () => {
       setView() { return this; }, fitBounds() { return this; },
       panTo() { return this; }, invalidateSize() { return this; },
       getZoom() { return 7; },
+      // 거래를 '보이는 영역만' 그리므로 경계가 없으면 한 점도 안 그려진다.
+      // 전국이 다 보이는 셈으로 둔다 — 잘라내기 자체는 아래에서 따로 본다.
+      getBounds() { return { contains: () => true, pad: () => ({}) }; },
       // 진짜 Leaflet 의 판(pane). 없으면 createPane 이 undefined 를 돌려
       // .style 에서 터지고, 지도 전체가 안 그려진다.
       createPane(name) {
@@ -114,6 +117,10 @@ const FAKE_LEAFLET = () => {
     marker: (ll, opts) => {
       const m = chain();
       m.options = Object.assign({}, opts);
+      m.__latlng = ll;
+      // 거래 상세 말풍선. 붙인 내용을 들고 있지 않으면 '눌러도 아무것도
+      // 안 나온다' 를 검사로 옮길 수 없다.
+      m.bindPopup = (html) => { m.__popupHtml = html; return m; };
       return m;
     },
     divIcon: (opts) => ({ options: Object.assign({}, opts) }),
@@ -834,6 +841,140 @@ const FAKE_LEAFLET = () => {
 
 
     await page.close();
+
+    /* ── 거래 연도 · 상세 말풍선 ──
+     *
+     * 사장님 지시(2026-09-07) 세 가지를 그대로 본다.
+     *   1) 실거래를 IC 거리와 무관하게 표기      → 반경 밖 좌표도 그려지는가
+     *   2) 거래 연도를 고를 수 있게              → 고른 해 파일을 받는가
+     *   3) 클릭 시 주요 거래 정보                → 말풍선에 값이 들어 있는가
+     *
+     * 자료는 여기서 만들어 넣는다. 커밋된 파일에 기대면 다음 수집이 돌기
+     * 전까지 이 검사가 '건너뜀' 으로 초록이 되는데, 건너뛴 검사는 통과가
+     * 아니라 안 본 것이다. */
+    {
+      const page2 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+      for (const pat of ['**/lib/supabase-init.js*', '**/app/supabase.js*',
+                         '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'])
+        await page2.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
+
+      const META = path.join(ROOT, 'public', 'app', 'data', 'meta.json');
+      const meta = JSON.parse(fs.readFileSync(META, 'utf8'));
+      meta.trade_years = [
+        { year: 2024, total: 500000, sample: 2 },
+        { year: 2025, total: 400000, sample: 3 },
+      ];
+      meta.counts = Object.assign({}, meta.counts, { trades_mapped: 9000000 });
+      await page2.route('**/app/data/meta.json*', (r) => r.fulfill({
+        status: 200, contentType: 'application/json', body: JSON.stringify(meta) }));
+
+      // 2025년 거래 세 건. 하나는 법정동 중심점(경고가 붙어야 한다).
+      const Y2025 = [
+        { kind: 'land', lat: 37.1, lon: 127.1, deal_year: 2025, deal_month: 3,
+          price_per_m2: 500000, price_krw: 370000000, area_m2: 740,
+          sido: '경기도', sigungu: '화성시', umd: '동탄면', jibun: '123-4',
+          jimok: '전', land_use: '계획관리', deal_type: '중개거래',
+          geocode_level: 'parcel' },
+        { kind: 'factory', lat: 37.2, lon: 127.2, deal_year: 2025, deal_month: 7,
+          price_per_m2: 900000, price_krw: 1500000000, area_m2: 1660,
+          sido: '경기도', sigungu: '평택시', umd: '청북읍', jibun: '55',
+          jimok: '공장용지', land_use: '계획관리', building_area_m2: 800,
+          build_year: 2010, deal_type: '직거래', geocode_level: 'parcel' },
+        // IC 에서 먼 곳 — 법정동 중심점 좌표. 예전에는 좌표가 아예 없어
+        // 지도에서 통째로 빠지던 종류다.
+        { kind: 'land', lat: 34.8, lon: 126.4, deal_year: 2025, deal_month: 1,
+          price_per_m2: 30000, price_krw: 45000000, area_m2: 1500,
+          sido: '전라남도', sigungu: '무안군', umd: '삼향읍', jibun: '901',
+          jimok: '답', land_use: '생산관리', deal_type: '중개거래',
+          geocode_level: 'umd' },
+      ];
+      const Y2024 = Y2025.slice(0, 2).map((t) =>
+        Object.assign({}, t, { deal_year: 2024 }));
+      await page2.route('**/app/data/trades-2025.json*', (r) => r.fulfill({
+        status: 200, contentType: 'application/json', body: JSON.stringify(Y2025) }));
+      await page2.route('**/app/data/trades-2024.json*', (r) => r.fulfill({
+        status: 200, contentType: 'application/json', body: JSON.stringify(Y2024) }));
+
+      await page2.addInitScript(FAKE_LEAFLET);
+      await page2.addInitScript(() => {
+        window.SB = {};
+        window.SBUtil = { me: async () => ({ user: { id: 'u1' },
+          profile: { status: 'approved' } }) };
+      });
+      await page2.goto(`${BASE}/app/`, { waitUntil: 'domcontentloaded' });
+      await page2.waitForFunction(() => document.querySelectorAll(
+        '#deal-year option').length > 0, null, { timeout: 15000 });
+
+      const sel = await page2.evaluate(() => {
+        const s = document.getElementById('deal-year');
+        return { value: s.value,
+                 options: [...s.options].map((o) => o.value) };
+      });
+      check('거래 연도를 고를 수 있다', sel.options.includes('2025')
+            && sel.options.includes('2024') && sel.options.includes('all'),
+            sel.options.join(','));
+      check('기본값은 가장 최근 해다', sel.value === '2025', sel.value);
+
+      // 거래는 기본이 꺼져 있다(2026-09-04 지시). 켜야 그려진다.
+      await page2.evaluate(() => {
+        document.querySelectorAll('#kind-filters input').forEach((i) => {
+          if (!i.checked) i.click();
+        });
+      });
+      await page2.waitForTimeout(300);
+
+      const styles = await page2.evaluate(() => window.__tradeStyles || []);
+      check('고른 해의 거래가 그려진다', styles.length === 3, `${styles.length}개`);
+      // 반경 밖(무안군) 거래도 그려져야 한다. 예전에는 좌표가 아예 없어
+      // 지도에서 통째로 빠졌다.
+      check('IC 반경 밖 거래도 그려진다',
+            styles.some((x) => x.geocodeLevel === 'umd'),
+            styles.map((x) => x.geocodeLevel).join(','));
+      check('거래 표식을 누를 수 있다',
+            styles.length > 0 && styles.every((x) => x.interactive === true));
+
+      const land = styles.find((x) => x.kind === 'land' && x.geocodeLevel === 'parcel');
+      const fac = styles.find((x) => x.kind === 'factory');
+      const coarse = styles.find((x) => x.geocodeLevel === 'umd');
+      check('말풍선에 주소가 들어 있다',
+            !!land && /화성시/.test(land.popup) && /123-4/.test(land.popup),
+            land ? land.popup.slice(0, 60) : '없음');
+      check('말풍선에 거래금액이 들어 있다',
+            !!land && /3\.7억원/.test(land.popup));
+      check('말풍선에 평당가가 들어 있다',
+            !!land && /평당/.test(land.popup) && /165만원/.test(land.popup),
+            land ? (land.popup.match(/평당[^<]*/) || [''])[0] : '없음');
+      check('말풍선에 면적을 평으로도 적는다',
+            !!land && /224평/.test(land.popup),
+            land ? (land.popup.match(/[\d,]+평/g) || []).join(' ') : '없음');
+      check('말풍선에 용도지역이 들어 있다', !!land && /계획관리/.test(land.popup));
+      check('공장은 건축연도와 건물면적을 적는다',
+            !!fac && /2010년/.test(fac.popup) && /건물면적/.test(fac.popup));
+      // 법정동 중심점은 실제 필지가 아니다. 지번을 적어 놓고 점을 찍으면
+      // 보는 사람은 그 자리라고 읽는다 — 땅을 보러 가는 사람에게 2km 는
+      // 다른 동네다.
+      check('법정동 중심점 거래는 실제 위치가 아니라고 말한다',
+            !!coarse && /법정동 중심점/.test(coarse.popup)
+            && /실제 필지 위치가 아닙니다/.test(coarse.popup));
+      check('지번 좌표에는 그 경고가 없다',
+            !!land && !/실제 필지 위치가 아닙니다/.test(land.popup));
+
+      // 표본이라는 사실을 화면이 말하는가.
+      const note = await page2.evaluate(() =>
+        document.getElementById('deal-year-note').textContent);
+      check('안내가 그 해 실제 건수를 말한다', /400,000건/.test(note), note);
+      check('안내가 표본임을 말한다', /무작위 표본/.test(note), note);
+
+      // 연도를 바꾸면 그 해 파일을 받아 다시 그린다.
+      await page2.selectOption('#deal-year', '2024');
+      await page2.waitForFunction(
+        () => (window.__tradeStyles || []).length === 2, null, { timeout: 8000 })
+        .then(() => check('연도를 바꾸면 그 해 자료로 다시 그린다', true))
+        .catch(async () => check('연도를 바꾸면 그 해 자료로 다시 그린다', false,
+          `${await page2.evaluate(() => (window.__tradeStyles || []).length)}개`));
+
+      await page2.close();
+    }
   } finally {
     await browser.close();
     srv.kill();

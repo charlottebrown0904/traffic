@@ -21,7 +21,8 @@ const state = {
   activeTiers: new Set([0, 1, 2, 3, 'new', 'none']),
   // 용도지역 배경은 기본으로 켜 둔다 — 사장님이 요청하신 화면이다.
   zoning: true,
-  tgYear: null, tgVehicle: 'total', dealFrom: null, dealTo: null,
+  tgYear: null, tgVehicle: 'total',
+  dealYear: 'all', tradeCache: {}, tradesShown: null,
   activeKinds: new Set(),
   parcelOnly: false, selected: null, showAllBands: false, tiers: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
@@ -94,8 +95,7 @@ async function boot() {
   // 사장님 지시(2026-09-04): "모든 실거래는 초기 기본설정은 표기 끄는 것."
   // 거래가 2천 점이라 처음 화면이 온통 점으로 덮인다. 필요할 때 켠다.
   state.activeKinds = new Set();
-  state.dealFrom = `${state.meta.year_min}-01`;
-  state.dealTo = `${state.meta.year_max}-12`;
+  state.tradesShown = state.trades;
 
   if (state.meta.is_synthetic) $('#demo-banner').hidden = false;
   $('#meta-stamp').innerHTML =
@@ -156,6 +156,10 @@ async function boot() {
   window.__bands = state.meta.bands_km || [];
 
   buildFilters();
+  // buildFilters 가 기본 연도를 정한다. 그 해 파일을 여기서 받아 둔다 —
+  // 안 받으면 처음 화면이 전 기간 표본으로 그려져, 연도 칸이 가리키는
+  // 해와 지도에 찍힌 점이 서로 다른 해가 된다.
+  await loadTradeYear(state.dealYear);
   buildRank();
   buildTrend();
   buildMap();
@@ -298,21 +302,27 @@ function buildFilters() {
     kinds.append(label);
   });
 
-  // ── 실거래 기간: 시작·끝 년월 ──
-  // 슬라이더는 '언제부터' 만 고를 수 있었다. 특정 구간(예: 2015-03 ~
-  // 2018-06)을 보려면 끝도 정할 수 있어야 한다.
-  const from = $('#deal-from'), to = $('#deal-to');
-  from.min = to.min = `${state.meta.year_min}-01`;
-  from.max = to.max = `${state.meta.year_max}-12`;
-  from.value = `${state.meta.year_min}-01`;
-  to.value = `${state.meta.year_max}-12`;
-  const onRange = () => {
-    state.dealFrom = from.value || null;
-    state.dealTo = to.value || null;
+  // ── 실거래 연도 ──
+  // 전에는 시작·끝 년월 두 칸이었다. 그런데 화면 자료에는 연도만
+  // 있어서 월을 골라도 아무 일이 없었고, 무엇보다 **전 기간이 한
+  // 파일**이라 표본 2천 건이 20년에 흩어져 한 해에 백 점씩밖에
+  // 안 남았다. 연도를 고르면 그 해 파일만 받으므로 같은 무게로
+  // 훨씬 촘촘히 볼 수 있다 (한 해 최대 4천 점).
+  const ysel = $('#deal-year');
+  const dealYears = (state.meta.trade_years || []).map((r) => r.year);
+  ysel.innerHTML =
+    `<option value="all">전 기간 (표본)</option>` +
+    dealYears.slice().reverse()
+      .map((y) => `<option value="${y}">${y}년</option>`).join('');
+  // 기본은 가장 최근 해. 전 기간을 기본으로 두면 처음 보는 화면이
+  // 늘 성긴 표본이라 '거래가 이것뿐인가' 로 읽힌다.
+  state.dealYear = dealYears.length ? dealYears[dealYears.length - 1] : 'all';
+  ysel.value = String(state.dealYear);
+  ysel.addEventListener('change', async () => {
+    state.dealYear = ysel.value === 'all' ? 'all' : Number(ysel.value);
+    await loadTradeYear(state.dealYear);
     refreshMap();
-  };
-  from.addEventListener('change', onRange);
-  to.addEventListener('change', onRange);
+  });
 
   $('#parcel-only').addEventListener('change', (e) => {
     state.parcelOnly = e.target.checked;
@@ -1107,6 +1117,9 @@ function buildMap() {
   const withCoords = state.tollgates.filter((t) => t.lat && t.lon);
   map = L.map('map', { zoomControl: true, preferCanvas: true })
     .setView([36.5, 127.8], 7);
+  // 보이는 영역만 그리므로, 움직이면 다시 그려야 한다. moveend 는
+  // 확대·축소 뒤에도 온다.
+  map.on('moveend', () => drawTrades());
   // 거래·매물은 **영업소 아래**에 깐다.
   //
   // Leaflet 은 divIcon 마커를 markerPane(z-index 600)에, 원(circleMarker)을
@@ -1229,19 +1242,88 @@ function drawAllBands() {
   });
 }
 
+/* 고른 해의 거래를 받아 온다. 한 번 받은 해는 다시 안 받는다.
+ *
+ * 실패해도 화면은 살려 둔다 — 거래가 안 보이는 것과 화면이 죽는 것은
+ * 사용자에게 전혀 다른 일이다. */
+async function loadTradeYear(year) {
+  if (year === 'all') { state.tradesShown = state.trades; return; }
+  if (state.tradeCache[year]) { state.tradesShown = state.tradeCache[year]; return; }
+  try {
+    const r = await fetch(`/app/data/trades-${year}.json`);
+    if (!r.ok) throw new Error(String(r.status));
+    state.tradeCache[year] = await r.json();
+  } catch (err) {
+    state.tradeCache[year] = [];
+  }
+  state.tradesShown = state.tradeCache[year];
+}
+
+/* 표본이라는 사실을 화면에 적는다.
+ *
+ * 이 한 줄이 없으면 '2019년 계획관리 거래는 이 열 점이 전부' 로 읽힌다.
+ * 스크리닝 도구에서 그 오해는 곧바로 투자 판단으로 이어진다. */
+function updateYearNote() {
+  const node = document.getElementById('deal-year-note');
+  if (!node) return;
+  const n = (v) => v.toLocaleString('ko-KR');
+  const held = visibleTrades().length;
+  const row = state.dealYear === 'all' ? null
+    : (state.meta.trade_years || []).find((r) => r.year === state.dealYear);
+  const total = row ? row.total : ((state.meta.counts || {}).trades_mapped || 0);
+  const label = row ? `${state.dealYear}년` : '전 기간';
+
+  let text = `${label} 좌표 있는 거래 <strong>${n(total)}건</strong>`;
+  if (held < total) text += ` 중 무작위 표본 ${n(held)}건을 받았습니다`;
+  else text += ` 전부를 받았습니다`;
+  // 화면에 실제로 몇 개가 그려졌는지. 잘렸으면 반드시 말한다.
+  if (typeof state.tradeInView === 'number') {
+    text += ` · 지금 보이는 영역 ${n(state.tradeInView)}건`;
+    if (state.tradeDrawn < state.tradeInView) {
+      text += ` <em>(그중 ${n(state.tradeDrawn)}건만 표시 — 확대하면 다 보입니다)</em>`;
+    }
+  }
+  node.innerHTML = text + '.';
+}
+
 function visibleTrades() {
-  // 거래에는 연·월이 다 있지만 화면 자료에는 연도만 실려 있다.
-  // 년월 입력의 연도 부분으로 자른다 — 월까지 자르려면 export 에
-  // deal_month 를 실어야 하고, 그건 파일이 커지는 값에 비해 이득이 적다.
-  const fy = state.dealFrom ? Number(state.dealFrom.slice(0, 4)) : -Infinity;
-  const ty = state.dealTo ? Number(state.dealTo.slice(0, 4)) : Infinity;
-  return state.trades.filter((t) =>
+  const rows = state.tradesShown || state.trades || [];
+  // 연도는 파일을 고를 때 이미 갈렸다. 여기서 또 자르지 않는다.
+  return rows.filter((t) =>
     state.activeKinds.has(t.kind) &&
-    t.deal_year >= fy && t.deal_year <= ty &&
     (!state.parcelOnly || t.geocode_level === 'parcel'));
 }
 
+/* 지금 보이는 영역의 거래만 그린다.
+ *
+ * 표식 하나가 DOM 요소 하나라 휴대폰에서는 수천 개를 못 버틴다. 그렇다고
+ * 표본을 줄이면 **확대해 들어갔을 때** 그 동네 거래가 몇 점 안 남는다 —
+ * 스크리닝 도구에서 정작 들여다볼 때 비는 셈이다.
+ *
+ * 그래서 받아 두는 것은 넉넉히, 그리는 것은 보이는 영역만. 전국을 볼 때는
+ * 자연히 성기고, 시군구 하나로 확대하면 그 안이 촘촘해진다. */
+const TRADE_DRAW_CAP = 1500;
+
+function drawTrades() {
+  if (!map || !tradeLayer) return;
+  tradeLayer.clearLayers();
+  const rows = visibleTrades();
+  const bounds = map.getBounds();
+  const inView = rows.filter((t) => bounds.contains([t.lat, t.lon]));
+  // 한 화면에 1,500개가 넘으면 앞에서 자른다. 자를 때는 반드시 말한다 —
+  // 말 안 하면 '이 동네 거래는 이것뿐' 으로 읽힌다.
+  state.tradeInView = inView.length;
+  state.tradeDrawn = Math.min(inView.length, TRADE_DRAW_CAP);
+  for (let i = 0; i < state.tradeDrawn; i++) {
+    tradeLayer.addLayer(tradeMarker(inView[i]));
+  }
+  updateYearNote();
+}
+
 function refreshMap() {
+  // 지도가 없어도(CDN 차단) 개수 안내는 갱신한다. 그 한 줄이 표본이라는
+  // 사실을 말하는 유일한 자리다.
+  updateYearNote();
   if (!map) return;
   tollgateLayer.clearLayers();
   const rank = (state.tiers || {}).rank || new Map();
@@ -1262,8 +1344,7 @@ function refreshMap() {
     else { bandLayer.clearLayers(); drawAllBands(); }
   }
 
-  tradeLayer.clearLayers();
-  visibleTrades().forEach((t) => tradeLayer.addLayer(tradeMarker(t)));
+  drawTrades();
   // 검사용 들여다보기 창. window.__bands 와 같은 취지다 — 지도는 CDN
   // 의 Leaflet 이 있어야 그려져서, 그리는 값 자체를 밖에서 볼 길이
   // 없으면 '색이 안 보인다' 같은 지적을 검사로 못 옮긴다.
@@ -1278,6 +1359,11 @@ function refreshMap() {
         // 내보내야 검사가 '네모인가 마름모인가' 를 볼 수 있다.
         html: (l.options.icon && l.options.icon.options
                && l.options.icon.options.html) || '',
+        // 누를 수 있는지와, 눌렀을 때 무엇이 뜨는지. 이 둘이 없으면
+        // '눌러도 아무것도 안 나온다' 를 검사로 옮길 수 없다.
+        interactive: l.options.interactive === true,
+        popup: (l.getPopup && l.getPopup() && l.getPopup().getContent
+                && l.getPopup().getContent()) || l.__popupHtml || '',
       }))
     : undefined;
 }
@@ -1404,6 +1490,82 @@ function toggleZoning(on) {
  */
 const TRADE_PX = 9;              // 표식 한 변(px). 원 반경 3.6 과 비슷한 무게.
 
+const PYEONG_M2 = 3.305785;          // 1평
+
+/* 원 단위를 사람이 읽는 꼴로. 3.7억 · 8,500만원 · 940만원 */
+function won(v) {
+  if (!(typeof v === 'number' && isFinite(v)) || v <= 0) return null;
+  if (v >= 1e8) {
+    const eok = v / 1e8;
+    return `${eok >= 10 ? Math.round(eok) : eok.toFixed(1)}억원`;
+  }
+  return `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`;
+}
+
+// 위쪽 num() 은 없으면 '—' 을 준다. 말풍선에서는 없는 칸을 아예 빼야
+// 하므로 null 을 주는 것이 따로 필요하다.
+const popNum = (v, digits = 0) =>
+  (typeof v === 'number' && isFinite(v))
+    ? v.toLocaleString('ko-KR', { maximumFractionDigits: digits }) : null;
+
+/* 거래 한 건의 상세. 사장님 지시(2026-09-07): "클릭 시 주요 거래 정보를
+ * 상세히." 지도에 점만 있으면 얼마에 팔렸는지를 알 수 없어 스크리닝에
+ * 쓸 수가 없다.
+ *
+ * 평(坪)을 함께 적는다. 토지·공장 거래를 실제로 하는 자리에서는 ㎡ 보다
+ * 평으로 값을 셈한다. */
+function tradePopup(t) {
+  const factory = t.kind === 'factory';
+  const addr = [t.sido, t.sigungu, t.umd, t.jibun].filter(Boolean).join(' ');
+  const rows = [];
+  const add = (k, v) => { if (v) rows.push(`<tr><th>${k}</th><td>${v}</td></tr>`); };
+
+  const when = t.deal_month
+    ? `${t.deal_year}년 ${t.deal_month}월` : `${t.deal_year}년`;
+  add('거래', when);
+  add('거래금액', won(t.price_krw));
+
+  const m2 = popNum(t.area_m2, 0);
+  const py = popNum(t.area_m2 / PYEONG_M2, 0);
+  if (m2) add(factory ? '대지면적' : '거래면적', `${m2}㎡ <span class="mut">(${py}평)</span>`);
+
+  const per = won(t.price_per_m2);
+  const perPy = won(t.price_per_m2 * PYEONG_M2);
+  if (per) add('단가', `㎡당 ${per} <span class="mut">· 평당 ${perPy}</span>`);
+
+  // 지번·지목·용도지역·거래유형은 자료에서 그대로 온다. HTML 에
+  // 넣기 전에 막는다.
+  add('지목', t.jimok && escapeHtml(t.jimok));
+  add('용도지역', t.land_use && escapeHtml(t.land_use));
+  if (t.building_area_m2) {
+    add('건물면적', `${popNum(t.building_area_m2, 0)}㎡ ` +
+        `<span class="mut">(${popNum(t.building_area_m2 / PYEONG_M2, 0)}평)</span>`);
+  }
+  if (t.build_year) {
+    const age = t.deal_year - t.build_year;
+    add('건축연도', `${t.build_year}년` +
+        (age >= 0 ? ` <span class="mut">(거래 시점 ${age}년차)</span>` : ''));
+  }
+  add('거래유형', t.deal_type && escapeHtml(t.deal_type));
+
+  // **좌표가 지번 좌표가 아니면 반드시 말한다.**
+  // 법정동 중심점은 오차가 ±1~2km 다. 지번을 적어 놓고 점을 그 자리에
+  // 찍어 두면, 보는 사람은 그 점이 그 필지라고 읽는다. 땅을 보러 가는
+  // 사람에게 2km 는 다른 동네다.
+  const coarse = t.geocode_level !== 'parcel';
+  const warn = coarse
+    ? '<p class="pop-warn">이 점은 <strong>법정동 중심점</strong>입니다 —'
+      + ' 실제 필지 위치가 아닙니다 (오차 ±1~2km).</p>'
+    : '';
+
+  return `<div class="trade-pop">`
+    + `<p class="pop-kind ${factory ? 'is-factory' : 'is-land'}">`
+    + `${factory ? '공장·창고' : '토지'}</p>`
+    + (addr ? `<p class="pop-addr">${escapeHtml(addr)}</p>` : '')
+    + `<table class="pop-table">${rows.join('')}</table>`
+    + warn + `</div>`;
+}
+
 function tradeMarker(t) {
   const factory = t.kind === 'factory';
   const coarse = t.geocode_level !== 'parcel';
@@ -1418,14 +1580,16 @@ function tradeMarker(t) {
       iconAnchor: [TRADE_PX / 2, TRADE_PX / 2],
     }),
     pane: 'tradePane',
-    // 표식을 눌러도 용도지역 말풍선이 뜨게 둔다. 거래 점 위가 곧
-    // 그 땅이므로 막을 이유가 없다.
-    interactive: false,
+    // 전에는 interactive:false 였다. 표식을 눌러도 밑의 용도지역
+    // 말풍선이 뜨게 하려던 것인데, 그러면 **거래 자체는 눌러도 아무
+    // 것도 안 나온다.** 지시(2026-09-07)에 따라 거래 상세를 띄우고,
+    // 용도지역은 그 말풍선 안에 같이 적어 잃는 것이 없게 했다.
+    interactive: true,
     keyboard: false,
     // 검사와 화면 양쪽이 같은 값을 본다.
     kind: t.kind,
     geocodeLevel: t.geocode_level || '',
-  });
+  }).bindPopup(tradePopup(t), { className: 'trade-popup', maxWidth: 320 });
 }
 
 function selectTollgate(id) {

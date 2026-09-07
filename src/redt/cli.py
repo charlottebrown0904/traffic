@@ -833,20 +833,27 @@ def cmd_geocode_staged(args):
             con.unregister("_fine")
             print(f"  지번단위 {len(fine):,}개 주소를 반영했습니다")
 
-        # **반경 안 법정동에만** 거친 좌표를 쓴다.
+        # 거친 좌표는 **전국 법정동 전부에** 쓴다.
         #
-        # 예전에는 전국 법정동 전부에 썼다. 그러면 영업소에서 100km 떨어진
-        # 거래에도 좌표가 붙고, 그 거래가 전부 공간 조인 대상이 된다.
-        # run 17 이 그 조인에서 러너째 죽었다 — 좌표 있는 거래가 수백만
-        # 건으로 불어났기 때문이다.
+        # 한동안 반경 안(13km)에만 붙였다. 분석만 생각하면 맞다 — 반경
+        # 밖 거래는 어느 밴드에도 못 들어가니 좌표가 쓸모없다. 그런데
+        # 화면에서는 그 거래가 **통째로 사라진다.** 거래 1,179만 건 중
+        # 227만 건(19%)이 지도에 없었고, 그것이 'IC 에서 먼 곳은 거래가
+        # 없다' 로 읽혔다. 사장님 지시(2026-09-07): "실거래는 IC 거리와
+        # 무관하게 모두 표기."
         #
-        # 반경 밖 거래는 어느 밴드에도 못 들어가므로 좌표를 붙일 이유가
-        # 없다. 붙이면 비용만 늘고 쓰이지는 않는다.
-        coarse = (near[["sigungu", "umd", "lat", "lon"]]
-                  if not near.empty else umd_points.iloc[0:0])
-        coarse = coarse.assign(geocode_level="umd")
+        # 조인이 터지지 않는가. run 17 이 조인에서 러너째 죽은 적이 있어
+        # 확인했다. 반경 밖 법정동은 정의상 영업소에서 13km 넘게 떨어져
+        # 있고 max_link_km 는 10km 다. 그러니 **연결 행은 한 줄도 늘지
+        # 않는다** — 거리 계산 대상만 24% 늘어 조인이 2분쯤 길어진다.
+        #
+        # 법정동 좌표는 이미 1단계에서 전부 받아 뒀다. 새 호출은 없다.
+        coarse = umd_points[["sigungu", "umd", "lat", "lon"]].assign(
+            geocode_level="umd")
+        outside = len(umd_points) - len(near)
         print(f"  거친 좌표를 쓸 법정동 {len(coarse):,}개 "
-              f"(전체 {len(umd_points):,} 중 반경 안만)")
+              f"(반경 안 {len(near):,} + 반경 밖 {outside:,})")
+        print(f"    반경 밖은 분석에는 안 들어가고 지도 표시에만 쓰입니다.")
         con.register("_coarse", coarse)
         # **이미 지번 좌표가 있는 행은 건드리지 않는다.** 거친 좌표로
         # 덮으면 정밀도가 조용히 내려간다.
@@ -1159,10 +1166,18 @@ def cmd_export_web(args):
     meta = webexport.export(band=args.band, volume_col=f"volume_{args.volume}")
     from .webexport import WEB_DATA
     made = sorted(f.name for f in WEB_DATA.glob("*.json"))
-    print(f"public/app/data/ 에 {len(made)}개 파일 생성: {', '.join(made)}")
+    years = [f for f in made if f.startswith("trades-")]
+    rest = [f for f in made if not f.startswith("trades-")]
+    print(f"public/app/data/ 에 {len(made)}개 파일 생성: {', '.join(rest)}"
+          f" + 연도별 거래 {len(years)}개")
     print(f"  영업소 {meta['counts']['tollgates']} (스코어 {meta['counts']['scored']})")
-    print(f"  거래 {meta['counts']['trades_total']:,} 중 지도 표시 "
-          f"{meta['counts']['trades_plotted']:,}")
+    mapped = meta["counts"].get("trades_mapped", 0)
+    total = meta["counts"]["trades_total"]
+    print(f"  거래 {total:,} 중 좌표 있는 것 {mapped:,} "
+          f"({mapped / max(total, 1):.0%}) — 지도는 여기서 표본을 뽑습니다")
+    print(f"  전 기간 개요 표본 {meta['counts']['trades_plotted']:,}건")
+    for row in meta.get("trade_years", [])[-3:]:
+        print(f"    {row['year']} 실제 {row['total']:,}건 → 표본 {row['sample']:,}건")
     print(f"  기간 {meta['year_min']}~{meta['year_max']}")
     if meta["is_synthetic"]:
         print("\n⚠️ 합성 데이터입니다 — 화면 상단에 데모 배너가 표시됩니다.")

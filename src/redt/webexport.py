@@ -18,9 +18,44 @@ from .config import PROCESSED, ROOT, primary_band, settings
 
 WEB_DATA = ROOT / "public" / "app" / "data"
 SYNTHETIC_MARK = PROCESSED / ".synthetic"
-# 배포 저장소에 커밋되는 파일이라 지도 표시용 표본은 작게 유지한다
-MAX_TRADE_POINTS = 2500
+# 배포 저장소에 커밋되는 파일이라 지도 표시용 표본은 작게 유지한다.
+#
+# 전체 개요용(연도 무관) 한 파일과, 연도별 파일을 따로 낸다.
+#
+# 왜 나누는가. 좌표 있는 거래가 953만 건인데 한 파일에 다 담으면
+# 2GB 다. 담아도 못 그린다 — 표식 하나가 DOM 요소 하나라 휴대폰에서는
+# 수천 개가 한계다. 그래서 **연도를 골라 그 해만 받는다.** 사장님
+# 지시(2026-09-07)의 '거래 연도 선택' 이 그대로 파일 나누는 기준이 된다.
+MAX_TRADE_POINTS = 2500          # trades.json — 전 기간 개요
+MAX_TRADE_POINTS_YEAR = 3000     # trades-YYYY.json — 그 해만
 SAMPLE_SEED = 42          # 표본을 고정해 실행마다 diff 가 생기지 않게 한다
+
+# 말풍선에 보여줄 칸. 지도에 점만 찍혀 있으면 '얼마에 팔렸나' 를
+# 알 수 없어서 스크리닝에 못 쓴다.
+TRADE_COLS = """
+    trade_id, kind, lat, lon, deal_year,
+    coalesce(deal_month, 0) AS deal_month,
+    price_per_m2, price_krw, area_m2,
+    coalesce(sido, '') AS sido,
+    coalesce(sigungu, '') AS sigungu,
+    coalesce(umd, '') AS umd,
+    coalesce(jibun, '') AS jibun,
+    coalesce(jimok, '') AS jimok,
+    -- 용도지역을 함께 내보냅니다. 지도에서 거래 점을 용도지역 색으로
+    -- 칠하기 위해서입니다 — 한국 지적편집도를 읽어온 분들에게는 이
+    -- 색이 곧 뜻입니다.
+    coalesce(land_use, '') AS land_use,
+    building_area_m2,
+    build_year,
+    coalesce(deal_type, '') AS deal_type,
+    coalesce(geocode_level, '') AS geocode_level
+"""
+
+# 어느 거래를 지도에 올릴 수 있는가. 좌표가 있고, 단가가 있고,
+# 해제되지 않은 것. **IC 거리로는 거르지 않는다** — 반경 밖 거래도
+# 그 자리에 실제로 있었던 거래다.
+TRADE_WHERE = ("lat IS NOT NULL AND price_per_m2 IS NOT NULL "
+               "AND NOT coalesce(is_cancelled, FALSE)")
 
 # 한국도로공사 TCS 차종 구분. 화면에서 "3종이 뭐냐" 는 물음에 답할 곳이 없어
 # 필터만 있고 뜻이 없었다. 요금 체계의 기준이라 그대로 옮긴다.
@@ -76,6 +111,42 @@ def _clean(value):
 
 def _records(df: pd.DataFrame) -> list[dict]:
     return [{k: _clean(v) for k, v in row.items()} for row in df.to_dict("records")]
+
+
+# 자리를 줄일 칸. 좌표는 소수 5자리면 약 1m 다 — 그보다 정밀해 봐야
+# 법정동 중심점은 ±1~2km 오차이고 지번 좌표도 필지 대표점이다.
+_TRADE_ROUND = {"lat": 5, "lon": 5, "area_m2": 1, "building_area_m2": 1,
+                "price_per_m2": 0}
+
+
+def _trade_records(df: pd.DataFrame) -> list[dict]:
+    """거래를 화면용으로 줄여서 내보낸다.
+
+    연도 파일 하나가 휴대폰으로 매번 내려가므로 무게가 그대로 체감된다.
+    처음 만들었을 때 4,000건에 1.6MB(건당 377바이트)였고, 그 절반이
+    **쓰지도 않는 값**이었다.
+
+      · trade_id 40자 해시 — 지도에서 한 번도 안 쓴다. 정렬에만 쓰고 뺀다
+      · 빈 칸 — 토지는 건물면적·건축연도가 늘 비어 있는데 `null` 이라고
+        또박또박 적고 있었다. 없는 칸은 아예 안 싣는다 (화면은 undefined
+        와 null 을 같게 다룬다)
+      · 소수점 — 좌표 6자리·면적 6자리는 뜻이 없다
+    """
+    out = []
+    for row in df.to_dict("records"):
+        rec = {}
+        for k, v in row.items():
+            if k == "trade_id":
+                continue                      # 정렬용으로만 쓴다
+            v = _clean(v)
+            if v is None or v == "":
+                continue                      # 없는 칸은 싣지 않는다
+            if k in _TRADE_ROUND and isinstance(v, (int, float)):
+                digits = _TRADE_ROUND[k]
+                v = round(v, digits) if digits else int(round(v))
+            rec[k] = v
+        out.append(rec)
+    return out
 
 
 def _text(value) -> str:
@@ -387,21 +458,36 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         trade_total = con.execute("SELECT count(*) FROM trade").fetchone()[0]
         # REPEATABLE 로 표본을 고정한다. 없으면 실행할 때마다 다른 거래가 뽑혀
         # 500KB 파일 전체가 바뀐 것처럼 보인다.
+        # **거른 뒤에 뽑는다.** DuckDB 의 USING SAMPLE 은 같은 절에 쓰면
+        # WHERE 보다 **먼저** 돈다. 그래서 예전 질의는 원본 표에서 2,500건을
+        # 뽑고 그중 조건을 통과한 것만 남겨, 늘 2천 건 남짓밖에 안 나왔다
+        # (좌표 없는 거래가 19% 라 그만큼 깎였다). 하위 질의로 감싸야
+        # 거른 뒤의 집합에서 뽑는다 — 합성 자료에서 446 → 4,000 으로 확인.
         trades = con.execute(f"""
             SELECT * FROM (
-                SELECT trade_id, kind, lat, lon, deal_year, price_per_m2, area_m2,
-                       coalesce(jimok, '') AS jimok,
-                       -- 용도지역을 함께 내보냅니다. 지도에서 거래 점을
-                       -- 용도지역 색으로 칠하기 위해서입니다 — 한국
-                       -- 지적편집도를 읽어온 분들에게는 이 색이 곧 뜻입니다.
-                       coalesce(land_use, '') AS land_use,
-                       coalesce(geocode_level, '') AS geocode_level
-                FROM trade
-                WHERE lat IS NOT NULL AND price_per_m2 IS NOT NULL
-                  AND NOT coalesce(is_cancelled, FALSE)
+                SELECT {TRADE_COLS}
+                FROM (SELECT * FROM trade WHERE {TRADE_WHERE})
                 USING SAMPLE reservoir({MAX_TRADE_POINTS} ROWS) REPEATABLE ({SAMPLE_SEED})
             ) ORDER BY trade_id
         """).fetchdf()
+        # 연도별 표본. 그 해만 받으므로 한 해에 더 많이 담을 수 있다.
+        # 실제 건수도 함께 센다 — 표본만 보여주면 '이 해에 거래가
+        # 4천 건뿐' 으로 읽힌다.
+        year_counts = con.execute(f"""
+            SELECT deal_year, count(*) AS n FROM trade
+            WHERE {TRADE_WHERE} GROUP BY 1 ORDER BY 1
+        """).fetchdf()
+        by_year = {}
+        for year in year_counts["deal_year"].dropna().astype(int).tolist():
+            by_year[year] = con.execute(f"""
+                SELECT * FROM (
+                    SELECT {TRADE_COLS}
+                    FROM (SELECT * FROM trade
+                          WHERE {TRADE_WHERE} AND deal_year = {year})
+                    USING SAMPLE reservoir({MAX_TRADE_POINTS_YEAR} ROWS)
+                                REPEATABLE ({SAMPLE_SEED})
+                ) ORDER BY trade_id
+            """).fetchdf()
 
     try:
         scores = scoring.build_scores(panel, band=band, volume_col=volume_col)
@@ -438,7 +524,15 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
             "scored": int(scores["tollgate_id"].nunique()) if len(scores) else 0,
             "trades_total": int(trade_total),
             "trades_plotted": int(len(trades)),
+            "trades_mapped": int(year_counts["n"].sum()) if len(year_counts) else 0,
         },
+        # 연도별 파일이 있다는 것과, 그 해의 **실제 건수**를 함께 알린다.
+        # 표본 수만 주면 화면이 '2019년 거래 4,000건' 이라고 말하게 된다.
+        "trade_years": [
+            {"year": int(r.deal_year), "total": int(r.n),
+             "sample": int(len(by_year.get(int(r.deal_year), [])))}
+            for r in year_counts.dropna(subset=["deal_year"]).itertuples()
+        ],
         "bands_km": settings()["spatial"]["bands"],
         "disclaimer": DISCLAIMER,
     }
@@ -454,6 +548,19 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     _write("traffic.json", _traffic_ranking())
     _write("chart.json", _chart_series())
     _write("tollgates.json", _records(merged))
-    _write("trades.json", _records(trades))
+    _write("trades.json", _trade_records(trades))
+    for year, frame in by_year.items():
+        _write(f"trades-{year}.json", _trade_records(frame))
+    # 기간이 줄면 지난 실행의 연도 파일이 남는다. 화면은 meta 의
+    # trade_years 만 보므로 안 읽히지만, 저장소에 낡은 자료가 새것인
+    # 얼굴로 남아 있는 것이 이 프로젝트에서 이미 한 번 사고를 냈다.
+    for stale in WEB_DATA.glob("trades-*.json"):
+        try:
+            year = int(stale.stem.split("-", 1)[1])
+        except ValueError:
+            continue
+        if year not in by_year:
+            stale.unlink()
+            print(f"  낡은 연도 파일 삭제: {stale.name}")
     _write("series.json", grouped)
     return meta
