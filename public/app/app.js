@@ -288,17 +288,41 @@ function buildFilters() {
   tierBox.append(noneBtn);
 
   const kinds = $('#kind-filters');
-  state.meta.kinds.forEach((kind) => {
+  // 공장과 창고를 갈라 보여준다. 국토부 15126470 은 '공장 및 창고 등'
+  // 자료라 창고가 처음부터 같이 들어와 있었는데, 한 칸에 담아 두어
+  // 가릴 수가 없었다. (2026-09-07 지시)
+  //
+  // 칸을 자료에서 만든다. 갈리지 않은 것이 있으면 그 칸도 만들어 몇
+  // 건인지 적는다 — 안 보여주면 그만큼이 조용히 사라진다.
+  const mix = state.meta.usage_mix || {};
+  const options = [];
+  (state.meta.kinds || []).forEach((kind) => {
+    if (kind !== 'factory') { options.push({ key: kind, label: KIND_LABEL[kind] || kind }); return; }
+    options.push({ key: 'factory:공장', label: '공장', n: mix['공장'] || 0 });
+    options.push({ key: 'factory:창고', label: '창고', n: mix['창고'] || 0 });
+    const rest = (mix['기타'] || 0) + (mix['미상'] || 0);
+    if (rest) {
+      options.push({ key: 'factory:기타', label: '그 밖·구분 미상', n: rest,
+        title: '공장·창고 자료에 들어 있으나 건물주용도·지목으로 어느 쪽인지'
+             + ' 가리지 못한 거래입니다. 빼놓지 않으려고 따로 둡니다.' });
+    }
+  });
+  options.forEach(({ key, label: text, n, title }) => {
     const label = el('label', 'check');
+    if (title) label.title = title;
     const input = el('input');
     input.type = 'checkbox';
     // 처음에는 꺼 둔다 (state.activeKinds 가 비어 있는 것과 짝이 맞아야 한다).
-    input.checked = state.activeKinds.has(kind);
+    input.checked = state.activeKinds.has(key);
     input.addEventListener('change', () => {
-      input.checked ? state.activeKinds.add(kind) : state.activeKinds.delete(kind);
+      input.checked ? state.activeKinds.add(key) : state.activeKinds.delete(key);
       refreshMap();
     });
-    label.append(input, el('span', null, KIND_LABEL[kind] || kind));
+    const suffix = (typeof n === 'number')
+      ? ` <span class="n">${n.toLocaleString('ko-KR')}건</span>` : '';
+    const span = el('span');
+    span.innerHTML = text + suffix;
+    label.append(input, span);
     kinds.append(label);
   });
 
@@ -359,7 +383,8 @@ function buildLegend() {
     // 네모인데 범례에서는 동그라미면 눈으로 짝을 못 맞춘다.
     '<div class="grp">실거래</div>' +
     '<div class="row"><span class="sw sw-trade trade-land"></span>토지</div>' +
-    '<div class="row"><span class="sw sw-trade trade-factory"></span>공장·창고</div>' +
+    '<div class="row"><span class="sw sw-trade trade-factory"></span>공장</div>' +
+    '<div class="row"><span class="sw sw-trade trade-warehouse"></span>창고</div>' +
     '<div class="grp">매물</div>' +
     '<div class="row"><span class="sw sw-listing"></span>등록 매물</div>' +
     `<div class="grp">영업소 · ${state.tgYear}년 교통량</div>` +
@@ -1286,11 +1311,22 @@ function updateYearNote() {
   node.innerHTML = text + '.';
 }
 
+/* 필터 칸의 열쇠. 공장 자료는 공장·창고·그 밖으로 갈린다.
+ *
+ * usage 가 비어 있는(가를 칸이 없던) 거래도 '그 밖' 으로 보낸다 —
+ * 어디에도 안 넣으면 켜 놓은 칸이 하나도 그것을 안 집어서 지도에서
+ * 통째로 사라지고, 사라진 줄도 모른다. */
+function tradeFilterKey(t) {
+  if (t.kind !== 'factory') return t.kind;
+  return (t.usage === '공장' || t.usage === '창고')
+    ? `factory:${t.usage}` : 'factory:기타';
+}
+
 function visibleTrades() {
   const rows = state.tradesShown || state.trades || [];
   // 연도는 파일을 고를 때 이미 갈렸다. 여기서 또 자르지 않는다.
   return rows.filter((t) =>
-    state.activeKinds.has(t.kind) &&
+    state.activeKinds.has(tradeFilterKey(t)) &&
     (!state.parcelOnly || t.geocode_level === 'parcel'));
 }
 
@@ -1558,12 +1594,23 @@ function tradePopup(t) {
       + ' 실제 필지 위치가 아닙니다 (오차 ±1~2km).</p>'
     : '';
 
+  const head = !factory ? { cls: 'is-land', text: '토지' }
+    : t.usage === '창고' ? { cls: 'is-warehouse', text: '창고' }
+    : t.usage === '공장' ? { cls: 'is-factory', text: '공장' }
+    // 가를 칸이 없었던 것. '공장' 이라고 단정하지 않는다.
+    : { cls: 'is-factory', text: '공장·창고 (구분 미상)' };
   return `<div class="trade-pop">`
-    + `<p class="pop-kind ${factory ? 'is-factory' : 'is-land'}">`
-    + `${factory ? '공장·창고' : '토지'}</p>`
+    + `<p class="pop-kind ${head.cls}">${head.text}</p>`
     + (addr ? `<p class="pop-addr">${escapeHtml(addr)}</p>` : '')
     + `<table class="pop-table">${rows.join('')}</table>`
     + warn + `</div>`;
+}
+
+// 창고는 공장과 색을 달리한다. 같은 색이면 필터를 갈라 놓아도
+// 지도에서는 여전히 한 덩어리로 보인다.
+function tradeShape(t) {
+  if (t.kind !== 'factory') return 'trade-land';
+  return t.usage === '창고' ? 'trade-warehouse' : 'trade-factory';
 }
 
 function tradeMarker(t) {
@@ -1574,7 +1621,7 @@ function tradeMarker(t) {
     // 못 그린다. 모양으로 가르려면 이 길뿐이다.
     icon: L.divIcon({
       className: 'trade-icon',
-      html: '<i class="trade-mark ' + (factory ? 'trade-factory' : 'trade-land')
+      html: '<i class="trade-mark ' + tradeShape(t)
             + (coarse ? ' trade-coarse' : '') + '"></i>',
       iconSize: [TRADE_PX, TRADE_PX],
       iconAnchor: [TRADE_PX / 2, TRADE_PX / 2],

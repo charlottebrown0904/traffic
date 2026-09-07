@@ -1724,6 +1724,58 @@ check(_ne.empty and _nu == [], "빈 표본을 넣으면 빈 표와 빈 목록이
 _e0, _u0 = H.attach_event_controls(_ev, None, None)
 check(_u0 == [], "지역 자료가 없으면 통제 목록이 빈다 (거짓 통제를 만들지 않는다)")
 
+# ────────────────────────────────────────────────────────────────
+print("\n36. 공장과 창고를 가른다")
+# ────────────────────────────────────────────────────────────────
+# 국토부 15126470 은 이름 그대로 '공장 및 창고 등' 자료다. 창고는
+# 처음부터 같이 들어오고 있었고, 우리가 전부 kind='factory' 한 칸에
+# 담아 두어 **구분이 보이지 않았을 뿐**이다. (2026-09-07 지시)
+from redt import usage as U                                      # noqa: E402
+
+check(U.classify('공장') == '공장' and U.classify('창고시설') == '창고',
+      "건물주용도로 가른다")
+# 글자를 통째로 비교하지 않는다. '창고시설' 이 '물류창고' 로 바뀌는 날
+# 조용히 전부 '기타' 가 되면, 화면은 창고 0건을 보여주면서 이유를 말하지
+# 못한다.
+check(U.classify('물류창고') == '창고' and U.classify('일반공장') == '공장',
+      "글자가 바뀌어도 '창고'·'공장' 이 들었으면 가른다")
+# 둘 다 든 값은 작은 쪽(창고)으로 센다. 애매한 것을 큰 쪽에 넣으면
+# 작은 쪽이 더 작아져 결국 아무것도 못 본다.
+check(U.classify('공장·창고') == '창고', "둘 다 든 값은 창고로 센다")
+
+# 건물주용도가 비어도 지목이 가른다. 하나만 보면 그 칸이 안 채워져
+# 오는 날 통째로 못 가른다.
+check(U.classify('', '창고용지') == '창고' and U.classify(None, '공장용지') == '공장',
+      "건물주용도가 비면 지목으로 가른다")
+# 건물이 무엇인지 아는 경우에는 그것을 믿는다 — 창고용지에 공장이
+# 서 있을 수 있다.
+check(U.classify('공장', '창고용지') == '공장', "건물주용도가 지목보다 앞선다")
+
+# **가를 수 없는 것을 아는 척하지 않는다.** 여기가 이 절의 요점이다.
+check(U.classify('', '') == U.UNKNOWN and U.classify(None, None) == U.UNKNOWN,
+      "가를 칸이 둘 다 비면 '미상' 이다 (공장으로 몰지 않는다)")
+check(U.classify('제1종근린생활시설', '대') == '기타',
+      "값은 있는데 어느 쪽도 아니면 '기타' 다")
+check(U.UNKNOWN != '공장' and U.UNKNOWN != '창고',
+      "'미상' 은 공장도 창고도 아니다")
+
+# 내보내기가 그 판정을 실제로 싣는가.
+from redt import webexport as _wx2                               # noqa: E402
+_tr = pd.DataFrame([
+    {"kind": "factory", "building_use": "창고시설", "jimok": "대"},
+    {"kind": "factory", "building_use": "", "jimok": "공장용지"},
+    {"kind": "factory", "building_use": "", "jimok": ""},
+    {"kind": "land", "building_use": "", "jimok": "전"},
+])
+_out = _wx2._with_usage(_tr)
+check(list(_out["usage"]) == ['창고', '공장', '', ''],
+      f"내보내기가 usage 를 붙인다 ({list(_out['usage'])})")
+check("building_use" not in _out.columns,
+      "원값은 파일에 싣지 않는다 (판정에만 쓴다)")
+# 토지는 가를 것이 없다. 빈 값이어야 _trade_records 가 안 싣는다.
+check(_out.loc[_out["kind"] == "land", "usage"].eq("").all(),
+      "토지는 usage 가 비어 있다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

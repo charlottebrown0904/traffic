@@ -1162,6 +1162,18 @@ def cmd_score(args):
     print(f"\n→ {out}")
 
 
+def cmd_usage_mix(args):
+    """공장과 창고가 실제로 갈리는지 본다.
+
+    15126470 은 '공장 및 창고 등' 자료다. 창고는 처음부터 같이 들어오고
+    있었고 우리가 한 칸에 담아 두었을 뿐이다. 가를 근거인 건물주용도가
+    실제로 채워지는지는 **돌려 봐야 안다.**
+    """
+    from . import usage
+    with db.connect(read_only=True) as con:
+        usage.describe(con)
+
+
 def cmd_export_web(args):
     meta = webexport.export(band=args.band, volume_col=f"volume_{args.volume}")
     from .webexport import WEB_DATA
@@ -1946,6 +1958,9 @@ def main(argv=None):
                    help="영업소 누락 진단 — 명단·좌표·거래 중 어디서 새는지"
                    ).set_defaults(func=cmd_gaps)
     sub.add_parser("status", help="적재 현황").set_defaults(func=cmd_status)
+    sub.add_parser("usage-mix",
+                   help="공장·창고 구분 — 건물주용도가 실제로 무엇으로 오는지"
+                   ).set_defaults(func=cmd_usage_mix)
     sub.add_parser("compact-db",
                    help="캐시에 실을 DB 를 줄인다 (조인 결과는 매번 다시 만든다)"
                    ).set_defaults(func=cmd_compact_db)

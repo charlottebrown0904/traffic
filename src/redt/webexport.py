@@ -48,6 +48,7 @@ TRADE_COLS = """
     building_area_m2,
     build_year,
     coalesce(deal_type, '') AS deal_type,
+    coalesce(building_use, '') AS building_use,
     coalesce(geocode_level, '') AS geocode_level
 """
 
@@ -117,6 +118,28 @@ def _records(df: pd.DataFrame) -> list[dict]:
 # 법정동 중심점은 ±1~2km 오차이고 지번 좌표도 필지 대표점이다.
 _TRADE_ROUND = {"lat": 5, "lon": 5, "area_m2": 1, "building_area_m2": 1,
                 "price_per_m2": 0}
+
+
+def _with_usage(df: pd.DataFrame) -> pd.DataFrame:
+    """공장·창고를 갈라 `usage` 칸을 붙인다.
+
+    15126470 은 '공장 및 창고 등' 자료라 창고가 처음부터 같이 들어와
+    있었다. 한 칸에 담아 두면 화면에서 가릴 수가 없다.
+
+    토지는 가를 것이 없으므로 빈 값이고, _trade_records 가 빈 값을
+    싣지 않으므로 파일이 무거워지지도 않는다.
+    """
+    from .usage import classify
+    out = df.copy()
+    if "kind" not in out or out.empty:
+        return out
+    blank = [""] * len(out)
+    use = out["building_use"].tolist() if "building_use" in out else blank
+    jimok = out["jimok"].tolist() if "jimok" in out else blank
+    out["usage"] = [classify(u, j) if k == "factory" else ""
+                    for k, u, j in zip(out["kind"].tolist(), use, jimok)]
+    # 원값은 내보내지 않는다. 판정에만 쓰고, 파일에는 결과만 싣는다.
+    return out.drop(columns=["building_use"], errors="ignore")
 
 
 def _trade_records(df: pd.DataFrame) -> list[dict]:
@@ -510,6 +533,20 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     for tollgate_id, group in series.groupby("tollgate_id"):
         grouped[str(tollgate_id)] = _records(group.drop(columns=["tollgate_id"]))
 
+    # 공장·창고 구분이 전체 자료에서 실제로 몇 건씩인가. 표본이 아니라
+    # **전수**를 세야 화면이 '창고가 원래 적다' 와 '못 가른다' 를 가른다.
+    from .usage import classify as _usage_of
+    with db.connect(read_only=True) as con:
+        _rows = con.execute("""
+            SELECT coalesce(building_use, '') AS use,
+                   coalesce(jimok, '') AS jimok, count(*) AS n
+            FROM trade WHERE kind = 'factory' GROUP BY 1, 2
+        """).fetchdf()
+    usage_mix: dict[str, int] = {}
+    for _r in _rows.itertuples(index=False):
+        _k = _usage_of(_r.use, _r.jimok) or "미상"
+        usage_mix[_k] = usage_mix.get(_k, 0) + int(_r.n)
+
     meta = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "is_synthetic": SYNTHETIC_MARK.exists(),
@@ -528,6 +565,10 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         },
         # 연도별 파일이 있다는 것과, 그 해의 **실제 건수**를 함께 알린다.
         # 표본 수만 주면 화면이 '2019년 거래 4,000건' 이라고 말하게 된다.
+        # 공장·창고가 실제로 갈렸는지. 화면이 '창고 0건' 을 만났을 때
+        # '창고 거래가 없다' 로 말할지 '가를 칸이 비어 있다' 로 말할지가
+        # 여기서 갈린다.
+        "usage_mix": usage_mix,
         "trade_years": [
             {"year": int(r.deal_year), "total": int(r.n),
              "sample": int(len(by_year.get(int(r.deal_year), [])))}
@@ -548,9 +589,9 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     _write("traffic.json", _traffic_ranking())
     _write("chart.json", _chart_series())
     _write("tollgates.json", _records(merged))
-    _write("trades.json", _trade_records(trades))
+    _write("trades.json", _trade_records(_with_usage(trades)))
     for year, frame in by_year.items():
-        _write(f"trades-{year}.json", _trade_records(frame))
+        _write(f"trades-{year}.json", _trade_records(_with_usage(frame)))
     # 기간이 줄면 지난 실행의 연도 파일이 남는다. 화면은 meta 의
     # trade_years 만 보므로 안 읽히지만, 저장소에 낡은 자료가 새것인
     # 얼굴로 남아 있는 것이 이 프로젝트에서 이미 한 번 사고를 냈다.

@@ -92,7 +92,8 @@
      배경 5색 전부와 최소 16.0, 둘끼리 44.8 이다. 채도도 높다(.186/.255)
      — 원색으로 해달라는 요구가 그것이다. */
   --kind-land:#00A63E;      /* 토지 — 초록. 네모 */
-  --kind-factory:#1414CC;   /* 공장·창고 — 진파랑. 마름모 */
+  --kind-factory:#1414CC;   /* 공장 — 진파랑. 마름모 */
+  --kind-warehouse:#B8860B; /* 창고 — 황토. 마름모 (공장과 모양은 같고 색이 다르다) */
   --listing:#111827;        /* 매물 — 짙은 먹, 마름모로 따로 구별 */
 
   /* ── 분면 (스코어보드 전용) ── */
@@ -111,7 +112,7 @@
     --ink:#EDF0F4; --muted:#9AA4B2; --faint:#7E8794;
     --border:#2A313A; --border-strong:#3D4753;
     --accent:#9FC0DE; --accent-soft:#1C242E; --on-accent:#0E1319;
-    --kind-land:#22D36A; --kind-factory:#6B7BFF;
+    --kind-land:#22D36A; --kind-factory:#6B7BFF; --kind-warehouse:#E0B44A;
     --tg-1:#4FD8CD; --tg-2:#6BA6F0; --tg-3:#F2703A; --tg-4:#E8558F;
     --tg-new:#FDE047; --tg-new-ring:#FEF9C3;
     --tg-none:#DCE3EC;
@@ -134,7 +135,7 @@
     --tg-none:#DCE3EC;
   --band-1:#E5E7EB; --band-2:#9CA3AF; --band-3:#6B7280;
   --band-4:#D1D5DB; --band-5:#F3F4F6;
-  --kind-land:#22D36A; --kind-factory:#6B7BFF;
+  --kind-land:#22D36A; --kind-factory:#6B7BFF; --kind-warehouse:#E0B44A;
   --listing:#F3F4F6;
   --q-under:#6BA8F5; --q-rising:#5FCB90; --q-over:#E8A94A; --q-quiet:#8E97A4;
   --traffic-1:#EDF0F4; --traffic-2:#F5A24E; --traffic-3:#E8558F; --traffic-4:#6BA6F0;
@@ -718,6 +719,7 @@ body.picking .leaflet-container{cursor:crosshair}
               border: 1.2px solid #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.35); }
 .trade-mark.trade-land { background: var(--kind-land); }
 .trade-mark.trade-factory { background: var(--kind-factory); transform: rotate(45deg); }
+.trade-mark.trade-warehouse { background: var(--kind-warehouse); transform: rotate(45deg); }
 /* 법정동 중심점 좌표는 ±1~2km 라 '그 자리' 가 아니다. 옅게 찍어 지번
    좌표와 구별한다 — 테두리가 있어 옅어도 보인다. */
 .trade-mark.trade-coarse { opacity: .55; }
@@ -736,6 +738,9 @@ body.picking .leaflet-container{cursor:crosshair}
 .map-legend .sw.sw-trade.trade-land { background: var(--kind-land); }
 .map-legend .sw.sw-trade.trade-factory {
   background: var(--kind-factory); transform: rotate(45deg) scale(.82);
+}
+.map-legend .sw.sw-trade.trade-warehouse {
+  background: var(--kind-warehouse); transform: rotate(45deg) scale(.82);
 }
 
 /* ── 세 가설 판정 ──
@@ -829,6 +834,7 @@ body.picking .leaflet-container{cursor:crosshair}
   margin: 0 0 2px; color: var(--kind-land);
 }
 .pop-kind.is-factory { color: var(--kind-factory); }
+.pop-kind.is-warehouse { color: var(--kind-warehouse); }
 .pop-addr { margin: 0 0 8px; font-weight: 700; font-size: 13.5px; }
 .pop-table { border-collapse: collapse; width: 100%; }
 .pop-table th {

@@ -865,6 +865,9 @@ const FAKE_LEAFLET = () => {
         { year: 2025, total: 400000, sample: 3 },
       ];
       meta.counts = Object.assign({}, meta.counts, { trades_mapped: 9000000 });
+      // 공장·창고 구분. 가르지 못한 것도 섞어 둔다 — 실제 자료가 그럴 수 있고,
+      // 그때 그 거래가 지도에서 조용히 사라지면 안 된다.
+      meta.usage_mix = { '공장': 30000, '창고': 8000, '기타': 500, '미상': 1200 };
       await page2.route('**/app/data/meta.json*', (r) => r.fulfill({
         status: 200, contentType: 'application/json', body: JSON.stringify(meta) }));
 
@@ -879,7 +882,19 @@ const FAKE_LEAFLET = () => {
           price_per_m2: 900000, price_krw: 1500000000, area_m2: 1660,
           sido: '경기도', sigungu: '평택시', umd: '청북읍', jibun: '55',
           jimok: '공장용지', land_use: '계획관리', building_area_m2: 800,
-          build_year: 2010, deal_type: '직거래', geocode_level: 'parcel' },
+          build_year: 2010, deal_type: '직거래', geocode_level: 'parcel',
+          usage: '공장' },
+        { kind: 'factory', lat: 37.3, lon: 127.3, deal_year: 2025, deal_month: 9,
+          price_per_m2: 700000, price_krw: 900000000, area_m2: 1280,
+          sido: '경기도', sigungu: '이천시', umd: '마장면', jibun: '77',
+          jimok: '창고용지', land_use: '계획관리', building_area_m2: 900,
+          build_year: 2015, deal_type: '중개거래', geocode_level: 'parcel',
+          usage: '창고' },
+        // 가를 칸이 없던 거래. 어느 칸에도 안 들어가면 지도에서 사라진다.
+        { kind: 'factory', lat: 37.4, lon: 127.4, deal_year: 2025, deal_month: 2,
+          price_per_m2: 400000, price_krw: 300000000, area_m2: 750,
+          sido: '경기도', sigungu: '안성시', umd: '대덕면', jibun: '12',
+          land_use: '계획관리', deal_type: '중개거래', geocode_level: 'parcel' },
         // IC 에서 먼 곳 — 법정동 중심점 좌표. 예전에는 좌표가 아예 없어
         // 지도에서 통째로 빠지던 종류다.
         { kind: 'land', lat: 34.8, lon: 126.4, deal_year: 2025, deal_month: 1,
@@ -924,7 +939,7 @@ const FAKE_LEAFLET = () => {
       await page2.waitForTimeout(300);
 
       const styles = await page2.evaluate(() => window.__tradeStyles || []);
-      check('고른 해의 거래가 그려진다', styles.length === 3, `${styles.length}개`);
+      check('고른 해의 거래가 그려진다', styles.length === 5, `${styles.length}개`);
       // 반경 밖(무안군) 거래도 그려져야 한다. 예전에는 좌표가 아예 없어
       // 지도에서 통째로 빠졌다.
       check('IC 반경 밖 거래도 그려진다',
@@ -964,6 +979,71 @@ const FAKE_LEAFLET = () => {
         document.getElementById('deal-year-note').textContent);
       check('안내가 그 해 실제 건수를 말한다', /400,000건/.test(note), note);
       check('안내가 표본임을 말한다', /무작위 표본/.test(note), note);
+
+      /* ── 공장·창고 구분 (2026-09-07 지시) ──
+       * 15126470 은 '공장 및 창고 등' 자료다. 창고가 처음부터 같이 들어와
+       * 있었는데 한 칸에 담아 두어 가릴 수가 없었다. */
+      const filters = await page2.evaluate(() =>
+        [...document.querySelectorAll('#kind-filters label')].map((l) => ({
+          text: l.textContent.replace(/\s+/g, ' ').trim(),
+          checked: l.querySelector('input').checked,
+        })));
+      const names = filters.map((f) => f.text);
+      check('필터에 공장과 창고가 따로 있다',
+            names.some((t) => /^공장/.test(t)) && names.some((t) => /^창고/.test(t)),
+            names.join(' | '));
+      check('필터가 각 구분의 건수를 적는다',
+            names.some((t) => /30,000건/.test(t)) && names.some((t) => /8,000건/.test(t)),
+            names.join(' | '));
+      // 가르지 못한 것도 칸을 만들어야 한다. 안 그러면 그만큼이 지도에서
+      // 조용히 사라지고, 사라진 줄도 모른다.
+      check('가르지 못한 거래도 칸이 있다',
+            names.some((t) => /구분 미상/.test(t) && /1,700건/.test(t)),
+            names.join(' | '));
+
+      // 창고만 켜면 창고만 남는가.
+      await page2.evaluate(() => {
+        document.querySelectorAll('#kind-filters input').forEach((i) => {
+          if (i.checked) i.click();
+        });
+        const only = [...document.querySelectorAll('#kind-filters label')]
+          .find((l) => /^창고/.test(l.textContent.trim()));
+        only.querySelector('input').click();
+      });
+      await page2.waitForTimeout(300);
+      const onlyWh = await page2.evaluate(() => window.__tradeStyles || []);
+      check('창고만 켜면 창고만 남는다', onlyWh.length === 1,
+            `${onlyWh.length}개`);
+      check('창고는 색이 공장과 다르다',
+            onlyWh.length === 1 && /trade-warehouse/.test(onlyWh[0].html),
+            onlyWh.length ? onlyWh[0].html : '없음');
+      check('창고 말풍선이 창고라고 말한다',
+            onlyWh.length === 1 && />창고</.test(onlyWh[0].popup));
+
+      // 구분 미상만 켜면 그 한 건이 나온다 — 어디에도 안 속해 사라지지 않는다.
+      await page2.evaluate(() => {
+        document.querySelectorAll('#kind-filters input').forEach((i) => {
+          if (i.checked) i.click();
+        });
+        const only = [...document.querySelectorAll('#kind-filters label')]
+          .find((l) => /구분 미상/.test(l.textContent));
+        only.querySelector('input').click();
+      });
+      await page2.waitForTimeout(300);
+      const unknown = await page2.evaluate(() => window.__tradeStyles || []);
+      check('가르지 못한 거래도 지도에 남는다', unknown.length === 1,
+            `${unknown.length}개`);
+      check("가르지 못한 것을 '공장' 이라고 단정하지 않는다",
+            unknown.length === 1 && /구분 미상/.test(unknown[0].popup),
+            unknown.length ? unknown[0].popup.slice(0, 80) : '없음');
+
+      // 다시 전부 켜 둔다 (아래 연도 검사가 개수를 센다).
+      await page2.evaluate(() => {
+        document.querySelectorAll('#kind-filters input').forEach((i) => {
+          if (!i.checked) i.click();
+        });
+      });
+      await page2.waitForTimeout(300);
 
       // 연도를 바꾸면 그 해 파일을 받아 다시 그린다.
       await page2.selectOption('#deal-year', '2024');

@@ -234,6 +234,25 @@ jobs:
         run: python -m redt.cli progress
 
       # 여기부터는 실패해도 수집 결과는 지키도록 계속 진행합니다.
+      # 공장과 창고가 실제로 갈리는지. 15126470 은 '공장 및 창고 등'
+      # 자료라 창고가 처음부터 같이 들어와 있었는데, 무엇으로 가를 수
+      # 있는지는 문서에 없다. 돌려 봐야 안다 — 안 찍으면 화면의
+      # '창고 0건' 을 '창고 거래가 없다' 로 읽게 된다.
+      - name: 공장·창고 구분 확인
+        continue-on-error: true
+        run: |
+          python -m redt.cli usage-mix 2>&1 | tee /tmp/usage.log
+          # 실행 요약에도 적는다. 로그는 실행이 지나가면 찾아 들어가야
+          # 보이는데, 이 표는 '창고 칸이 왜 비었나' 를 묻게 되는 바로
+          # 그 순간에 필요하다.
+          {
+            echo "## 공장·창고 구분"
+            echo
+            echo '```'
+            cat /tmp/usage.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 영업소 누락 진단
         continue-on-error: true
         run: python -m redt.cli gaps
