@@ -14,6 +14,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 import numpy as np
 import pandas as pd
@@ -1011,8 +1015,15 @@ def _analysis_inputs(con):
     됩니다.
     """
     cols = ", ".join(f"t.{c}" for c in PANEL_TRADE_COLS)
+    # 필지 특성을 함께 읽는다. 없으면(아직 안 받았으면) NULL 이고,
+    # 헤도닉이 값이 하나뿐인 칸은 알아서 뺀다 — 지금까지의 결과가
+    # 그대로 나온다.
     trades = con.execute(f"""
-        SELECT {cols} FROM trade t
+        SELECT {cols},
+               pc.road_side, pc.shape AS parcel_shape, pc.slope AS parcel_slope
+        FROM trade t
+        LEFT JOIN trade_parcel tp ON tp.trade_id = t.trade_id
+        LEFT JOIN parcel pc ON pc.pnu = tp.pnu
         WHERE t.lat IS NOT NULL
           AND t.trade_id IN (SELECT trade_id FROM trade_tollgate_link
                              WHERE is_nearest)
@@ -1160,6 +1171,124 @@ def cmd_score(args):
             "traffic_score", "price_score", "n_trades", "confidence"]
     print(top[cols].to_string(index=False) if len(top) else "  해당 없음")
     print(f"\n→ {out}")
+
+
+def cmd_landchar(args):
+    """필지 특성(도로접·형상·지세)을 받아 거래에 붙인다.
+
+    사장님 지시(2026-09-07)와 실측(남이천·안성)의 결과다. 차가 들어가느냐가
+    값을 +66~67% 가르는데 헤도닉이 그것을 안 쓰고 있었다.
+    """
+    from .collect import landchar as lc
+    cfg = lc._cfg()
+    tile_deg = float(args.tile or cfg["tile_deg"])
+    workers = int(args.workers or cfg["workers"])
+
+    with db.connect() as con:
+        # 붙일 대상. **지번 좌표**여야 한다 — 법정동 중심점은 ±1~2km 라
+        # 어느 필지인지 가릴 수 없다. 그리고 밴드 안(어느 IC 든 max_link_km
+        # 이내)만. 반경 밖 거래는 분석에 안 들어가므로 받을 이유가 없다.
+        wanted = settings().get("land_use_filter") or []
+        cond = " OR ".join(f"t.land_use LIKE '%{w}%'" for w in wanted) or "1=1"
+        todo = con.execute(f"""
+            SELECT DISTINCT t.trade_id, t.lat, t.lon
+            FROM trade t
+            JOIN trade_tollgate_link l USING (trade_id)
+            LEFT JOIN trade_parcel tp ON tp.trade_id = t.trade_id
+            WHERE t.kind = 'land'
+              AND t.geocode_level = 'parcel'
+              AND t.lat IS NOT NULL
+              AND NOT coalesce(t.is_cancelled, FALSE)
+              AND ({cond})
+              AND tp.trade_id IS NULL
+        """).fetchdf()
+        done_tiles = set(con.execute(
+            "SELECT tile_key FROM parcel_tile").fetchdf()["tile_key"])
+
+    print(f"붙일 거래 {len(todo):,}건 (지번 좌표 · 밴드 안 · "
+          f"{'·'.join(wanted) if wanted else '전체'})")
+    if todo.empty:
+        print("  더 붙일 것이 없습니다.")
+        return
+
+    tiles = lc.tiles_for(todo, tile_deg)
+    left = {k: v for k, v in tiles.items() if k not in done_tiles}
+    print(f"  칸 {len(tiles):,}개 중 아직 안 훑은 것 {len(left):,}개"
+          f" (칸 {tile_deg}도)")
+    if args.max_tiles:
+        left = dict(list(left.items())[:int(args.max_tiles)])
+        print(f"  이번 실행 예산 {len(left):,}칸 — 남은 것은 다음 실행이 이어받습니다")
+    if not left:
+        print("  훑을 칸이 없습니다.")
+        return
+
+    # 칸마다 그 안의 거래만 넘긴다. 칸 하나 안에서만 도는 곱이라
+    # 전국을 통째로 도는 것과 비용이 다르다.
+    import math as _m
+    by_tile: dict[str, list] = {}
+    for r in todo.itertuples(index=False):
+        w = _m.floor(r.lon / tile_deg) * tile_deg
+        s_ = _m.floor(r.lat / tile_deg) * tile_deg
+        by_tile.setdefault(lc.tile_key((w, s_, w + tile_deg, s_ + tile_deg)),
+                           []).append(r)
+
+    pace = lc._Pace(cfg["calls_per_sec"])
+    lock = threading.Lock()
+    state = {"n": 0, "parcels": 0, "links": 0, "trunc": 0, "err": 0}
+    t0 = time.monotonic()
+    rows_p: list[dict] = []
+    rows_l: list[dict] = []
+    rows_t: list[dict] = []
+
+    def one(item):
+        key, box = item
+        try:
+            feats, trunc = lc.fetch_tile(box, pace)
+        except Exception as exc:                       # noqa: BLE001
+            with lock:
+                state["err"] += 1
+            return
+        mine = pd.DataFrame(by_tile.get(key, []))
+        parcels, links = lc.match_tile(feats, mine) if len(mine) else ([], [])
+        with lock:
+            rows_p.extend(parcels)
+            rows_l.extend(links)
+            rows_t.append({"tile_key": key, "n_parcels": len(parcels),
+                           "n_matched": len(links), "truncated": trunc,
+                           "fetched_at": datetime.now(timezone.utc)})
+            state["n"] += 1
+            state["parcels"] += len(parcels)
+            state["links"] += len(links)
+            state["trunc"] += int(trunc)
+            if state["n"] % 50 == 0 or state["n"] == len(left):
+                el = time.monotonic() - t0
+                print(f"    {state['n']}/{len(left)} 칸 · 필지 {state['parcels']:,}"
+                      f" · 붙은 거래 {state['links']:,} · {el / 60:.1f}분",
+                      flush=True)
+
+    print(f"  워커 {workers}개 · 전체 상한 초당 {cfg['calls_per_sec']:g}건")
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        list(pool.map(one, left.items()))
+
+    if state["err"]:
+        print(f"  ⚠ 실패한 칸 {state['err']}개 — 다음 실행이 다시 시도합니다")
+
+    with db.connect() as con:
+        if rows_p:
+            df = pd.DataFrame(rows_p).drop_duplicates("pnu")
+            con.register("_p", df)
+            con.execute("INSERT OR REPLACE INTO parcel SELECT * FROM _p")
+            con.unregister("_p")
+        if rows_l:
+            df = pd.DataFrame(rows_l).drop_duplicates("trade_id")
+            con.register("_l", df)
+            con.execute("INSERT OR REPLACE INTO trade_parcel SELECT * FROM _l")
+            con.unregister("_l")
+        if rows_t:
+            con.register("_t", pd.DataFrame(rows_t))
+            con.execute("INSERT OR REPLACE INTO parcel_tile SELECT * FROM _t")
+            con.unregister("_t")
+        lc.describe(con)
 
 
 def cmd_usage_mix(args):
@@ -1958,6 +2087,15 @@ def main(argv=None):
                    help="영업소 누락 진단 — 명단·좌표·거래 중 어디서 새는지"
                    ).set_defaults(func=cmd_gaps)
     sub.add_parser("status", help="적재 현황").set_defaults(func=cmd_status)
+    lch = sub.add_parser(
+        "landchar", help="필지 특성(도로접·형상·지세)을 받아 거래에 붙인다")
+    lch.add_argument("--tile", type=float, default=None,
+                     help="훑는 칸 크기(도). 잘리면 알아서 넷으로 쪼갭니다")
+    lch.add_argument("--workers", type=int, default=None)
+    lch.add_argument("--max-tiles", type=int, default=0,
+                     help="이번 실행에서 훑을 최대 칸 수 (0=제한없음)")
+    lch.set_defaults(func=cmd_landchar)
+
     sub.add_parser("usage-mix",
                    help="공장·창고 구분 — 건물주용도가 실제로 무엇으로 오는지"
                    ).set_defaults(func=cmd_usage_mix)

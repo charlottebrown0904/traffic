@@ -133,6 +133,48 @@ CREATE TABLE IF NOT EXISTS trade_tollgate_link (
     is_nearest  BOOLEAN,
     PRIMARY KEY (trade_id, tollgate_id)
 );
+
+-- 필지 특성 — 도로접·형상·지세. 브이월드 토지특성(dt_d194).
+--
+-- 사장님 지시(2026-09-07): "도로를 접하는 가가 제일 중요합니다."
+-- 실측(남이천·안성)으로 확인한 것: 차가 들어가느냐가 값을 +66~67% 가른다.
+-- 그 변수를 헤도닉이 안 쓰고 있어서, 전·답·임야 잔차가 통째로 남아
+-- 교통량 계수를 덮고 있었다.
+--
+-- **도형은 저장하지 않는다.** 필지 도형은 무겁고(전국이면 수백만 개),
+-- 우리가 쓰는 것은 '이 거래가 어느 필지인가' 하나뿐이다. 받는 그 자리
+-- 에서 점-다각형으로 맞춰 trade_parcel 에 남기고 도형은 버린다.
+CREATE TABLE IF NOT EXISTS parcel (
+    pnu            VARCHAR PRIMARY KEY,   -- 19자리 필지 식별자
+    sigungu_cd     VARCHAR,
+    jimok          VARCHAR,               -- lndcgr_code_nm
+    land_use       VARCHAR,               -- prpos_area_1_nm 용도지역
+    use_situation  VARCHAR,               -- lad_use_sittn_nm 토지이용상황
+    area_m2        DOUBLE,                -- lndpcl_ar
+    road_side      VARCHAR,               -- road_side_code_nm 도로접면
+    shape          VARCHAR,               -- tpgrph_frm_code_nm 형상
+    slope          VARCHAR,               -- tpgrph_hg_code_nm 지세
+    official_price DOUBLE,                -- pblntf_pclnd 공시지가 원/㎡
+    stdr_year      INTEGER
+);
+
+-- 거래가 어느 필지에 떨어졌는가. 점-다각형으로 맞춘다.
+--
+-- 지번으로 맞추는 길도 재 봤는데 두 곳 다 0% 였다 — 저쪽은 읍면동을
+-- 숫자 코드로 주고 우리는 이름으로 갖고 있어서다. 좌표는 100% 붙는다.
+CREATE TABLE IF NOT EXISTS trade_parcel (
+    trade_id VARCHAR PRIMARY KEY,
+    pnu      VARCHAR
+);
+
+-- 어느 칸을 이미 훑었는가. 없으면 재개할 때마다 처음부터 다시 받는다.
+CREATE TABLE IF NOT EXISTS parcel_tile (
+    tile_key   VARCHAR PRIMARY KEY,   -- "w,s,e,n" 소수 4자리로 반올림
+    n_parcels  INTEGER,
+    n_matched  INTEGER,
+    truncated  BOOLEAN,               -- 한도에 닿아 쪼갠 칸인가
+    fetched_at TIMESTAMP
+);
 """
 
 

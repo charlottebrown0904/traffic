@@ -115,6 +115,21 @@ def get_once(url: str, params: dict, timeout: int = 15) -> requests.Response:
     return _sess().get(url, params=params, timeout=timeout, headers=headers)
 
 
+def get_json(url: str, params: dict, timeout: int = 60) -> dict:
+    """JSON 으로 받는다. 아니면 무엇이 왔는지 말하고 죽는다.
+
+    브이월드 /ned WFS 는 오류를 JSON 이 아닌 것으로 돌려주는 일이 있다.
+    조용히 빈 dict 를 주면 '이 칸에는 필지가 없구나' 로 읽히므로
+    구분되게 던진다.
+    """
+    resp = get(url, params, timeout)
+    try:
+        return resp.json()
+    except ValueError:
+        raise ApiError(
+            f"JSON 이 아닙니다 (HTTP {resp.status_code}): {scrub(resp.text[:200])}")
+
+
 def get_xml(url: str, params: dict, timeout: int = 30) -> ET.Element:
     resp = get(url, params, timeout)
     text = resp.text.lstrip("﻿")

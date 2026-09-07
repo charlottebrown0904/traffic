@@ -1868,6 +1868,64 @@ check(set(U.road_car_ok(v) for v in
       and set(U.road_car_ok(v) for v in ['세로한면(불)', '맹지']) == {0},
       "차 진입 여부는 이진이다 (등급의 어느 지점에서 한 번 꺾인다)")
 
+# ────────────────────────────────────────────────────────────────
+print("\n38. 도로 접함이 헤도닉에서 실제로 빠지는가")
+# ────────────────────────────────────────────────────────────────
+# 실측이 말한 것: 차가 들어가느냐가 값을 +66~67% 가른다. 그 변수를
+# 헤도닉이 안 쓰고 있어서 전·답·임야의 잔차가 통째로 남았다.
+#
+# **진실을 아는 자료**로 확인한다. 값에 도로 효과만 심고 교통량 효과는
+# 0 으로 둔다. 보정 뒤에 도로와 값의 관계가 사라져야 맞다.
+_rng38 = np.random.default_rng(38)
+_n = 4000
+_road = _rng38.choice(['소로한면', '세로한면(가)', '세로한면(불)', '맹지'],
+                      _n, p=[.15, .45, .15, .25])
+_car = np.isin(_road, ['소로한면', '세로한면(가)']).astype(float)
+_shape = _rng38.choice(['부정형', '사다리형', '가로장방'], _n, p=[.7, .2, .1])
+_area = np.exp(_rng38.normal(7, .6, _n))
+# 심은 진실: 차가 들어가면 +0.50 (약 +65%, 실측과 같은 크기).
+# 형상은 값에 영향이 없다 — 사장님 지적 그대로다.
+_ln = 11 + 0.50 * _car - 0.10 * np.log(_area) + _rng38.normal(0, .25, _n)
+_tr38 = pd.DataFrame({
+    "kind": "land",
+    "price_per_m2": np.exp(_ln),
+    "area_m2": _area,
+    "jimok": _rng38.choice(['전', '답', '임야'], _n),
+    "land_use": "계획관리",
+    "sigungu_cd": _rng38.choice(['41500', '41220', '41590'], _n),
+    "deal_year": _rng38.choice([2020, 2021, 2022, 2023], _n),
+    "road_side": _road,
+    "parcel_shape": _shape,
+    "parcel_slope": _rng38.choice(['평지', '완경사'], _n),
+})
+
+def _corr_with_car(df, col):
+    car = np.isin(df["road_side"], ['소로한면', '세로한면(가)']).astype(float)
+    return float(np.corrcoef(car, df[col])[0, 1])
+
+_before = _corr_with_car(_tr38, "price_per_m2")
+_adj38 = pn.hedonic_adjust(_tr38)
+_after = _corr_with_car(_adj38, "adj_ln_price")
+check(abs(_before) > 0.3,
+      f"보정 전에는 도로와 값이 이어져 있다 (r={_before:+.2f})")
+check(abs(_after) < 0.05,
+      f"보정 뒤에는 그 관계가 사라진다 (r={_after:+.2f})")
+
+# 도로 자료가 아예 없어도 죽지 않아야 한다. 전국 수집 전까지가 그 상태다.
+_no_road = _tr38.drop(columns=["road_side", "parcel_shape", "parcel_slope"])
+_adj_no = pn.hedonic_adjust(_no_road)
+check("adj_ln_price" in _adj_no and _adj_no["adj_ln_price"].notna().all(),
+      "도로 자료가 없어도 헤도닉이 돈다 (수집 전 상태)")
+
+# **모르는 것을 맹지로 셈하지 않는다.** 절반을 비워도 나머지로 보정한다.
+_half = _tr38.copy()
+_half.loc[_half.index % 2 == 0, "road_side"] = None
+_adj_half = pn.hedonic_adjust(_half)
+_known = _adj_half[_adj_half["road_side"].notna()]
+check(abs(_corr_with_car(_known, "adj_ln_price")) < 0.08,
+      f"절반이 비어도 아는 쪽은 제대로 보정된다"
+      f" (r={_corr_with_car(_known, 'adj_ln_price'):+.2f})")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

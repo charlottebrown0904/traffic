@@ -153,6 +153,39 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
             terms += ["bldg_age", "bldg_age2"]
             if group["has_age"].nunique() > 1:
                 terms.append("has_age")
+
+        # ── 도로 접함 · 형상 · 지세 ──
+        #
+        # 사장님 지시(2026-09-07): "도로를 접하는 가가 제일 중요합니다."
+        # 실측이 그 말을 숫자로 확인했다 — 세로(불) → 세로(가) 계단이
+        # 남이천 +66%, 안성 +67% 로 같았다.
+        #
+        # **차 진입 여부를 따로 넣는다.** 도로접면 더미만 넣어도 그 정보가
+        # 들어 있지만, 등급이 여럿이라 계수가 흩어진다. 두 표본에서 같은
+        # 크기로 확인된 그 한 계단은 따로 세우는 편이 읽기도 쉽고 표본이
+        # 얇을 때도 버틴다.
+        #
+        # **도로접면은 범주로 넣는다.** 등급을 선형으로 넣으려 했다가
+        # 안성 실측에서 깨졌다 — 중로가 광대로보다 비싸고 맹지가
+        # 세로(불)보다 비쌌다. 큰길이 늘 좋은 것은 아니다.
+        #
+        # 형상은 순서가 없으므로 그냥 범주다. 지세도 같다.
+        if "road_side" in group:
+            from ..usage import road_car_ok
+            car = group["road_side"].map(road_car_ok)
+            # 모르는 것을 0(못 들어감)으로 채우면 조사가 안 된 땅이
+            # 맹지로 셈해진다. 더미를 따로 세워 표본을 지킨다.
+            group["has_road"] = car.notna().astype(int)
+            group["road_car_ok"] = car.fillna(0).astype(int)
+            if group["road_car_ok"].nunique() > 1:
+                terms.append("road_car_ok")
+                if group["has_road"].nunique() > 1:
+                    terms.append("has_road")
+        for col in ("road_side", "parcel_shape", "parcel_slope"):
+            if col in group and group[col].fillna("NA").nunique() > 1:
+                group[col] = group[col].fillna("NA").replace("", "NA")
+                terms.append(f"C({col})")
+                cat_cols.append(col)
         fe = []
         for col in ("sigungu_cd", "deal_year"):
             if col in group and group[col].nunique() > 1:
@@ -170,11 +203,15 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
         # 기준값은 **적합에 쓴 표본**에서 뽑는다. 전수에서 뽑으면 표본을
         # 바꿀 때마다 기준이 함께 움직여, 계수가 같아도 보정값이 달라진다.
         overrides = {"ln_area": fit_on["ln_area"].mean()}
-        for col in ("jimok", "land_use", "building_use"):
+        # 범주는 최빈값으로. 새로 붙은 도로접·형상·지세도 여기 든다 —
+        # 빼먹으면 그 항의 기여분이 안 빠져서 '보정' 이 반쪽이 된다.
+        for col in ("jimok", "land_use", "building_use",
+                    "road_side", "parcel_shape", "parcel_slope"):
             if col in group:
                 overrides[col] = fit_on[col].mode().iat[0]
         for col in ("has_building", "ln_building_area",
-                    "has_age", "bldg_age", "bldg_age2"):
+                    "has_age", "bldg_age", "bldg_age2",
+                    "road_car_ok", "has_road"):
             if col in group:
                 overrides[col] = fit_on[col].mean()
 
