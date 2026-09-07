@@ -56,6 +56,21 @@ on:
         # 한 번에 못 넘기므로 나눠 돈다. 남은 셀은 다음 실행이 이어받는다.
         description: "이번 실행에서 처리할 최대 셀 수 (0=제한없음)"
         default: "35000"
+      landchar_scope:
+        # 어디까지 필지 특성을 받을지. 사장님 지시(2026-09-08):
+        # "필지 특성 대상을 전국 전체로 넓혀 주세요."
+        #
+        #   core  밴드 안 · 계획관리·생산관리·자연녹지 · 토지만 (옛 기본값)
+        #   land  전국 · 용도지역 전부 · 토지만
+        #   all   전국 · 용도지역 전부 · 토지 + 공장/창고
+        #
+        # **지번 좌표 조건은 어느 범위에서도 안 푼다.** 법정동 중심점은
+        # 오차가 ±1~2km 라 엉뚱한 필지가 붙는데, 그것은 자료가 없는
+        # 것보다 나쁘다.
+        description: "필지 특성 범위 (core/land/all)"
+        type: choice
+        options: [all, land, core]
+        default: all
       landchar_tiles:
         # 필지 특성(도로접·형상·지세). 거래가 있는 칸만 훑고, 칸 단위로
         # 재개하므로 한 번에 다 안 해도 된다. 0 이면 이번 실행은 건너뛴다.
@@ -259,6 +274,7 @@ jobs:
         continue-on-error: true
         run: |
           python -m redt.cli landchar \
+            --scope "${{ inputs.landchar_scope }}" \
             --max-tiles "${{ inputs.landchar_tiles }}" 2>&1 | tee /tmp/landchar.log
           {
             echo "## 필지 특성 (도로접·형상)"

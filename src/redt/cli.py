@@ -1185,29 +1185,68 @@ def cmd_landchar(args):
     tile_deg = float(args.tile or cfg["tile_deg"])
     workers = int(args.workers or cfg["workers"])
 
+    # 어디까지 받을 것인가. 사장님 지시(2026-09-08): "필지 특성 대상을
+    # 전국 전체로 넓혀 주세요."
+    #
+    #   core  밴드 안 · 계획관리·생산관리·자연녹지 · 토지만 (예전 기본값)
+    #   land  전국 · 용도지역 전부 · 토지만
+    #   all   전국 · 용도지역 전부 · 토지 + 공장/창고  ← 지금 기본값
+    #
+    # **지번 좌표 조건만은 못 푼다.** 법정동 중심점은 오차가 ±1~2km 라
+    # 어느 필지인지 가릴 수가 없다. 그것을 풀면 엉뚱한 필지의 도로접이
+    # 붙는데, 그것은 자료가 없는 것보다 나쁘다.
+    scope = getattr(args, "scope", None) or "all"
+    wanted = settings().get("land_use_filter") or []
+    lu_cond = (" OR ".join(f"t.land_use LIKE '%{w}%'" for w in wanted) or "1=1") \
+        if scope == "core" else "1=1"
+    kind_cond = "t.kind = 'land'" if scope in ("core", "land") \
+        else "t.kind IN ('land', 'factory')"
+    band_join = ("JOIN trade_tollgate_link l USING (trade_id)"
+                 if scope == "core" else "")
+    base = ("t.geocode_level = 'parcel' AND t.lat IS NOT NULL"
+            " AND NOT coalesce(t.is_cancelled, FALSE)")
+
     with db.connect() as con:
-        # 붙일 대상. **지번 좌표**여야 한다 — 법정동 중심점은 ±1~2km 라
-        # 어느 필지인지 가릴 수 없다. 그리고 밴드 안(어느 IC 든 max_link_km
-        # 이내)만. 반경 밖 거래는 분석에 안 들어가므로 받을 이유가 없다.
-        wanted = settings().get("land_use_filter") or []
-        cond = " OR ".join(f"t.land_use LIKE '%{w}%'" for w in wanted) or "1=1"
+        # 범위마다 몇 건인지 먼저 찍는다. 넓히기로 했을 때 얼마나 늘어나는지
+        # 로그가 스스로 말해야, 다음 사람이 예산을 짐작하지 않는다.
+        lu_all = " OR ".join(f"t.land_use LIKE '%{w}%'" for w in wanted) or "1=1"
+        ladder = con.execute(f"""
+            SELECT
+              count(*) FILTER (WHERE t.kind = 'land' AND ({lu_all})
+                               AND l.trade_id IS NOT NULL)         AS core,
+              count(*) FILTER (WHERE t.kind = 'land')              AS land,
+              count(*)                                             AS all_kinds,
+              count(*) FILTER (WHERE tp.trade_id IS NOT NULL)      AS done
+            FROM trade t
+            LEFT JOIN (SELECT DISTINCT trade_id FROM trade_tollgate_link) l
+                   USING (trade_id)
+            LEFT JOIN trade_parcel tp ON tp.trade_id = t.trade_id
+            WHERE {base}
+        """).fetchone()
         todo = con.execute(f"""
             SELECT DISTINCT t.trade_id, t.lat, t.lon
             FROM trade t
-            JOIN trade_tollgate_link l USING (trade_id)
+            {band_join}
             LEFT JOIN trade_parcel tp ON tp.trade_id = t.trade_id
-            WHERE t.kind = 'land'
-              AND t.geocode_level = 'parcel'
-              AND t.lat IS NOT NULL
-              AND NOT coalesce(t.is_cancelled, FALSE)
-              AND ({cond})
+            WHERE {kind_cond}
+              AND {base}
+              AND ({lu_cond})
               AND tp.trade_id IS NULL
         """).fetchdf()
         done_tiles = set(con.execute(
             "SELECT tile_key FROM parcel_tile").fetchdf()["tile_key"])
 
-    print(f"붙일 거래 {len(todo):,}건 (지번 좌표 · 밴드 안 · "
-          f"{'·'.join(wanted) if wanted else '전체'})")
+    SCOPE_WHAT = {
+        "core": f"밴드 안 · {'·'.join(wanted) if wanted else '전체'} · 토지만",
+        "land": "전국 · 용도지역 전부 · 토지만",
+        "all": "전국 · 용도지역 전부 · 토지+공장/창고",
+    }
+    print("지번 좌표가 있는 거래 (범위별)")
+    print(f"    core {ladder[0]:>10,}   밴드 안 · 세 용도지역 · 토지만")
+    print(f"    land {ladder[1]:>10,}   전국 · 토지만")
+    print(f"    all  {ladder[2]:>10,}   전국 · 토지+공장/창고")
+    print(f"    이미 붙은 것 {ladder[3]:,}")
+    print(f"붙일 거래 {len(todo):,}건 — 범위 '{scope}' ({SCOPE_WHAT[scope]})")
     if todo.empty:
         print("  더 붙일 것이 없습니다.")
         return
@@ -1241,6 +1280,33 @@ def cmd_landchar(args):
     rows_l: list[dict] = []
     rows_t: list[dict] = []
 
+    # **중간중간 DB 에 넣는다.** 예전에는 다 받아서 끝에 한 번에 넣었다.
+    # 밴드 안 세 용도지역(6,677칸)까지는 그래도 됐지만 — 필지 434만 —
+    # 전국으로 넓히면 그 몇 배가 메모리에 쌓여 러너가 죽는다.
+    #
+    # 나눠 넣으면 덤으로 하나 더 얻는다: 도중에 끊겨도 넣은 데까지는
+    # 남고, parcel_tile 에 기록된 칸은 다음 실행이 건너뛴다.
+    flush_every = int(getattr(args, "flush_every", None) or 400)
+    wcon = db.connect()
+
+    def flush():
+        """lock 을 쥔 채로만 부른다 (DuckDB 연결은 동시 사용 불가)."""
+        if rows_p:
+            wcon.register("_p", pd.DataFrame(rows_p).drop_duplicates("pnu"))
+            wcon.execute("INSERT OR REPLACE INTO parcel SELECT * FROM _p")
+            wcon.unregister("_p")
+            rows_p.clear()
+        if rows_l:
+            wcon.register("_l", pd.DataFrame(rows_l).drop_duplicates("trade_id"))
+            wcon.execute("INSERT OR REPLACE INTO trade_parcel SELECT * FROM _l")
+            wcon.unregister("_l")
+            rows_l.clear()
+        if rows_t:
+            wcon.register("_t", pd.DataFrame(rows_t))
+            wcon.execute("INSERT OR REPLACE INTO parcel_tile SELECT * FROM _t")
+            wcon.unregister("_t")
+            rows_t.clear()
+
     def one(item):
         key, box = item
         try:
@@ -1266,6 +1332,8 @@ def cmd_landchar(args):
                 print(f"    {state['n']}/{len(left)} 칸 · 필지 {state['parcels']:,}"
                       f" · 붙은 거래 {state['links']:,} · {el / 60:.1f}분",
                       flush=True)
+            if state["n"] % flush_every == 0:
+                flush()
 
     print(f"  워커 {workers}개 · 전체 상한 초당 {cfg['calls_per_sec']:g}건")
     with ThreadPoolExecutor(max_workers=workers) as pool:
@@ -1274,22 +1342,10 @@ def cmd_landchar(args):
     if state["err"]:
         print(f"  ⚠ 실패한 칸 {state['err']}개 — 다음 실행이 다시 시도합니다")
 
-    with db.connect() as con:
-        if rows_p:
-            df = pd.DataFrame(rows_p).drop_duplicates("pnu")
-            con.register("_p", df)
-            con.execute("INSERT OR REPLACE INTO parcel SELECT * FROM _p")
-            con.unregister("_p")
-        if rows_l:
-            df = pd.DataFrame(rows_l).drop_duplicates("trade_id")
-            con.register("_l", df)
-            con.execute("INSERT OR REPLACE INTO trade_parcel SELECT * FROM _l")
-            con.unregister("_l")
-        if rows_t:
-            con.register("_t", pd.DataFrame(rows_t))
-            con.execute("INSERT OR REPLACE INTO parcel_tile SELECT * FROM _t")
-            con.unregister("_t")
-        lc.describe(con)
+    with lock:
+        flush()
+    lc.describe(wcon)
+    wcon.close()
 
 
 def cmd_offices(args):
@@ -2331,6 +2387,11 @@ def main(argv=None):
     lch.add_argument("--workers", type=int, default=None)
     lch.add_argument("--max-tiles", type=int, default=0,
                      help="이번 실행에서 훑을 최대 칸 수 (0=제한없음)")
+    lch.add_argument("--scope", choices=["core", "land", "all"], default="all",
+                     help="core=밴드 안·세 용도지역·토지만 · "
+                          "land=전국 토지 · all=전국 토지+공장/창고 (기본)")
+    lch.add_argument("--flush-every", type=int, default=400,
+                     help="몇 칸마다 DB 에 넣을지 (메모리를 비웁니다)")
     lch.set_defaults(func=cmd_landchar)
 
     ofc = sub.add_parser(
