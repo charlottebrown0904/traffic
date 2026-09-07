@@ -241,6 +241,30 @@ def hedonic_adjust(trades: pd.DataFrame) -> pd.DataFrame:
         note = "" if fit_on is group else f" (적합 표본 {len(fit_on):,})"
         print(f"  헤도닉[{kind}]: n={len(group):,}{note} R²={model.rsquared:.3f} "
               f"면적계수={model.params['ln_area']:.3f}")
+
+        # 도로접 계수를 찍는다. 사장님 지시(2026-09-07): "도로를 접하는
+        # 가가 제일 중요합니다."
+        #
+        # **실측과 다른 숫자다.** 남이천 +66% · 안성 +67% 는 그냥 평균을
+        # 나눈 값이라 시군구·연도·지목·면적이 다 섞여 있다. 여기 계수는
+        # 그것을 다 통제한 뒤에 남는 몫이다. 둘이 다르면 그 차이가
+        # '도로 때문' 과 '도로가 좋은 동네라서' 를 가른다 — 스크리닝에
+        # 쓸 수 있는 것은 앞의 것뿐이다.
+        if "road_car_ok" in model.params.index:
+            b = float(model.params["road_car_ok"])
+            se = float(model.bse["road_car_ok"])
+            print(f"    도로접(차 진입 가능) {np.exp(b) - 1:+.1%}"
+                  f"  (계수 {b:+.3f} · 표준오차 {se:.3f}"
+                  f" · 95% {np.exp(b - 1.96 * se) - 1:+.1%}"
+                  f"~{np.exp(b + 1.96 * se) - 1:+.1%})")
+            known = int(group["has_road"].sum()) if "has_road" in group else 0
+            print(f"    조사된 거래 {known:,} / {len(group):,}"
+                  f" ({known / max(len(group), 1):.0%})")
+        for term in [t for t in model.params.index
+                     if t.startswith("C(road_side)")][:12]:
+            level = term.split("[T.")[-1].rstrip("]")
+            b = float(model.params[term])
+            print(f"      {level:<12} {np.exp(b) - 1:+7.1%}")
         adjusted.append(group)
 
     return pd.concat(adjusted, ignore_index=True)

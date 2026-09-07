@@ -329,6 +329,31 @@ if got2:
 check(asked.count("울릉군청") == 1,
       f"빌릴 이름이 없으면 다시 묻지 않는다 ({asked.count('울릉군청')}회)")
 
+print("\n8. 이어서 도는 실행도 못 찾은 곳을 다시 찾는가")
+# run 42 가 '새로 담은 것 0' 이었다. 대부분을 건너뛰니 이번 실행이 찾은
+# 것이 없고, 그러면 시도 이름 다수결이 성립하지 않아 다시 찾기가 아예
+# 안 돌았다. **예전에 담아 둔 것도 표에 넣어야** 이어서 도는 실행이
+# 지난번 실패를 만회한다.
+with db.connect() as con:
+    con.execute("DELETE FROM office")
+    # 이웃 하나만 미리 담아 둔다 (지난 실행이 담았다고 치고).
+    db.upsert(con, "office", pd.DataFrame([dict(
+        level="gu", key="41111", label="수원시 장안구", name="장안구청",
+        category="지방행정기관 > 구청", sido="경기도",
+        road_addr="경기도 수원시 장안구 송원로 101",
+        lat=37.3040, lon=127.0101, dist_km=0.4,
+        source="vworld:search", fetched_at=of.now())]))
+asked.clear()
+of.search_place = two_round_search
+cli.cmd_offices(argparse.Namespace(refresh=False))
+check("경기도권선구청" in asked,
+      "이어서 도는 실행도 시도 이름을 붙여 다시 묻는다")
+with db.connect(read_only=True) as con:
+    n2 = con.execute(
+        "SELECT count(*) FROM office WHERE level='gu' AND key='41113'"
+    ).fetchone()[0]
+check(n2 == 1, f"지난 실행의 실패를 만회한다 ({n2}곳)")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

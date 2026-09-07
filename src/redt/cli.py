@@ -1393,6 +1393,14 @@ def cmd_offices(args):
     # 갖고 있어도 나머지가 이긴다.
     sido_of_cd: dict[str, str] = {}
     by_prefix: dict[str, list[str]] = {}
+    # **이미 담아 둔 것도 표에 넣는다.** 이어서 도는 실행은 대부분을
+    # 건너뛰므로 got_by_cd 가 거의 비고, 그러면 다수결이 성립하지 않아
+    # 다시 찾기가 아예 안 돈다 — run 42 가 그래서 '새로 담은 것 0' 이었다.
+    with db.connect(read_only=True) as con:
+        for r in con.execute(
+                "SELECT key, sido FROM office WHERE level = 'gu' AND sido <> ''"
+        ).fetchall():
+            by_prefix.setdefault(str(r[0])[:2], []).append(r[1])
     for cd, rec in got_by_cd.items():
         if rec["sido"]:
             by_prefix.setdefault(cd[:2], []).append(rec["sido"])
@@ -1409,8 +1417,12 @@ def cmd_offices(args):
     #
     # 1차를 다 돌기 전에는 시도 이름을 모르므로, 이 시도는 두 번째
     # 바퀴가 될 수밖에 없다.
+    # 아직 관청이 없는 곳만. 이번에 담은 것과 예전에 담은 것을 함께 본다.
+    with db.connect(read_only=True) as con:
+        have = {str(r[0]) for r in con.execute(
+            "SELECT key FROM office WHERE level = 'gu'").fetchall()}
     retry = [r for r in rows
-             if r["cd"] not in got_by_cd and sido_of_cd.get(r["cd"])]
+             if r["cd"] not in have and sido_of_cd.get(r["cd"])]
     if retry:
         print(f"  못 찾은 {len(retry)}곳을 시도 이름을 붙여 다시 찾습니다")
         found = 0
