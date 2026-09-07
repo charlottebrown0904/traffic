@@ -390,6 +390,21 @@ def h1(event_df: pd.DataFrame, controls: list[str]) -> pd.DataFrame:
     adj = base.dropna(subset=have) if have else base
     if have and len(adj) >= MIN_OBS and adj["tollgate_id"].nunique() >= 2:
         fe2 = " + C(year)" + (" + C(sigungu_cd)" if adj["sigungu_cd"].nunique() > 1 else "")
+        # **같은 표본에서 통제 전을 한 번 더 잰다.**
+        #
+        # 통제 변수에 결측이 있으면 통제를 넣는 순간 표본이 함께 줄어든다.
+        # run 31 에서 토지가 100,239 → 43,661 로 반 이상 빠졌고, 계수는
+        # -0.005 에서 +0.064 로 부호까지 뒤집혔다. 그것이 통제 때문인지
+        # 표본이 바뀌어서인지 두 줄만으로는 **가릴 수가 없다.**
+        #
+        # 가운데 줄이 그 답이다. 위와 가운데의 차이는 표본 탓, 가운데와
+        # 아래의 차이가 통제 탓이다.
+        lost = 1 - len(adj) / max(n, 1)
+        m_same = _fit(adj, f"adj_ln_price ~ treated * post{fe2}", "tollgate_id")
+        rows.append({**_row(m_same, "treated:post", "treated:post",
+                            len(adj), adj["tollgate_id"].nunique()),
+                     "모형": "통제 전 · 같은 표본",
+                     "비고": f"통제 결측으로 {lost:.0%} 빠진 표본"})
         m1 = _fit(adj, f"adj_ln_price ~ treated * post + {' + '.join(have)}{fe2}",
                   "tollgate_id")
         rows.append({**_row(m1, "treated:post", "treated:post",
@@ -414,6 +429,22 @@ def judge_h1(table: pd.DataFrame, pre_trend_ok: bool | None) -> tuple[str, str]:
     row = after.iloc[0] if len(after) else table.dropna(subset=["beta"]).iloc[0]
     label = row["모형"]
 
+    # 표본이 바뀌어 생긴 변화를 통제의 공으로 돌리지 않는다.
+    #
+    # 통제를 넣으면 결측 때문에 표본이 함께 줄어든다. 그러면 계수가
+    # 움직이는데, 그 움직임의 어디까지가 통제 덕이고 어디부터가 표본이
+    # 달라진 탓인지 두 줄로는 못 가른다. h1() 이 같은 표본에서 통제 전을
+    # 한 번 더 재 두었으므로, 그 줄과 견줘 한 문장으로 적는다.
+    same = table[table["모형"] == "통제 전 · 같은 표본"].dropna(subset=["beta"])
+    raw = table[table["모형"] == "통제 전"].dropna(subset=["beta"])
+    note = ""
+    if len(same) and len(raw) and len(after):
+        by_sample = float(same.iloc[0]["beta"]) - float(raw.iloc[0]["beta"])
+        by_ctrl = float(after.iloc[0]["beta"]) - float(same.iloc[0]["beta"])
+        note = (f" 통제 전 {float(raw.iloc[0]['beta']):+.3f} 에서 움직인 폭 중"
+                f" 표본이 바뀌어서가 {by_sample:+.3f},"
+                f" 통제 때문이 {by_ctrl:+.3f} 입니다.")
+
     if pre_trend_ok is False:
         return (Verdict.CONFOUNDED,
                 "개통 **전** 계수가 유의합니다. 처치군이 개통 전부터 이미 더 빨리"
@@ -425,14 +456,14 @@ def judge_h1(table: pd.DataFrame, pre_trend_ok: bool | None) -> tuple[str, str]:
         return (Verdict.UNKNOWN,
                 f"{label} 교차항 {row['beta']:+.3f}(p={row['p']:.2f}), 95% 구간 {span}."
                 " 0 을 품고 있어 있는지 없는지 말할 수 없습니다 — '효과가 없다'"
-                " 와는 다릅니다.")
+                " 와는 다릅니다." + note)
     if row["beta"] <= 0:
         return (Verdict.REJECT,
                 f"{label} 교차항이 음수({row['beta']:+.3f}, p={row['p']:.3f})입니다."
-                " 가설과 반대 방향입니다.")
+                " 가설과 반대 방향입니다." + note)
     return (Verdict.SUPPORT,
             f"{label} 교차항 {row['beta']:+.3f}(p={row['p']:.3f}) → 대조군 대비"
-            f" {np.expm1(row['beta']):+.1%}, 95% 구간 {span}.")
+            f" {np.expm1(row['beta']):+.1%}, 95% 구간 {span}." + note)
 
 
 # ────────────────────────────────────────────────────────────────

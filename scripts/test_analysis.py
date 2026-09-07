@@ -1709,6 +1709,36 @@ _v1, _w1 = H.judge_h1(_t1_after, True)
 check("H3 통제 후" in _w1 or "통제 후" in _w1,
       f"판정 설명이 통제 후 줄을 가리킨다 ({_w1[:60]})")
 
+# ── 표본이 바뀐 탓과 통제 탓을 가른다 ──
+# 통제 변수에 결측이 있으면 통제를 넣는 순간 표본이 함께 줄어든다.
+# 그러면 계수가 움직이는데, 두 줄만으로는 그 움직임이 통제 덕인지
+# 표본이 달라진 탓인지 못 가른다 — run 31 의 토지가 정확히 그랬다
+# (100,239 → 43,661, 계수 부호까지 뒤집힘).
+#
+# 여기서는 인구를 **일부러 절반만** 비워, 통제를 넣으면 표본이 반으로
+# 줄게 만든다. 그래도 가운데 줄이 있으면 갈린다.
+_ev_gap = _ev2.copy()
+_ev_gap.loc[_ev_gap.index % 2 == 0, "d_ln_population"] = np.nan
+_t1_gap = H.h1(_ev_gap, _use2)
+_models = list(_t1_gap["모형"])
+check(_models == ["통제 전", "통제 전 · 같은 표본", "H3 통제 후"],
+      f"세 줄로 낸다 ({_models})")
+_raw_r = _t1_gap[_t1_gap["모형"] == "통제 전"].iloc[0]
+_same_r = _t1_gap[_t1_gap["모형"] == "통제 전 · 같은 표본"].iloc[0]
+_ctrl_r = _t1_gap[_t1_gap["모형"] == "H3 통제 후"].iloc[0]
+check(_raw_r["n"] > _same_r["n"] and _same_r["n"] == _ctrl_r["n"],
+      f"가운데와 아래가 같은 표본이다 ({_raw_r['n']} → {_same_r['n']} = {_ctrl_r['n']})")
+check("빠진 표본" in str(_same_r["비고"]),
+      f"몇 %가 빠졌는지 적는다 ({_same_r['비고']})")
+# 통제 없이 표본만 줄인 것이므로, 가운데 줄은 위와 크게 다르지 않아야
+# 한다. 진짜 변화는 가운데 → 아래에서 일어난다.
+check(abs(_ctrl_r["beta"] - _same_r["beta"]) > abs(_same_r["beta"] - _raw_r["beta"]),
+      f"움직임의 대부분이 통제 탓이다 (표본 {_same_r['beta'] - _raw_r['beta']:+.3f}"
+      f" vs 통제 {_ctrl_r['beta'] - _same_r['beta']:+.3f})")
+_v1g, _w1g = H.judge_h1(_t1_gap, True)
+check("표본이 바뀌어서가" in _w1g and "통제 때문이" in _w1g,
+      f"판정이 둘을 갈라 적는다 ({_w1g[-70:]})")
+
 # 산단 압력도 영업소·연도로 붙는가 (패널과 열쇠가 다른 쪽).
 _press = pd.DataFrame([{"tollgate_id": tg, "year": y,
                         "zone_area_km2": float(max(0, y - 2016)), "zone_n": 1}
