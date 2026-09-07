@@ -110,11 +110,23 @@ def probe_rtms() -> None:
     try:
         root = ET.fromstring(body)
     except ET.ParseError:
-        print("\n  실거래 응답이 XML 이 아닙니다:", body[:160])
+        print("\n  실거래 응답이 XML 이 아닙니다. 받은 것 앞머리:")
+        print("   ", body[:300].replace("\n", " "))
         return
     items = root.findall(".//item")
     rows = [{c.tag: (c.text or "").strip() for c in it if (c.text or "").strip()}
             for it in items]
+    if not rows:
+        # **실패를 삼키지 않는다.** 첫 실행에서 '피처가 없습니다' 만 찍고
+        # 끝나 원인을 알 수 없었다. 응답이 오류인지 진짜 0건인지는
+        # 본문을 봐야 갈린다.
+        print("\n  item 이 0개입니다. 응답에서 무엇이 왔는지 봅니다:")
+        for tag in ("resultCode", "resultMsg", "returnReasonCode",
+                    "returnAuthMsg", "errMsg", "totalCount"):
+            got = root.find(f".//{tag}")
+            if got is not None:
+                print(f"    {tag} = {(got.text or '').strip()}")
+        print("    본문 앞머리:", body[:300].replace("\n", " "))
     show("1. 실거래 토지 API (15126466) — 원본 칸 전부", rows)
 
 
