@@ -630,12 +630,19 @@ jobs:
           # 청구 화면(settings/billing)은 **한도를 넘긴 뒤에야** 숫자가
           # 보입니다. 포함된 분 안에서 쓰는 동안은 비어 보여서, 얼마나
           # 다가갔는지 알 수가 없습니다. 사장님이 "못 찾겠다" 고 하신
-          # 것이 그래서입니다.
+          # 것이 그래서입니다. 그래서 실행 기록에서 직접 셉니다.
           #
-          # 그래서 실행 기록에서 직접 셉니다. GITHUB_TOKEN 으로 읽히고
-          # 새 비밀값이 필요 없습니다. 청구액이 아니라 **실행 시간**
-          # 이므로 GitHub 이 청구한 값과 완전히 같지는 않지만, 한도에
-          # 얼마나 다가갔는지 보는 데는 이것이면 충분합니다.
+          # **다만 이것은 청구액이 아니라 벽시계 시간입니다.** 예전에는
+          # 이 값을 Free 2,000분 · Pro 3,000분 한도와 나란히 찍었는데,
+          # 그것이 사람을 잘못 이끌었습니다 — 2,570분을 보고 "한도의
+          # 86%" 라고 보고했다가, 실제 청구 기록을 열어 보니 0 이었습니다.
+          #
+          #     /actions/runs/{id}/timing
+          #     {"billable": {"UBUNTU": {"total_ms": 0}}, "run_duration_ms": 2253000}
+          #
+          # 공개 저장소는 표준 러너 사용이 청구되지 않기 때문입니다.
+          # 그래서 이제 **청구 기록을 직접 물어봅니다.** 추측한 한도와
+          # 비교하는 대신, GitHub 이 실제로 얼마를 청구했는지 찍습니다.
           from datetime import datetime, timezone
           now = datetime.now(timezone.utc)
           month = now.strftime("%Y-%m")
@@ -662,13 +669,28 @@ jobs:
                   break
               page += 1
 
+          # 최근 실행 몇 개의 **실제 청구 기록**을 물어본다. 벽시계
+          # 시간과 나란히 놓아야 둘이 다르다는 것이 보인다.
+          billed_ms, asked = 0, 0
+          for r in api("/actions/runs?per_page=10")["workflow_runs"]:
+              try:
+                  tm = api(f"/actions/runs/{r['id']}/timing")
+              except Exception:
+                  continue
+              billed_ms += sum(v.get("total_ms", 0)
+                               for v in (tm.get("billable") or {}).values())
+              asked += 1
+
           print()
           print(f"=== 이번 달({month}) 실행 시간 ===")
-          print(f"  {total:,.0f}분 · 실행 {counted}건")
-          for plan, cap in (("Free", 2000), ("Pro", 3000)):
-              mark = " ⚠" if total > cap * 0.8 else ""
-              print(f"    {plan} 한도 {cap:,}분 대비 {total/cap:5.0%}{mark}")
-          print("  * 실행 시간을 직접 센 값입니다. 청구 기준은")
-          print("    github.com/settings/billing (Settings → Access → Billing and licensing)")
+          print(f"  벽시계 {total:,.0f}분 · 실행 {counted}건")
+          if asked:
+              print(f"  최근 {asked}건의 **청구된** 시간 {billed_ms / 60000:,.0f}분")
+              if billed_ms == 0:
+                  print("    → 청구 0. 공개 저장소는 표준 러너가 무료입니다.")
+                  print("       위 벽시계 시간은 '얼마나 오래 걸리나' 를 볼 때만 쓰세요.")
+              else:
+                  print("    → 청구되고 있습니다. github.com/settings/billing 에서")
+                  print("       남은 분을 확인하세요.")
           PY
           echo
