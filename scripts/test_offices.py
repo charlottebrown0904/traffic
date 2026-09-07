@@ -224,6 +224,28 @@ with db.connect(read_only=True) as con:
     after = con.execute("SELECT count(*) FROM office").fetchone()[0]
 check(after == before, f"다시 돌려도 안 늘어난다 ({before} → {after})")
 
+# **한 곳이 죽어도 나머지는 받는다.** 440번을 부르는 고리라 어느 하나가
+# 예외를 던지면 그 뒤가 통째로 안 돌고, 워크플로 단계가 continue-on-error
+# 라 초록으로 지나간다. 그러면 화면은 어제 그대로인데 아무도 이유를 모른다.
+calls = {"n": 0}
+
+
+def flaky_search(query, size=10):
+    calls["n"] += 1
+    if calls["n"] == 1:
+        raise RuntimeError("중계기가 403 을 줬습니다")
+    return fake_search(query, size)
+
+
+of.search_place = flaky_search
+with db.connect() as con:
+    con.execute("DELETE FROM office")
+cli.cmd_offices(argparse.Namespace(refresh=True))
+with db.connect(read_only=True) as con:
+    n = con.execute("SELECT count(*) FROM office").fetchone()[0]
+# 첫 곳이 죽었지만 나머지는 담겼어야 한다.
+check(n >= 4, f"첫 호출이 죽어도 나머지를 받는다 ({n}곳)")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

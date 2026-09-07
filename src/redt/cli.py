@@ -1348,11 +1348,21 @@ def cmd_offices(args):
 
     out: list[dict] = []
     fail: list[str] = []
+    errs: list[str] = []
 
     def take(level: str, key: str, label: str, anchor):
         if f"{level}|{key}" in done:
             return None
-        got = of.fetch_one(label, anchor, level)
+        # **한 곳이 죽어도 나머지는 받는다.** 440번을 부르는 고리라
+        # 어느 하나가 예외를 던지면 그 뒤가 통째로 안 돌고, 단계가
+        # continue-on-error 라 초록으로 지나간다. 그러면 화면은 어제
+        # 그대로인데 아무도 이유를 모른다.
+        try:
+            got = of.fetch_one(label, anchor, level)
+        except Exception as exc:                       # noqa: BLE001
+            errs.append(f"{level}:{label} — {type(exc).__name__}: {exc}")
+            fail.append(f"{level}:{label}")
+            return None
         if not got:
             fail.append(f"{level}:{label}")
             return None
@@ -1418,6 +1428,13 @@ def cmd_offices(args):
             con.unregister("_o")
     print(f"\n=== 관청 좌표 ===")
     print(f"  새로 담은 것 {len(out):,} · 못 찾은 것 {len(fail)}")
+    if errs:
+        # 예외는 '없다' 와 다르다. 없는 것은 그 관청이 검색에 안 잡힌
+        # 것이고, 예외는 우리 쪽이나 API 가 고장난 것이다. 섞어서
+        # 세면 고장을 영영 못 본다.
+        print(f"  ⚠ 부르다 죽은 것 {len(errs)}건 — 앞의 다섯 개:")
+        for e in errs[:5]:
+            print(f"      {e}")
     if fail:
         print(f"  못 찾음: {', '.join(fail[:20])}"
               + (" …" if len(fail) > 20 else ""))
