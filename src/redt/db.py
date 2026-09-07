@@ -167,6 +167,33 @@ CREATE TABLE IF NOT EXISTS trade_parcel (
     pnu      VARCHAR
 );
 
+-- 관청(도청·시청·군청·구청) 위치.
+--
+-- 사장님 지시(2026-09-07): "인구 표시 원의 중심은 도청/시청/구청/군청
+-- 소재지가 중심이 되도록." 그 전까지 원의 중심은 우리 거래 좌표에서
+-- 만든 대표점이었다 — 거래가 없는 동네가 많은 시군구는 그만큼 끌려간다.
+--
+-- **시도 이름도 여기서 온다.** 실거래 API 응답에 시도가 없어서
+-- trade.sido 는 늘 빈 값이다(collect/rtms.py). 관청 도로명주소의 첫
+-- 마디가 그 시군구의 시도 이름이고, 그것이 우리가 가진 유일한 출처다.
+CREATE TABLE IF NOT EXISTS office (
+    level      VARCHAR,    -- 'sido' | 'si' | 'gu'
+    key        VARCHAR,    -- gu 는 시군구코드, 나머지는 행정구역 이름
+    label      VARCHAR,    -- 화면에 쓰는 행정구역 이름 (수원시 장안구 …)
+    name       VARCHAR,    -- 검색이 준 관청 이름 (장안구청 …)
+    category   VARCHAR,    -- 지방행정기관 > 구청 …
+    sido       VARCHAR,    -- 도로명주소의 첫 마디
+    road_addr  VARCHAR,
+    lat        DOUBLE,
+    lon        DOUBLE,
+    -- 대표점과 몇 km 떨어졌는가. 같은 이름의 구가 여럿이라 엉뚱한 곳을
+    -- 집을 수 있는데, 그때 조용히 틀리지 않고 이 숫자가 커진다.
+    dist_km    DOUBLE,
+    source     VARCHAR,
+    fetched_at TIMESTAMP,
+    PRIMARY KEY (level, key)
+);
+
 -- 어느 칸을 이미 훑었는가. 없으면 재개할 때마다 처음부터 다시 받는다.
 CREATE TABLE IF NOT EXISTS parcel_tile (
     tile_key   VARCHAR PRIMARY KEY,   -- "w,s,e,n" 소수 4자리로 반올림

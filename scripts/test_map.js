@@ -122,6 +122,9 @@ const FAKE_LEAFLET = () => {
       m.__opts = Object.assign({}, opts);
       // 진짜 Leaflet 은 만들 때 준 값을 layer.options 로 들고 있다.
       m.options = m.__opts;
+      // 어디에 찍혔는가. 인구 원의 중심이 관청인지 대표점인지는
+      // 이것을 봐야 알 수 있다.
+      m.__latlng = ll;
       m.__marker = true;
       rec.markers.push(m.__opts);
       return m;
@@ -242,6 +245,9 @@ const FAKE_LEAFLET = () => {
       // 광역시의 구, 그리고 도 아래 군.
       { sigungu_cd: '41111', name: '수원시 장안구', sido: '경기도',
         parent: '수원시', lat: 37.304, lon: 127.011,
+        // 관청 좌표. 대표점(lat/lon)과 일부러 다르게 둔다 — 둘이 같으면
+        // 어느 쪽을 쓰는지 검사가 못 가른다.
+        office_lat: 37.3040, office_lon: 127.0101,
         n_umd: 10, pop: { '2024': 300000, '2025': 280000 } },
       { sigungu_cd: '41113', name: '수원시 권선구', sido: '경기도',
         parent: '수원시', lat: 37.241, lon: 126.971,
@@ -259,10 +265,29 @@ const FAKE_LEAFLET = () => {
       { sigungu_cd: '11680', name: '강남구', sido: '서울특별시', parent: '',
         lat: 37.517, lon: 127.047,
         n_umd: 14, pop: { '2024': 560000, '2025': 550000 } },
+      // 관청 좌표를 아직 못 받은 곳. 그때도 원이 사라지면 안 되고,
+      // 관청 위에 찍힌 것처럼 보여서도 안 된다.
       { sigungu_cd: '47940', name: '울릉군', sido: '경상북도', parent: '',
         lat: 37.484, lon: 130.905,
         n_umd: 3, pop: { '2024': 10000, '2025': 10000 } },
     ];
+    // 묶은 단위(시·도, 시·군)의 관청. 경기도청은 수원에 있고 —
+    // 43개 시군구 대표점의 평균과는 한참 다른 자리다.
+    //
+    // **실제 meta 를 읽어 한 칸만 더한다.** 통째로 지어내면 나머지
+    // 검사(기준 연도·차종·밴드)가 진짜 자료를 안 보게 된다.
+    {
+      const metaPath = path.join(ROOT, 'public', 'app', 'data', 'meta.json');
+      const realMeta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      realMeta.region_offices = {
+        sido: { '경기도': [37.274975, 127.009235],
+                '서울특별시': [37.566610, 126.978388] },
+        si: { '수원시': [37.263434, 127.028653] },
+      };
+      await page.route('**/app/data/meta.json*', (r) => r.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify(realMeta) }));
+    }
     await page.route('**/app/data/regions.json*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify(FAKE_REGIONS),
@@ -669,6 +694,7 @@ const FAKE_LEAFLET = () => {
         n: marks.length,
         radii: marks.map((m) => m.__opts.radius),
         tips: marks.map((m) => m.__tooltip || ''),
+        at: marks.map((m) => m.__latlng),
         legend: document.querySelector('#map-legend').textContent,
       };
     }, z);
@@ -750,6 +776,44 @@ const FAKE_LEAFLET = () => {
     check('어느 해 인구인지 적는다',
           !!near.peek.year && near.legend.includes(String(near.peek.year)),
           String(near.peek.year));
+
+    /* ── 원의 중심은 관청 소재지 (2026-09-07 지시) ──
+     * "인구 표시 원의 중심은 도청/시청/구청/군청 소재지가 중심이 되도록."
+     * 그 전에는 우리 거래 좌표에서 만든 대표점이라, 거래가 없는 동네가
+     * 많은 시군구는 그만큼 끌려갔다. */
+    const near2 = await popAt(12);
+    const jangan = near2.at[near2.tips.findIndex((t) => /^수원시 장안구/.test(t))];
+    check('구 단위 원이 그 구청 위에 선다',
+          !!jangan && Math.abs(jangan[0] - 37.3040) < 1e-4
+          && Math.abs(jangan[1] - 127.0101) < 1e-4,
+          JSON.stringify(jangan));
+    check('관청 위에 찍혔다고 말한다',
+          near2.tips.some((t) => /^수원시 장안구/.test(t)
+                                 && /점 위치는 관청 소재지/.test(t)),
+          near2.tips.find((t) => /^수원시 장안구/.test(t)) || '없음');
+    // 못 받은 곳은 사라지지 않고, 관청 위인 척하지도 않는다.
+    check('관청을 못 받은 곳도 원은 그린다',
+          near2.tips.some((t) => /^울릉군/.test(t)));
+    check('그 원은 대표점이라고 말한다',
+          near2.tips.some((t) => /^울릉군/.test(t)
+                                 && /인구로 가중한 대표점/.test(t)),
+          near2.tips.find((t) => /^울릉군/.test(t)) || '없음');
+
+    // 묶은 단위는 **묶은 단위의 관청**이다. 시군구 관청의 평균을 쓰면
+    // 그것은 다시 대표점이다 — 경기도청은 수원에 있지 경기도 한가운데
+    // 있지 않다.
+    const wide2 = await popAt(7);
+    const gg = wide2.at[wide2.tips.findIndex((t) => /^경기도/.test(t))];
+    check('시·도 원이 도청 위에 선다',
+          !!gg && Math.abs(gg[0] - 37.274975) < 1e-4
+          && Math.abs(gg[1] - 127.009235) < 1e-4,
+          JSON.stringify(gg));
+    const mid2 = await popAt(10);
+    const suwon = mid2.at[mid2.tips.findIndex((t) => /^수원시 ·/.test(t))];
+    check('시 원이 시청 위에 선다',
+          !!suwon && Math.abs(suwon[0] - 37.263434) < 1e-4
+          && Math.abs(suwon[1] - 127.028653) < 1e-4,
+          JSON.stringify(suwon));
 
     // 다음 절이 기본 배율을 가정하므로 되돌린다.
     await popAt(7);

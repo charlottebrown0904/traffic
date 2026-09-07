@@ -2133,25 +2133,42 @@ function popYear() {
   return years.has(want) ? want : sorted[sorted.length - 1];
 }
 
-/* 묶은 단위 하나의 중심.
+/* 묶은 단위 하나의 중심 — 그 단위의 **관청**.
  *
- * **아직 관청 좌표가 아니다.** 사장님 지시(2026-09-07)는 도청·시청·
- * 군청·구청 소재지를 중심으로 하라는 것이고, 그 좌표는 우리에게 없다
- * (scripts/office_probe.py 가 어디서 받을 수 있는지 확인하는 중이다).
- * 그때까지는 **인구로 가중한 평균**을 쓴다. 시군구 대표점을 그냥
- * 평균내면 인구 3만인 군과 60만인 시가 같은 무게로 잡아당겨, 도 하나의
- * 중심이 사람이 안 사는 산으로 간다.
+ * 사장님 지시(2026-09-07): "인구 표시 원의 중심은 도청/시청/구청/군청
+ * 소재지가 중심이 되도록." 브이월드 장소검색에서 받아 두었다
+ * (redt.cli offices → office 표).
  *
- * 관청 좌표가 들어오면 **이 함수 하나만** 바꾸면 된다. */
-function popCenter(members, year) {
-  const own = members.find((r) => r.office_lat && r.office_lon);
-  if (own && members.length === 1) return [own.office_lat, own.office_lon];
+ *   구 단위   regions.json 의 각 행이 office_lat/office_lon 을 들고 온다
+ *   시·시도   meta.region_offices[단위][이름] = [lat, lon]
+ *
+ * 못 받은 곳은 **인구로 가중한 평균**으로 물러난다. 시군구 대표점을
+ * 그냥 평균내면 인구 3만인 군과 60만인 시가 같은 무게로 잡아당겨, 도의
+ * 중심이 사람이 안 사는 산으로 간다. 물러났다는 사실은 말풍선이 적는다 —
+ * 관청 위에 찍힌 원과 그렇지 않은 원이 화면에서 같아 보이면 안 된다. */
+function popCenter(group, levelKey, year) {
+  const members = group.members;
+  // ① 묶은 단위 자체의 관청 (시·도, 시·군)
+  const table = (state.meta.region_offices || {})[levelKey] || {};
+  const hit = table[group.name];
+  if (Array.isArray(hit) && hit.length === 2) return { at: hit, office: true };
+  // ② 안 묶였으면 그 시군구 자신의 관청
+  if (members.length === 1) {
+    const r = members[0];
+    if (r.office_lat && r.office_lon) {
+      return { at: [r.office_lat, r.office_lon], office: true };
+    }
+  }
+  // ③ 물러남 — 인구로 가중한 대표점
   let wsum = 0, lat = 0, lon = 0;
   members.forEach((r) => {
     const w = (r.pop || {})[year] || 1;
     wsum += w; lat += r.lat * w; lon += r.lon * w;
   });
-  return wsum ? [lat / wsum, lon / wsum] : [members[0].lat, members[0].lon];
+  return {
+    at: wsum ? [lat / wsum, lon / wsum] : [members[0].lat, members[0].lon],
+    office: false,
+  };
 }
 
 function drawPopulation() {
@@ -2186,8 +2203,11 @@ function drawPopulation() {
   if (!groups.size) return;
 
   let max = 0;
+  let onOffice = 0;
   groups.forEach((g) => {
-    const [lat, lon] = popCenter(g.members, year);
+    const c = popCenter(g, level.key, year);
+    const [lat, lon] = c.at;
+    if (c.office) onOffice += 1;
     max = Math.max(max, g.pop);
     const marker = L.circleMarker([lat, lon], {
       pane: 'popPane',
@@ -2203,16 +2223,22 @@ function drawPopulation() {
     const rolled = g.members.length > 1
       ? `<br>${g.members.length}개 시군구를 합친 값입니다`
       : '';
+    // 관청 위에 찍힌 원과 물러난 원이 같아 보이면 안 된다. 앞의 것은
+    // 실제 소재지고 뒤의 것은 몇 km 어긋날 수 있는 짐작이다.
+    const where = c.office
+      ? '<br><em>점 위치는 관청 소재지입니다</em>'
+      : '<br><em>관청 좌표를 아직 못 받아, 인구로 가중한 대표점에'
+        + ' 찍었습니다</em>';
     marker.bindTooltip(
       `${escapeHtml(g.name)} · ${year}년 인구 ${g.pop.toLocaleString('ko-KR')}명`
-      + rolled
-      + '<br><em>점 위치는 인구로 가중한 대표점입니다 (관청 좌표 준비 중)</em>',
+      + rolled + where,
       { direction: 'top' });
     popLayer.addLayer(marker);
   });
   window.__pop = {
     year, level: level.key, levelLabel: level.label,
     n: popLayer.getLayers ? popLayer.getLayers().length : 0, max,
+    onOffice,
   };
 }
 

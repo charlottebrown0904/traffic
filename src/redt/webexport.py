@@ -455,6 +455,29 @@ def _landprice_series() -> dict:
     return {"rows": rows, "available": bool(rows)}
 
 
+def _region_offices() -> dict[str, dict[str, list[float]]]:
+    """묶은 단위(시·도, 시·군)의 관청 좌표.
+
+    구 단위는 regions.json 의 각 행이 들고 있으므로 여기 안 싣는다.
+    """
+    with db.connect(read_only=True) as con:
+        has = con.execute("""
+            SELECT count(*) FROM information_schema.tables
+            WHERE table_name = 'office'
+        """).fetchone()[0]
+        if not has:
+            return {}
+        rows = con.execute("""
+            SELECT level, key, lat, lon FROM office
+            WHERE level IN ('sido', 'si') AND lat IS NOT NULL
+        """).fetchdf()
+    out: dict[str, dict[str, list[float]]] = {}
+    for r in rows.itertuples(index=False):
+        out.setdefault(r.level, {})[str(r.key)] = [
+            round(float(r.lat), 6), round(float(r.lon), 6)]
+    return out
+
+
 def _parent_si(name: str) -> str:
     """'수원시 장안구' → '수원시'. 아니면 빈 문자열.
 
@@ -502,21 +525,29 @@ def _regions() -> list[dict]:
             return []
         # 법정동마다 한 점. 같은 법정동에 거래가 천 건이어도 한 번만 센다.
         pts = con.execute("""
-            SELECT sigungu_cd,
-                   any_value(sigungu) AS name,
-                   any_value(sido) AS sido,
-                   median(lat) AS lat, median(lon) AS lon,
-                   count(*) AS n_umd
+            SELECT p.sigungu_cd, p.name, p.lat, p.lon, p.n_umd,
+                   coalesce(o.sido, '') AS sido,
+                   o.lat AS office_lat, o.lon AS office_lon
             FROM (
-                SELECT sigungu_cd, any_value(sigungu) AS sigungu,
-                       any_value(sido) AS sido,
-                       avg(lat) AS lat, avg(lon) AS lon
-                FROM trade
-                WHERE lat IS NOT NULL AND umd IS NOT NULL AND umd <> ''
-                GROUP BY sigungu_cd, umd
-            )
-            GROUP BY sigungu_cd
-            ORDER BY sigungu_cd
+                SELECT sigungu_cd,
+                       any_value(sigungu) AS name,
+                       median(lat) AS lat, median(lon) AS lon,
+                       count(*) AS n_umd
+                FROM (
+                    SELECT sigungu_cd, any_value(sigungu) AS sigungu,
+                           avg(lat) AS lat, avg(lon) AS lon
+                    FROM trade
+                    WHERE lat IS NOT NULL AND umd IS NOT NULL AND umd <> ''
+                    GROUP BY sigungu_cd, umd
+                )
+                GROUP BY sigungu_cd
+            ) p
+            -- 시도 이름과 관청 좌표는 둘 다 office 에서 온다.
+            -- **trade.sido 는 쓸 수 없다** — 실거래 API 응답에 시도가
+            -- 없어서 늘 빈 값이다(collect/rtms.py 가 그렇게 적어 두었다).
+            -- 관청 도로명주소의 첫 마디가 우리가 가진 유일한 출처다.
+            LEFT JOIN office o ON o.level = 'gu' AND o.key = p.sigungu_cd
+            ORDER BY p.sigungu_cd
         """).fetchdf()
 
     centers = {str(r.sigungu_cd): r for r in pts.itertuples(index=False)}
@@ -537,6 +568,12 @@ def _regions() -> list[dict]:
             # (12210 동구 … 12870 신안군). 코드로 갈랐으면 광주 다섯 구가
             # 전남 아래로 들어갔을 것이다.
             "sido": _text(c.sido),
+            # 관청 좌표. 있으면 원의 중심이 여기가 된다 (사장님 지시
+            # 2026-09-07). 아직 못 받은 시군구는 빈 값이고, 그때는
+            # 화면이 대표점으로 물러난다.
+            **({"office_lat": round(float(c.office_lat), 6),
+                "office_lon": round(float(c.office_lon), 6)}
+               if pd.notna(c.office_lat) and pd.notna(c.office_lon) else {}),
             # 시 아래 구는 그 시로 묶을 수 있어야 한다 ('수원시 장안구'
             # → '수원시'). 이름이 두 마디로 오는 것이 유일한 단서다.
             "parent": _parent_si(_text(c.name)),
@@ -723,6 +760,12 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
 
     regions = _regions()
     meta["counts"]["regions"] = len(regions)
+    # 묶은 단위의 관청. 화면이 축척에 따라 시도·시군으로 묶을 때
+    # 원의 중심으로 쓴다. 경기도를 볼 때 원이 경기도청에 있어야지
+    # 43개 시군구 관청의 평균에 있으면 그것은 다시 대표점이다.
+    meta["region_offices"] = _region_offices()
+    meta["counts"]["offices"] = sum(
+        len(v) for v in meta["region_offices"].values())
     if regions:
         years = sorted({int(y) for r in regions for y in r["pop"]})
         meta["population_years"] = years

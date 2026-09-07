@@ -16,6 +16,7 @@ import json
 import sys
 import threading
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -1291,6 +1292,158 @@ def cmd_landchar(args):
         lc.describe(con)
 
 
+def cmd_offices(args):
+    """관청(도청·시청·군청·구청) 좌표를 받아 office 에 담는다.
+
+    사장님 지시(2026-09-07): "인구 표시 원의 중심은 도청/시청/구청/군청
+    소재지가 중심이 되도록 수정해 주세요."
+
+    세 단을 다 받는다. 화면이 축척에 따라 시도 → 시군 → 구로 묶으므로,
+    묶인 단위에도 자기 관청이 있어야 한다. 경기도를 볼 때 원이 경기도청에
+    있어야지 43개 시군구 관청의 평균에 있으면 그것은 다시 대표점이다.
+
+    **대표점이 후보를 가른다.** 동구·서구·남구는 전국에 흩어져 있어
+    이름만으로는 못 가린다. 우리가 이미 가진 대표점(법정동 중심점들의
+    중앙값)에 가장 가까운 것을 고르고, 그래도 40km 밖이면 집지 않는다 —
+    조용히 틀린 좌표를 쓰는 것보다 빈 것이 낫다.
+    """
+    from .collect import office as of
+
+    with db.connect() as con:
+        units = con.execute("""
+            SELECT sigungu_cd,
+                   any_value(sigungu) AS name,
+                   median(lat) AS lat, median(lon) AS lon
+            FROM (
+                SELECT sigungu_cd, any_value(sigungu) AS sigungu,
+                       avg(lat) AS lat, avg(lon) AS lon
+                FROM trade
+                WHERE lat IS NOT NULL AND umd IS NOT NULL AND umd <> ''
+                GROUP BY sigungu_cd, umd
+            )
+            GROUP BY sigungu_cd ORDER BY sigungu_cd
+        """).fetchdf()
+        # 인구는 가중치로 쓴다. 도의 중심을 시군구 대표점의 **단순**
+        # 평균으로 잡으면 인구 3만인 군과 60만인 시가 같은 무게로
+        # 잡아당겨, 관청을 찾을 앵커가 사람이 안 사는 산으로 간다.
+        pop = con.execute("""
+            SELECT sigungu_cd, max(value) AS pop
+            FROM region_year WHERE metric = 'population' AND value IS NOT NULL
+            GROUP BY sigungu_cd
+        """).fetchdf()
+        done = set(con.execute(
+            "SELECT level || '|' || key FROM office").fetchdf()
+            .iloc[:, 0].tolist()) if not args.refresh else set()
+
+    if units.empty:
+        print("시군구 대표점이 없습니다. 먼저 거래를 수집·지오코딩하세요.")
+        return
+    weight = {str(r.sigungu_cd): float(r.pop or 1) for r in pop.itertuples(index=False)}
+    rows = [{"cd": str(r.sigungu_cd),
+             "name": (r.name if isinstance(r.name, str) else "") or str(r.sigungu_cd),
+             "lat": float(r.lat), "lon": float(r.lon),
+             "w": weight.get(str(r.sigungu_cd), 1.0)}
+            for r in units.itertuples(index=False)]
+    print(f"시군구 {len(rows):,}곳")
+
+    out: list[dict] = []
+    fail: list[str] = []
+
+    def take(level: str, key: str, label: str, anchor):
+        if f"{level}|{key}" in done:
+            return None
+        got = of.fetch_one(label, anchor)
+        if not got:
+            fail.append(f"{level}:{label}")
+            return None
+        out.append({
+            "level": level, "key": key, "label": label,
+            "name": got["name"], "category": got["category"],
+            "sido": of.sido_of(got["road_addr"]),
+            "road_addr": got["road_addr"],
+            "lat": got["lat"], "lon": got["lon"],
+            "dist_km": got["dist_km"], "source": "vworld:search",
+            "fetched_at": of.now(),
+        })
+        return out[-1]
+
+    # ── ① 구·시·군 (가장 작은 단위) ──
+    print("  구·시·군 관청을 찾습니다")
+    got_by_cd: dict[str, dict] = {}
+    for i, r in enumerate(rows, 1):
+        rec = take("gu", r["cd"], r["name"], (r["lat"], r["lon"]))
+        if rec:
+            got_by_cd[r["cd"]] = rec
+        if i % 40 == 0 or i == len(rows):
+            print(f"    {i}/{len(rows)} · 찾은 것 {len(out):,} · 못 찾은 것 {len(fail)}",
+                  flush=True)
+
+    # 시도 이름은 관청 주소의 첫 마디에서 온다. 시군구 코드 앞 두 자리가
+    # 같은 것끼리 모아 **많이 나온 이름**을 쓴다 — 한 곳이 엉뚱한 주소를
+    # 갖고 있어도 나머지가 이긴다.
+    sido_of_cd: dict[str, str] = {}
+    by_prefix: dict[str, list[str]] = {}
+    for cd, rec in got_by_cd.items():
+        if rec["sido"]:
+            by_prefix.setdefault(cd[:2], []).append(rec["sido"])
+    prefix_sido = {p: Counter(v).most_common(1)[0][0] for p, v in by_prefix.items()}
+    for r in rows:
+        sido_of_cd[r["cd"]] = prefix_sido.get(r["cd"][:2], "")
+
+    # ── ② 시·군 (도 아래 구를 그 시로 묶은 단위) ──
+    from .webexport import _parent_si
+    si_members: dict[str, list[dict]] = {}
+    for r in rows:
+        parent = _parent_si(r["name"])
+        if parent:
+            si_members.setdefault(parent, []).append(r)
+    print(f"  시 아래 구를 묶은 시 {len(si_members)}곳")
+    for name, members in si_members.items():
+        take("si", name, name, _weighted(members))
+
+    # ── ③ 시·도 ──
+    sido_members: dict[str, list[dict]] = {}
+    for r in rows:
+        sd = sido_of_cd.get(r["cd"])
+        if sd:
+            sido_members.setdefault(sd, []).append(r)
+    print(f"  시·도 {len(sido_members)}곳")
+    for name, members in sido_members.items():
+        take("sido", name, name, _weighted(members))
+
+    if out:
+        with db.connect() as con:
+            con.register("_o", pd.DataFrame(out))
+            con.execute("INSERT OR REPLACE INTO office SELECT * FROM _o")
+            con.unregister("_o")
+    print(f"\n=== 관청 좌표 ===")
+    print(f"  새로 담은 것 {len(out):,} · 못 찾은 것 {len(fail)}")
+    if fail:
+        print(f"  못 찾음: {', '.join(fail[:20])}"
+              + (" …" if len(fail) > 20 else ""))
+    with db.connect(read_only=True) as con:
+        tot = con.execute(
+            "SELECT level, count(*) n, max(dist_km) far FROM office"
+            " GROUP BY level ORDER BY level").fetchdf()
+        print(tot.to_string(index=False) if len(tot) else "  (없음)")
+        # 대표점에서 멀리 떨어진 것은 엉뚱한 도시의 같은 이름 관청일 수
+        # 있다. 조용히 두면 원이 옆 도(道)에 가서 찍힌다.
+        far = con.execute("""
+            SELECT level, label, name, road_addr, round(dist_km, 1) AS km
+            FROM office WHERE dist_km > 15 ORDER BY dist_km DESC LIMIT 15
+        """).fetchdf()
+        if len(far):
+            print("\n  대표점에서 15km 넘게 떨어진 것 (확인 필요)")
+            print(far.to_string(index=False))
+
+
+def _weighted(members: list[dict]) -> tuple[float, float]:
+    """인구로 가중한 중심. 관청 후보를 고를 앵커로 쓴다."""
+    w = sum(m["w"] for m in members) or 1.0
+    return (sum(m["lat"] * m["w"] for m in members) / w,
+            sum(m["lon"] * m["w"] for m in members) / w)
+
+
 def cmd_usage_mix(args):
     """공장과 창고가 실제로 갈리는지 본다.
 
@@ -2095,6 +2248,12 @@ def main(argv=None):
     lch.add_argument("--max-tiles", type=int, default=0,
                      help="이번 실행에서 훑을 최대 칸 수 (0=제한없음)")
     lch.set_defaults(func=cmd_landchar)
+
+    ofc = sub.add_parser(
+        "offices", help="관청(도청·시청·군청·구청) 좌표를 받는다")
+    ofc.add_argument("--refresh", action="store_true",
+                     help="이미 담은 것도 다시 받는다")
+    ofc.set_defaults(func=cmd_offices)
 
     sub.add_parser("usage-mix",
                    help="공장·창고 구분 — 건물주용도가 실제로 무엇으로 오는지"
