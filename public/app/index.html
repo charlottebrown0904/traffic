@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260905a">
+<link rel="stylesheet" href="/app/style.css?v=20260907a">
 </head>
 <body>
 
@@ -89,6 +89,17 @@
           알려주지 않으므로, <strong>개발이 끝난 지목</strong>(대·공장용지·
           창고용지 등)을 따로 봅니다.</p>
         <div class="checks" id="stage-filters"></div>
+
+        <h3 class="rail-sub">토지 — 도로 접함</h3>
+        <p class="hint">차가 들어가는 땅과 못 들어가는 땅은 같은 동네에서도
+          단가가 <strong>1.7배</strong> 벌어집니다 (남이천 +66% · 안성 +67%
+          실측). 필지 특성은 전국을 나눠 받는 중이라 아직 대부분이
+          <strong>조사 안 됨</strong>입니다 — 그 거래까지 보시려면
+          <strong>전체</strong>로 두십시오.</p>
+        <label class="field">
+          <span>도로 접함</span>
+          <select id="road-filter"></select>
+        </label>
 
         <h3 class="rail-sub">토지 — 용도지역</h3>
         <p class="hint">처음에는 <strong>계획관리·생산관리·자연녹지</strong>만

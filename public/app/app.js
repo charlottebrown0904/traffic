@@ -31,6 +31,9 @@ const state = {
   dealYear: 'all', tradeCache: {}, tradesShown: null,
   activeStages: new Set(), activeLandUse: new Set(),
   hasStageFilter: false, hasLandUseFilter: false,
+  // 'all' | 'ok' | 'no'. 기본은 'all' — 필지 특성을 아직 전국의 일부만
+  // 훑었으므로, 여기서 걸면 조사 안 된 거래가 통째로 사라진다.
+  roadFilter: 'all',
   activeKinds: new Set(),
   parcelOnly: false, selected: null, showAllBands: false, tiers: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
@@ -393,6 +396,33 @@ function buildFilters() {
              STAGE_HINT[name]);
   });
   state.hasStageFilter = state.activeStages.size > 0;
+
+  /* 도로 접함 — 사장님 지시(2026-09-07): "도로를 접하는 가가 제일
+   * 중요합니다." 실측이 크기까지 확인했다: 차가 들어가느냐가 단가를
+   * 남이천 +66%, 안성 +67% 가른다. 두 표본에서 같은 크기다.
+   *
+   * 칸 이름 옆에 건수를 적는다. 지금은 '조사 안 됨' 이 압도적인데,
+   * 그것을 안 보여 주면 '차 진입 가능' 을 골랐을 때 지도가 텅 비는
+   * 이유를 알 수가 없다. */
+  const rsel = $('#road-filter');
+  if (rsel) {
+    const roadMix = state.meta.road_mix || {};
+    const cnt = (k) => (typeof roadMix[k] === 'number'
+      ? ` (${nfmt(roadMix[k])}건)` : '');
+    const known = (roadMix['차 진입 가능'] || 0) + (roadMix['진입 어려움'] || 0);
+    rsel.innerHTML =
+      `<option value="all">전체${known ? '' : ' — 아직 조사 전'}</option>`
+      + `<option value="ok">차 진입 가능${cnt('차 진입 가능')}</option>`
+      + `<option value="no">진입 어려움 · 맹지${cnt('진입 어려움')}</option>`;
+    rsel.value = state.roadFilter;
+    // 조사된 것이 하나도 없으면 고를 수 있게 두지 않는다 — 골라 봐야
+    // 지도가 비고, 왜 비는지는 안 보인다.
+    rsel.disabled = !known;
+    rsel.addEventListener('change', () => {
+      state.roadFilter = rsel.value;
+      refreshMap();
+    });
+  }
 
   // 용도지역 — 25종이라 많은 것부터 늘어놓는다.
   //
@@ -1447,6 +1477,16 @@ function visibleTrades() {
           && !state.activeStages.has(t.stage || '지목 미상')) return false;
       if (state.hasLandUseFilter
           && !state.activeLandUse.has(t.land_use || '용도 미상')) return false;
+      // 도로 접함. car_ok 는 파이썬이 판정해서 실어 준다 — 여기서
+      // 문자열을 다시 뜯지 않는다('세로한면(가)' 와 '(불)' 은 한 글자
+      // 차이라 갈라 두면 언젠가 어긋난다).
+      //
+      // **조사 안 된 것은 어느 쪽도 아니다.** 'ok' 를 골랐을 때 빈 값을
+      // 남기면 맹지가 섞이고, 'no' 에 남기면 아직 모르는 땅이 맹지로
+      // 몰린다. 그래서 둘 다에서 뺀다 — 고르는 순간 표본이 '조사된 것'
+      // 으로 좁아진다는 뜻이고, 그 숫자는 아래 안내가 말해 준다.
+      if (state.roadFilter === 'ok' && t.car_ok !== 'Y') return false;
+      if (state.roadFilter === 'no' && t.car_ok !== 'N') return false;
     }
     return true;
   });
@@ -1698,6 +1738,34 @@ function tradePopup(t) {
   add('지목', t.jimok && (escapeHtml(t.jimok)
       + (t.stage ? ` <span class="mut">(${escapeHtml(t.stage)})</span>` : '')));
   add('용도지역', t.land_use && escapeHtml(t.land_use));
+
+  /* ── 필지 특성 ──
+   * 실거래 API 에는 없는 값이다. 브이월드 토지특성(dt_d194)에서 따로
+   * 받아 점-다각형으로 맞춰 붙였다. 사장님 지시(2026-09-07):
+   * "실거래 내용에 도로접하거나 토지의 모양등을 알 수 있는 지". */
+  if (t.road_side) {
+    const ok = t.car_ok === 'Y';
+    add('도로접', escapeHtml(t.road_side)
+        + ` <span class="road-tag ${ok ? 'is-ok' : 'is-no'}">`
+        + `${ok ? '차 진입 가능' : '진입 어려움'}</span>`);
+  }
+  // 형상은 등급이 아니다. 사장님 지시(2026-09-07): "부정형이 무조건
+  // 좋지 않은 건 아닙니다." 그래서 좋고 나쁨을 붙이지 않고 그대로 적는다.
+  add('형상', t.parcel_shape && escapeHtml(t.parcel_shape));
+  add('지세', t.parcel_slope && escapeHtml(t.parcel_slope));
+  if (t.official_price) {
+    // 공시지가 대비 배수. 스크리닝에서 '비싸게 샀나' 를 가장 빨리
+    // 가늠하는 값이라 함께 적는다.
+    const mult = t.price_per_m2 ? t.price_per_m2 / t.official_price : null;
+    add('공시지가', `㎡당 ${won(t.official_price)}`
+        + (mult && isFinite(mult)
+           ? ` <span class="mut">(실거래가 ${mult.toFixed(1)}배)</span>` : ''));
+  }
+  // 토지인데 필지 특성이 하나도 없으면 그 사실을 말한다. 비어 있는
+  // 것과 '맹지·부정형' 인 것은 전혀 다른데, 아무 말도 없으면 읽는
+  // 사람은 둘을 못 가른다.
+  const noParcel = !factory && !t.road_side && !t.parcel_shape;
+
   if (t.building_area_m2) {
     add('건물면적', `${popNum(t.building_area_m2, 0)}㎡ ` +
         `<span class="mut">(${popNum(t.building_area_m2 / PYEONG_M2, 0)}평)</span>`);
@@ -1726,11 +1794,15 @@ function tradePopup(t) {
     : { cls: shape === 'trade-warehouse' ? 'is-warehouse'
            : shape === 'trade-factory' ? 'is-factory' : 'is-etc',
         text: escapeHtml(t.usage || '공장·창고 (구분 없음)') };
+  const nochar = noParcel
+    ? '<p class="pop-note">도로접·형상은 <strong>아직 조사 전</strong>입니다'
+      + ' (전국을 나눠 받는 중입니다). 맹지라는 뜻이 아닙니다.</p>'
+    : '';
   return `<div class="trade-pop">`
     + `<p class="pop-kind ${head.cls}">${head.text}</p>`
     + (addr ? `<p class="pop-addr">${escapeHtml(addr)}</p>` : '')
     + `<table class="pop-table">${rows.join('')}</table>`
-    + warn + `</div>`;
+    + nochar + warn + `</div>`;
 }
 
 /* 색은 셋으로 묶는다 — 공장 계열 / 창고 계열 / 그 밖.

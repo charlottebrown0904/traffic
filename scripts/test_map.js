@@ -877,6 +877,10 @@ const FAKE_LEAFLET = () => {
       meta.stage_mix = { '원지': 9100000, '개발완료': 1500000, '그 밖': 700000 };
       meta.land_use_mix = { '계획관리지역': 2600000, '농림지역': 2100000,
                             '자연녹지지역': 1200000, '제2종일반주거지역': 640000 };
+      // 도로 접함. 실제 자료의 모양대로 '조사 안 됨' 이 압도적이다 —
+      // 전국을 칸으로 나눠 받는 중이라 아직 일부만 붙어 있다.
+      meta.road_mix = { '차 진입 가능': 61764, '진입 어려움': 117711,
+                        '조사 안 됨': 11020525 };
       await page2.route('**/app/data/meta.json*', (r) => r.fulfill({
         status: 200, contentType: 'application/json', body: JSON.stringify(meta) }));
 
@@ -886,7 +890,10 @@ const FAKE_LEAFLET = () => {
           price_per_m2: 500000, price_krw: 370000000, area_m2: 740,
           sido: '경기도', sigungu: '화성시', umd: '동탄면', jibun: '123-4',
           jimok: '전', land_use: '계획관리지역', deal_type: '중개거래',
-          geocode_level: 'parcel', stage: '원지' },
+          geocode_level: 'parcel', stage: '원지',
+          // 필지 특성이 붙은 거래. car_ok 는 파이썬이 판정해서 실어 준다.
+          road_side: '세로한면(가)', car_ok: 'Y', parcel_shape: '부정형',
+          parcel_slope: '평지', official_price: 200000 },
         { kind: 'factory', lat: 37.2, lon: 127.2, deal_year: 2025, deal_month: 7,
           price_per_m2: 900000, price_krw: 1500000000, area_m2: 1660,
           sido: '경기도', sigungu: '평택시', umd: '청북읍', jibun: '55',
@@ -904,6 +911,15 @@ const FAKE_LEAFLET = () => {
           price_per_m2: 400000, price_krw: 300000000, area_m2: 750,
           sido: '경기도', sigungu: '안성시', umd: '대덕면', jibun: '12',
           land_use: '계획관리', deal_type: '중개거래', geocode_level: 'parcel' },
+        // 맹지. 값이 붙은 쪽의 반대편이다. 농림지역·개발완료로 둔 것은
+        // 위 개발단계·용도지역 검사가 세는 숫자를 건드리지 않기 위해서다.
+        { kind: 'land', lat: 37.5, lon: 127.5, deal_year: 2025, deal_month: 5,
+          price_per_m2: 90000, price_krw: 90000000, area_m2: 1000,
+          sido: '경기도', sigungu: '여주시', umd: '가남읍', jibun: '3',
+          jimok: '대', land_use: '농림지역', deal_type: '중개거래',
+          geocode_level: 'parcel', stage: '개발완료',
+          road_side: '맹지', car_ok: 'N', parcel_shape: '가로장방',
+          parcel_slope: '평지', official_price: 60000 },
         // IC 에서 먼 곳 — 법정동 중심점 좌표. 예전에는 좌표가 아예 없어
         // 지도에서 통째로 빠지던 종류다.
         { kind: 'land', lat: 34.8, lon: 126.4, deal_year: 2025, deal_month: 1,
@@ -1141,6 +1157,82 @@ const FAKE_LEAFLET = () => {
 
       await page2.evaluate(() => document.getElementById('lu-all').click());
       await page2.waitForTimeout(300);
+
+      /* ── 토지: 도로 접함 (2026-09-07 지시) ──
+       * "도로를 접하는 가가 제일 중요합니다." 실측이 크기까지 확인했다 —
+       * 차가 들어가느냐가 단가를 남이천 +66%, 안성 +67% 가른다. */
+      const roadUi = await page2.evaluate(() => {
+        const s = document.getElementById('road-filter');
+        return { value: s.value, disabled: s.disabled,
+                 options: [...s.options].map((o) => o.value),
+                 texts: [...s.options].map((o) => o.textContent.trim()) };
+      });
+      check('도로 접함 필터가 선다',
+            roadUi.options.join(',') === 'all,ok,no', roadUi.options.join(','));
+      check('기본값은 전체다 — 조사 안 된 거래를 감추지 않는다',
+            roadUi.value === 'all' && roadUi.disabled === false, roadUi.value);
+      check('칸마다 건수를 적는다',
+            roadUi.texts.some((t) => /61,764건/.test(t))
+            && roadUi.texts.some((t) => /117,711건/.test(t)),
+            roadUi.texts.join(' | '));
+
+      // 차 진입 가능만 고르면 그것만 남는다. 공장은 그대로여야 한다 —
+      // 도로 접함은 토지에만 거는 조건이다.
+      await page2.selectOption('#road-filter', 'ok');
+      await page2.waitForTimeout(300);
+      const roadOk = await page2.evaluate(() => (window.__tradeStyles || []).slice());
+      check('차 진입 가능만 고르면 그것만 남는다',
+            roadOk.filter((x) => x.kind === 'land').length === 1
+            && roadOk.filter((x) => x.kind === 'factory').length === 3,
+            `토지 ${roadOk.filter((x) => x.kind === 'land').length} · `
+            + `공장계 ${roadOk.filter((x) => x.kind === 'factory').length}`);
+      check('조사 안 된 거래를 차 진입 가능으로 세지 않는다',
+            roadOk.filter((x) => x.kind === 'land').length === 1
+            && /세로한면\(가\)/.test(roadOk.find((x) => x.kind === 'land').popup),
+            roadOk.filter((x) => x.kind === 'land').length + '건');
+
+      await page2.selectOption('#road-filter', 'no');
+      await page2.waitForTimeout(300);
+      const roadNo = await page2.evaluate(() => (window.__tradeStyles || []).slice());
+      // **조사 안 된 것을 맹지로 몰지 않는다.** 그러면 아직 안 받은 땅이
+      // 전부 최악으로 셈해진다 — 지금은 그것이 대부분이다.
+      check('맹지만 고르면 조사 안 된 거래는 안 딸려 온다',
+            roadNo.filter((x) => x.kind === 'land').length === 1
+            && /맹지/.test(roadNo.find((x) => x.kind === 'land').popup),
+            `토지 ${roadNo.filter((x) => x.kind === 'land').length}건`);
+
+      await page2.selectOption('#road-filter', 'all');
+      await page2.waitForTimeout(300);
+
+      // 말풍선이 도로접·형상·공시지가를 적는가.
+      const roadPop = await page2.evaluate(() =>
+        (window.__tradeStyles || []).find((x) => /화성시/.test(x.popup)));
+      check('말풍선이 도로접면을 적는다',
+            !!roadPop && /도로접/.test(roadPop.popup)
+            && /세로한면\(가\)/.test(roadPop.popup),
+            roadPop ? (roadPop.popup.match(/도로접[\s\S]{0,90}/) || [''])[0] : '없음');
+      check('차 진입 가능 여부를 글자로 붙인다',
+            !!roadPop && /차 진입 가능/.test(roadPop.popup));
+      // 형상은 등급이 아니다 — "부정형이 무조건 좋지 않은 건 아닙니다."
+      // 그대로 적기만 하고 좋고 나쁨을 붙이지 않는다.
+      check('형상을 그대로 적고 등급을 매기지 않는다',
+            !!roadPop && /부정형/.test(roadPop.popup)
+            && !/(불리|나쁨|좋음)/.test(roadPop.popup),
+            roadPop ? (roadPop.popup.match(/형상[\s\S]{0,60}/) || [''])[0] : '없음');
+      check('공시지가와 실거래 배수를 적는다',
+            !!roadPop && /공시지가/.test(roadPop.popup) && /2\.5배/.test(roadPop.popup),
+            roadPop ? (roadPop.popup.match(/공시지가[\s\S]{0,90}/) || [''])[0] : '없음');
+
+      // **조사 안 된 것을 맹지처럼 보이게 두지 않는다.** 비어 있는 것과
+      // '맹지' 는 전혀 다른데, 아무 말도 없으면 읽는 사람은 둘을 못 가른다.
+      const bare = await page2.evaluate(() =>
+        (window.__tradeStyles || []).find((x) => /무안군/.test(x.popup)));
+      check('필지 특성이 없는 토지는 조사 전이라고 말한다',
+            !!bare && /아직 조사 전/.test(bare.popup)
+            && /맹지라는 뜻이 아닙니다/.test(bare.popup),
+            bare ? bare.popup.slice(-140) : '없음');
+      check('공장 말풍선에는 그 안내가 안 붙는다',
+            !!fac && !/아직 조사 전/.test(fac.popup));
 
       // 연도를 바꾸면 그 해 파일을 받아 다시 그린다.
       await page2.selectOption('#deal-year', '2024');

@@ -30,6 +30,12 @@ MAX_TRADE_POINTS = 2500          # trades.json — 전 기간 개요
 MAX_TRADE_POINTS_YEAR = 3000     # trades-YYYY.json — 그 해만
 SAMPLE_SEED = 42          # 표본을 고정해 실행마다 diff 가 생기지 않게 한다
 
+# 도로 접함 필터의 세 칸 이름. 화면과 meta 가 같은 글자를 써야 하므로
+# 여기서 한 번만 정한다.
+ROAD_OK = "차 진입 가능"
+ROAD_NO = "진입 어려움"
+ROAD_UNKNOWN = "조사 안 됨"
+
 # 말풍선에 보여줄 칸. 지도에 점만 찍혀 있으면 '얼마에 팔렸나' 를
 # 알 수 없어서 스크리닝에 못 쓴다.
 TRADE_COLS = """
@@ -57,6 +63,53 @@ TRADE_COLS = """
 # 그 자리에 실제로 있었던 거래다.
 TRADE_WHERE = ("lat IS NOT NULL AND price_per_m2 IS NOT NULL "
                "AND NOT coalesce(is_cancelled, FALSE)")
+
+# 필지 특성. **trade 표에는 없다** — 실거래 API 가 도로접·형상을 주지
+# 않아서 브이월드 토지특성(dt_d194)에서 따로 받아 parcel 에 담고,
+# 점-다각형으로 맞춘 결과를 trade_parcel 로 이어 놓았다.
+#
+# 사장님 지시(2026-09-07): "실거래 내용에 도로접하거나 토지의 모양등을
+# 알 수 있는 지도 확인해 주세요." · "도로를 접하는 가가 제일 중요합니다."
+# 실측이 그 말을 확인했다 — 차가 들어가느냐가 단가를 +66~67% 가른다.
+def _trade_where(alias: str) -> str:
+    """TRADE_WHERE 를 별칭 붙여서.
+
+    필지와 조인하면 이름이 겹치는 칸이 생긴다(지목·용도지역·면적).
+    지금 조건에 그 셋은 없지만, 조건 쪽을 미리 못박아 두면 나중에
+    칸을 하나 더 넣을 때 조용한 모호성으로 죽지 않는다.
+    """
+    return (f"{alias}.lat IS NOT NULL AND {alias}.price_per_m2 IS NOT NULL "
+            f"AND NOT coalesce({alias}.is_cancelled, FALSE)")
+
+
+PARCEL_COLS = """
+    coalesce(pc.road_side, '') AS road_side,
+    coalesce(pc.shape, '') AS parcel_shape,
+    coalesce(pc.slope, '') AS parcel_slope,
+    pc.official_price
+"""
+
+
+def _trade_query(where: str, limit: int) -> str:
+    """표본을 뽑은 **뒤에** 필지 특성을 붙인다.
+
+    순서가 중요하다. 먼저 조인하면 수백만 행짜리 결합을 만들어 놓고
+    거기서 2천 건을 뽑는 셈이 된다. 뽑고 나서 붙이면 2천 번의 조회다.
+
+    아직 전국을 다 안 훑었으므로 대부분의 거래에는 붙는 것이 없다.
+    그래서 LEFT JOIN 이고, 빈 값은 _trade_records 가 알아서 뺀다.
+    """
+    return f"""
+        SELECT s.*, {PARCEL_COLS}
+        FROM (
+            SELECT {TRADE_COLS}
+            FROM (SELECT * FROM trade WHERE {where})
+            USING SAMPLE reservoir({limit} ROWS) REPEATABLE ({SAMPLE_SEED})
+        ) s
+        LEFT JOIN trade_parcel tp ON tp.trade_id = s.trade_id
+        LEFT JOIN parcel pc ON pc.pnu = tp.pnu
+        ORDER BY s.trade_id
+    """
 
 # 한국도로공사 TCS 차종 구분. 화면에서 "3종이 뭐냐" 는 물음에 답할 곳이 없어
 # 필터만 있고 뜻이 없었다. 요금 체계의 기준이라 그대로 옮긴다.
@@ -117,7 +170,7 @@ def _records(df: pd.DataFrame) -> list[dict]:
 # 자리를 줄일 칸. 좌표는 소수 5자리면 약 1m 다 — 그보다 정밀해 봐야
 # 법정동 중심점은 ±1~2km 오차이고 지번 좌표도 필지 대표점이다.
 _TRADE_ROUND = {"lat": 5, "lon": 5, "area_m2": 1, "building_area_m2": 1,
-                "price_per_m2": 0}
+                "price_per_m2": 0, "official_price": 0}
 
 
 def _with_usage(df: pd.DataFrame) -> pd.DataFrame:
@@ -143,6 +196,18 @@ def _with_usage(df: pd.DataFrame) -> pd.DataFrame:
     from .usage import land_stage
     out["stage"] = [land_stage(j) if k == "land" else ""
                     for k, j in zip(out["kind"].tolist(), jimok)]
+    # 도로 접함 여부는 **여기서 한 번만** 판정한다. 도로접면은
+    # '세로한면(가)' 와 '세로한면(불)' 처럼 한 글자로 갈리므로, 화면에서
+    # 문자열을 다시 뜯게 두면 규칙이 두 군데로 갈라져 언젠가 어긋난다.
+    # 사장님 지시(2026-09-07): "도로를 접하는 가가 제일 중요합니다."
+    #
+    # 'Y'/'N' 로 싣는 이유는 0 이 아니어야 하기 때문이다 — 0 을 실으면
+    # 화면의 `if (t.car_ok)` 가 '맹지' 와 '모름' 을 못 가른다.
+    if "road_side" in out:
+        from .usage import road_car_ok
+        out["car_ok"] = ["" if (c := road_car_ok(r)) is None
+                         else ("Y" if c else "N")
+                         for r in out["road_side"].tolist()]
     # 원값은 내보내지 않는다. 판정에만 쓰고, 파일에는 결과만 싣는다.
     return out.drop(columns=["building_use"], errors="ignore")
 
@@ -491,13 +556,8 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         # 뽑고 그중 조건을 통과한 것만 남겨, 늘 2천 건 남짓밖에 안 나왔다
         # (좌표 없는 거래가 19% 라 그만큼 깎였다). 하위 질의로 감싸야
         # 거른 뒤의 집합에서 뽑는다 — 합성 자료에서 446 → 4,000 으로 확인.
-        trades = con.execute(f"""
-            SELECT * FROM (
-                SELECT {TRADE_COLS}
-                FROM (SELECT * FROM trade WHERE {TRADE_WHERE})
-                USING SAMPLE reservoir({MAX_TRADE_POINTS} ROWS) REPEATABLE ({SAMPLE_SEED})
-            ) ORDER BY trade_id
-        """).fetchdf()
+        trades = con.execute(
+            _trade_query(TRADE_WHERE, MAX_TRADE_POINTS)).fetchdf()
         # 연도별 표본. 그 해만 받으므로 한 해에 더 많이 담을 수 있다.
         # 실제 건수도 함께 센다 — 표본만 보여주면 '이 해에 거래가
         # 4천 건뿐' 으로 읽힌다.
@@ -507,15 +567,9 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         """).fetchdf()
         by_year = {}
         for year in year_counts["deal_year"].dropna().astype(int).tolist():
-            by_year[year] = con.execute(f"""
-                SELECT * FROM (
-                    SELECT {TRADE_COLS}
-                    FROM (SELECT * FROM trade
-                          WHERE {TRADE_WHERE} AND deal_year = {year})
-                    USING SAMPLE reservoir({MAX_TRADE_POINTS_YEAR} ROWS)
-                                REPEATABLE ({SAMPLE_SEED})
-                ) ORDER BY trade_id
-            """).fetchdf()
+            by_year[year] = con.execute(_trade_query(
+                f"{TRADE_WHERE} AND deal_year = {year}",
+                MAX_TRADE_POINTS_YEAR)).fetchdf()
 
     try:
         scores = scoring.build_scores(panel, band=band, volume_col=volume_col)
@@ -573,6 +627,35 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         _s = _stage_of(_r.jimok) or "지목 미상"
         stage_mix[_s] = stage_mix.get(_s, 0) + int(_r.n)
 
+    # 도로 접함. 사장님 지시(2026-09-07): "도로를 접하는 가가 제일
+    # 중요합니다." 실측이 크기까지 알려줬다 — 차가 들어가느냐가 단가를
+    # 남이천 +66%, 안성 +67% 가른다.
+    #
+    # **'조사 안 됨' 을 반드시 함께 센다.** 필지 특성은 전국을 칸으로
+    # 나눠 조금씩 모으는 중이라 아직 대부분의 거래에 안 붙어 있다.
+    # 그 숫자를 감추면 화면이 '맹지가 적다' 로 읽히는데, 사실은
+    # '아직 모른다' 다.
+    from .usage import road_car_ok as _car_of
+    with db.connect(read_only=True) as con:
+        _rrows = con.execute(f"""
+            SELECT coalesce(pc.road_side, '') AS road_side, count(*) AS n
+            FROM trade t
+            LEFT JOIN trade_parcel tp ON tp.trade_id = t.trade_id
+            LEFT JOIN parcel pc ON pc.pnu = tp.pnu
+            WHERE t.kind = 'land' AND {_trade_where('t')}
+            GROUP BY 1
+        """).fetchdf()
+    road_mix: dict[str, int] = {ROAD_OK: 0, ROAD_NO: 0, ROAD_UNKNOWN: 0}
+    road_side_mix: dict[str, int] = {}
+    for _r in _rrows.itertuples(index=False):
+        _n = int(_r.n)
+        _c = _car_of(_r.road_side)
+        road_mix[ROAD_UNKNOWN if _c is None
+                 else ROAD_OK if _c else ROAD_NO] += _n
+        if _r.road_side:
+            road_side_mix[_r.road_side] = \
+                road_side_mix.get(_r.road_side, 0) + _n
+
     meta = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "is_synthetic": SYNTHETIC_MARK.exists(),
@@ -599,6 +682,10 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         # 전체 건수다.
         "land_use_mix": land_use_mix,
         "stage_mix": stage_mix,
+        # 도로 접함. road_mix 는 필터가 쓰는 세 칸,
+        # road_side_mix 는 원래 등급별 건수(말풍선·설명용)다.
+        "road_mix": road_mix,
+        "road_side_mix": road_side_mix,
         "trade_years": [
             {"year": int(r.deal_year), "total": int(r.n),
              "sample": int(len(by_year.get(int(r.deal_year), [])))}
