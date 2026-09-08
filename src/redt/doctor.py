@@ -25,6 +25,11 @@ PACKAGES = [
 _fail: list[str] = []
 _warn: list[str] = []
 
+# 중계기가 그 주소에 없으면 3·4·5 절이 똑같은 404 를 세 번 토한다. 원인은
+# 하나인데 실패가 셋이면 읽는 사람이 무엇을 고쳐야 할지 못 고른다.
+# 한 번 판정해서 여기 적어 두고, 아래 실호출들은 건너뛴다.
+_relay_dead = False
+
 def _say(ok: bool | None, label: str, hint: str = "") -> None:
     mark = "  ok   " if ok else ("  --   " if ok is None else "  FAIL ")
     print(mark + label + (f"\n         → {_scrub(hint)}" if hint and not ok else ""))
@@ -53,6 +58,40 @@ def _check_packages() -> None:
             _say(False, f"{name} ({why})", "pip install -r requirements.txt")
 
 
+def _relay_alive() -> tuple[bool | None, str]:
+    """중계기가 그 주소에 실제로 살아 있는지 한 번 두드린다.
+
+    target 없이 부르면 살아 있는 중계기는 400('target 파라미터가 없습니다')
+    을 준다. **404 는 중계기가 대답한 것이 아니라 그 주소에 아무것도 없다는
+    뜻이다** — Vercel 주소를 바꾸면 이렇게 된다. run 58~60 이 그것이었다:
+    실거래가·브이월드·도로공사 세 줄이 모두 404 였고, 셋 다 같은 원인이었다.
+    """
+    import requests
+
+    cfg = relay()
+    try:
+        r = requests.get(f"{cfg.url}/api/relay",
+                         headers={"x-relay-token": cfg.token}, timeout=15)
+    except Exception as exc:
+        return False, f"{type(exc).__name__}: {str(exc)[:160]}"
+    if r.status_code == 404:
+        return False, ("그 주소에 중계기가 없습니다 (404). Vercel 주소를 "
+                       "바꾸셨다면 GitHub Secrets 의 REDT_RELAY_URL 도 "
+                       "새 주소로 바꾸셔야 합니다.")
+    if r.status_code == 401:
+        return False, "토큰이 거절됐습니다 (401) — REDT_RELAY_TOKEN 을 확인하세요"
+    if r.status_code == 400:
+        return True, ""          # target 이 없다고 나무란다 = 살아 있다
+    return None, f"뜻밖의 응답 {r.status_code} — 중계기 배포를 확인하세요"
+
+
+def _skip_if_relay_dead() -> bool:
+    if _relay_dead:
+        _say(None, "건너뜀 — 중계기가 응답하지 않습니다 (2절 참고)")
+        return True
+    return False
+
+
 def _check_keys() -> None:
     """키는 config/.env 로도, 환경변수로도 들어온다 (Codespaces Secrets 등).
     파일이 없다고 실패시키면 안 된다 — 값이 있는지만 본다."""
@@ -62,6 +101,11 @@ def _check_keys() -> None:
     if cfg.enabled:
         print("\n2. API 키  (서울 중계기 경유 — 키는 중계기 쪽에 있습니다)")
         _say(True, f"중계기 {cfg.url}/api/relay")
+        ok, why = _relay_alive()
+        _say(ok, "중계기 응답", why)
+        if ok is False:
+            global _relay_dead
+            _relay_dead = True
         return
     print(f"\n2. API 키  (읽은 곳: {source})")
     if not env.exists():
@@ -90,6 +134,8 @@ def _check_rtms() -> None:
     if not keys().data_go_kr and not relay().enabled:
         _say(None, "건너뜀 — 키 없음")
         return
+    if _skip_if_relay_dead():
+        return
     try:
         from .collect.rtms import fetch_page
         ym = _recent_ym()
@@ -108,6 +154,8 @@ def _check_vworld() -> None:
     print("\n4. VWorld 지오코딩 실호출")
     if not keys().vworld and not relay().enabled:
         _say(None, "건너뜀 — 키 없음")
+        return
+    if _skip_if_relay_dead():
         return
     try:
         from .collect.geocode import geocode_one, QuotaExhausted
@@ -140,6 +188,8 @@ def _check_ex() -> None:
     print("\n5. 도로공사 API 실호출 (영업소 마스터)")
     if not keys().ex and not relay().enabled:
         _say(None, "건너뜀 — 키 없음")
+        return
+    if _skip_if_relay_dead():
         return
     try:
         from .collect.tollgate import fetch_tollgates

@@ -205,6 +205,14 @@ _still = [n for n in _named
           if any(h in n for h in _HEAVY)
           and "stage != 'web'" not in str(_named[n].get("if", ""))]
 check(not _still, f"web 은 무거운 단계를 건너뛴다 (아직 도는 것 {_still})")
+# 점검(doctor)도 web 에서는 안 돈다. 캐시만 읽어 화면을 다시 뽑는 실행은
+# 키도 네트워크도 안 쓴다. 그런데 run 58~60 은 여기서 실호출을 세 번
+# 하다가 중계기 404 로 죽었고, **프런트 배포가 통째로 빨갛게** 됐다.
+# 원인과 상관없는 곳에 빨간불이 켜지면 진짜 빨간불도 안 읽게 된다.
+_doc = next((s2 for n, s2 in _named.items() if "점검" in n), None)
+check(_doc is not None and "stage != 'web'" in str(_doc.get("if", "")),
+      "web 은 키·네트워크 점검을 건너뛴다 (쓰지 않으므로)")
+
 # 그런데 화면은 반드시 다시 만들어야 한다 — 안 그러면 낡은 JSON 이
 # 새 코드와 함께 나간다.
 _exp = next((s2 for n, s2 in _named.items() if "화면용 JSON" in n), None)

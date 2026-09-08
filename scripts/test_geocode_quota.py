@@ -181,6 +181,67 @@ check(len(dr._fail) == 1,
       f"한도 말고 진짜 실패는 그대로 막는다 (막힘 {dr._fail})")
 
 print()
+print("6-B. 중계기가 그 주소에 없으면 '404' 셋 대신 그 한 줄을 말한다")
+
+# run 58~60 이 빨갛게 났습니다. 세 줄이 똑같이 404 였습니다 —
+#
+#   FAIL 실거래가 API 호출 실패  → 404 ... /api/relay?target=apis.data.go.kr...
+#   FAIL VWorld 호출 실패        → 404 ... /api/relay?target=api.vworld.kr...
+#   FAIL 도로공사 API 호출 실패  → 404 ... /api/relay?target=data.ex.co.kr...
+#
+# 세 API 가 동시에 죽은 것이 아닙니다. **중계기가 그 주소에 없던 것**입니다.
+# 사장님이 Vercel 주소를 바꾸셨는데 REDT_RELAY_URL 은 옛 주소를 가리키고
+# 있었습니다. 원인이 하나인데 실패가 셋으로 보이면 무엇을 고쳐야 할지
+# 고를 수가 없습니다. 중계기부터 두드리고, 죽었으면 나머지는 건너뜁니다.
+import types as _types                                          # noqa: E402
+
+class _Relay:
+    url = "https://old-address.example"
+    token = "t"
+    enabled = True
+
+def _relay_probe(status):
+    """requests.get 을 갈아 끼워 중계기 응답만 흉내낸다."""
+    import requests as _rq
+    real = _rq.get
+    _rq.get = lambda *a, **k: _types.SimpleNamespace(status_code=status)
+    return real
+
+dr.relay = lambda: _Relay()
+dr.keys = lambda: _types.SimpleNamespace(data_go_kr="K", vworld="K", ex="K")
+
+import requests as _rq                                          # noqa: E402
+_real_get = _rq.get
+try:
+    for status, want_fail, word in [
+        (404, True, "REDT_RELAY_URL"),
+        (401, True, "REDT_RELAY_TOKEN"),
+        (400, False, ""),
+    ]:
+        dr._fail.clear(); dr._warn.clear(); dr._relay_dead = False
+        _relay_probe(status)
+        dr._check_keys()
+        if want_fail:
+            check(len(dr._fail) == 1,
+                  f"{status} 는 막힌 항목이다 (막힘 {dr._fail})")
+            check(dr._relay_dead, f"{status} 뒤에는 중계기를 죽은 것으로 본다")
+        else:
+            check(not dr._fail, f"400 은 살아 있다는 뜻이다 (막힘 {dr._fail})")
+            check(not dr._relay_dead, "400 뒤에는 실호출을 계속한다")
+
+    # 죽었으면 뒤 세 절은 부르지도 않는다 — 404 를 세 번 더 보여줘 봐야
+    # 알려주는 것이 없다.
+    dr._fail.clear(); dr._warn.clear(); dr._relay_dead = True
+    _rq.get = _real_get
+    dr._check_rtms(); dr._check_vworld(); dr._check_ex()
+    check(not dr._fail, f"중계기가 죽었으면 실호출은 건너뛴다 (막힘 {dr._fail})")
+    check(len(dr._warn) == 3, f"대신 셋 다 '건너뜀' 으로 남는다 (경고 {len(dr._warn)}건)")
+finally:
+    _rq.get = _real_get
+    dr._relay_dead = False
+    dr._fail.clear(); dr._warn.clear()
+
+print()
 print("7. 영업소 좌표 찾기도 같은 한도를 쓴다 — 캐시를 오염시키면 안 된다")
 
 # 사장님 지적: "지금 ic 좌표 붙이고 있는 API가 지오코딩 API입니다."

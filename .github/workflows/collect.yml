@@ -166,7 +166,12 @@ jobs:
           key: redt-data-${{ github.run_id }}
           restore-keys: redt-data-
 
+      # 화면만 다시 뽑는 실행(stage: web)은 캐시만 읽는다 — 키도 네트워크도
+      # 쓰지 않는다. 그런데도 여기서 실호출을 세 번 하다가 중계기가 아프면
+      # **프런트 배포가 빨갛게** 됐다 (run 58~60). 원인과 상관없는 곳에
+      # 빨간불이 켜지면, 나중에 진짜 빨간불도 안 읽게 된다.
       - name: 점검 (키·네트워크)
+        if: inputs.stage != 'web'
         run: python -m redt.cli doctor
 
       # 영업소 엔드포인트가 아직 확정되지 않았다 (P2-3).
