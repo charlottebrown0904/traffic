@@ -631,11 +631,30 @@ def _regions() -> list[dict]:
             vote[code[:2]][name] = vote[code[:2]].get(name, 0) + 1
     prefix_sido = {p: max(v, key=v.get) for p, v in vote.items()}
 
+    pop_by_code = {str(code): group for code, group in pop.groupby("sigungu_cd")}
+
+    # **인구가 없다고 시군구를 통째로 빼면 안 된다.**
+    #
+    # 예전에는 이 고리를 인구 표에서 돌렸다. 그래서 인구가 없는 시군구는
+    # regions.json 에 아예 없었고, 화면의 모든 겹(인구·땅값)이 그 시군구를
+    # 조용히 잃었다. run 46 에서 실제로 드러났다 —
+    #
+    #   41591·41593·41595·41597 (화성시 4개 구, 2025 신설)
+    #   28125·28155·28275·28290 (인천 신설 구)
+    #
+    # 이 여덟 코드는 실거래에는 있는데(계획관리만 120,214건) KOSIS 인구에는
+    # 아직 그 코드가 없다. 그래서 땅값 지도에서 계획관리 거래의 4.5% 가
+    # 소리 없이 사라져 있었다. 화성시가 통째로 없는 지도였다.
+    #
+    # 인구를 지어내서 메우지는 않는다. **좌표가 있으면 싣고, 인구는 비운다.**
+    # 인구 겹은 그 해 값이 없는 시군구를 이미 건너뛰므로(app.js drawPopulation)
+    # 빈 pop 은 안전하고, 땅값 겹은 그 시군구를 되찾는다.
     out = []
-    for code, group in pop.groupby("sigungu_cd"):
-        c = centers.get(str(code))
+    for code in sorted(set(pop_by_code) | set(centers)):
+        c = centers.get(code)
         if c is None:
             continue          # 좌표가 없으면 지도에 못 찍는다. 조용히 빼되 수는 센다.
+        group = pop_by_code.get(code)
         out.append({
             "sigungu_cd": str(code),
             "name": _text(c.name) or str(code),
@@ -657,14 +676,25 @@ def _regions() -> list[dict]:
             # 시 아래 구는 그 시로 묶을 수 있어야 한다 ('수원시 장안구'
             # → '수원시'). 이름이 두 마디로 오는 것이 유일한 단서다.
             "parent": _parent_si(_text(c.name)),
-            "pop": {str(int(r.year)): int(r.value)
-                    for r in group.itertuples(index=False)},
+            "pop": ({str(int(r.year)): int(r.value)
+                     for r in group.itertuples(index=False)}
+                    if group is not None else {}),
         })
     n_office = sum(1 for r in out if "office_lat" in r)
     n_sido = sum(1 for r in out if r["sido"])
-    print(f"  행정구역 인구 {len(out)}개 시군구"
-          f" (좌표 없어 빠진 것 {pop['sigungu_cd'].nunique() - len(out)}개)")
+    no_pop = [r for r in out if not r["pop"]]
+    no_center = sorted(set(pop_by_code) - set(centers))
+    print(f"  행정구역 {len(out)}개 시군구"
+          f" (좌표가 없어 빠진 것 {len(no_center)}개)")
     print(f"    관청 좌표 {n_office}곳 · 시도 이름 {n_sido}곳")
+    if no_pop:
+        # 이름을 찍는다. 수만 세면 '몇 개 없구나' 로 지나가는데, 화성시가
+        # 통째로 빠진 것은 이름이 보여야 알아챈다.
+        names = ", ".join(f"{r['sigungu_cd']} {r['name']}" for r in no_pop[:12])
+        print(f"    인구를 못 채운 시군구 {len(no_pop)}곳 — {names}"
+              + (" …" if len(no_pop) > 12 else ""))
+        print("      (지도에는 나오되 인구 원만 안 그려집니다. "
+              "KOSIS 가 신설 코드를 아직 안 줍니다)")
     return out
 
 
@@ -855,7 +885,24 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
 
     _write("meta.json", meta)
     _write("regions.json", regions)
-    _write("landprice.json", _land_price_by_region())
+
+    # 땅값 겹은 regions.json 의 좌표를 타고 그려진다. 거기 없는 시군구는
+    # **화면에서 조용히 사라진다** — 오류도 빈 칸도 안 남기고 그냥 없다.
+    # 그래서 여기서 센다. run 46 에서 여덟 코드(화성시 4개 구, 인천 신설
+    # 구 4곳)가 그렇게 빠져 계획관리 거래의 4.5% 를 잃고 있었다.
+    landprice = _land_price_by_region()
+    known = {r["sigungu_cd"] for r in regions}
+    orphan: dict[str, int] = {}
+    for cells in landprice.get("groups", {}).values():
+        for cd, cell in cells.items():
+            if cd not in known:
+                orphan[cd] = orphan.get(cd, 0) + sum(cell["n"])
+    if orphan:
+        top = ", ".join(f"{cd} {n:,}건" for cd, n
+                        in sorted(orphan.items(), key=lambda kv: -kv[1])[:8])
+        print(f"  ⚠ 좌표가 없어 땅값 지도에서 빠지는 시군구 {len(orphan)}곳"
+              f" · 거래 {sum(orphan.values()):,}건 — {top}")
+    _write("landprice.json", landprice)
     _write("traffic.json", _traffic_ranking())
     _write("chart.json", _chart_series())
     _write("tollgates.json", _records(merged))
