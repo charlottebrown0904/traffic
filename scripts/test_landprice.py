@@ -131,11 +131,16 @@ check("y1" not in nong, f"2025년 농림 거래가 없으니 최근 1년 칸이 
 check(nong.get("y3") == [1, 50, 50, 2024], f"최근 3년에는 있다 — {nong.get('y3')}")
 
 print()
-print("2. 읍면동 — 용도지역마다 파일을 따로 낸다")
+print("2. 읍면동 — 용도지역마다, 그리고 시·도마다 파일을 따로 낸다")
+# 통짜로 내면 안 된다. 실측(run 48)에서 계획관리 읍면동이 13,472칸,
+# 3.0MB(gzip 753KB)였는데 화면에는 90개까지만 놓는다 — 받은 것의 99%를
+# 그리지도 않는다. 용도지역으로 한 번, 시도로 한 번 더 나눈다.
 umd = wx._land_price_by_umd(latest)
 check(set(umd) == {"계획관리", "생산관리", "자연녹지", "농림", "보전관리"},
-      f"다섯 파일을 늘 낸다 (빈 것도) — {sorted(umd)}")
-gd = {c["nm"]: c for c in umd["계획관리"]["cells"]}
+      f"다섯 용도지역을 늘 낸다 (빈 것도) — {sorted(umd)}")
+check(sorted(umd["계획관리"]) == ["41"],
+      f"시도 두 자리로 조각을 나눈다 — {sorted(umd['계획관리'])}")
+gd = {c["nm"]: c for c in umd["계획관리"]["41"]["cells"]}
 check("공도읍" in gd, f"읍면동 이름으로 온다 — {sorted(gd)}")
 if "공도읍" in gd:
     c = gd["공도읍"]
@@ -143,13 +148,14 @@ if "공도읍" in gd:
           f"어느 시군구인지 같이 온다 — {c['sg']} {c['sgnm']}")
     check(abs(c["lat"] - 37.0) < 0.01 and abs(c["lon"] - 127.2) < 0.01,
           f"좌표는 그 읍면동 거래의 평균 — {c['lat']}, {c['lon']}")
-    check(c["w"]["y3"] == [5, 300, 820, 2024], f"창 값은 시군구와 같은 셈 — {c['w']['y3']}")
+    check(c["w"]["y3"] == [5, 300, 820, 2024],
+          f"창 값은 시군구와 같은 셈 — {c['w']['y3']}")
 # 다섯 건 미만인 읍면동은 뺀다. 두 건으로 만든 중앙값은 자료가 아니라 우연이다.
-check(all(cc["nm"] != "얇은리" for cc in umd["계획관리"]["cells"]),
-      "거래 다섯 건 미만인 읍면동은 안 싣는다")
-check("농림" in umd and any(cc["nm"] == "공도읍"
-                            for cc in umd["농림"]["cells"]) is False,
-      "농림은 한 건뿐이라 읍면동 칸이 안 생긴다")
+check("얇은리" not in gd, "거래 다섯 건 미만인 읍면동은 안 싣는다")
+check(not umd["농림"], "농림은 한 건뿐이라 조각 자체가 안 생긴다")
+# 경계상자가 없으면 화면이 무엇을 받을지 모른다 — 나눈 뜻이 없어진다.
+bbox = wx._umd_bbox(umd["계획관리"]["41"]["cells"])
+check(bbox == [37.0, 127.2, 37.0, 127.2], f"조각의 경계상자를 낸다 — {bbox}")
 check(json.dumps(umd, ensure_ascii=False), "브라우저가 읽을 수 있는 JSON 이다")
 
 print()

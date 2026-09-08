@@ -104,13 +104,17 @@ const FAKE_LEAFLET = () => {
         // 땅값 글자는 '보이는 곳만' 그린다. window.__bbox 로 화면을 좁혀
         // 그 잘라내기가 실제로 도는지 볼 수 있게 한다. 기본은 전국이다.
         const bb = window.__bbox;
+        const box = bb || [-90, -180, 90, 180];
         return {
           contains: (ll) => {
-            if (!bb) return true;
             const lat = Array.isArray(ll) ? ll[0] : ll.lat;
             const lon = Array.isArray(ll) ? ll[1] : ll.lng;
-            return lat >= bb[0] && lat <= bb[2] && lon >= bb[1] && lon <= bb[3];
+            return lat >= box[0] && lat <= box[2] && lon >= box[1] && lon <= box[3];
           },
+          // 읍면동 조각을 '화면에 걸치는 것만' 받으므로, 검사도 진짜
+          // Leaflet 처럼 모서리를 내놓아야 그 고르기가 돈다.
+          getSouthWest: () => ({ lat: box[0], lng: box[1] }),
+          getNorthEast: () => ({ lat: box[2], lng: box[3] }),
           pad: () => ({}),
         };
       },
@@ -316,7 +320,14 @@ const FAKE_LEAFLET = () => {
         { key: 'y3', label: '최근 3년', kind: 'year', span: 3 },
         { key: 'c20', label: '최근 20건', kind: 'count', span: 20 },
       ],
-      umd_files: { 계획관리: 'landprice-umd-gyehoek.json' },
+      umd_index: {
+        계획관리: [
+          { p: '41', f: 'landprice-umd-gyehoek-41.json', n: 2,
+            bbox: [37.24, 126.97, 37.31, 127.02] },
+          { p: '47', f: 'landprice-umd-gyehoek-47.json', n: 1,
+            bbox: [37.48, 130.90, 37.49, 130.91] },
+        ],
+      },
       groups: {
         계획관리: {
           41111: { y1: [12, 110000, 120000, 2025], y3: [10, 100000, 900000, 2023],
@@ -331,23 +342,38 @@ const FAKE_LEAFLET = () => {
         },
       },
     };
-    // 읍면동은 고른 용도지역의 파일만 따로 받는다.
+    // 읍면동은 **고른 용도지역 × 화면에 걸치는 시도** 조각만 받는다.
+    // 그래서 조각을 둘로 나눠 둔다 — 수도권(41)과 울릉도(47).
     const FAKE_LP_UMD = {
-      group: '계획관리',
-      cells: [
-        { nm: '정자동', sg: '41111', sgnm: '수원시 장안구', lat: 37.304, lon: 127.011,
-          w: { y1: [8, 130000, 130000, 2025], y3: [9, 120000, 120000, 2023] } },
-        { nm: '권선동', sg: '41113', sgnm: '수원시 권선구', lat: 37.241, lon: 126.971,
-          w: { y1: [30, 220000, 220000, 2025], y3: [40, 210000, 210000, 2023] } },
-        // 화면 밖(울릉도). 경계를 좁히면 빠져야 한다.
-        { nm: '울릉읍', sg: '47940', sgnm: '울릉군', lat: 37.484, lon: 130.905,
-          w: { y3: [6, 30000, 30000, 2023] } },
-      ],
+      41: {
+        group: '계획관리', sido_prefix: '41', bbox: [37.24, 126.97, 37.31, 127.02],
+        cells: [
+          { nm: '정자동', sg: '41111', sgnm: '수원시 장안구', lat: 37.304, lon: 127.011,
+            w: { y1: [8, 130000, 130000, 2025], y3: [9, 120000, 120000, 2023] } },
+          { nm: '권선동', sg: '41113', sgnm: '수원시 권선구', lat: 37.241, lon: 126.971,
+            w: { y1: [30, 220000, 220000, 2025], y3: [40, 210000, 210000, 2023] } },
+        ],
+      },
+      47: {
+        group: '계획관리', sido_prefix: '47', bbox: [37.48, 130.90, 37.49, 130.91],
+        cells: [
+          { nm: '울릉읍', sg: '47940', sgnm: '울릉군', lat: 37.484, lon: 130.905,
+            w: { y3: [6, 30000, 30000, 2023] } },
+        ],
+      },
     };
-    await page.route('**/app/data/landprice-umd-*.json*', (r) => r.fulfill({
-      status: 200, contentType: 'application/json',
-      body: JSON.stringify(FAKE_LP_UMD),
-    }));
+    // 어느 조각을 실제로 받았는지 센다. '보이는 것만 받는다' 는 말은
+    // 그리는 것이 아니라 **받는 것**을 세야 확인된다.
+    const lpUmdHits = [];
+    await page.route('**/app/data/landprice-umd-*.json*', (r) => {
+      const m = r.request().url().match(/landprice-umd-\w+-(\d+)\.json/);
+      const p = m ? m[1] : '41';
+      lpUmdHits.push(p);
+      return r.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify(FAKE_LP_UMD[p] || { cells: [] }),
+      });
+    });
     await page.route('**/app/data/landprice.json*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify(FAKE_LANDPRICE),
@@ -1004,26 +1030,29 @@ const FAKE_LEAFLET = () => {
           lpWide.tips.some((t) => /^경기도/.test(t) && /166,667원/.test(t)),
           lpWide.tips.find((t) => /^경기도/.test(t)) || '없음');
 
-    // **배율을 더 당기면 읍·면·동으로 내려간다.** 그 파일은 고른
-    // 용도지역의 것만 따로 받는다.
+    // **배율을 더 당기면 읍·면·동으로 내려간다.** 그 자료는 고른
+    // 용도지역 중 **화면에 걸치는 시도 조각만** 받는다.
+    await page.evaluate(() => { window.__bbox = [37.0, 126.5, 37.6, 127.5]; });
     await page.evaluate(() => { window.__zoom = 14; });
     await lpPick(null, 'y3', null);
-    await page.waitForTimeout(250);          // 읍면동 파일을 받아 오는 동안
+    await page.waitForTimeout(300);          // 조각을 받아 오는 동안
     const lpUmd = await lpPick(null, 'y3', null);
     check('더 당기면 읍·면·동으로 내려간다',
-          lpUmd.peek.level === 'umd' && lpUmd.n === 3,
+          lpUmd.peek.level === 'umd' && lpUmd.n === 2,
           `${lpUmd.peek.level} · ${lpUmd.n}곳`);
     check('읍면동 이름과 그 시군구를 같이 말한다',
           lpUmd.html.some((h) => /정자동/.test(h))
           && lpUmd.tips.some((t) => /정자동/.test(t) && /수원시 장안구/.test(t)),
           lpUmd.tips.find((t) => /정자동/.test(t)) || '없음');
-
-    // **보이는 곳만 그린다.** 전국 읍면동을 다 그리면 휴대폰이 죽는다.
-    await page.evaluate(() => { window.__bbox = [37.0, 126.5, 37.6, 127.5]; });
-    const lpBox = await lpPick(null, 'y3', null);
-    check('화면 밖은 안 그린다 (울릉도가 빠진다)',
-          lpBox.n === 2 && !lpBox.tips.some((t) => /울릉/.test(t)),
-          `${lpBox.n}곳`);
+    // **화면 밖 조각은 받지도 않는다.** 그리지 않는 것만으로는 부족하다 —
+    // 실측(run 48)에서 계획관리 읍면동이 통짜로 3.0MB 였다. 경기도를
+    // 보는데 제주도 자료를 내려받으면 그 몇 초가 그대로 '느린 앱' 이다.
+    check('화면 밖 시도 조각은 아예 안 받는다',
+          lpUmdHits.includes('41') && !lpUmdHits.includes('47'),
+          `받은 조각 ${lpUmdHits.join(',') || '없음'}`);
+    check('울릉도는 그리지도 않는다',
+          !lpUmd.tips.some((t) => /울릉/.test(t)),
+          lpUmd.tips.map((t) => t.split('<')[0]).join(','));
     await page.evaluate(() => { window.__bbox = null; window.__zoom = 12; });
 
     // 끄면 사라진다.

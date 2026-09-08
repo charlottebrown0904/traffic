@@ -2303,8 +2303,11 @@ const LP_UMD_ZOOM = 13;
  * 남긴다 — 표본이 두꺼운 값이 먼저 보이는 것이 맞다. */
 const LP_MAX_LABELS = 90;
 
-let lpUmdCache = {};      // 용도지역 → cells (한 번 받으면 다시 안 받는다)
-let lpUmdPending = '';
+/* 받아 둔 읍면동 조각. 열쇠는 "용도지역|시도두자리" 다.
+ * 한 번 받으면 다시 안 받는다 — 조각이 작아서 여러 개를 들고 있어도
+ * 가볍고, 지도를 좌우로 밀 때마다 다시 받으면 그게 더 느리다. */
+let lpUmdCache = {};
+const lpUmdPending = new Set();
 
 /* ㎡ 단가를 **평당**으로 바꿔 짧게 쓴다.
  *
@@ -2341,13 +2344,29 @@ function lpValue(cell) {
   return { v, n: w[0], from: w[3] };
 }
 
+/* 지금 화면에 걸치는 조각들.
+ *
+ * 색인이 조각마다 경계상자를 들고 있다. 화면과 안 겹치는 것은 받지도
+ * 그리지도 않는다 — 경기도를 보는데 제주도 자료를 받을 이유가 없다. */
+function lpUmdChunks(group) {
+  const idx = ((state.landPrice || {}).umd_index || {})[group] || [];
+  if (!map) return idx;
+  const b = map.getBounds();
+  const sw = b.getSouthWest ? b.getSouthWest() : null;
+  const ne = b.getNorthEast ? b.getNorthEast() : null;
+  if (!sw || !ne) return idx;
+  return idx.filter((c) => !(c.bbox[2] < sw.lat || c.bbox[0] > ne.lat
+                             || c.bbox[3] < sw.lng || c.bbox[1] > ne.lng));
+}
+
 /* 지금 배율에서 무엇을 그릴 것인가.
  *
- * 읍면동 파일이 아직 안 왔으면 시군구로 물러난다. 빈 화면을 보여주느니
- * 덜 자세한 것을 보여주는 편이 낫다 — 사용자는 '고장' 과 '로딩 중' 을
- * 구별하지 못한다. */
+ * 읍면동 조각이 하나라도 와 있어야 읍면동으로 내려간다. 아직 오는
+ * 중이면 시군구로 물러난다 — 빈 화면을 보여주느니 덜 자세한 것을
+ * 보여주는 편이 낫다. 사용자는 '고장' 과 '로딩 중' 을 구별하지 못한다. */
 function lpLevel(zoom) {
-  if (zoom >= LP_UMD_ZOOM && lpUmdCache[state.lpGroup]) {
+  if (zoom >= LP_UMD_ZOOM
+      && lpUmdChunks(state.lpGroup).some((c) => lpUmdCache[`${state.lpGroup}|${c.p}`])) {
     return { key: 'umd', label: '읍·면·동' };
   }
   return popLevel(zoom);
@@ -2395,15 +2414,16 @@ function lpItemsRegion(levelKey) {
 
 /* 읍·면·동 — 좌표가 칸마다 들어 있다. 묶지 않는다. */
 function lpItemsUmd() {
-  const cells = lpUmdCache[state.lpGroup] || [];
   const out = [];
-  cells.forEach((c) => {
-    const got = lpValue(c.w);
-    if (!got) return;
-    out.push({
-      name: c.nm, sub: c.sgnm,
-      v: got.v, n: got.n, from: got.from, parts: 1,
-      at: [c.lat, c.lon],
+  lpUmdChunks(state.lpGroup).forEach((c) => {
+    (lpUmdCache[`${state.lpGroup}|${c.p}`] || []).forEach((cell) => {
+      const got = lpValue(cell.w);
+      if (!got) return;
+      out.push({
+        name: cell.nm, sub: cell.sgnm,
+        v: got.v, n: got.n, from: got.from, parts: 1,
+        at: [cell.lat, cell.lon],
+      });
     });
   });
   return out;
@@ -2438,29 +2458,35 @@ function lpColor(val, scale) {
   return LP_COLORS[Math.round((rank / (v.length - 1)) * (LP_COLORS.length - 1))];
 }
 
-/* 고른 용도지역의 읍면동 파일을 받아 둔다.
+/* 화면에 걸치는 읍면동 조각을 받아 둔다.
  *
- * 한 파일에 다 담지 않는 이유 — 읍면동 칸은 시군구의 스무 배가 넘는다.
- * 고른 것만 받으면 그 몫이 5분의 1이 된다. 실패해도 조용히 시군구로
- * 물러난다(치명적이지 않다). */
+ * 통짜로 안 받는 이유 — 실측(run 48)으로 계획관리 읍면동이 13,472칸,
+ * 3.0MB(gzip 753KB)였다. 그런데 화면에는 90개까지만 놓으므로 받은 것의
+ * 99% 는 그리지도 않는다. 용도지역으로 한 번, 시도로 한 번 더 나누면
+ * 한 번에 받는 것이 수십 KB가 된다.
+ *
+ * 실패해도 조용히 시군구로 물러난다 (치명적이지 않다). */
 async function lpLoadUmd(group) {
-  if (!group || lpUmdCache[group] || lpUmdPending === group) return;
-  const files = (state.landPrice || {}).umd_files || {};
-  const file = files[group];
-  if (!file) return;
-  lpUmdPending = group;
-  try {
-    const r = await fetch(`data/${file}`, { cache: 'no-cache' });
-    if (r.ok) {
-      const payload = await r.json();
-      lpUmdCache[group] = payload.cells || [];
+  if (!group) return;
+  const want = lpUmdChunks(group)
+    .filter((c) => !lpUmdCache[`${group}|${c.p}`] && !lpUmdPending.has(`${group}|${c.p}`));
+  if (!want.length) return;
+  want.forEach((c) => lpUmdPending.add(`${group}|${c.p}`));
+  await Promise.all(want.map(async (c) => {
+    const key = `${group}|${c.p}`;
+    try {
+      const r = await fetch(`data/${c.f}`, { cache: 'no-cache' });
+      if (r.ok) {
+        const payload = await r.json();
+        lpUmdCache[key] = payload.cells || [];
+      }
+    } catch (e) {
+      // 못 받아도 지도는 시군구로 계속 돈다.
+    } finally {
+      lpUmdPending.delete(key);
     }
-  } catch (e) {
-    // 못 받아도 지도는 시군구로 계속 돈다.
-  } finally {
-    if (lpUmdPending === group) lpUmdPending = '';
-    drawLandPrice();
-  }
+  }));
+  drawLandPrice();
 }
 
 function drawLandPrice() {

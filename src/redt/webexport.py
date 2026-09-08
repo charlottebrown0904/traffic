@@ -641,11 +641,24 @@ def _land_price_by_region(latest_year: int) -> dict:
 
 
 def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
-    """읍면동 × 용도지역. **용도지역마다 파일을 따로 낸다.**
+    """읍면동 × 용도지역. **용도지역마다, 그리고 시·도마다 파일을 나눈다.**
 
-    한 파일에 담으면 안 된다. 읍면동 칸은 시군구의 스무 배가 넘어서,
-    다 담으면 휴대폰이 고른 적도 없는 용도지역 넷을 같이 내려받는다.
-    고른 것만 받게 하면 그 몫이 5분의 1이 된다.
+    한 파일에 담으면 안 된다. 실측(run 48)으로 나온 숫자가 그것을 말한다.
+
+      계획관리 13,472칸 · 3.0MB (gzip 753KB)
+      농림     13,542칸 · 2.9MB (gzip 715KB)
+
+    사장님은 휴대폰으로 보신다. 읍면동으로 당길 때마다 750KB 를 받으면
+    그 몇 초가 그대로 '느린 앱' 이 된다. 그런데 정작 화면에 글자를 90개
+    까지만 놓으므로, 받은 것의 99% 는 그리지도 않는다.
+
+    그래서 두 번 나눈다.
+
+      1. 용도지역 — 고른 것 하나만 받는다 (5분의 1)
+      2. 시·도 — 화면에 걸치는 것만 받는다 (다시 17분의 1)
+
+    landprice.json 의 umd_index 가 조각마다 경계상자를 들고 있어서,
+    화면이 무엇을 받아야 할지 스스로 안다.
 
     좌표는 그 읍면동 거래들의 평균이다. 법정동 경계의 중심이 아니라
     **거래가 실제로 일어난 자리의 한가운데**다 — 우리가 가진 것이
@@ -676,10 +689,9 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
                    {_landprice_windows_sql(latest_year)}
             FROM r GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
         """).fetchdf()
-    files: dict[str, dict] = {name: {"group": name, "cells": []}
-                              for name, _like, _key in LANDPRICE_GROUPS}
+    out: dict[str, dict] = {name: {} for name, _like, _key in LANDPRICE_GROUPS}
     if df.empty:
-        return files
+        return out
     thin = 0
     for r in df.itertuples(index=False):
         if int(r.n_all) < UMD_MIN_TRADES:
@@ -688,20 +700,37 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
         cell = _landprice_cell(r)
         if not cell:
             continue
-        files[str(r.grp)]["cells"].append({
+        code = str(r.sigungu_cd)
+        chunk = out[str(r.grp)].setdefault(code[:2], {
+            "group": str(r.grp), "sido_prefix": code[:2], "cells": [],
+        })
+        chunk["cells"].append({
             "nm": _text(r.umd),
-            "sg": str(r.sigungu_cd),
+            "sg": code,
             "sgnm": _text(r.sigungu),
             "lat": round(float(r.lat), 5),
             "lon": round(float(r.lon), 5),
             "w": cell,
         })
-    got = sum(len(v["cells"]) for v in files.values())
+    got = sum(len(c["cells"]) for g in out.values() for c in g.values())
     print(f"  읍면동 땅값 {got:,}칸"
           f" (거래 {UMD_MIN_TRADES}건 미만이라 뺀 칸 {thin:,}개)")
     for name, _like, _key in LANDPRICE_GROUPS:
-        print(f"    {name} {len(files[name]['cells']):,}칸")
-    return files
+        n = sum(len(c["cells"]) for c in out[name].values())
+        print(f"    {name} {n:,}칸 · 시도 {len(out[name])}조각")
+    return out
+
+
+def _umd_bbox(cells: list[dict]) -> list[float]:
+    """조각의 경계상자 [남, 서, 북, 동].
+
+    화면이 이것을 보고 무엇을 받을지 정한다. 없으면 다 받아야 하고,
+    그러면 나눈 뜻이 없다.
+    """
+    lats = [c["lat"] for c in cells]
+    lons = [c["lon"] for c in cells]
+    return [round(min(lats), 4), round(min(lons), 4),
+            round(max(lats), 4), round(max(lons), 4)]
 
 
 def _regions() -> list[dict]:
@@ -1052,14 +1081,39 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         print(f"  ⚠ 좌표가 없어 땅값 지도에서 빠지는 시군구 {len(orphan)}곳"
               f" · 거래 {sum(orphan.values()):,}건 — {top}")
 
-    # 읍면동은 용도지역마다 따로 낸다. 화면이 고른 것 하나만 받는다.
-    umd_files = {}
+    # 읍면동은 용도지역 × 시도로 쪼개서 낸다. 화면은 고른 용도지역 중
+    # **보이는 시도 조각만** 받는다. 경계상자를 색인에 실어 그것을
+    # 화면이 스스로 판단하게 한다.
     if landprice:
-        for name, _like, key in LANDPRICE_GROUPS:
-            umd_files[name] = f"landprice-umd-{key}.json"
-        for name, payload in _land_price_by_umd(latest_year).items():
-            _write(umd_files[name], payload)
-        landprice["umd_files"] = umd_files
+        key_of = {name: key for name, _like, key in LANDPRICE_GROUPS}
+        keep = set()
+        index: dict[str, list] = {}
+        for name, chunks in _land_price_by_umd(latest_year).items():
+            rows = []
+            total = 0
+            for prefix, chunk in sorted(chunks.items()):
+                fname = f"landprice-umd-{key_of[name]}-{prefix}.json"
+                chunk["bbox"] = _umd_bbox(chunk["cells"])
+                _write(fname, chunk)
+                keep.add(fname)
+                total += (WEB_DATA / fname).stat().st_size
+                rows.append({"p": prefix, "f": fname,
+                             "bbox": chunk["bbox"], "n": len(chunk["cells"])})
+            if rows:
+                index[name] = rows
+                big = max(rows, key=lambda r: r["n"])
+                size = (WEB_DATA / big["f"]).stat().st_size
+                print(f"    {name}: {len(rows)}조각 · 합 {total / 1024:,.0f}KB"
+                      f" · 가장 큰 조각 {big['p']} {big['n']:,}칸"
+                      f" {size / 1024:,.0f}KB")
+        landprice["umd_index"] = index
+        # 이번에 안 낸 읍면동 파일은 지운다 (예전 통짜 파일 포함).
+        # 저장소에 낡은 자료가 새것인 얼굴로 남는 것이 이 프로젝트에서
+        # 이미 한 번 사고를 냈다.
+        for stale in WEB_DATA.glob("landprice-umd-*.json"):
+            if stale.name not in keep:
+                stale.unlink()
+                print(f"  낡은 읍면동 파일 삭제: {stale.name}")
     _write("landprice.json", landprice)
     _write("traffic.json", _traffic_ranking())
     _write("chart.json", _chart_series())
