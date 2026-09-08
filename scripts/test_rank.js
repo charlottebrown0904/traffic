@@ -209,11 +209,21 @@ const rows = (page) => page.evaluate(() =>
     });
     check('실자료에서는 데모 배너가 안 뜬다', !bannerShown);
 
-    // 10) 지도 범례가 밴드까지 설명한다
-    const legendText = await page.$eval('#map-legend', (e) => e.textContent);
-    check('지도 범례에 거리 밴드가 들어 있다', /km/.test(legendText));
-    check('지도 범례에 실거래 종류가 들어 있다',
-          /토지/.test(legendText) && /공장/.test(legendText));
+    // 10) 지도 위 범례는 없앴다 (사장님 지시 2026-09-08: "좌측 범례 삭제").
+    //     지도를 키워 놓고 그 위를 12줄짜리 범례로 다시 덮으면 뜻이 없다.
+    //     담고 있던 것은 왼쪽 필터와 말풍선에 있다 — 거리 밴드는 왼쪽에
+    //     남기고, 거래 종류는 그 필터 칸 이름이 곧 설명이다.
+    const legendGone = await page.evaluate(() => ({
+      overlay: !!document.querySelector('#map-legend'),
+      bands: (document.querySelector('#band-legend') || {}).textContent || '',
+      kinds: (document.querySelector('#kind-filters') || {}).textContent || '',
+    }));
+    check('지도 위 범례가 없다', !legendGone.overlay);
+    check('거리 밴드는 왼쪽 필터에 남는다', /km/.test(legendGone.bands),
+          legendGone.bands.slice(0, 60));
+    check('거래 종류는 왼쪽 필터가 말한다',
+          /토지/.test(legendGone.kinds) && /공장/.test(legendGone.kinds),
+          legendGone.kinds.slice(0, 60));
 
     // ── 추이 비교 탭 ──────────────────────────────────────────────
     // chart.json 은 파이프라인이 만든다. 아직 없으면 탭이 스스로 숨는데,

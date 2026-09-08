@@ -569,6 +569,49 @@ DEFAULT_LANDPRICE_WINDOW = "y3"
 # 같은 지역을 다시 볼 수 있다.
 LANDPRICE_MIN_N = 5
 
+# 말풍선에 그릴 **최근 추이**. 몇 해치를 실을 것인가.
+#
+# 사장님 지시(2026-09-08): "마우스 오버랩시 정보와 실거래가격 트랜드 표시".
+# 값 하나만 보면 그것이 오르는 중인지 내리는 중인지 알 수 없다. 같은
+# 평당 80만원이라도 3년째 오르는 80만과 꺾여 내려온 80만은 다른 물건이다.
+#
+# 한 해 거래가 두세 건인 리가 흔해서, **세 건 미만인 해는 점을 안 찍는다.**
+# 한 건짜리 해를 이어 그리면 그것은 추세가 아니라 잡음이다.
+LANDPRICE_TREND_YEARS = 10
+TREND_MIN_N = 3
+
+
+def _landprice_trend(latest_year: int, keys: str, group_by: str) -> dict:
+    """(칸, 용도지역) → [[연도, 건수, 중앙값], ...].
+
+    빈 해는 아예 안 싣는다. 촘촘한 배열로 만들면 거래가 드문 리에서
+    자리의 대부분이 null 이 된다 — 파일만 무거워지고 그릴 것은 같다.
+    """
+    since = latest_year - LANDPRICE_TREND_YEARS + 1
+    with db.connect(read_only=True) as con:
+        df = con.execute(f"""
+            SELECT {keys}, grp, deal_year AS y,
+                   count(*) AS n, median(price_per_m2) AS p50
+            FROM (
+                SELECT {keys}, deal_year, price_per_m2,
+                       CASE {_landprice_case()} ELSE NULL END AS grp
+                FROM trade
+                WHERE kind = 'land' AND {TRADE_WHERE}
+                  AND sigungu_cd IS NOT NULL AND deal_year >= {since}
+            )
+            WHERE grp IS NOT NULL
+            GROUP BY {group_by}
+            HAVING count(*) >= {TREND_MIN_N}
+            ORDER BY {group_by}
+        """).fetchdf()
+    out: dict = {}
+    for r in df.itertuples(index=False):
+        key = tuple(str(getattr(r, k.split(".")[-1])) for k in keys.split(", "))
+        out.setdefault(key + (str(r.grp),), []).append(
+            [int(r.y), int(r.n), int(round(float(r.p50)))])
+    return out
+
+
 # 읍면동은 그 위에 하나 더 — 용도지역 통틀어 다섯 건도 안 되는 칸은
 # 애초에 파일에 넣지 않는다. 창별로 걸러도 어차피 다 빌 것이고,
 # 넣어 봐야 파일만 무거워진다.
@@ -661,11 +704,16 @@ def _land_price_by_region(latest_year: int) -> dict:
         """).fetchdf()
     if df.empty:
         return {}
+    trend = _landprice_trend(latest_year, "sigungu_cd", "1, 2, 3")
     out: dict[str, dict] = {}
     dropped = 0
     for r in df.itertuples(index=False):
         cell = _landprice_cell(r)
         if cell:
+            # 말풍선에 그릴 최근 추이. 없으면 안 싣는다.
+            ser = trend.get((str(r.sigungu_cd), str(r.grp)))
+            if ser:
+                cell["s"] = ser
             out.setdefault(str(r.grp), {})[str(r.sigungu_cd)] = cell
         # 창이 하나도 안 남은 칸. 창별로 몇 개가 빠졌는지까지 세면
         # 숫자가 길어지므로 칸 단위로만 센다.
@@ -741,6 +789,7 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
     out: dict[str, dict] = {name: {} for name, _like, _key in LANDPRICE_GROUPS}
     if df.empty:
         return out
+    trend = _landprice_trend(latest_year, "sigungu_cd, umd", "1, 2, 3, 4")
     thin = 0
     for r in df.itertuples(index=False):
         if int(r.n_all) < UMD_MIN_TRADES:
@@ -749,6 +798,9 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
         cell = _landprice_cell(r)
         if not cell:
             continue
+        ser = trend.get((str(r.sigungu_cd), _text(r.umd), str(r.grp)))
+        if ser:
+            cell["s"] = ser
         code = str(r.sigungu_cd)
         chunk = out[str(r.grp)].setdefault(code[:2], {
             "group": str(r.grp), "sido_prefix": code[:2], "cells": [],
