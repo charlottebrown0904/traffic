@@ -24,7 +24,7 @@ const ALLOW = {
   // 처럼 Referer 를 붙이지 않으므로, 등록된 주소를 직접 실어 보낸다.
   // 지오코더는 이것을 따지지 않아 지금까지 드러나지 않았다.
   "api.vworld.kr":   { param: "key",        env: "VWORLD_KEY",
-                       referer: process.env.VWORLD_REFERER || "https://sado-toji.vercel.app/" },
+                       referer: process.env.VWORLD_REFERER || "https://toji-gogo.vercel.app/" },
   "data.ex.co.kr":   { param: "key",        env: "EX_API_KEY" },
   "www.data.go.kr":  {},
   // 경매·공매 원천 확인용. 둘 다 키가 없는 공개 페이지라 통과만 시킨다.

@@ -672,6 +672,105 @@ const FAKE_LEAFLET = () => {
     }
 
     console.log();
+    console.log('4-A. 필터를 큰 분류 셋으로 묶었다');
+    // 사장님 지시(2026-09-08): "왼쪽 필터를 큰 분류별로 묶어주세요
+    // (호갱노노 참조). 실거래 표시 / IC / 실거래 가격 으로 묶어주고,
+    // 선택하면 하단에 현재 필터들을 선택할 수 있도록."
+    const cats = await page.evaluate(() => ({
+      // 왼쪽 레일을 없앴다 — 필터가 지도 옆에 늘 펼쳐져 있으면 지도가
+      // 그만큼 좁아지는데 실제로 만지는 것은 한 번에 한 묶음뿐이다.
+      rail: !!document.querySelector('.rail'),
+      chips: [...document.querySelectorAll('.cat')].map((b) => b.dataset.cat),
+      labels: [...document.querySelectorAll('.cat')].map((b) => b.textContent.trim()),
+      sheetShut: (document.getElementById('sheet') || {}).hidden,
+    }));
+    check('왼쪽 레일이 없다 (지도가 그 자리를 쓴다)', !cats.rail);
+    check('큰 분류가 셋이다',
+          cats.chips.join(',') === 'trade,ic,price', cats.chips.join(','));
+    check('이름이 지시하신 그대로다',
+          cats.labels.join(' / ') === '실거래 표시 / IC / 실거래 가격',
+          cats.labels.join(' / '));
+    check('처음에는 시트가 닫혀 있다 (지도부터 보이게)', cats.sheetShut);
+
+    const openCat = async (cat) => page.evaluate((c) => {
+      document.querySelector(`.cat[data-cat="${c}"]`).click();
+      const sheet = document.getElementById('sheet');
+      const pane = document.querySelector(`.sheet-pane[data-cat="${c}"]`);
+      return {
+        shut: sheet.hidden,
+        title: (document.getElementById('sheet-title') || {}).textContent,
+        paneShown: pane ? !pane.hidden : false,
+        others: [...document.querySelectorAll('.sheet-pane')]
+          .filter((p) => p.dataset.cat !== c && !p.hidden).length,
+        chipOn: document.querySelector(`.cat[data-cat="${c}"]`).classList.contains('is-on'),
+        has: (id) => !!document.getElementById(id),
+      };
+    }, cat);
+
+    const oTrade = await openCat('trade');
+    check('누르면 아래에서 그 묶음이 올라온다',
+          !oTrade.shut && oTrade.paneShown && oTrade.chipOn
+          && oTrade.title === '실거래 표시',
+          `"${oTrade.title}"`);
+    check('한 번에 한 묶음만 보인다', oTrade.others === 0,
+          `다른 묶음 ${oTrade.others}개 열림`);
+    // 옮기면서 조작부를 흘리면 안 된다. 하나라도 없으면 그 필터는
+    // 화면에서 사라진 것이고, 사라진 줄도 모른다.
+    const moved = await page.evaluate(() => ({
+      trade: ['kind-filters', 'year-from', 'year-to', 'stage-filters',
+              'road-filter', 'land-use-filters', 'parcel-only']
+        .filter((id) => !document.getElementById(id)),
+      ic: ['tg-year', 'tg-vehicle', 'tier-filters', 'band-legend']
+        .filter((id) => !document.getElementById(id)),
+      price: ['lp-note', 'lp-swap'].filter((id) => !document.getElementById(id)),
+      pills: document.querySelectorAll('.sheet .lp-filter').length,
+    }));
+    check('실거래 표시 묶음에 그 조작부가 다 있다',
+          moved.trade.length === 0, moved.trade.join(','));
+    check('IC 묶음에 그 조작부가 다 있다', moved.ic.length === 0, moved.ic.join(','));
+    check('실거래 가격 묶음에 땅값 칩이 있다',
+          moved.price.length === 0 && moved.pills === 2,
+          `빠진 것 ${moved.price.join(',')} · 칩 ${moved.pills}개`);
+
+    const oIc = await openCat('ic');
+    check('다른 분류를 누르면 그쪽으로 바뀐다',
+          !oIc.shut && oIc.paneShown && oIc.title === 'IC' && oIc.others === 0,
+          `"${oIc.title}"`);
+    const again = await openCat('ic');
+    check('같은 분류를 다시 누르면 닫힌다', again.shut && !again.chipOn);
+
+    console.log();
+    console.log('4-B. 거래 연도를 좌/우 손잡이로');
+    await openCat('trade');
+    const yr = await page.evaluate(() => {
+      const f = document.getElementById('year-from');
+      const t = document.getElementById('year-to');
+      const set = (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input')); };
+      const read = () => ({
+        out: document.getElementById('year-out').textContent,
+        from: window.__state ? null : null,
+      });
+      const one = (() => { set(f, f.max); set(t, f.max); return read().out; })();
+      const range = (() => { set(f, f.min); return read().out; })();
+      // 손잡이가 엇갈리면 서로 밀어낸다 — '2020~2015' 같은 뒤집힌 범위가
+      // 만들어지면 아무것도 안 보인다.
+      const crossed = (() => { set(f, f.max); set(t, t.min); return read().out; })();
+      const fill = document.getElementById('yr-fill');
+      set(f, f.min); set(t, t.max);
+      return { one, range, crossed, wide: document.getElementById('year-out').textContent,
+               fillLeft: fill.style.left, fillRight: fill.style.right };
+    });
+    check('한 해만 고르면 그 해만 적는다', /^\d{4}년$/.test(yr.one), yr.one);
+    check('범위를 넓히면 두 해를 적는다', /~/.test(yr.range), yr.range);
+    check('손잡이가 엇갈려도 뒤집히지 않는다',
+          !/(\d{4}) ~ (\d{4})/.test(yr.crossed)
+          || Number(RegExp.$1) <= Number(RegExp.$2), yr.crossed);
+    check('고른 구간이 막대에 칠해진다',
+          yr.fillLeft === '0%' && yr.fillRight === '0%',
+          `left=${yr.fillLeft} right=${yr.fillRight}`);
+    await page.evaluate(() => document.getElementById('sheet-close').click());
+
+    console.log();
     console.log('4. 왼쪽 설명을 물음표 뒤로 접었다');
     // 사장님 지시(2026-09-08): "왼쪽 스크롤에 있는 문장들은 물음표 원
     // 표시 아이콘(?) 만들어서 마우스 클릭하면 나타나도록... 지금은 무슨
@@ -680,9 +779,14 @@ const FAKE_LEAFLET = () => {
     // 설명이 틀린 것은 아니었다. 다만 필터가 열두 줄짜리 설명 사이에
     // 파묻혀 있으면 읽지도 않고 만지지도 못한다. **지우지 않고 접는다** —
     // 지우면 '왜 계획관리만 켜져 있나' 를 물을 곳이 없어진다.
+    // 필터가 아래 시트로 옮겨졌다 (2026-09-08). 열어야 보인다.
+    await page.evaluate(() => {
+      document.querySelector('.cat[data-cat="trade"]').click();
+    });
+    await page.waitForTimeout(150);
     const why = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('.rail .info-dot')];
-      const bodies = [...document.querySelectorAll('.rail .info-pop')];
+      const btns = [...document.querySelectorAll('.sheet .info-dot')];
+      const bodies = [...document.querySelectorAll('.sheet .info-pop')];
       const vis = (e) => !!(e && !e.hidden && e.offsetParent !== null);
       return {
         buttons: btns.length,
@@ -697,7 +801,7 @@ const FAKE_LEAFLET = () => {
         // 그렸는지. 이 줄이 없으면 '2019년 계획관리 거래는 이 열 점이
         // 전부' 로 읽히고, 스크리닝 도구에서 그 오해는 곧바로 투자
         // 판단으로 이어진다.
-        loose: [...document.querySelectorAll('.rail p.hint')]
+        loose: [...document.querySelectorAll('.sheet p.hint')]
           .filter((e) => e.id !== 'deal-year-note')
           .filter((e) => vis(e) && e.textContent.trim().length > 40).length,
         live: (document.getElementById('deal-year-note') || {}).textContent || '',
@@ -718,7 +822,7 @@ const FAKE_LEAFLET = () => {
           /건/.test(why.live) && why.live.length > 10, why.live.slice(0, 70));
 
     const whyOpen = await page.evaluate(() => {
-      const b = document.querySelector('.rail .info-dot');
+      const b = document.querySelector('.sheet-pane:not([hidden]) .info-dot');
       b.click();
       const body = b.closest('h2, h3').nextElementSibling;
       return { open: !body.hidden, on: b.classList.contains('is-on'),
@@ -728,7 +832,7 @@ const FAKE_LEAFLET = () => {
           whyOpen.open && whyOpen.on && whyOpen.aria === 'true',
           JSON.stringify(whyOpen));
     const whyShut = await page.evaluate(() => {
-      const b = document.querySelector('.rail .info-dot');
+      const b = document.querySelector('.sheet-pane:not([hidden]) .info-dot');
       b.click();
       return b.closest('h2, h3').nextElementSibling.hidden;
     });
@@ -1685,18 +1789,27 @@ const FAKE_LEAFLET = () => {
           profile: { status: 'approved' } }) };
       });
       await page2.goto(`${BASE}/app/`, { waitUntil: 'domcontentloaded' });
-      await page2.waitForFunction(() => document.querySelectorAll(
-        '#deal-year option').length > 0, null, { timeout: 15000 });
+      await page2.waitForFunction(
+        () => (document.getElementById('year-from') || {}).max,
+        null, { timeout: 15000 });
 
+      // 사장님 지시(2026-09-08): "실거래 연도는 좌/우로 선택해서 범위를
+      // 정할 수 있도록 (호갱노노 참조)".
       const sel = await page2.evaluate(() => {
-        const s = document.getElementById('deal-year');
-        return { value: s.value,
-                 options: [...s.options].map((o) => o.value) };
+        const f = document.getElementById('year-from');
+        const t = document.getElementById('year-to');
+        return { from: f.value, to: t.value, min: f.min, max: f.max,
+                 out: document.getElementById('year-out').textContent,
+                 selects: document.querySelectorAll('#deal-year').length };
       });
-      check('거래 연도를 고를 수 있다', sel.options.includes('2025')
-            && sel.options.includes('2024') && sel.options.includes('all'),
-            sel.options.join(','));
-      check('기본값은 가장 최근 해다', sel.value === '2025', sel.value);
+      check('연도를 좌/우 손잡이로 고른다 (드롭다운이 아니다)',
+            sel.selects === 0 && Number(sel.min) < Number(sel.max),
+            `${sel.min}~${sel.max} · 남은 select ${sel.selects}개`);
+      // 전 기간을 기본으로 두면 처음 보는 화면이 늘 성긴 표본이라
+      // '거래가 이것뿐인가' 로 읽힌다.
+      check('기본은 가장 최근 한 해다',
+            sel.from === '2025' && sel.to === '2025' && /2025년/.test(sel.out),
+            `${sel.from}~${sel.to} "${sel.out}"`);
 
       // 거래는 기본이 꺼져 있다(2026-09-04 지시). 켜야 그려진다.
       await page2.evaluate(() => {
@@ -1921,6 +2034,12 @@ const FAKE_LEAFLET = () => {
 
       // 차 진입 가능만 고르면 그것만 남는다. 공장은 그대로여야 한다 —
       // 도로 접함은 토지에만 거는 조건이다.
+      // 필터가 아래 시트로 옮겨졌다 (2026-09-08). 열어야 만질 수 있다.
+      await page2.evaluate(() => {
+        const b = document.querySelector('.cat[data-cat="trade"]');
+        if (b && !b.classList.contains('is-on')) b.click();
+      });
+      await page2.waitForTimeout(150);
       await page2.selectOption('#road-filter', 'ok');
       await page2.waitForTimeout(300);
       const roadOk = await page2.evaluate(() => (window.__tradeStyles || []).slice());
@@ -1978,7 +2097,15 @@ const FAKE_LEAFLET = () => {
             !!fac && !/아직 조사 전/.test(fac.popup));
 
       // 연도를 바꾸면 그 해 파일을 받아 다시 그린다.
-      await page2.selectOption('#deal-year', '2024');
+      // 범위이므로 양끝을 다 옮겨야 그 해만 남는다. 왼쪽만 밀면
+      // 2024~2025 가 되어 두 해가 함께 보인다 — 그것이 맞는 동작이다.
+      await page2.evaluate(() => {
+        const f = document.getElementById('year-from');
+        const t = document.getElementById('year-to');
+        f.value = '2024'; t.value = '2024';
+        f.dispatchEvent(new Event('input'));
+        t.dispatchEvent(new Event('input'));
+      });
       await page2.waitForFunction(
         () => (window.__tradeStyles || []).length === 2, null, { timeout: 8000 })
         .then(() => check('연도를 바꾸면 그 해 자료로 다시 그린다', true))

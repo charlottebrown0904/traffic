@@ -1046,3 +1046,86 @@ body.picking .leaflet-container{cursor:crosshair}
   font-size: 11.5px; color: var(--muted);
 }
 .pc-note { margin: .35rem 0 0; font-size: 11px; color: var(--faint); line-height: 1.5; }
+
+
+/* ── 큰 분류 셋 + 아래 시트 (사장님 지시 2026-09-08) ──
+   "왼쪽 필터를 큰 분류별로 묶어주세요 (호갱노노 참조).
+    실거래 표시 / IC / 실거래 가격 으로 묶어주고,
+    선택하면 하단에 현재 필터들을 선택할 수 있도록"
+
+   왼쪽 레일을 없앤 자리를 지도가 다 쓴다. 필터는 한 번에 한 묶음만
+   아래에서 올라온다. */
+.cat-bar {
+  position: absolute; top: .6rem; left: .6rem; z-index: 500;
+  display: flex; gap: .35rem; flex-wrap: wrap;
+}
+.cat {
+  font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer;
+  padding: .4rem .85rem; border-radius: 999px;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-strong); box-shadow: var(--shadow);
+}
+.cat:hover { border-color: #3B73C4; }
+.cat.is-on { background: #3B73C4; border-color: #3B73C4; color: #fff; }
+
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 550;
+  max-height: 62%; display: flex; flex-direction: column;
+  background: var(--surface); border-top: 1px solid var(--border);
+  border-radius: 14px 14px 0 0; box-shadow: 0 -6px 24px -12px rgba(16,32,64,.4);
+}
+.sheet-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: .6rem .9rem .4rem; border-bottom: 1px solid var(--border);
+}
+.sheet-head b { font-size: .92rem; }
+.sheet-close {
+  font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer;
+  background: none; border: 0; color: var(--accent); padding: .2rem .3rem;
+}
+.sheet-body { overflow: auto; padding: .7rem .9rem 1rem; }
+.sheet-pane h3 {
+  font-size: .74rem; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--faint); margin: .9rem 0 .45rem;
+}
+.sheet-pane h3:first-child { margin-top: 0; }
+/* 넓은 화면에서는 두 칸으로. 한 줄씩 쌓으면 시트가 끝없이 길어진다. */
+@media (min-width: 56rem) {
+  .sheet-body { columns: 2; column-gap: 1.6rem; }
+  .sheet-pane > * { break-inside: avoid; }
+}
+
+/* 연도 범위 — 좌/우 손잡이 (호갱노노 참조).
+   <input type=range> 둘을 겹쳐 놓는다. 위에 놓인 것이 누름을 다 먹으므로
+   트랙은 pointer-events 를 끄고 손잡이만 살린다. */
+.year-range { margin-bottom: .3rem; }
+.year-range output {
+  display: block; font-weight: 700; font-variant-numeric: tabular-nums;
+  margin-bottom: .35rem;
+}
+.yr-track { position: relative; height: 26px; }
+.yr-track::before {
+  content: ''; position: absolute; left: 0; right: 0; top: 11px; height: 4px;
+  border-radius: 2px; background: var(--surface-2);
+}
+.yr-fill {
+  position: absolute; top: 11px; height: 4px; border-radius: 2px;
+  background: #3B73C4;
+}
+.yr-track input[type=range] {
+  position: absolute; left: 0; right: 0; top: 0; width: 100%;
+  margin: 0; padding: 0; height: 26px;
+  -webkit-appearance: none; appearance: none;
+  background: none; pointer-events: none;
+}
+.yr-track input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; pointer-events: auto;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--surface); border: 2px solid #3B73C4; cursor: pointer;
+  box-shadow: 0 1px 3px rgba(16,32,64,.3);
+}
+.yr-track input[type=range]::-moz-range-thumb {
+  pointer-events: auto;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--surface); border: 2px solid #3B73C4; cursor: pointer;
+}

@@ -21,7 +21,8 @@ const check = (label, ok, note = '') => {
 
 const KEY = 'SECRET-VWORLD-KEY-0000';
 process.env.VWORLD_KEY = KEY;
-process.env.VWORLD_REFERER = 'https://sado-toji.vercel.app/';
+const KEY_REFERER = 'https://toji-gogo.vercel.app/';
+process.env.VWORLD_REFERER = KEY_REFERER;
 
 const handler = require(path.join('..', 'api', 'tile.js'));
 
@@ -99,9 +100,11 @@ const jsonReply = {
   arrayBuffer: async () => new Uint8Array([0x7b, 0x7d]).buffer,
 };
 
-const call = async (query, method = 'GET') => {
+const call = async (query, method = 'GET', headers = {}) => {
   const res = fakeRes();
-  await handler({ method, query }, res);
+  // 진짜 요청에는 늘 host 헤더가 있다. 없으면 코드가 그것을 읽다 죽는데,
+  // 그 죽음이 배포에서만 안 나므로 검사에서도 늘 실어 준다.
+  await handler({ method, query, headers: { host: 'toji-gogo.vercel.app', ...headers } }, res);
   return res;
 };
 
@@ -129,7 +132,7 @@ const call = async (query, method = 'GET') => {
   check('상류 주소에는 키가 붙어 있다 (실제로 인증은 한다)',
         calls.length === 1 && calls[0].url.includes(KEY));
   check('등록된 Referer 를 실어 보낸다 (웹사이트 유형 키)',
-        calls[0].headers.Referer === 'https://sado-toji.vercel.app/',
+        calls[0].headers.Referer === 'https://toji-gogo.vercel.app/',
         String(calls[0].headers.Referer));
 
   console.log();
@@ -213,7 +216,7 @@ const call = async (query, method = 'GET') => {
         `${q.get('REQUEST')} ${q.get('VERSION')}`);
   // ④ 등록 도메인을 Referer 로 실어야 WMS 가 열린다.
   check('등록된 Referer 를 싣는다',
-        calls[0].headers.Referer === 'https://sado-toji.vercel.app/');
+        calls[0].headers.Referer === 'https://toji-gogo.vercel.app/');
 
   console.log();
   console.log('9. 타일 좌표 → 머케이터 bbox 가 맞는가');
@@ -405,6 +408,29 @@ const call = async (query, method = 'GET') => {
     coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] };
   check('점-다각형 판정: 안', handler.hitsPoint(ring, 5, 5));
   check('점-다각형 판정: 밖', !handler.hitsPoint(ring, 15, 5));
+
+  console.log();
+  console.log('15. 배포 주소를 코드에 박지 않는다');
+  // 2026-09-08 에 주소가 바뀌었다 (사도 토지 → 토지 고고). 박아 둔 값이
+  // 남아 있으면 조용히 틀린 Referer 를 보내고, 브이월드는 **그림 대신
+  // 오류**를 준다. 원인이 화면에 안 나타나서 찾기가 어렵다.
+  delete process.env.VWORLD_REFERER;
+  stubFetch(pngReply);
+  await call({ z: '12', y: '5', x: '5' }, 'GET', { host: 'toji-gogo.vercel.app' });
+  check('환경변수가 없으면 지금 요청이 온 호스트를 쓴다',
+        (calls[0] || {}).headers.Referer === 'https://toji-gogo.vercel.app/',
+        (calls[0] || {}).headers.Referer);
+  stubFetch(pngReply);
+  await call({ z: '12', y: '5', x: '5' }, 'GET', { host: 'somewhere-else.vercel.app' });
+  check('주소가 바뀌어도 따라간다',
+        (calls[0] || {}).headers.Referer === 'https://somewhere-else.vercel.app/',
+        (calls[0] || {}).headers.Referer);
+  process.env.VWORLD_REFERER = KEY_REFERER;
+  stubFetch(pngReply);
+  await call({ z: '12', y: '5', x: '5' }, 'GET', { host: 'toji-gogo.vercel.app' });
+  check('환경변수가 있으면 그것이 이긴다 (콘솔 등록 주소와 맞춰야 한다)',
+        (calls[0] || {}).headers.Referer === KEY_REFERER,
+        (calls[0] || {}).headers.Referer);
 
   console.log();
   console.log('7. GET 만 받는다');

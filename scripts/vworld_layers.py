@@ -30,7 +30,9 @@ TOKEN = os.environ.get("RELAY_TOKEN", "")
 # 중계기가 key 를 끼워 넣으므로 이쪽에서는 비워 보낸다.
 # 웹사이트 유형 키는 등록된 도메인에서 온 요청인지를 본다. 중계기가 Referer 를
 # 실어 보내도록 고쳤고, 브이월드가 따로 받는 domain 파라미터도 같이 시험한다.
-DOMAIN = "sado-toji.vercel.app"
+# 브이월드 콘솔에 등록된 서비스 주소. 배포 주소가 바뀌면
+# 콘솔에도 더해야 한다 (2026-09-08 사도 토지 → 토지 고고).
+DOMAIN = os.environ.get("VWORLD_DOMAIN", "toji-gogo.vercel.app")
 BASE = {"SERVICE": "WFS", "REQUEST": "GetCapabilities"}
 
 CANDIDATES = [

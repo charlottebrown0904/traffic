@@ -43,6 +43,8 @@ const state = {
   // 땅값이 이 화면의 주인공인데, 인구 원과 영업소 점이 함께 깔리면
   // 처음 여는 사람은 무엇을 봐야 할지 모른다.
   regions: null, showPop: false, popYear: null, showGates: false,
+  // 거래 연도 범위 (좌/우 손잡이). yearWide 면 전 기간 표본으로 물러난 것이다.
+  yearFrom: null, yearTo: null, yearWide: false,
   // 땅값 분위지도 (2026-09-08 지시)
   landPrice: null, lpGroup: '', lpStat: 'p50', lpWindow: '',
 };
@@ -95,6 +97,7 @@ async function boot() {
   // 이 틈이 눈에 띄게 벌어진다.
   wireTabs();
   wireWhy();
+  wireSheet();
   try {
     const [meta, tollgates, trades, series] = await Promise.all(
       ['meta', 'tollgates', 'trades', 'series'].map((n) =>
@@ -183,7 +186,7 @@ async function boot() {
   // buildFilters 가 기본 연도를 정한다. 그 해 파일을 여기서 받아 둔다 —
   // 안 받으면 처음 화면이 전 기간 표본으로 그려져, 연도 칸이 가리키는
   // 해와 지도에 찍힌 점이 서로 다른 해가 된다.
-  await loadTradeYear(state.dealYear);
+  if (state.yearFrom != null) await loadTradeYears(state.yearFrom, state.yearTo);
   buildRank();
   buildTrend();
   buildMap();
@@ -228,6 +231,50 @@ function wireWhy() {
       btn.classList.toggle('is-on', open);
     });
   });
+}
+
+/* 큰 분류 셋 — 실거래 표시 / IC / 실거래 가격 (사장님 지시 2026-09-08).
+ *
+ * 왼쪽 레일을 통째로 없앴다. 필터가 지도 옆에 늘 펼쳐져 있으면 지도가
+ * 그만큼 좁아지는데, 실제로 만지는 것은 한 번에 한 묶음뿐이다. 칩을
+ * 누르면 그 묶음만 아래에서 올라온다 (호갱노노가 하는 것이 이것이다). */
+const SHEET_TITLE = {
+  trade: '실거래 표시', ic: 'IC', price: '실거래 가격',
+};
+
+function openSheet(cat) {
+  const sheet = document.getElementById('sheet');
+  if (!sheet) return;
+  const same = sheet.dataset.cat === cat && !sheet.hidden;
+  document.querySelectorAll('.cat').forEach((b) => {
+    b.classList.toggle('is-on', !same && b.dataset.cat === cat);
+  });
+  if (same) { sheet.hidden = true; sheet.dataset.cat = ''; return; }
+  sheet.hidden = false;
+  sheet.dataset.cat = cat;
+  const title = document.getElementById('sheet-title');
+  if (title) title.textContent = SHEET_TITLE[cat] || '';
+  sheet.querySelectorAll('.sheet-pane').forEach((p) => {
+    p.hidden = p.dataset.cat !== cat;
+  });
+  // 시트가 지도의 아래쪽을 덮는다. Leaflet 에 알려주지 않으면 새로
+  // 드러난/가려진 부분이 회색으로 남는다.
+  if (map) setTimeout(() => map.invalidateSize(), 220);
+}
+
+function wireSheet() {
+  document.querySelectorAll('.cat').forEach((b) => {
+    b.addEventListener('click', () => openSheet(b.dataset.cat));
+  });
+  const close = document.getElementById('sheet-close');
+  if (close) {
+    close.addEventListener('click', () => {
+      const sheet = document.getElementById('sheet');
+      if (sheet) { sheet.hidden = true; sheet.dataset.cat = ''; }
+      document.querySelectorAll('.cat').forEach((b) => b.classList.remove('is-on'));
+      if (map) setTimeout(() => map.invalidateSize(), 220);
+    });
+  }
 }
 
 function wireTabs() {
@@ -501,27 +548,59 @@ function buildFilters() {
     syncLuBoxes();
   });
 
-  // ── 실거래 연도 ──
-  // 전에는 시작·끝 년월 두 칸이었다. 그런데 화면 자료에는 연도만
-  // 있어서 월을 골라도 아무 일이 없었고, 무엇보다 **전 기간이 한
-  // 파일**이라 표본 2천 건이 20년에 흩어져 한 해에 백 점씩밖에
-  // 안 남았다. 연도를 고르면 그 해 파일만 받으므로 같은 무게로
-  // 훨씬 촘촘히 볼 수 있다 (한 해 최대 4천 점).
-  const ysel = $('#deal-year');
+  // ── 실거래 연도 — 좌/우 손잡이로 범위 ──
+  //
+  // 사장님 지시(2026-09-08): "실거래 연도는 좌/우로 선택해서 범위를 정할
+  // 수 있도록 (호갱노노 참조)".
+  //
+  // **범위는 공짜가 아니다.** 해마다 파일이 따로 있고 한 해가 약 950KB 다.
+  // 넓게 잡으면 그만큼 받는다. 그래서 MAX_YEAR_FILES 까지만 받고, 그보다
+  // 넓히면 전 기간 표본으로 물러난다 — 어느 쪽인지 아래 줄이 말한다.
   const dealYears = (state.meta.trade_years || []).map((r) => r.year);
-  ysel.innerHTML =
-    `<option value="all">전 기간 (표본)</option>` +
-    dealYears.slice().reverse()
-      .map((y) => `<option value="${y}">${y}년</option>`).join('');
-  // 기본은 가장 최근 해. 전 기간을 기본으로 두면 처음 보는 화면이
-  // 늘 성긴 표본이라 '거래가 이것뿐인가' 로 읽힌다.
-  state.dealYear = dealYears.length ? dealYears[dealYears.length - 1] : 'all';
-  ysel.value = String(state.dealYear);
-  ysel.addEventListener('change', async () => {
-    state.dealYear = ysel.value === 'all' ? 'all' : Number(ysel.value);
-    await loadTradeYear(state.dealYear);
-    refreshMap();
-  });
+  if (dealYears.length) {
+    const from = $('#year-from');
+    const to = $('#year-to');
+    const lo = dealYears[0];
+    const hi = dealYears[dealYears.length - 1];
+    [from, to].forEach((el) => { el.min = String(lo); el.max = String(hi); el.step = '1'; });
+    // 기본은 가장 최근 한 해. 전 기간을 기본으로 두면 처음 보는 화면이
+    // 늘 성긴 표본이라 '거래가 이것뿐인가' 로 읽힌다.
+    from.value = String(hi);
+    to.value = String(hi);
+    state.yearFrom = hi;
+    state.yearTo = hi;
+
+    const paint = () => {
+      const span = (hi - lo) || 1;
+      const fill = document.getElementById('yr-fill');
+      if (fill) {
+        fill.style.left = `${((state.yearFrom - lo) / span) * 100}%`;
+        fill.style.right = `${((hi - state.yearTo) / span) * 100}%`;
+      }
+      const out = document.getElementById('year-out');
+      if (out) {
+        out.textContent = state.yearFrom === state.yearTo
+          ? `${state.yearFrom}년`
+          : `${state.yearFrom} ~ ${state.yearTo}년`;
+      }
+    };
+
+    const pull = async () => {
+      // 두 손잡이가 엇갈리면 서로 밀어낸다. 안 그러면 '2020~2015' 같은
+      // 뒤집힌 범위가 만들어지고 아무것도 안 보인다.
+      let f = Number(from.value);
+      let t = Number(to.value);
+      if (f > t) { const m = f; f = t; t = m; }
+      state.yearFrom = f;
+      state.yearTo = t;
+      paint();
+      await loadTradeYears(f, t);
+      refreshMap();
+    };
+    from.addEventListener('input', pull);
+    to.addEventListener('input', pull);
+    paint();
+  }
 
   $('#parcel-only').addEventListener('change', (e) => {
     state.parcelOnly = e.target.checked;
@@ -1431,6 +1510,10 @@ function drawAllBands() {
  *
  * 실패해도 화면은 살려 둔다 — 거래가 안 보이는 것과 화면이 죽는 것은
  * 사용자에게 전혀 다른 일이다. */
+/* 한 해가 약 950KB 다. 이보다 넓게 잡으면 전 기간 표본으로 물러난다 —
+ * 20년치를 다 받으면 19MB 이고, 그 중 화면에 그리는 것은 수천 점뿐이다. */
+const MAX_YEAR_FILES = 5;
+
 async function loadTradeYear(year) {
   if (year === 'all') { state.tradesShown = state.trades; return; }
   if (state.tradeCache[year]) { state.tradesShown = state.tradeCache[year]; return; }
@@ -1444,6 +1527,27 @@ async function loadTradeYear(year) {
   state.tradesShown = state.tradeCache[year];
 }
 
+/* 범위만큼 받아서 잇는다. 받은 해는 다시 안 받는다(브라우저 캐시와
+ * 별개로 우리도 들고 있는다) — 손잡이를 조금씩 미는 동안 같은 파일을
+ * 몇 번씩 받으면 그게 더 느리다. */
+async function loadTradeYears(from, to) {
+  const years = [];
+  for (let y = from; y <= to; y += 1) years.push(y);
+  state.yearWide = years.length > MAX_YEAR_FILES;
+  if (state.yearWide) {
+    // **넓게 잡으면 전 기간 표본으로 물러난다.** 그 표본은 20년에
+    // 흩어져 있어 성기다. 그것을 안 밝히면 '2015~2025 거래가 이것뿐' 으로
+    // 읽힌다 — updateYearNote 가 말한다.
+    state.tradesShown = state.trades.filter(
+      (t) => t.deal_year >= from && t.deal_year <= to);
+    return;
+  }
+  await Promise.all(years.map((y) => loadTradeYear(y)));
+  const out = [];
+  years.forEach((y) => { (state.tradeCache[y] || []).forEach((t) => out.push(t)); });
+  state.tradesShown = out;
+}
+
 /* 표본이라는 사실을 화면에 적는다.
  *
  * 이 한 줄이 없으면 '2019년 계획관리 거래는 이 열 점이 전부' 로 읽힌다.
@@ -1453,14 +1557,23 @@ function updateYearNote() {
   if (!node) return;
   const n = (v) => v.toLocaleString('ko-KR');
   const held = visibleTrades().length;
-  const row = state.dealYear === 'all' ? null
-    : (state.meta.trade_years || []).find((r) => r.year === state.dealYear);
-  const total = row ? row.total : ((state.meta.counts || {}).trades_mapped || 0);
-  const label = row ? `${state.dealYear}년` : '전 기간';
+  const rows = (state.meta.trade_years || []).filter(
+    (r) => r.year >= state.yearFrom && r.year <= state.yearTo);
+  const total = rows.length
+    ? rows.reduce((a, r) => a + r.total, 0)
+    : ((state.meta.counts || {}).trades_mapped || 0);
+  const label = state.yearFrom === state.yearTo
+    ? `${state.yearFrom}년` : `${state.yearFrom}~${state.yearTo}년`;
 
   let text = `${label} 좌표 있는 거래 <strong>${n(total)}건</strong>`;
   if (held < total) text += ` 중 무작위 표본 ${n(held)}건을 받았습니다`;
   else text += ` 전부를 받았습니다`;
+  // **넓게 잡으면 성긴 표본으로 물러난다.** 그것을 안 밝히면 범위를
+  // 넓혔는데 점이 줄어드는 것을 고장으로 읽는다.
+  if (state.yearWide) {
+    text += ` <em>(${MAX_YEAR_FILES}년이 넘어 전 기간 표본에서 골랐습니다 —`
+      + ` 좁히면 그 해 자료를 통째로 받습니다)</em>`;
+  }
   // 화면에 실제로 몇 개가 그려졌는지. 잘렸으면 반드시 말한다.
   if (typeof state.tradeInView === 'number') {
     text += ` · 지금 보이는 영역 ${n(state.tradeInView)}건`;
@@ -3563,37 +3676,8 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && state.pickMode) endPick(null);
 });
 
-/* 모바일 필터 접기.
- *
- * 좁은 화면에서는 접은 채로 시작한다. 필터가 펼쳐진 채로 지도 위에 있으면
- * 지도를 보려고 매번 스크롤해야 하고, 지도가 화면 아래쪽 조각으로 남는다.
- * 폭 기준은 CSS 의 56rem 미디어쿼리와 같은 값을 쓴다 — 둘이 어긋나면
- * 데스크톱에서 필터가 사라지거나 모바일에서 단추가 안 보인다.
- *
- * 접었다 펴면 지도 높이가 바뀌므로 Leaflet 에 알려줘야 한다. 안 그러면
- * 새로 드러난 부분이 회색으로 남는다.
- */
-(function foldRail() {
-  const rail = document.querySelector('.rail');
-  const btn = document.getElementById('rail-toggle');
-  if (!rail || !btn) return;
-  const narrow = () => window.matchMedia('(max-width:56rem)').matches;
-
-  const apply = (folded) => {
-    rail.classList.toggle('is-folded', folded);
-    btn.setAttribute('aria-expanded', String(!folded));
-    if (map) setTimeout(() => map.invalidateSize(), 220);
-  };
-
-  if (narrow()) apply(true);
-  btn.addEventListener('click', () => apply(!rail.classList.contains('is-folded')));
-
-  // 가로/세로를 돌리거나 창을 넓히면 데스크톱 배치로 돌아간다. 접힌 상태가
-  // 남아 있으면 넓은 화면에서 필터가 통째로 사라진다.
-  window.matchMedia('(max-width:56rem)').addEventListener('change', (e) => {
-    apply(e.matches);
-  });
-})();
+/* 레일 접기 로직은 레일과 함께 사라졌다 (2026-09-08). 필터는 이제
+   아래 시트에 있고, 시트는 닫혀서 시작하므로 접을 것이 없다. */
 
 /* 상단 '전체 IC 반경' 스위치. */
 (function allBandsSwitch() {

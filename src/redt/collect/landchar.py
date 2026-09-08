@@ -28,6 +28,8 @@
 """
 from __future__ import annotations
 
+import os
+
 import json
 import math
 import threading
@@ -41,7 +43,9 @@ from .http import get_json
 
 WFS = "https://api.vworld.kr/ned/wfs/getLandCharacteristicsWFS"
 TYPENAME = "dt_d194"
-DOMAIN = "sado-toji.vercel.app"
+# 브이월드 콘솔에 등록된 서비스 주소. 배포 주소가 바뀌면
+# 콘솔에도 더해야 한다 (2026-09-08 사도 토지 → 토지 고고).
+DOMAIN = os.environ.get("VWORLD_DOMAIN", "toji-gogo.vercel.app")
 
 # 한 번에 받아 볼 최대 피처 수. 돌려받은 수가 이것과 같으면 **잘린 것**
 # 이므로 칸을 넷으로 쪼개 다시 부른다. 안성에서 실제로 7번 걸렸다 —

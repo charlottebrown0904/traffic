@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260908g">
+<link rel="stylesheet" href="/app/style.css?v=20260909a">
 </head>
 <body>
 
@@ -47,120 +47,6 @@
 
 <!-- ══ 탐색 ══ -->
 <main class="view is-active" id="view-explore">
-  <aside class="rail">
-    <!-- 모바일에서만 보이는 접기 단추. 필터가 지도를 아래로 밀어내
-         지도가 답답해지던 것을 막는다. 데스크톱에서는 숨기고 항상 편다. -->
-    <button class="rail-toggle" id="rail-toggle" type="button"
-            aria-expanded="true" aria-controls="rail-body">
-      <span class="rail-toggle-label">필터</span>
-      <span class="rail-toggle-mark" aria-hidden="true"></span>
-    </button>
-    <div class="rail-body" id="rail-body">
-    <!-- **설명은 물음표 뒤로 접는다** (사장님 지시 2026-09-08:
-         "왼쪽 스크롤에 있는 문장들은 물음표 원 표시 아이콘(?) 만들어서
-          마우스 클릭하면 나타나도록 간략하게... 지금은 무슨 책같아서
-          뭘 봐야할 지 모르겠습니다").
-
-         설명이 틀린 것은 아니었다 — 왜 이 셋만 켜 두는지, 도로접이 왜
-         1.7배인지는 알아야 한다. 다만 **처음 여는 사람이 필터를 못
-         찾는다.** 조작부만 남기고 설명은 눌러야 나오게 한다. -->
-    <section class="rail-block">
-      <h2>IC 교통량
-        <button type="button" class="info-dot" aria-expanded="false"
-                aria-label="설명 보기">?</button></h2>
-      <div class="info-pop" hidden>
-        <p>영업소를 통과한 <strong>하루 평균 통행량</strong>입니다.
-          공장·물류 수요는 화물(3·4·5종)이 가장 직접 반영합니다.</p>
-      </div>
-      <label class="field">
-        <span>기준 연도</span>
-        <select id="tg-year"></select>
-      </label>
-      <label class="field">
-        <span>차종</span>
-        <select id="tg-vehicle"></select>
-      </label>
-      <div class="quad-filters" id="tier-filters"></div>
-    </section>
-    <section class="rail-block">
-      <h2>실거래 표시
-        <button type="button" class="info-dot" aria-expanded="false"
-                aria-label="설명 보기">?</button></h2>
-      <div class="info-pop" hidden>
-        <p><strong>공장·창고</strong>가 분석의 기준 물건입니다. 토지는
-          지목·형상·도로 조건에 따라 물건마다 값이 크게 흔들려 효과를
-          가려내기 어렵습니다. 공장은 <em>지어질 수 있는 땅에만</em>
-          들어서므로 입지가 가격에 그대로 드러납니다.</p>
-      </div>
-      <div class="checks" id="kind-filters"></div>
-      <label class="field">
-        <span>거래 연도</span>
-        <select id="deal-year"></select>
-      </label>
-      <p class="hint" id="deal-year-note"></p>
-
-      <div id="land-box">
-        <h3 class="rail-sub">토지 — 개발단계
-          <button type="button" class="info-dot" aria-expanded="false"
-                  aria-label="설명 보기">?</button></h3>
-        <div class="info-pop" hidden>
-          <p>전·답·임야는 개발 가능 여부·도로접·모양에 따라 같은 동네에서도
-            값이 몇 배 벌어집니다. 실거래 자료가 그 셋을 안 알려주므로,
-            <strong>개발이 끝난 지목</strong>(대·공장용지·창고용지 등)을
-            따로 봅니다.</p>
-        </div>
-        <div class="checks" id="stage-filters"></div>
-
-        <h3 class="rail-sub">토지 — 도로 접함
-          <button type="button" class="info-dot" aria-expanded="false"
-                  aria-label="설명 보기">?</button></h3>
-        <div class="info-pop" hidden>
-          <p>차가 들어가는 땅과 못 들어가는 땅은 같은 동네에서도 단가가
-            <strong>1.7배</strong> 벌어집니다 (남이천 +66% · 안성 +67% 실측).
-            필지 특성은 전국을 나눠 받는 중이라 아직 대부분이
-            <strong>조사 안 됨</strong>입니다 — 그 거래까지 보시려면
-            <strong>전체</strong>로 두십시오.</p>
-        </div>
-        <label class="field">
-          <span>도로 접함</span>
-          <select id="road-filter"></select>
-        </label>
-
-        <h3 class="rail-sub">토지 — 용도지역
-          <button type="button" class="info-dot" aria-expanded="false"
-                  aria-label="설명 보기">?</button></h3>
-        <div class="info-pop" hidden>
-          <p>여기서 켠 용도지역이 <strong>지도의 땅값 글자</strong>도
-            정합니다. 처음에는 계획관리·생산관리·자연녹지 셋만 켭니다 —
-            분석이 쓰는 것도 이 셋입니다.</p>
-          <p><strong>관리지역</strong>은 2006~2010년 거래에만 있습니다.
-            세분화(계획·생산·보전)가 끝나기 전이라 그냥 '관리지역'으로
-            신고된 것이고, 2014년 이후로는 거의 없습니다.</p>
-        </div>
-        <div class="field-row">
-          <button type="button" class="mini-btn" id="lu-all">전체</button>
-          <button type="button" class="mini-btn" id="lu-none">해제</button>
-          <button type="button" class="mini-btn" id="lu-core">분석 대상만</button>
-        </div>
-        <div class="checks scroll-box" id="land-use-filters"></div>
-      </div>
-      <label class="check">
-        <input type="checkbox" id="parcel-only">
-        <span>지번단위 좌표만 <em>정밀도 높은 거래</em></span>
-      </label>
-    </section>
-    <section class="rail-block">
-      <h2>거리 밴드
-        <button type="button" class="info-dot" aria-expanded="false"
-                aria-label="설명 보기">?</button></h2>
-      <div class="info-pop" hidden>
-        <p>지도에서 영업소를 누르면 그 반경이 그려집니다.</p>
-      </div>
-      <div class="legend" id="band-legend"></div>
-    </section>
-    </div>
-  </aside>
-
   <div class="map-wrap">
     <!-- 지도 위 도구막대. 한 영업소를 고르지 않아도 전국의 반경 분포를
          한 번에 볼 수 있어야 한다. -->
@@ -188,31 +74,156 @@
       </label>
     </div>
 
-    <!-- 땅값 지도 (2026-09-08 지시).
-         "정보들은 필터로 넣고 간결하게 최근 실거래가격(기간 또는 건수)
-          기준으로(기본은 계획관리) 축척에따라 보여줍니다"
-         "필터를 호갱노노처럼 클릭하면 선택할 수 있도록"
+    <div class="cat-bar" id="cat-bar">
+      <button type="button" class="cat" data-cat="trade">실거래 표시</button>
+      <button type="button" class="cat" data-cat="ic">IC</button>
+      <button type="button" class="cat" data-cat="price">실거래 가격</button>
+    </div>
 
-         그래서 <select> 를 걷어내고 **누르면 열리는 칩**으로 바꾼다.
-         칩에는 지금 고른 값이 적혀 있어서, 열지 않아도 무엇으로 보고
-         있는지 읽힌다. -->
-    <div class="land-price-bar" id="lp-bar" hidden>
-      <div class="lp-chips">
-        <div class="lp-filter" data-filter="window">
-          <button type="button" class="lp-pill" aria-expanded="false">
-            <span class="lp-pill-val">최근 3년</span>
-          </button>
-          <div class="lp-menu" hidden></div>
-        </div>
-        <div class="lp-filter" data-filter="stat">
-          <button type="button" class="lp-pill" aria-expanded="false">
-            <span class="lp-pill-val">중앙값</span>
-          </button>
-          <div class="lp-menu" hidden></div>
-        </div>
+    <div class="sheet" id="sheet" hidden>
+      <div class="sheet-head">
+        <b id="sheet-title"></b>
+        <button type="button" class="sheet-close" id="sheet-close">닫기</button>
       </div>
-      <p class="hint" id="lp-note"></p>
-      <button type="button" class="lp-swap" id="lp-swap" hidden></button>
+      <div class="sheet-body">
+
+      <!-- ── 실거래 표시 ── -->
+      <section class="sheet-pane" data-cat="trade" hidden>
+        <h3>물건 종류
+          <button type="button" class="info-dot" aria-expanded="false"
+                  aria-label="설명 보기">?</button></h3>
+        <div class="info-pop" hidden>
+          <p><strong>공장·창고</strong>가 분석의 기준 물건입니다. 토지는
+            지목·형상·도로 조건에 따라 물건마다 값이 크게 흔들려 효과를
+            가려내기 어렵습니다.</p>
+        </div>
+        <div class="checks" id="kind-filters"></div>
+
+        <h3>거래 연도
+          <button type="button" class="info-dot" aria-expanded="false"
+                  aria-label="설명 보기">?</button></h3>
+        <div class="info-pop" hidden>
+          <p>양끝을 잡아 <strong>범위</strong>를 정합니다. 해마다 파일이
+            따로 있어서, 넓게 잡을수록 받는 양이 늘어납니다 — 아래 줄이
+            몇 건을 받았는지 말해 줍니다.</p>
+        </div>
+        <div class="year-range" id="year-range">
+          <output id="year-out"></output>
+          <div class="yr-track">
+            <span class="yr-fill" id="yr-fill"></span>
+            <input type="range" id="year-from" aria-label="시작 연도">
+            <input type="range" id="year-to" aria-label="끝 연도">
+          </div>
+        </div>
+        <p class="hint" id="deal-year-note"></p>
+
+        <div id="land-box">
+          <h3>토지 — 개발단계
+            <button type="button" class="info-dot" aria-expanded="false"
+                    aria-label="설명 보기">?</button></h3>
+          <div class="info-pop" hidden>
+            <p>전·답·임야는 개발 가능 여부·도로접·모양에 따라 같은 동네에서도
+              값이 몇 배 벌어집니다. 실거래 자료가 그 셋을 안 알려주므로,
+              <strong>개발이 끝난 지목</strong>(대·공장용지·창고용지 등)을
+              따로 봅니다.</p>
+          </div>
+          <div class="checks" id="stage-filters"></div>
+
+          <h3>토지 — 도로 접함
+            <button type="button" class="info-dot" aria-expanded="false"
+                    aria-label="설명 보기">?</button></h3>
+          <div class="info-pop" hidden>
+            <p>차가 들어가는 땅과 못 들어가는 땅은 같은 동네에서도 단가가
+              <strong>1.7배</strong> 벌어집니다 (남이천 +66% · 안성 +67% 실측).
+              필지 특성은 전국의 22.3% 만 조사돼 있어 대부분이
+              <strong>조사 안 됨</strong>입니다.</p>
+          </div>
+          <label class="field">
+            <span>도로 접함</span>
+            <select id="road-filter"></select>
+          </label>
+
+          <h3>토지 — 용도지역
+            <button type="button" class="info-dot" aria-expanded="false"
+                    aria-label="설명 보기">?</button></h3>
+          <div class="info-pop" hidden>
+            <p>여기서 켠 용도지역이 <strong>지도의 땅값 글자</strong>도
+              정합니다. 처음에는 계획관리·생산관리·자연녹지 셋만 켭니다.</p>
+            <p><strong>관리지역</strong>은 2006~2010년 거래에만 있습니다.
+              세분화(계획·생산·보전)가 끝나기 전이라 그냥 '관리지역'으로
+              신고된 것입니다.</p>
+          </div>
+          <div class="field-row">
+            <button type="button" class="mini-btn" id="lu-all">전체</button>
+            <button type="button" class="mini-btn" id="lu-none">해제</button>
+            <button type="button" class="mini-btn" id="lu-core">분석 대상만</button>
+          </div>
+          <div class="checks scroll-box" id="land-use-filters"></div>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="parcel-only">
+          <span>지번단위 좌표만 <em>정밀도 높은 거래</em></span>
+        </label>
+      </section>
+
+      <!-- ── IC ── -->
+      <section class="sheet-pane" data-cat="ic" hidden>
+        <h3>기준
+          <button type="button" class="info-dot" aria-expanded="false"
+                  aria-label="설명 보기">?</button></h3>
+        <div class="info-pop" hidden>
+          <p>영업소를 통과한 <strong>하루 평균 통행량</strong>입니다.
+            공장·물류 수요는 화물(3·4·5종)이 가장 직접 반영합니다.</p>
+        </div>
+        <label class="field">
+          <span>기준 연도</span>
+          <select id="tg-year"></select>
+        </label>
+        <label class="field">
+          <span>차종</span>
+          <select id="tg-vehicle"></select>
+        </label>
+        <div class="quad-filters" id="tier-filters"></div>
+
+        <h3>거리 밴드
+          <button type="button" class="info-dot" aria-expanded="false"
+                  aria-label="설명 보기">?</button></h3>
+        <div class="info-pop" hidden>
+          <p>지도에서 영업소를 누르면 그 반경이 그려집니다.</p>
+        </div>
+        <div class="legend" id="band-legend"></div>
+      </section>
+
+      <!-- ── 실거래 가격 ── -->
+      <section class="sheet-pane" data-cat="price" hidden>
+        <h3>땅값 글자
+          <button type="button" class="info-dot" aria-expanded="false"
+                  aria-label="설명 보기">?</button></h3>
+        <div class="info-pop" hidden>
+          <p>배율에 따라 시·도 → 시·군 → 구 → 읍·면·동 → 리·동으로 잘게
+            나뉩니다. <strong>용도지역은 '실거래 표시' 에서 켠 것을 따릅니다.</strong></p>
+          <p>여러 용도지역을 켜면 거래 건수로 가중해 섞습니다. 중앙값끼리
+            섞은 것은 근사입니다 — 말풍선에 그렇게 적습니다.</p>
+        </div>
+        <div class="lp-chips">
+          <div class="lp-filter" data-filter="window">
+            <button type="button" class="lp-pill" aria-expanded="false">
+              <span class="lp-pill-val">최근 3년</span>
+            </button>
+            <div class="lp-menu" hidden></div>
+          </div>
+          <div class="lp-filter" data-filter="stat">
+            <button type="button" class="lp-pill" aria-expanded="false">
+              <span class="lp-pill-val">중앙값</span>
+            </button>
+            <div class="lp-menu" hidden></div>
+          </div>
+        </div>
+        <p class="hint" id="lp-note"></p>
+        <button type="button" class="lp-swap" id="lp-swap" hidden></button>
+      </section>
+
+      </div>
     </div>
     <div id="map"></div>
   </div>

@@ -185,14 +185,19 @@ function mercBbox(z, x, y) {
 }
 
 /** 브이월드를 부른다. 인증키는 여기서만 붙고 밖으로 안 나간다. */
-async function callVworld(params, base) {
+async function callVworld(params, base, host) {
   const key = process.env.VWORLD_KEY;
   if (!key) return { keyMissing: true };
   // 브이월드 키는 '웹사이트' 유형으로 서비스URL 이 등록돼 있다. WMS 는
   // 요청이 그 도메인에서 왔는지를 Referer 로 본다. 서버에서 부르면
   // 브라우저처럼 Referer 가 안 붙으므로 등록된 주소를 실어 보낸다
   // (api/relay.js 가 같은 이유로 같은 값을 쓴다).
-  const referer = process.env.VWORLD_REFERER || "https://sado-toji.vercel.app/";
+  // **주소를 코드에 박지 않는다.** 배포 주소가 바뀌면(2026-09-08 사도
+  // 토지 → 토지 고고) 박아 둔 값이 그대로 남아 조용히 틀린 Referer 를
+  // 보내게 된다. 환경변수가 있으면 그것을 쓰고, 없으면 지금 요청이 온
+  // 그 호스트를 쓴다. 브이월드 콘솔에 등록된 주소와 맞아야 한다.
+  const referer = process.env.VWORLD_REFERER
+    || (host ? `https://${host}/` : "https://toji-gogo.vercel.app/");
   const url = `${base || VWORLD_WMS}?` + new URLSearchParams({ ...params, key });
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), TIMEOUT_MS);
@@ -232,7 +237,7 @@ async function featureInfo(req, res, layers) {
     // 사각형 한가운데를 찍는다. 폭·높이는 픽셀 좌표의 기준일 뿐이다.
     WIDTH: "101", HEIGHT: "101", I: "50", J: "50",
     INFO_FORMAT, FEATURE_COUNT: "5",
-  });
+  }, null, (req.headers || {}).host);
   if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
   if (!out.upstream) {
     return fail(res, out.timedOut ? 504 : 502,
@@ -294,8 +299,9 @@ async function parcelInfo(req, res) {
     // GML 로 요청하면 중계기가 죽는다 (docs/land-price-fallback.md).
     OUTPUT: "application/json",
     MAXFEATURES: "10", RESULTTYPE: "results",
-    DOMAIN: process.env.VWORLD_REFERER || "https://sado-toji.vercel.app/",
-  }, VWORLD_WFS);
+    DOMAIN: process.env.VWORLD_REFERER
+      || `https://${(req.headers || {}).host || "toji-gogo.vercel.app"}/`,
+  }, VWORLD_WFS, (req.headers || {}).host);
   if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
   if (!out.upstream) {
     return fail(res, out.timedOut ? 504 : 502,
@@ -370,7 +376,7 @@ module.exports = async function handler(req, res) {
     BBOX: mercBbox(z, x, y),
     WIDTH: "256", HEIGHT: "256",
     FORMAT: "image/png", TRANSPARENT: "true",
-  });
+  }, null, (req.headers || {}).host);
   if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
   if (!out.upstream) {
     // 오류 문구에 url 을 넣지 않는다 — 인증키가 붙어 있어 그대로 새어나간다.

@@ -29,7 +29,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from vworld_landprice import fetch, parse_features, why    # noqa: E402
 
-DOMAIN = "sado-toji.vercel.app"
+# 브이월드 콘솔에 등록된 서비스 주소. 배포 주소가 바뀌면
+# 콘솔에도 더해야 한다 (2026-09-08 사도 토지 → 토지 고고).
+DOMAIN = os.environ.get("VWORLD_DOMAIN", "toji-gogo.vercel.app")
 NED = "https://api.vworld.kr/ned/wfs/getLandCharacteristicsWFS"
 RTMS = ("https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade"
         "/getRTMSDataSvcLandTrade")
