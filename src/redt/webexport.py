@@ -533,8 +533,21 @@ LANDPRICE_WINDOWS = [
 DEFAULT_LANDPRICE_GROUP = "계획관리"
 DEFAULT_LANDPRICE_WINDOW = "y3"
 
-# 읍면동 칸은 거래가 너무 적으면 싣지 않는다. 두 건으로 만든 중앙값을
-# 지도에 값으로 찍으면, 그것은 자료가 아니라 우연이다.
+# **거래가 너무 적은 칸은 창째로 싣지 않는다.**
+#
+# run 49 배포본이 이것을 증명했다. 계획관리 최근 3년 순위 1위가
+# **부천시 원미구, 거래 2건, 평당 2,199만원**이었다. 부산 동구 1건,
+# 서울 강동구 1건도 상위에 섞였다. 지도에서 그 시군구가 가장 짙은
+# 파랑으로 뜨는데, 그것은 자료가 아니라 우연이다.
+#
+# 다섯 건이면 중앙값이 한 건에 통째로 끌려가지는 않는다. 모자란 창은
+# 비운다 — 사용자는 기간을 넓히거나(최근 5년) 건수 기준으로 바꿔서
+# 같은 지역을 다시 볼 수 있다.
+LANDPRICE_MIN_N = 5
+
+# 읍면동은 그 위에 하나 더 — 용도지역 통틀어 다섯 건도 안 되는 칸은
+# 애초에 파일에 넣지 않는다. 창별로 걸러도 어차피 다 빌 것이고,
+# 넣어 봐야 파일만 무거워진다.
 UMD_MIN_TRADES = 5
 
 
@@ -573,7 +586,7 @@ def _landprice_cell(row) -> dict:
     for key, _label, _kind, _span in LANDPRICE_WINDOWS:
         n = getattr(row, f"n_{key}", 0)
         p50 = getattr(row, f"p50_{key}", None)
-        if not n or p50 is None or pd.isna(p50):
+        if n < LANDPRICE_MIN_N or p50 is None or pd.isna(p50):
             continue
         out[key] = [int(n), int(round(float(p50))),
                     int(round(float(getattr(row, f"avg_{key}")))),
@@ -600,7 +613,8 @@ def _land_price_by_region(latest_year: int) -> dict:
     다르면 그 자체가 '큰 거래가 섞였다' 는 신호다.
 
     거래 건수도 같이 낸다. 세 건으로 만든 값과 삼백 건으로 만든 값을
-    같은 색으로 칠하면 안 된다.
+    같은 색으로 칠하면 안 된다. 그리고 다섯 건이 안 되는 창은 아예
+    비운다 (LANDPRICE_MIN_N 참조 — run 49 가 그 이유를 보여줬다).
     """
     with db.connect(read_only=True) as con:
         df = con.execute(f"""
@@ -624,12 +638,19 @@ def _land_price_by_region(latest_year: int) -> dict:
     if df.empty:
         return {}
     out: dict[str, dict] = {}
+    dropped = 0
     for r in df.itertuples(index=False):
         cell = _landprice_cell(r)
         if cell:
             out.setdefault(str(r.grp), {})[str(r.sigungu_cd)] = cell
+        # 창이 하나도 안 남은 칸. 창별로 몇 개가 빠졌는지까지 세면
+        # 숫자가 길어지므로 칸 단위로만 센다.
+        for key, _l, _k, _s in LANDPRICE_WINDOWS:
+            if getattr(r, f"n_{key}", 0) and key not in cell:
+                dropped += 1
     n_cells = sum(len(v) for v in out.values())
-    print(f"  행정구역 땅값 {len(out)}개 용도지역 × {n_cells:,}개 시군구칸")
+    print(f"  행정구역 땅값 {len(out)}개 용도지역 × {n_cells:,}개 시군구칸"
+          f" (거래 {LANDPRICE_MIN_N}건 미만이라 비운 창 {dropped:,}개)")
     return {
         "latest_year": latest_year,
         "windows": [{"key": k, "label": la, "kind": ki, "span": sp}

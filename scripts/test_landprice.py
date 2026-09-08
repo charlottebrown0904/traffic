@@ -74,6 +74,14 @@ rows.append(dict(trade_id="F0", kind="factory", sigungu_cd="41550",
                  land_use="계획관리지역", deal_year=2024,
                  lat=37.0, lon=127.2, price_per_m2=777777.0,
                  area_m2=1000.0, is_cancelled=False))
+# **최근 1년이 다섯 건을 넘는 시군구 하나.** 이것이 없으면 y1 이 늘
+# 비어서, '창이 제대로 채워지는가' 를 아예 못 본다.
+for i, price in enumerate([100.0, 200.0, 300.0, 400.0, 500.0, 600.0]):
+    rows.append(dict(trade_id=f"K{i}", kind="land", sigungu_cd="41570",
+                     sigungu="김포시", umd="통진읍", jibun=str(i),
+                     land_use="계획관리지역", deal_year=2025,
+                     lat=37.6, lon=126.6, price_per_m2=price,
+                     area_m2=1000.0, is_cancelled=False))
 # **다섯 건 미만인 읍면동.** 두 건으로 만든 중앙값을 지도에 값으로
 # 찍으면 그것은 자료가 아니라 우연이다.
 for i, price in enumerate([1000.0, 2000.0]):
@@ -97,16 +105,17 @@ check([w["key"] for w in got.get("windows", [])]
       == ["y1", "y3", "y5", "c20", "c50"],
       "기간 기준 셋과 건수 기준 둘을 낸다")
 g = got.get("groups", {})
-check(set(g) == {"계획관리", "농림"},
-      f"자료가 있는 용도지역만 실린다 — {sorted(g)}")
-check(sorted(g["계획관리"]) == ["41500", "41550"],
-      f"시군구가 둘 다 실린다 — {sorted(g['계획관리'])}")
+check(set(g) == {"계획관리"},
+      f"다섯 건을 넘긴 용도지역만 실린다 — {sorted(g)}")
+
+check(sorted(g["계획관리"]) == ["41550", "41570"],
+      f"다섯 건을 넘긴 시군구만 실린다 — {sorted(g['계획관리'])}")
 
 cell = g.get("계획관리", {}).get("41550")
 check(cell is not None, "시군구 코드로 찾을 수 있다")
 if cell:
-    # 최근 1년(2025)은 500 한 건뿐이다. 2024년의 치우친 값이 안 섞인다.
-    check(cell["y1"] == [1, 500, 500, 2025], f"최근 1년 — {cell['y1']}")
+    # 안성은 최근 1년(2025)이 한 건뿐이다 — 창째로 빠진다.
+    check("y1" not in cell, f"다섯 건이 안 되는 창은 안 싣는다 — {sorted(cell)}")
     # 최근 3년(2023~2025)은 다섯 건 전부. 100·200·300·500·3000
     #   중앙값 300 · 평균 820 — **평균이 큰 거래 한 건에 끌려간다.**
     check(cell["y3"] == [5, 300, 820, 2024], f"최근 3년 — {cell['y3']}")
@@ -118,6 +127,10 @@ if cell:
           f"최근 20건은 있는 것 다섯 건 — {cell['c20']}")
     check(cell["c20"][3] == 2024, "몇 년부터 긁어온 값인지 같이 싣는다")
 
+# 김포는 2025년에 여섯 건 — 최근 1년이 제대로 채워진다.
+kim = g["계획관리"].get("41570", {})
+check(kim.get("y1") == [6, 350, 350, 2025], f"최근 1년이 채워진다 — {kim.get('y1')}")
+
 check("제2종일반주거" not in json.dumps(got, ensure_ascii=False),
       "묶음에 없는 용도지역은 안 싣는다")
 _dump = json.dumps(got, ensure_ascii=False)
@@ -128,7 +141,15 @@ check("888888" not in _dump and "777777" not in _dump,
 # 무거워지고 화면은 어차피 못 그린다.
 nong = g.get("농림", {}).get("41550", {})
 check("y1" not in nong, f"2025년 농림 거래가 없으니 최근 1년 칸이 없다 — {sorted(nong)}")
-check(nong.get("y3") == [1, 50, 50, 2024], f"최근 3년에는 있다 — {nong.get('y3')}")
+# **거래가 다섯 건도 안 되면 창째로 비운다.** run 49 배포본에서 계획관리
+# 최근 3년 1위가 거래 2건짜리 부천시 원미구(평당 2,199만원)였다. 지도에서
+# 가장 짙은 파랑으로 뜨는데 그것은 자료가 아니라 우연이다.
+check(nong == {}, f"한 건뿐인 농림은 어느 창에도 안 실린다 — {sorted(nong)}")
+check("농림" not in g or "41550" not in g.get("농림", {}),
+      "창이 하나도 안 남으면 칸 자체가 없다")
+# 그리고 얇은 시군구도 같은 규칙으로 빠진다 (41500 은 두 건).
+check("41500" not in g["계획관리"],
+      f"두 건짜리 시군구는 안 실린다 — {sorted(g['계획관리'])}")
 
 print()
 print("2. 읍면동 — 용도지역마다, 그리고 시·도마다 파일을 따로 낸다")
@@ -155,7 +176,7 @@ check("얇은리" not in gd, "거래 다섯 건 미만인 읍면동은 안 싣�
 check(not umd["농림"], "농림은 한 건뿐이라 조각 자체가 안 생긴다")
 # 경계상자가 없으면 화면이 무엇을 받을지 모른다 — 나눈 뜻이 없어진다.
 bbox = wx._umd_bbox(umd["계획관리"]["41"]["cells"])
-check(bbox == [37.0, 127.2, 37.0, 127.2], f"조각의 경계상자를 낸다 — {bbox}")
+check(bbox == [37.0, 126.6, 37.6, 127.2], f"조각의 경계상자를 낸다 — {bbox}")
 check(json.dumps(umd, ensure_ascii=False), "브라우저가 읽을 수 있는 JSON 이다")
 
 print()
