@@ -94,11 +94,13 @@ on:
         # 붙이기 전에 "그 API 가 정말 그것을 주는가" 를 한 번 받아서
         # 찍어 본다. 수집을 건드리지 않으므로 아무 때나 켜도 안전하다.
         #
-        #   none    아무것도 안 한다 (기본)
-        #   office  도청·시청·군청·구청 좌표를 어디서 받을 수 있는가
+        #   none       아무것도 안 한다 (기본)
+        #   office     도청·시청·군청·구청 좌표를 어디서 받을 수 있는가
+        #   cadastral  연속지적도로 지오코딩을 대체할 수 있는가
+        #              (사장님 지시 2026-09-08: "탐침해봅시다")
         description: "원천 탐침 (없으면 none)"
         type: choice
-        options: [none, office]
+        options: [none, office, cadastral]
         default: none
       geocode_limit:
         # 4,000 은 근거 없이 박아둔 숫자였다. 브이월드 안내는 하루 3만건이고
@@ -344,6 +346,14 @@ jobs:
             tail -n 40 /tmp/offices.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # 연속지적도 탐침. 수집을 건드리지 않고 읽기만 한다 —
+      # 브이월드 지오코더 한도(하루 3만~4만)를 호출 0 으로 대체할 수
+      # 있는지 본다. 실거래 329만 건에 좌표를 붙이는 유일한 병목이다.
+      - name: 연속지적도 탐침
+        if: inputs.stage != 'web' && inputs.probe == 'cadastral'
+        continue-on-error: true
+        run: python scripts/cadastral_probe.py
 
       - name: 가설3 자료 적재
         if: inputs.stage != 'web'
