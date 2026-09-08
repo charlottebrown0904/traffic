@@ -54,6 +54,7 @@ test: test-server
 	$(PY) scripts/test_web_parcel.py
 	$(PY) scripts/test_offices.py
 	$(PY) scripts/test_landchar_scope.py
+	$(PY) scripts/test_landprice.py
 	$(PY) scripts/test_analysis.py
 	node scripts/test_palette.js
 	node scripts/test_board.js

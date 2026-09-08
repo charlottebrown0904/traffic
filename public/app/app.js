@@ -40,9 +40,11 @@ const state = {
   apiAvailable: false, verdicts: null,
   verdictSets: {}, verdictKind: 'land',
   regions: null, showPop: true, popYear: null,
+  // 땅값 분위지도 (2026-09-08 지시)
+  landPrice: null, lpGroup: '', lpStat: 'p50', lpYearIdx: 0,
 };
 
-let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, popLayer;
+let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, popLayer, lpLayer;
 const markers = new Map();
 
 /* ─────────── 유틸 ─────────── */
@@ -140,6 +142,13 @@ async function boot() {
   } catch (err) {
     state.regions = null;
   }
+  // 행정구역별·연도별 땅값. 없으면 그 테마 막대만 숨긴다.
+  try {
+    const r = await fetch('/app/data/landprice.json');
+    if (r.ok) state.landPrice = await r.json();
+  } catch (err) {
+    state.landPrice = null;
+  }
   // 판정은 분석이 한 번이라도 돈 뒤에야 생긴다. 없으면 그 탭만 비운다.
   // 토지와 공장을 따로 낸다 — 한 파일에 덮어쓰면 나중에 돈 쪽만 남아,
   // 공장을 돌렸는데 화면에는 토지가 떠 있는 일이 생긴다.
@@ -175,6 +184,8 @@ async function boot() {
   buildTrend();
   buildMap();
   drawPopulation();
+  wireLandPrice();
+  drawLandPrice();
   buildLegend();
   buildMatrix();
   buildBoardTable();
@@ -1186,6 +1197,7 @@ function recolorTollgates() {
   // 인구도 같은 해를 본다. 교통량은 2026년인데 인구는 2025년이면
   // 화면 두 곳이 다른 해를 말하게 된다.
   drawPopulation();
+  drawLandPrice();
   buildLegend();
 }
 
@@ -1287,6 +1299,7 @@ function buildMap() {
   // 다시 그리지 않으면 확대해 들어가도 전국 원 17개가 그대로 남는다.
   map.on('zoomend', () => {
     drawPopulation();
+    drawLandPrice();
     // 범례의 원 크기와 '몇 만 이하' 도 단위에 맞춰 다시 그린다.
     // 자료가 오기 전이면 그릴 것이 없다.
     if (state.meta) buildLegend();
@@ -1318,6 +1331,9 @@ function buildMap() {
   // 거래(380)와 밴드·영업소(400)보다 아래다.
   map.createPane('popPane').style.zIndex = 370;
   popLayer = L.layerGroup().addTo(map);
+  // 땅값 분위지도. 인구보다 위, 거래보다 아래.
+  map.createPane('lpPane').style.zIndex = 375;
+  lpLayer = L.layerGroup().addTo(map);
   bandLayer = L.layerGroup().addTo(map);
   tradeLayer = L.layerGroup().addTo(map);
   tollgateLayer = L.layerGroup().addTo(map);
@@ -2240,6 +2256,203 @@ function drawPopulation() {
     n: popLayer.getLayers ? popLayer.getLayers().length : 0, max,
     onOffice,
   };
+}
+
+/* ─────────── 땅값 분위지도 ─────────── */
+/* 사장님 지시(2026-09-08): "행정 구역별 계획관리 땅값 실거래가 연 평균제공"
+ *
+ * 땅박사의 '토지잠재력' 과 호갱노노의 '분위지도' 를 보고 오신 지시다.
+ * 우리가 가진 것으로 곧바로 되는 것이 이것이다 — 실거래 1,179만 건에
+ * 용도지역·시군구·연도가 다 붙어 있다.
+ *
+ * **경계 폴리곤은 없다.** 호갱노노처럼 면을 칠하려면 시군구 경계가
+ * 있어야 하는데 우리에게 없다. 대신 인구 원에서 쓰던 **관청 좌표**에
+ * 원을 놓고 값으로 칠한다. 면이 아니라 점이지만, 어느 지역이 비싼지를
+ * 읽는 데는 같은 일을 한다.
+ *
+ * 묶는 단위도 인구와 같다 (시도 → 시군 → 구). 다만 **값을 더하지
+ * 않는다** — 땅값은 합치는 것이 아니라 **거래 건수로 가중해 섞는다.**
+ * 그냥 평균내면 세 건짜리 군과 삼천 건짜리 시가 같은 무게가 된다. */
+
+/* 다섯 칸으로 끊는다. 값을 연속 색으로 칠하면 두 지역을 나란히 놓고도
+ * 어느 쪽이 비싼지 눈으로 못 가른다 — 인구 원에서 배운 것과 같다.
+ * 자르는 자리는 **그 해 그 용도지역의 분위수**로 잡는다. 해마다 값이
+ * 통째로 오르므로 고정 경계를 쓰면 나중 해가 전부 맨 위 칸에 든다. */
+const LP_COLORS = ['#2C7BB6', '#ABD9E9', '#FFFFBF', '#FDAE61', '#D7191C'];
+const LP_LABELS = ['가장 싼 20%', '', '가운데', '', '가장 비싼 20%'];
+
+function lpCells() {
+  const lp = state.landPrice;
+  if (!lp || !state.lpGroup) return null;
+  const g = (lp.groups || {})[state.lpGroup];
+  if (!g) return null;
+  const i = state.lpYearIdx;
+  const stat = state.lpStat;
+  const out = new Map();
+  Object.keys(g).forEach((cd) => {
+    const v = g[cd][stat] && g[cd][stat][i];
+    const n = g[cd].n && g[cd].n[i];
+    if (typeof v === 'number' && v > 0 && n > 0) out.set(cd, { v, n });
+  });
+  return out;
+}
+
+/* 값 → 색. **지역이 적을 때가 함정이다.**
+ *
+ * 분위수로 끊으면 지역이 다섯 곳 미만일 때 경계가 안 만들어지고, 그러면
+ * 모두 첫 색(가장 싼 칸)으로 칠해진다. 비싼 곳도 '가장 싼 20%' 색을
+ * 뒤집어쓴다 — 보기 나쁜 게 아니라 **사실이 아닌 것을 보여주는 것**이다.
+ *
+ * 그래서 지역이 적으면 분위수 대신 **순위**로 색을 편다. 그리고 한 곳뿐이면
+ * 가운데 색으로 둔다 — 비교 대상이 없는데 비싸다 싸다 말할 수 없다. */
+function lpScale(values) {
+  const v = values.slice().sort((a, b) => a - b);
+  if (v.length >= 5) {
+    const breaks = [0.2, 0.4, 0.6, 0.8].map((q) => v[Math.floor(v.length * q)]);
+    return { kind: 'quantile', breaks, sorted: v };
+  }
+  return { kind: 'rank', breaks: [], sorted: v };
+}
+
+function lpColor(val, scale) {
+  if (scale.kind === 'quantile') {
+    let i = 0;
+    while (i < scale.breaks.length && val >= scale.breaks[i]) i += 1;
+    return LP_COLORS[Math.min(i, LP_COLORS.length - 1)];
+  }
+  const v = scale.sorted;
+  if (v.length <= 1) return LP_COLORS[2];        // 비교 대상이 없다
+  const rank = v.indexOf(val);
+  return LP_COLORS[Math.round((rank / (v.length - 1)) * (LP_COLORS.length - 1))];
+}
+
+function drawLandPrice() {
+  const bar = document.getElementById('lp-bar');
+  const have = !!(state.landPrice && (state.landPrice.years || []).length);
+  if (bar) bar.hidden = !have;
+  if (!map || !lpLayer) return;
+  lpLayer.clearLayers();
+  window.__lp = { on: false, n: 0, group: state.lpGroup, level: null };
+  if (!have || !state.lpGroup) { updateLpNote(null); return; }
+
+  const cells = lpCells();
+  if (!cells || !cells.size) { updateLpNote({ n: 0 }); return; }
+  const level = popLevel(map.getZoom());
+
+  // 시군구를 지금 배율의 단위로 묶는다. **거래 건수로 가중한다.**
+  const groups = new Map();
+  (state.regions || []).forEach((r) => {
+    const cell = cells.get(String(r.sigungu_cd));
+    if (!cell) return;
+    const key = popGroupKey(r, level.key);
+    if (!groups.has(key)) groups.set(key, { name: key, members: [], wsum: 0, vsum: 0, n: 0 });
+    const g = groups.get(key);
+    g.members.push(r);
+    g.wsum += cell.n;
+    g.vsum += cell.v * cell.n;
+    g.n += cell.n;
+  });
+  if (!groups.size) { updateLpNote({ n: 0 }); return; }
+
+  const vals = [...groups.values()].map((g) => g.vsum / g.wsum);
+  const scale = lpScale(vals);
+  const year = state.landPrice.years[state.lpYearIdx];
+
+  groups.forEach((g) => {
+    const val = g.vsum / g.wsum;
+    const c = popCenter(g, level.key, String(year));
+    const marker = L.circleMarker(c.at, {
+      pane: 'lpPane',
+      // 크기는 **거래 건수**로. 세 건으로 만든 값과 삼천 건으로 만든
+      // 값을 같은 크기로 칠하면 안 된다.
+      radius: Math.max(5, Math.min(20, 4 + Math.sqrt(g.n) / 2)),
+      color: '#ffffff', weight: 1.2,
+      fillColor: lpColor(val, scale), fillOpacity: .85, opacity: .9,
+    });
+    const per = Math.round(val).toLocaleString('ko-KR');
+    const py = Math.round(val * PYEONG_M2).toLocaleString('ko-KR');
+    marker.bindTooltip(
+      `${escapeHtml(g.name)} · ${year}년`
+      + `<br>${state.lpStat === 'p50' ? '중앙값' : '평균'} ㎡당 ${per}원`
+      + ` <em>(평당 ${py}원)</em>`
+      + `<br>거래 ${g.n.toLocaleString('ko-KR')}건`
+      + (g.members.length > 1
+         ? ` · ${g.members.length}개 시군구` : ''),
+      { direction: 'top' });
+    lpLayer.addLayer(marker);
+  });
+  window.__lp = {
+    on: true, n: groups.size, group: state.lpGroup, level: level.key,
+    year, scale: scale.kind,
+  };
+  updateLpNote({ n: groups.size, year, level: level.label, scale });
+}
+
+function updateLpNote(info) {
+  const el = document.getElementById('lp-note');
+  if (!el) return;
+  if (!info || !state.lpGroup) {
+    el.textContent = '용도지역을 고르면 그 해 실거래 단가로 지역을 칠합니다.';
+    return;
+  }
+  if (!info.n) {
+    el.textContent = '그 해에는 이 용도지역 거래가 없습니다.';
+    return;
+  }
+  // **중앙값과 평균을 왜 나눠 두는지 화면이 말해야 한다.**
+  const which = state.lpStat === 'p50'
+    ? '중앙값입니다 — 큰 거래 몇 건에 안 끌립니다.'
+    : '평균입니다 — 큰 거래 몇 건에 끌릴 수 있습니다. 중앙값과 크게'
+      + ' 다르면 그 지역에 큰 거래가 섞였다는 뜻입니다.';
+  // 색이 무엇을 뜻하는지 정확히 말한다. 지역이 적어 순위로 편 것을
+  // 분위수인 척하면 안 된다.
+  const how = info.scale && info.scale.kind === 'rank'
+    ? (info.n <= 1
+       ? ' 지역이 하나뿐이라 색으로는 비교할 수 없습니다.'
+       : ` 지역이 ${info.n}곳뿐이라 분위수 대신 순위로 색을 폈습니다.`)
+    : '';
+  el.textContent = `${info.year}년 · ${info.level} ${info.n}곳 · ${which}`
+    + ' 원 크기는 거래 건수입니다.' + how;
+}
+
+function wireLandPrice() {
+  const sel = document.getElementById('lp-group');
+  const stat = document.getElementById('lp-stat');
+  const yr = document.getElementById('lp-year');
+  const out = document.getElementById('lp-year-out');
+  if (!sel || !yr) return;
+  const lp = state.landPrice;
+  const years = (lp && lp.years) || [];
+  const groups = Object.keys((lp && lp.groups) || {});
+  // 자료에 있는 것만 칸을 만든다. 계획관리를 먼저 놓는다 — 사장님이
+  // 콕 집으신 것이고, 공장·창고가 실제로 들어가는 땅이다.
+  groups.sort((a, b) => (a === '계획관리' ? -1 : b === '계획관리' ? 1 : a.localeCompare(b, 'ko')));
+  groups.forEach((g) => {
+    const o = el('option');
+    o.value = g;
+    o.textContent = g;
+    sel.append(o);
+  });
+  if (!years.length) return;
+  yr.min = 0;
+  yr.max = years.length - 1;
+  state.lpYearIdx = years.length - 1;
+  yr.value = state.lpYearIdx;
+  const syncYear = () => { if (out) out.textContent = `${years[state.lpYearIdx]}년`; };
+  syncYear();
+  sel.addEventListener('change', () => {
+    state.lpGroup = sel.value;
+    drawLandPrice();
+  });
+  stat.addEventListener('change', () => {
+    state.lpStat = stat.value;
+    drawLandPrice();
+  });
+  yr.addEventListener('input', () => {
+    state.lpYearIdx = Number(yr.value);
+    syncYear();
+    drawLandPrice();
+  });
 }
 
 /* ─────────── 세 가설 판정 ─────────── */

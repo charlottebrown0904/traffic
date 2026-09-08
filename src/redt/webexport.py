@@ -493,6 +493,71 @@ def _parent_si(name: str) -> str:
     return ""
 
 
+# 행정구역별·연도별 땅값. 사장님 지시(2026-09-08):
+# "행정 구역별 계획관리 땅값 실거래가 연 평균제공"
+#
+# 용도지역을 묶는 이름과 그 판정 조건. LIKE 로 보는 이유는 자료에
+# '계획관리지역' 과 '계획관리' 가 섞여 오기 때문이다.
+LANDPRICE_GROUPS = [
+    ("계획관리", "계획관리"),
+    ("생산관리", "생산관리"),
+    ("자연녹지", "자연녹지"),
+    ("농림", "농림"),
+    ("보전관리", "보전관리"),
+]
+
+
+def _land_price_by_region() -> dict:
+    """시군구 × 연도 × 용도지역의 ㎡당 단가.
+
+    **중앙값과 평균을 둘 다 낸다.** 사장님은 평균을 말씀하셨는데,
+    땅값은 한쪽으로 길게 늘어진 분포라 평균이 큰 거래 몇 건에 끌려간다.
+    한 시군구 한 해에 수십억짜리 한 건이 섞이면 평균이 통째로 들린다.
+    그래서 화면은 중앙값을 먼저 보이고 평균을 함께 적는다 — 둘이 크게
+    다르면 그 자체가 '큰 거래가 섞였다' 는 신호다.
+
+    거래 건수도 같이 낸다. 세 건으로 만든 평균과 삼백 건으로 만든
+    평균을 같은 색으로 칠하면 안 된다.
+    """
+    case = " ".join(
+        f"WHEN land_use LIKE '%{like}%' THEN '{name}'"
+        for name, like in LANDPRICE_GROUPS)
+    with db.connect(read_only=True) as con:
+        df = con.execute(f"""
+            SELECT sigungu_cd, deal_year AS y,
+                   CASE {case} ELSE NULL END AS grp,
+                   count(*) AS n,
+                   median(price_per_m2) AS p50,
+                   avg(price_per_m2) AS avg
+            FROM trade
+            WHERE kind = 'land' AND {TRADE_WHERE}
+              AND sigungu_cd IS NOT NULL AND deal_year IS NOT NULL
+            GROUP BY 1, 2, 3
+            HAVING grp IS NOT NULL
+            ORDER BY 1, 2
+        """).fetchdf()
+    if df.empty:
+        return {}
+    years = sorted(int(y) for y in df["y"].unique())
+    idx = {y: i for i, y in enumerate(years)}
+    out: dict[str, dict] = {}
+    for r in df.itertuples(index=False):
+        g = out.setdefault(str(r.grp), {})
+        cell = g.setdefault(str(r.sigungu_cd), {
+            "n": [0] * len(years),
+            "p50": [None] * len(years),
+            "avg": [None] * len(years),
+        })
+        i = idx[int(r.y)]
+        cell["n"][i] = int(r.n)
+        cell["p50"][i] = int(round(float(r.p50)))
+        cell["avg"][i] = int(round(float(r.avg)))
+    n_cells = sum(len(v) for v in out.values())
+    print(f"  행정구역 땅값 {len(out)}개 용도지역 × {n_cells:,}개 시군구칸"
+          f" · {years[0]}~{years[-1]}")
+    return {"years": years, "groups": out}
+
+
 def _regions() -> list[dict]:
     """시군구별 인구와 **대표점**.
 
@@ -790,6 +855,7 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
 
     _write("meta.json", meta)
     _write("regions.json", regions)
+    _write("landprice.json", _land_price_by_region())
     _write("traffic.json", _traffic_ranking())
     _write("chart.json", _chart_series())
     _write("tollgates.json", _records(merged))
