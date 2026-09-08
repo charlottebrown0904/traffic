@@ -866,6 +866,15 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 .land-price-bar .field { min-width: 7.5rem; }
 .land-price-bar .hint { flex-basis: 100%; margin: 0; }
+/* 이 화면에 더 맞는 용도지역이 있을 때 뜨는 단추.
+   서울을 계획관리로 보면 지도가 비는데, 자연녹지로 바꾸면 바로 보인다.
+   그것을 사람이 스스로 알아내게 두지 않는다. */
+.lp-swap {
+  flex-basis: 100%; text-align: left; font: inherit; font-weight: 700;
+  padding: .35rem .6rem; border-radius: 8px; cursor: pointer;
+  border: 1px solid #3B73C4; background: #EEF4FC; color: #123B7A;
+}
+.lp-swap:hover { background: #DCE9F8; }
 @media (max-width: 640px) {
   .land-price-bar { font-size: .75rem; gap: .4rem .5rem; }
   .land-price-bar .field { min-width: 6rem; }

@@ -530,6 +530,30 @@ LANDPRICE_WINDOWS = [
     ("c20", "최근 20건", "count", 20),
     ("c50", "최근 50건", "count", 50),
 ]
+# **도시지역과 비도시지역을 갈라 적는다.**
+#
+# 사장님 지적(2026-09-08): "인구가 많고 개발되고, 면적이 적은 도시는
+# 도시지역(자연 녹지)의 비율이 높고 비도시지역(계획관리, 생산관리)
+# 면적이 매우 적거나 없을 확율이 있습니다."
+#
+# 우리 자료로 그대로 확인됐다 (최근 5년 토지거래, 30건 이상 시군구):
+#
+#   인구 5만 미만   39곳   자연녹지  6%   계획+생산 56%
+#   인구 5~15만     64곳   자연녹지 15%   계획+생산 48%
+#   인구 15~40만    89곳   자연녹지 65%   계획+생산 22%   ← 여기서 뒤집힌다
+#   인구 40~80만    31곳   자연녹지 74%   계획+생산 17%
+#
+# 서울 노원구·인천 부평구·대구 달서구는 자연녹지 100% · 계획관리 0건.
+# 최근 5년 계획관리 거래가 다섯 건도 안 되는 시군구가 64곳이다.
+#
+# 그래서 이 둘을 한 목록에 평평하게 늘어놓으면 안 된다. 부천의 자연녹지와
+# 안성의 계획관리를 같은 종류인 것처럼 나란히 놓게 된다.
+LANDPRICE_ZONE_KIND = {
+    "계획관리": "비도시지역", "생산관리": "비도시지역",
+    "보전관리": "비도시지역", "농림": "비도시지역",
+    "자연녹지": "도시지역",
+}
+
 DEFAULT_LANDPRICE_GROUP = "계획관리"
 DEFAULT_LANDPRICE_WINDOW = "y3"
 
@@ -657,6 +681,10 @@ def _land_price_by_region(latest_year: int) -> dict:
                     for k, la, ki, sp in LANDPRICE_WINDOWS],
         "default_group": DEFAULT_LANDPRICE_GROUP,
         "default_window": DEFAULT_LANDPRICE_WINDOW,
+        # 도시/비도시 구분. 화면이 목록을 갈라 놓는 데 쓴다.
+        "zone_kinds": {name: LANDPRICE_ZONE_KIND[name]
+                       for name, _like, _key in LANDPRICE_GROUPS
+                       if name in out},
         "groups": out,
     }
 

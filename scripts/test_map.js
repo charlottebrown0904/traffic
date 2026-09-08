@@ -320,6 +320,7 @@ const FAKE_LEAFLET = () => {
         { key: 'y3', label: '최근 3년', kind: 'year', span: 3 },
         { key: 'c20', label: '최근 20건', kind: 'count', span: 20 },
       ],
+      zone_kinds: { 계획관리: '비도시지역', 농림: '비도시지역', 자연녹지: '도시지역' },
       umd_index: {
         계획관리: [
           { p: '41', f: 'landprice-umd-gyehoek-41.json', n: 2,
@@ -337,8 +338,16 @@ const FAKE_LEAFLET = () => {
           // 최근 1년에는 거래가 없다. y1 칸 자체가 없어야 한다.
           47940: { y3: [3, 30000, 30000, 2023], c20: [20, 28000, 28000, 2009] },
         },
+        // **도시는 계획관리가 없고 자연녹지만 있다** (사장님 지적,
+        // 2026-09-08). 그 상황을 그대로 만들어 둔다 — 자연녹지는 세
+        // 시군구에 다 있고 계획관리는 최근 1년에 두 곳뿐이다.
         농림: {
           41111: { y3: [5, 50000, 50000, 2023] },
+        },
+        자연녹지: {
+          41111: { y1: [40, 300000, 300000, 2025], y3: [60, 290000, 290000, 2023] },
+          41113: { y1: [50, 310000, 310000, 2025], y3: [70, 300000, 300000, 2023] },
+          47940: { y1: [20, 40000, 40000, 2025], y3: [30, 39000, 39000, 2023] },
         },
       },
     };
@@ -1054,6 +1063,53 @@ const FAKE_LEAFLET = () => {
           !lpUmd.tips.some((t) => /울릉/.test(t)),
           lpUmd.tips.map((t) => t.split('<')[0]).join(','));
     await page.evaluate(() => { window.__bbox = null; window.__zoom = 12; });
+
+    // **도시는 계획관리가 없다** (사장님 지적, 2026-09-08). 우리 자료가
+    // 그것을 확인해 줬다 — 인구 15만에서 자연녹지 비중이 6% → 65% 로
+    // 뒤집히고, 서울 노원구·인천 부평구는 자연녹지 100% 에 계획관리
+    // 0건이다. 그러면 계획관리로 서울을 볼 때 지도가 텅 빈다.
+    //
+    // 화면이 '자료가 없다' 와 '그런 땅이 여기 없다' 를 구별해 주지
+    // 않으면 사람은 빈 화면을 고장으로 읽는다.
+    const lpKinds = await page.evaluate(() => {
+      const sel = document.getElementById('lp-group');
+      return [...sel.querySelectorAll('optgroup')]
+        .map((g) => `${g.label}:${[...g.children].map((o) => o.value).join('+')}`);
+    });
+    check('용도지역 목록이 도시·비도시로 갈려 있다',
+          lpKinds.some((k) => /^비도시지역:.*계획관리/.test(k))
+          && lpKinds.some((k) => /^도시지역:자연녹지/.test(k)),
+          lpKinds.join(' | '));
+
+    // 최근 1년으로 좁히면 계획관리는 두 곳, 자연녹지는 세 곳이다.
+    // 두 배가 안 벌어지므로 **권하지 않는다** — 잔소리가 된다.
+    const lpNoNag = await lpPick('계획관리', 'y1', null);
+    const nag1 = await page.evaluate(() => {
+      const b = document.getElementById('lp-swap');
+      return { hidden: b.hidden, text: b.textContent };
+    });
+    check('조금 차이나는 정도로는 바꾸라고 안 한다', nag1.hidden,
+          `${lpNoNag.n}곳 · 단추 "${nag1.text}"`);
+
+    // 화면을 울릉도만 남기면 계획관리는 0곳(최근 1년), 자연녹지는 1곳.
+    await page.evaluate(() => { window.__bbox = [37.4, 130.5, 37.6, 131.2]; });
+    const lpEmpty = await lpPick(null, 'y1', null);
+    const nag2 = await page.evaluate(() => {
+      const b = document.getElementById('lp-swap');
+      return { hidden: b.hidden, text: b.textContent, group: b.dataset.group };
+    });
+    check('빈 화면에 이유를 적는다 (고장이 아니라 그런 땅이 없는 것)',
+          /계획관리 거래가 없습니다/.test(lpEmpty.note), lpEmpty.note);
+    check('이 화면에 맞는 용도지역을 한 번에 바꿔 준다',
+          !nag2.hidden && nag2.group === '자연녹지' && /자연녹지\(도시지역\)/.test(nag2.text),
+          `단추 "${nag2.text}"`);
+    // 눌러 보면 실제로 바뀌어야 한다. 글자만 띄우고 안 되면 더 나쁘다.
+    await page.evaluate(() => document.getElementById('lp-swap').click());
+    const lpSwapped = await lpPick(null, null, null);
+    check('누르면 실제로 그 용도지역으로 바뀐다',
+          lpSwapped.peek.group === '자연녹지' && lpSwapped.n === 1,
+          `${lpSwapped.peek.group} · ${lpSwapped.n}곳`);
+    await page.evaluate(() => { window.__bbox = null; });
 
     // 끄면 사라진다.
     const lpOff = await lpPick('', null, null);

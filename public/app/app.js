@@ -2302,6 +2302,8 @@ const LP_UMD_ZOOM = 13;
 /* 한 화면에 글자를 몇 개까지 놓을 것인가. 넘으면 거래가 많은 곳부터
  * 남긴다 — 표본이 두꺼운 값이 먼저 보이는 것이 맞다. */
 const LP_MAX_LABELS = 90;
+/* 내보내기(webexport.LANDPRICE_MIN_N)와 같은 값. 안내문에 쓴다. */
+const LP_MIN_LABEL = 5;
 
 /* 받아 둔 읍면동 조각. 열쇠는 "용도지역|시도두자리" 다.
  * 한 번 받으면 다시 안 받는다 — 조각이 작아서 여러 개를 들고 있어도
@@ -2429,6 +2431,43 @@ function lpItemsUmd() {
   return out;
 }
 
+/* **이 화면에서 용도지역마다 몇 곳이 잡히는가.**
+ *
+ * 사장님 지적(2026-09-08): "인구가 많고 개발되고, 면적이 적은 도시는
+ * 도시지역(자연 녹지)의 비율이 높고 비도시지역(계획관리, 생산관리)
+ * 면적이 매우 적거나 없을 확율이 있습니다."
+ *
+ * 우리 자료가 그대로 확인해 줬다 — 인구 15만에서 뒤집힌다. 자연녹지
+ * 비중이 6%(5만 미만)에서 65%(15~40만)로 간다. 서울 노원구·인천
+ * 부평구는 자연녹지 100%에 계획관리 0건이다.
+ *
+ * 그래서 계획관리로 서울을 보면 지도가 **텅 빈다.** 그런데 화면은
+ * '자료가 없다' 와 '그런 땅이 여기 없다' 를 구별해 주지 않는다. 사람은
+ * 빈 화면을 보면 고장으로 읽는다.
+ *
+ * 시군구 칸으로만 센다 — 그것은 늘 받아 둔 자료라 공짜다. 읍면동
+ * 조각까지 세려면 안 고른 용도지역 넷을 다 받아야 하는데, 그것은
+ * 조각을 나눈 이유를 통째로 없애는 짓이다. */
+function lpCoverage() {
+  const lp = state.landPrice || {};
+  const b = map && map.getBounds();
+  const near = new Set();
+  (state.regions || []).forEach((r) => {
+    const at = (r.office_lat != null) ? [r.office_lat, r.office_lon] : [r.lat, r.lon];
+    if (!b || b.contains(at)) near.add(String(r.sigungu_cd));
+  });
+  const out = [];
+  Object.keys(lp.groups || {}).forEach((g) => {
+    let n = 0;
+    Object.keys(lp.groups[g]).forEach((cd) => {
+      if (near.has(cd) && lp.groups[g][cd][state.lpWindow]) n += 1;
+    });
+    out.push({ group: g, n, kind: (lp.zone_kinds || {})[g] || '' });
+  });
+  out.sort((a, b2) => b2.n - a.n);
+  return out;
+}
+
 /* 값 → 색. **지역이 적을 때가 함정이다.**
  *
  * 분위수로 끊으면 지역이 다섯 곳 미만일 때 경계가 안 만들어지고, 그러면
@@ -2551,10 +2590,15 @@ function updateLpNote(info) {
   if (!el) return;
   if (!info || !state.lpGroup) {
     el.textContent = '용도지역을 고르면 최근 실거래 단가로 지역을 칠합니다.';
+    lpSuggest(null);
     return;
   }
   if (!info.n) {
-    el.textContent = `이 기준으로는 ${info.level || ''} 단위에 보여줄 거래가 없습니다.`;
+    // **빈 화면에 이유를 적는다.** '자료가 없다' 와 '그런 땅이 여기
+    // 없다' 는 다른 말이다.
+    el.textContent = `이 화면에는 ${state.lpGroup} 거래가 없습니다`
+      + ` (한 곳에 ${LP_MIN_LABEL}건은 있어야 값으로 씁니다).`;
+    lpSuggest(info);
     return;
   }
   const stat = state.lpStat === 'avg' ? '평균' : '중앙값';
@@ -2566,6 +2610,32 @@ function updateLpNote(info) {
   const cut = info.total > info.n
     ? ` · 화면 안 ${info.total}곳 중 거래 많은 ${info.n}곳만 표시` : '';
   el.textContent = `${info.level} 단위 · ${info.n}곳 · 평당 ${stat} · ${how}${cut}`;
+  lpSuggest(info);
+}
+
+/* 이 화면에 더 잘 맞는 용도지역이 있으면 한 번에 바꿔 준다.
+ *
+ * 서울을 계획관리로 보면 아무것도 안 뜨는데, 자연녹지로 바꾸면 바로
+ * 보인다. 그 사실을 사람이 스스로 알아내게 두지 않는다. */
+function lpSuggest(info) {
+  const btn = document.getElementById('lp-swap');
+  if (!btn) return;
+  if (!state.lpGroup || !state.landPrice) { btn.hidden = true; return; }
+  const cov = lpCoverage();
+  const here = cov.find((c) => c.group === state.lpGroup);
+  const best = cov.find((c) => c.group !== state.lpGroup);
+  const mine = here ? here.n : 0;
+  // **비어 있으면 무조건 길을 알려준다.** 지도가 텅 빈 채로 '알아서
+  // 찾아보라' 는 것은 안내가 아니다.
+  //
+  // 값이 이미 나오고 있을 때는 두 배는 벌어져야 권한다. 12곳과 14곳
+  // 사이에서 권하면 잔소리가 된다.
+  const enough = mine === 0 ? best.n >= 1 : best.n >= Math.max(3, mine * 2);
+  if (!best || !best.n || !enough) { btn.hidden = true; return; }
+  btn.hidden = false;
+  btn.textContent = `이 화면엔 ${state.lpGroup} ${mine}곳 —`
+    + ` ${best.group}(${best.kind})로 보면 ${best.n}곳`;
+  btn.dataset.group = best.group;
 }
 
 function wireLandPrice() {
@@ -2579,10 +2649,25 @@ function wireLandPrice() {
   // 콕 집으신 것이고, 공장·창고가 실제로 들어가는 땅이다.
   const first = (lp && lp.default_group) || '계획관리';
   groups.sort((a, b) => (a === first ? -1 : b === first ? 1 : a.localeCompare(b, 'ko')));
+  // **도시지역과 비도시지역을 갈라 놓는다.** 한 목록에 평평하게
+  // 늘어놓으면 부천의 자연녹지와 안성의 계획관리를 같은 종류인 것처럼
+  // 나란히 놓게 된다. 둘은 다른 제도의 땅이다.
+  const kinds = (lp && lp.zone_kinds) || {};
+  const boxes = {};
   groups.forEach((g) => {
+    const kind = kinds[g] || '';
+    let parent = sel;
+    if (kind) {
+      if (!boxes[kind]) {
+        boxes[kind] = document.createElement('optgroup');
+        boxes[kind].label = kind;
+        sel.appendChild(boxes[kind]);
+      }
+      parent = boxes[kind];
+    }
     const o = document.createElement('option');
     o.value = g; o.textContent = g;
-    sel.appendChild(o);
+    parent.appendChild(o);
   });
   // **기본이 계획관리다** (사장님 지시). 끄기로 시작하면 사장님이 매번
   // 골라야 하고, 그러면 이 화면이 있는 줄도 모르고 지나간다.
@@ -2612,6 +2697,15 @@ function wireLandPrice() {
     stat.addEventListener('change', () => {
       state.lpStat = stat.value;
       drawLandPrice();
+    });
+  }
+  const swap = document.getElementById('lp-swap');
+  if (swap) {
+    swap.addEventListener('click', () => {
+      const g = swap.dataset.group;
+      if (!g) return;
+      sel.value = g;
+      sel.dispatchEvent(new Event('change'));
     });
   }
 }
