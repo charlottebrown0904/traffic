@@ -167,6 +167,61 @@ check(n_tiles == 3, f"성공한 칸만 기록된다 — 실패한 칸은 다음�
 run("all")
 check(linked() == {"A", "B", "C", "D"}, f"다음 실행이 못 받은 칸을 마저 받는다 — {sorted(linked())}")
 
+print("\n9. 같은 칸 안에서 대상이 늘어나면 그 칸을 다시 훑는다")
+# **run 44 가 여기서 반쪽만 붙였다.**
+#
+#     붙일 거래 1,484,720건
+#     칸 7,520개 중 아직 안 훑은 것 1,168개   ← 나머지 6,352칸이 갇혔다
+#
+# 필지 도형은 저장하지 않는다 — 받는 자리에서 맞추고 버린다. 그래서
+# 이미 훑은 칸 안에 **새로 대상이 된 거래**가 생기면, 그 칸을 다시
+# 받지 않는 한 영영 못 붙인다.
+#
+# 앞의 검사들이 이것을 못 잡은 이유: 거래를 저마다 다른 칸에 흩어
+# 놓아서 '같은 칸에 대상이 늘어나는' 상황을 한 번도 안 만들었다.
+# 여기서는 **한 칸에 두 건**을 넣는다.
+with db.connect() as con:
+    con.execute("DELETE FROM trade")
+    con.execute("DELETE FROM trade_tollgate_link")
+    con.execute("DELETE FROM trade_parcel")
+    con.execute("DELETE FROM parcel")
+    con.execute("DELETE FROM parcel_tile")
+    # 같은 0.01도 칸(127.10~127.11, 37.10~37.11) 안의 두 건.
+    db.upsert(con, "trade", pd.DataFrame([
+        dict(trade_id="SAME_core", kind="land", sigungu_cd="41550",
+             sigungu="안성시", umd="공도읍", jibun="1",
+             land_use="계획관리지역", lat=37.104, lon=127.104,
+             geocode_level="parcel", deal_year=2025,
+             price_per_m2=100000.0, area_m2=1000.0, is_cancelled=False),
+        dict(trade_id="SAME_wide", kind="factory", sigungu_cd="41550",
+             sigungu="안성시", umd="공도읍", jibun="2",
+             land_use="농림지역", lat=37.106, lon=127.106,
+             geocode_level="parcel", deal_year=2025,
+             price_per_m2=100000.0, area_m2=1000.0, is_cancelled=False),
+    ]))
+    db.upsert(con, "trade_tollgate_link", pd.DataFrame([
+        dict(trade_id="SAME_core", tollgate_id="101", distance_km=2.0,
+             band="1-3", is_nearest=True)]))
+
+lc.fetch_tile = fake_fetch
+run("core")
+check(linked() == {"SAME_core"}, f"core 로는 한 건만 — {sorted(linked())}")
+
+# 넓힌다. 그 칸은 이미 '훑음' 으로 적혀 있지만 **범위가 좁았으므로**
+# 다시 훑어야 한다.
+run("all")
+check(linked() == {"SAME_core", "SAME_wide"},
+      f"넓히면 같은 칸의 새 거래도 붙는다 — {sorted(linked())}")
+with db.connect(read_only=True) as con:
+    sc = con.execute("SELECT scope FROM parcel_tile").fetchall()
+check(all(r[0] == "all" for r in sc), f"칸에 지금 범위가 기록된다 — {sc}")
+
+# 같은 범위로 다시 돌리면 이제는 건너뛴다. 안 그러면 넓힌 뒤로
+# 매 실행이 전국을 처음부터 다시 훑는다.
+before = len(linked())
+run("all")
+check(len(linked()) == before, "같은 범위로 다시 돌리면 건너뛴다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

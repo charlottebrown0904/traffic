@@ -1174,6 +1174,11 @@ def cmd_score(args):
     print(f"\n→ {out}")
 
 
+# 범위의 포함 관계. core ⊂ land ⊂ all.
+# 이미 훑은 칸이라도 **그때의 범위가 지금보다 좁았으면** 다시 훑어야 한다.
+SCOPE_RANK = {"core": 0, "land": 1, "all": 2}
+
+
 def cmd_landchar(args):
     """필지 특성(도로접·형상·지세)을 받아 거래에 붙인다.
 
@@ -1233,8 +1238,21 @@ def cmd_landchar(args):
               AND ({lu_cond})
               AND tp.trade_id IS NULL
         """).fetchdf()
-        done_tiles = set(con.execute(
-            "SELECT tile_key FROM parcel_tile").fetchdf()["tile_key"])
+        # **이미 훑은 칸도 범위가 좁았으면 다시 훑는다.**
+        #
+        # 필지 도형은 저장하지 않는다 — 받는 자리에서 맞추고 버린다.
+        # 그래서 그 칸 안에 **새로 대상이 된 거래**(농림지역·밴드 밖·
+        # 공장)를 붙이려면 그 칸을 다시 받는 수밖에 없다.
+        #
+        # run 44 가 이것 때문에 반쪽만 붙였다: 붙일 거래 1,484,720건인데
+        # 칸 7,520개 중 1,168개만 '안 훑은 것' 으로 잡혔고, 나머지
+        # 115만 건이 이미 훑은 칸 안에 갇혔다.
+        rank = SCOPE_RANK[scope]
+        done_tiles = set(con.execute(f"""
+            SELECT tile_key FROM parcel_tile
+            WHERE CASE coalesce(scope, 'core')
+                    WHEN 'core' THEN 0 WHEN 'land' THEN 1 ELSE 2 END >= {rank}
+        """).fetchdf()["tile_key"])
 
     SCOPE_WHAT = {
         "core": f"밴드 안 · {'·'.join(wanted) if wanted else '전체'} · 토지만",
@@ -1320,9 +1338,11 @@ def cmd_landchar(args):
         with lock:
             rows_p.extend(parcels)
             rows_l.extend(links)
+            # 칸 순서는 스키마와 같아야 한다 (SELECT * 로 넣는다).
             rows_t.append({"tile_key": key, "n_parcels": len(parcels),
                            "n_matched": len(links), "truncated": trunc,
-                           "fetched_at": datetime.now(timezone.utc)})
+                           "fetched_at": datetime.now(timezone.utc),
+                           "scope": scope})
             state["n"] += 1
             state["parcels"] += len(parcels)
             state["links"] += len(links)

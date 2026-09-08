@@ -200,7 +200,13 @@ CREATE TABLE IF NOT EXISTS parcel_tile (
     n_parcels  INTEGER,
     n_matched  INTEGER,
     truncated  BOOLEAN,               -- 한도에 닿아 쪼갠 칸인가
-    fetched_at TIMESTAMP
+    fetched_at TIMESTAMP,
+    -- **어느 범위로 훑었는가.** 이것이 없으면 대상을 넓혀도 이미 훑은
+    -- 칸은 영영 건너뛴다. run 44 가 그랬다 — 붙일 거래가 148만인데
+    -- 칸 7,520개 중 1,168개만 안 훑은 것으로 잡혀서, 나머지 115만 건이
+    -- 이미 훑은 칸 안에 갇혔다. 필지 도형은 저장하지 않으므로 다시
+    -- 받지 않으면 맞출 방법이 없다.
+    scope      VARCHAR                -- core ⊂ land ⊂ all
 );
 """
 
@@ -213,6 +219,8 @@ MIGRATIONS = [
     "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS sigungu_cd VARCHAR",
     "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS source VARCHAR",
     "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS geocode_level VARCHAR",
+    # 예전에 담긴 칸은 전부 core 범위로 훑은 것이다. 빈 값을 그렇게 읽는다.
+    "ALTER TABLE parcel_tile ADD COLUMN IF NOT EXISTS scope VARCHAR",
 ]
 
 
