@@ -100,7 +100,20 @@ const FAKE_LEAFLET = () => {
       },
       // 거래를 '보이는 영역만' 그리므로 경계가 없으면 한 점도 안 그려진다.
       // 전국이 다 보이는 셈으로 둔다 — 잘라내기 자체는 아래에서 따로 본다.
-      getBounds() { return { contains: () => true, pad: () => ({}) }; },
+      getBounds() {
+        // 땅값 글자는 '보이는 곳만' 그린다. window.__bbox 로 화면을 좁혀
+        // 그 잘라내기가 실제로 도는지 볼 수 있게 한다. 기본은 전국이다.
+        const bb = window.__bbox;
+        return {
+          contains: (ll) => {
+            if (!bb) return true;
+            const lat = Array.isArray(ll) ? ll[0] : ll.lat;
+            const lon = Array.isArray(ll) ? ll[1] : ll.lng;
+            return lat >= bb[0] && lat <= bb[2] && lon >= bb[1] && lon <= bb[3];
+          },
+          pad: () => ({}),
+        };
+      },
       // 진짜 Leaflet 의 판(pane). 없으면 createPane 이 undefined 를 돌려
       // .style 에서 터지고, 지도 전체가 안 그려진다.
       createPane(name) {
@@ -288,21 +301,53 @@ const FAKE_LEAFLET = () => {
         status: 200, contentType: 'application/json',
         body: JSON.stringify(realMeta) }));
     }
-    // 땅값 분위지도 (2026-09-08 지시). 세 시군구 × 두 해 × 두 용도지역.
+    // 땅값 지도 (2026-09-08 지시). 세 시군구 × 두 용도지역.
     // 값이 계단처럼 벌어지게 둬서 색이 실제로 갈리는지 볼 수 있게 한다.
+    //
+    // 칸 하나는 [건수, 중앙값, 평균, 시작연도] 다.
+    //   41111 은 y3 에서 중앙값 10만 · 평균 90만 — **큰 거래가 섞인 곳**.
+    //   47940 은 y1 이 없다 — 최근 1년에 거래가 없는 곳.
     const FAKE_LANDPRICE = {
-      years: [2024, 2025],
+      latest_year: 2025,
+      default_group: '계획관리',
+      default_window: 'y3',
+      windows: [
+        { key: 'y1', label: '최근 1년', kind: 'year', span: 1 },
+        { key: 'y3', label: '최근 3년', kind: 'year', span: 3 },
+        { key: 'c20', label: '최근 20건', kind: 'count', span: 20 },
+      ],
+      umd_files: { 계획관리: 'landprice-umd-gyehoek.json' },
       groups: {
         계획관리: {
-          41111: { n: [10, 12], p50: [100000, 110000], avg: [900000, 120000] },
-          41113: { n: [20, 25], p50: [200000, 210000], avg: [200000, 210000] },
-          47940: { n: [3, 0], p50: [30000, null], avg: [30000, null] },
+          41111: { y1: [12, 110000, 120000, 2025], y3: [10, 100000, 900000, 2023],
+                   c20: [20, 105000, 500000, 2019] },
+          41113: { y1: [25, 210000, 210000, 2025], y3: [20, 200000, 200000, 2023],
+                   c20: [20, 200000, 200000, 2021] },
+          // 최근 1년에는 거래가 없다. y1 칸 자체가 없어야 한다.
+          47940: { y3: [3, 30000, 30000, 2023], c20: [20, 28000, 28000, 2009] },
         },
         농림: {
-          41111: { n: [5, 6], p50: [50000, 55000], avg: [50000, 55000] },
+          41111: { y3: [5, 50000, 50000, 2023] },
         },
       },
     };
+    // 읍면동은 고른 용도지역의 파일만 따로 받는다.
+    const FAKE_LP_UMD = {
+      group: '계획관리',
+      cells: [
+        { nm: '정자동', sg: '41111', sgnm: '수원시 장안구', lat: 37.304, lon: 127.011,
+          w: { y1: [8, 130000, 130000, 2025], y3: [9, 120000, 120000, 2023] } },
+        { nm: '권선동', sg: '41113', sgnm: '수원시 권선구', lat: 37.241, lon: 126.971,
+          w: { y1: [30, 220000, 220000, 2025], y3: [40, 210000, 210000, 2023] } },
+        // 화면 밖(울릉도). 경계를 좁히면 빠져야 한다.
+        { nm: '울릉읍', sg: '47940', sgnm: '울릉군', lat: 37.484, lon: 130.905,
+          w: { y3: [6, 30000, 30000, 2023] } },
+      ],
+    };
+    await page.route('**/app/data/landprice-umd-*.json*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify(FAKE_LP_UMD),
+    }));
     await page.route('**/app/data/landprice.json*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify(FAKE_LANDPRICE),
@@ -838,17 +883,19 @@ const FAKE_LEAFLET = () => {
     await popAt(7);
 
     console.log();
-    console.log('9-B. 땅값 분위지도 — 행정구역별 연평균 실거래 단가');
-    /* 사장님 지시(2026-09-08): "행정 구역별 계획관리 땅값 실거래가
-     * 연 평균제공". 땅박사·호갱노노를 보고 오신 지시다. */
+    console.log('9-B. 땅값 지도 — 최근 실거래 기준 · 축척별 · 파란 계열');
+    /* 사장님 지시(2026-09-08): "정보들은 필터로 넣고 간결하게 최근
+     * 실거래가격(기간 또는 건수) 기준으로(기본은 계획관리) 축척에따라
+     * 보여줍니다. 색상은 파란계열로합니다." */
     const lpUi = await page.evaluate(() => {
       const sel = document.getElementById('lp-group');
-      const yr = document.getElementById('lp-year');
+      const win = document.getElementById('lp-window');
       return {
         barShown: !(document.getElementById('lp-bar') || {}).hidden,
         groups: [...sel.options].map((o) => o.value),
-        yearMax: Number(yr.max),
-        yearVal: Number(yr.value),
+        picked: sel.value,
+        windows: [...win.options].map((o) => o.value),
+        window: win.value,
         note: document.getElementById('lp-note').textContent,
       };
     });
@@ -858,77 +905,96 @@ const FAKE_LEAFLET = () => {
     check('용도지역 칸이 자료에서 만들어지고 계획관리가 맨 앞이다',
           lpUi.groups[0] === '' && lpUi.groups[1] === '계획관리'
           && lpUi.groups.includes('농림'), lpUi.groups.join(','));
-    check('연도 슬라이더가 마지막 해에서 시작한다',
-          lpUi.yearMax === 1 && lpUi.yearVal === 1,
-          `max=${lpUi.yearMax} val=${lpUi.yearVal}`);
-    check('끄고 있을 때는 무엇을 하는 곳인지 말한다',
-          /용도지역을 고르면/.test(lpUi.note), lpUi.note);
+    // **기본이 계획관리다.** 끄기로 시작하면 이 화면이 있는 줄도 모르고
+    // 지나간다.
+    check('켠 채로 시작하고 기본이 계획관리다', lpUi.picked === '계획관리',
+          `고른 것 "${lpUi.picked}"`);
+    check('최근 기준을 기간과 건수 둘 다 준다',
+          lpUi.windows.includes('y3') && lpUi.windows.includes('c20'),
+          lpUi.windows.join(','));
+    check('기본 기준이 자료가 말한 것으로 잡힌다', lpUi.window === 'y3', lpUi.window);
 
-    const lpPick = async (group, stat, yearIdx) => page.evaluate((a) => {
+    const lpPick = async (group, win, stat) => page.evaluate((a) => {
       const sel = document.getElementById('lp-group');
+      const wi = document.getElementById('lp-window');
       const st = document.getElementById('lp-stat');
-      const yr = document.getElementById('lp-year');
       if (a.group !== null) { sel.value = a.group; sel.dispatchEvent(new Event('change')); }
+      if (a.win) { wi.value = a.win; wi.dispatchEvent(new Event('change')); }
       if (a.stat) { st.value = a.stat; st.dispatchEvent(new Event('change')); }
-      if (a.yearIdx !== null) { yr.value = String(a.yearIdx); yr.dispatchEvent(new Event('input')); }
       const marks = (window.__map.groups || []).flatMap((g) => g._items)
-        .filter((m) => m.__opts && m.__opts.pane === 'lpPane');
+        .filter((m) => m.options && m.options.pane === 'lpPane');
       return {
         peek: window.__lp || {},
         n: marks.length,
-        fills: marks.map((m) => m.__opts.fillColor),
-        radii: marks.map((m) => m.__opts.radius),
+        html: marks.map((m) => (m.options.icon || {}).options.html || ''),
         tips: marks.map((m) => m.__tooltip || ''),
         note: document.getElementById('lp-note').textContent,
       };
-    }, { group, stat, yearIdx });
+    }, { group, win, stat });
+    const fillsOf = (htmls) => htmls
+      .map((h) => (h.match(/background:(#[0-9A-Fa-f]{6})/) || [])[1]).filter(Boolean);
 
     // 배율 12 = 구 단위. 세 시군구가 따로 선다.
     await page.evaluate(() => { window.__zoom = 12; });
-    const lp1 = await lpPick('계획관리', 'p50', 0);
+    const lp1 = await lpPick('계획관리', 'y3', 'p50');
     check('용도지역을 고르면 지역이 칠해진다', lp1.n === 3 && lp1.peek.on,
           `${lp1.n}곳 · on=${lp1.peek.on}`);
+    // 원이 아니라 **글자**다. 얼마인지는 결국 숫자로 읽는다.
+    check('값을 글자로 적는다 (원 크기가 아니라)',
+          lp1.html.every((h) => /class="lp-chip"/.test(h))
+          && lp1.html.some((h) => /수원시 장안구/.test(h)),
+          (lp1.html[0] || '없음').slice(0, 90));
+    // 사장님 지시: 파란 계열.
+    const lp1Fills = fillsOf(lp1.html);
+    check('색이 파란 계열이다 (빨강·노랑이 없다)',
+          lp1Fills.length === 3 && lp1Fills.every((c) => {
+            const r = parseInt(c.slice(1, 3), 16);
+            const b = parseInt(c.slice(5, 7), 16);
+            return b > r;
+          }), lp1Fills.join(' '));
     // **지역이 적을 때가 함정이다.** 분위수로 끊으면 다섯 곳 미만일 때
-    // 경계가 안 만들어져 모두 '가장 싼 20%' 색을 뒤집어쓴다. 비싼 곳도
-    // 싼 색으로 칠해지는 것은 보기 나쁜 게 아니라 사실이 아니다.
-    check('지역이 적어도 값이 다르면 색이 갈린다', new Set(lp1.fills).size === 3,
-          lp1.fills.join(' '));
+    // 경계가 안 만들어져 모두 '가장 싼 20%' 색을 뒤집어쓴다.
+    check('지역이 적어도 값이 다르면 색이 갈린다', new Set(lp1Fills).size === 3,
+          lp1Fills.join(' '));
     check('순위로 편 것을 분위수인 척하지 않는다',
-          /순위로 색을 폈습니다/.test(lp1.note), lp1.note);
-    // 세 건으로 만든 값과 스무 건으로 만든 값을 같은 크기로 칠하면 안 된다.
-    const rByTip = {};
-    lp1.tips.forEach((t, i) => { rByTip[t.split(' ·')[0]] = lp1.radii[i]; });
-    check('원 크기가 거래 건수를 따른다',
-          rByTip['수원시 권선구'] > rByTip['울릉군'],
-          JSON.stringify(rByTip));
-    check('말풍선이 ㎡당·평당·건수를 적는다',
-          lp1.tips.some((t) => /㎡당/.test(t) && /평당/.test(t) && /거래/.test(t)),
+          /순위로 색을 폄/.test(lp1.note), lp1.note);
+    // 평당으로 접어 쓴다. ㎡당 10만원은 감이 안 오지만 평당 33만은 온다.
+    check('글자는 평당으로 접어 쓴다',
+          lp1.html.some((h) => /33\.1만|33만/.test(h)),
+          lp1.html.find((h) => /장안구/.test(h)) || '없음');
+    check('말풍선이 평당·㎡당·건수·기준을 적는다',
+          lp1.tips.some((t) => /평당/.test(t) && /㎡당/.test(t)
+                               && /거래/.test(t) && /최근 3년/.test(t)),
           lp1.tips[0] || '없음');
 
-    // **중앙값과 평균의 차이가 화면에 드러나야 한다.**
-    // 41111 은 2024년 중앙값 10만인데 평균 90만이다 — 큰 거래가 섞였다.
-    const lpMean = await lpPick(null, 'avg', 0);
-    const janTip = (t) => t.split('<br>')[1] || '';
-    const lpMed50 = janTip(lp1.tips.find((t) => /^수원시 장안구/.test(t)) || '');
-    const lpAvg = janTip(lpMean.tips.find((t) => /^수원시 장안구/.test(t)) || '');
-    check('평균으로 바꾸면 값이 달라진다', lpMed50 !== lpAvg,
-          `중앙값 "${lpMed50}" vs 평균 "${lpAvg}"`);
-    check('평균일 때 끌릴 수 있다고 말한다',
-          /끌릴 수 있습니다/.test(lpMean.note), lpMean.note);
+    // **최근 1년으로 좁히면 거래가 없는 곳이 빠진다.** 자료가 없는 것을
+    // 옛날 값으로 채우면 '최근' 이라는 말이 거짓이 된다.
+    const lpY1 = await lpPick(null, 'y1', null);
+    check('기준을 최근 1년으로 좁히면 거래 없는 곳이 빠진다',
+          lpY1.n === 2 && !lpY1.tips.some((t) => /울릉군/.test(t)),
+          `${lpY1.n}곳 · ${lpY1.tips.map((t) => t.split('<')[0]).join(',')}`);
 
-    // 연도를 밀면 그 해 값으로 다시 칠한다. 2025년에는 울릉군이 없다.
-    const lp2025 = await lpPick(null, 'p50', 1);
-    check('연도를 밀면 그 해로 다시 칠한다',
-          lp2025.peek.year === 2025 && lp2025.n === 2,
-          `${lp2025.peek.year}년 · ${lp2025.n}곳`);
-    check('그 해 거래가 없는 지역은 안 칠한다',
-          !lp2025.tips.some((t) => /울릉군/.test(t)),
-          lp2025.tips.join(' | ').slice(0, 120));
+    // 건수 기준은 시점이 지역마다 다르다. **몇 년치인지 밝혀야 한다** —
+    // 울릉군의 '최근 20건' 은 2009년까지 거슬러 올라간다.
+    const lpC = await lpPick(null, 'c20', null);
+    check('건수 기준은 몇 년치를 긁어온 값인지 밝힌다',
+          /2009년부터/.test(lpC.tips.find((t) => /울릉군/.test(t)) || ''),
+          lpC.tips.find((t) => /울릉군/.test(t)) || '없음');
+
+    // **중앙값과 평균의 차이가 화면에 드러나야 한다.**
+    // 41111 은 y3 중앙값 10만인데 평균 90만이다 — 큰 거래가 섞였다.
+    const lpMed = await lpPick(null, 'y3', 'p50');
+    const lpMean = await lpPick(null, 'y3', 'avg');
+    const line2 = (t) => (t.split('<br>')[1] || '');
+    const medTip = line2(lpMed.tips.find((t) => /^수원시 장안구/.test(t)) || '');
+    const avgTip = line2(lpMean.tips.find((t) => /^수원시 장안구/.test(t)) || '');
+    check('평균으로 바꾸면 값이 달라진다', medTip !== avgTip && /평균/.test(avgTip),
+          `중앙값 "${medTip}" vs 평균 "${avgTip}"`);
 
     // 멀리서 보면 인구 원과 같은 단위로 묶인다. **값은 더하지 않고
     // 거래 건수로 가중해 섞는다.**
     await page.evaluate(() => { window.__zoom = 7; });
-    const lpWide = await lpPick(null, 'p50', 0);
+    const lpWide = await lpPick(null, 'y3', 'p50');
     check('멀리서는 시·도로 묶인다',
           lpWide.peek.level === 'sido' && lpWide.n === 2,
           `${lpWide.peek.level} · ${lpWide.n}곳`);
@@ -937,6 +1003,28 @@ const FAKE_LEAFLET = () => {
     check('묶을 때 거래 건수로 가중한다 (합치지 않는다)',
           lpWide.tips.some((t) => /^경기도/.test(t) && /166,667원/.test(t)),
           lpWide.tips.find((t) => /^경기도/.test(t)) || '없음');
+
+    // **배율을 더 당기면 읍·면·동으로 내려간다.** 그 파일은 고른
+    // 용도지역의 것만 따로 받는다.
+    await page.evaluate(() => { window.__zoom = 14; });
+    await lpPick(null, 'y3', null);
+    await page.waitForTimeout(250);          // 읍면동 파일을 받아 오는 동안
+    const lpUmd = await lpPick(null, 'y3', null);
+    check('더 당기면 읍·면·동으로 내려간다',
+          lpUmd.peek.level === 'umd' && lpUmd.n === 3,
+          `${lpUmd.peek.level} · ${lpUmd.n}곳`);
+    check('읍면동 이름과 그 시군구를 같이 말한다',
+          lpUmd.html.some((h) => /정자동/.test(h))
+          && lpUmd.tips.some((t) => /정자동/.test(t) && /수원시 장안구/.test(t)),
+          lpUmd.tips.find((t) => /정자동/.test(t)) || '없음');
+
+    // **보이는 곳만 그린다.** 전국 읍면동을 다 그리면 휴대폰이 죽는다.
+    await page.evaluate(() => { window.__bbox = [37.0, 126.5, 37.6, 127.5]; });
+    const lpBox = await lpPick(null, 'y3', null);
+    check('화면 밖은 안 그린다 (울릉도가 빠진다)',
+          lpBox.n === 2 && !lpBox.tips.some((t) => /울릉/.test(t)),
+          `${lpBox.n}곳`);
+    await page.evaluate(() => { window.__bbox = null; window.__zoom = 12; });
 
     // 끄면 사라진다.
     const lpOff = await lpPick('', null, null);

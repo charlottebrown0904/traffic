@@ -493,69 +493,215 @@ def _parent_si(name: str) -> str:
     return ""
 
 
-# 행정구역별·연도별 땅값. 사장님 지시(2026-09-08):
-# "행정 구역별 계획관리 땅값 실거래가 연 평균제공"
+# 행정구역별 땅값. 사장님 지시(2026-09-08):
+#   "행정 구역별 계획관리 땅값 실거래가 연 평균제공"
+#   "최근 실거래가격(기간 또는 건수) 기준으로 (기본은 계획관리)
+#    축척에따라 보여줍니다"
 #
 # 용도지역을 묶는 이름과 그 판정 조건. LIKE 로 보는 이유는 자료에
 # '계획관리지역' 과 '계획관리' 가 섞여 오기 때문이다.
+#
+# key 는 파일 이름에 쓴다 — 한글을 URL 에 넣으면 인코딩이 서버마다
+# 달라져서 어느 날 조용히 404 가 된다.
 LANDPRICE_GROUPS = [
-    ("계획관리", "계획관리"),
-    ("생산관리", "생산관리"),
-    ("자연녹지", "자연녹지"),
-    ("농림", "농림"),
-    ("보전관리", "보전관리"),
+    ("계획관리", "계획관리", "gyehoek"),
+    ("생산관리", "생산관리", "saengsan"),
+    ("자연녹지", "자연녹지", "jayeon"),
+    ("농림", "농림", "nongrim"),
+    ("보전관리", "보전관리", "bojeon"),
 ]
 
+# **'최근' 을 무엇으로 자르는가.** 두 가지를 다 낸다 — 어느 쪽도 혼자서는
+# 안 된다.
+#
+#   기간 기준은 시점이 같다. 화면의 모든 지역이 같은 달까지를 본다.
+#     대신 거래가 드문 군은 최근 1년이 두세 건이라 값이 튄다.
+#   건수 기준은 표본이 같다. 어느 지역이든 최근 N건으로 잰다.
+#     대신 시점이 지역마다 다르다 — 어떤 군의 '최근 20건' 은 2011년까지
+#     거슬러 올라간다. **그래서 몇 년치인지를 같이 싣는다.**
+#
+# 기간은 **자료의 마지막 해**를 기준으로 자른다. 지역마다 자기 마지막
+# 해를 쓰면, 10년째 거래가 없는 군이 2015년 값을 '최근 1년' 이라고
+# 내놓는다. 거래가 없으면 값이 없는 것이 맞다.
+LANDPRICE_WINDOWS = [
+    ("y1", "최근 1년", "year", 1),
+    ("y3", "최근 3년", "year", 3),
+    ("y5", "최근 5년", "year", 5),
+    ("c20", "최근 20건", "count", 20),
+    ("c50", "최근 50건", "count", 50),
+]
+DEFAULT_LANDPRICE_GROUP = "계획관리"
+DEFAULT_LANDPRICE_WINDOW = "y3"
 
-def _land_price_by_region() -> dict:
-    """시군구 × 연도 × 용도지역의 ㎡당 단가.
+# 읍면동 칸은 거래가 너무 적으면 싣지 않는다. 두 건으로 만든 중앙값을
+# 지도에 값으로 찍으면, 그것은 자료가 아니라 우연이다.
+UMD_MIN_TRADES = 5
+
+
+def _landprice_case() -> str:
+    return " ".join(f"WHEN land_use LIKE '%{like}%' THEN '{name}'"
+                    for name, like, _key in LANDPRICE_GROUPS)
+
+
+def _landprice_windows_sql(latest_year: int) -> str:
+    """창마다 건수·중앙값·평균·시작연도를 뽑는 SELECT 조각.
+
+    FILTER 로 한 번에 뽑는다. 창마다 따로 훑으면 1,180만 행을 다섯 번
+    읽는다.
+    """
+    parts = []
+    for key, _label, kind, span in LANDPRICE_WINDOWS:
+        if kind == "year":
+            cond = f"deal_year >= {latest_year - span + 1}"
+        else:
+            cond = f"rn <= {span}"
+        parts.append(f"""
+            count(*) FILTER (WHERE {cond}) AS n_{key},
+            median(price_per_m2) FILTER (WHERE {cond}) AS p50_{key},
+            avg(price_per_m2) FILTER (WHERE {cond}) AS avg_{key},
+            min(deal_year) FILTER (WHERE {cond}) AS from_{key}""")
+    return ",".join(parts)
+
+
+def _landprice_cell(row) -> dict:
+    """한 칸의 창별 값. **비어 있는 창은 싣지 않는다.**
+
+    거래가 없는 창에 0 이나 null 을 실으면 파일만 무거워지고, 화면은
+    어차피 그리지 못한다. 없으면 없는 것이다.
+    """
+    out = {}
+    for key, _label, _kind, _span in LANDPRICE_WINDOWS:
+        n = getattr(row, f"n_{key}", 0)
+        p50 = getattr(row, f"p50_{key}", None)
+        if not n or p50 is None or pd.isna(p50):
+            continue
+        out[key] = [int(n), int(round(float(p50))),
+                    int(round(float(getattr(row, f"avg_{key}")))),
+                    int(getattr(row, f"from_{key}"))]
+    return out
+
+
+def _latest_trade_year() -> int | None:
+    with db.connect(read_only=True) as con:
+        got = con.execute(f"""
+            SELECT max(deal_year) FROM trade
+            WHERE kind = 'land' AND {TRADE_WHERE} AND deal_year IS NOT NULL
+        """).fetchone()[0]
+    return int(got) if got is not None else None
+
+
+def _land_price_by_region(latest_year: int) -> dict:
+    """시군구 × 용도지역의 최근 실거래 ㎡당 단가.
 
     **중앙값과 평균을 둘 다 낸다.** 사장님은 평균을 말씀하셨는데,
     땅값은 한쪽으로 길게 늘어진 분포라 평균이 큰 거래 몇 건에 끌려간다.
-    한 시군구 한 해에 수십억짜리 한 건이 섞이면 평균이 통째로 들린다.
+    한 시군구에 수십억짜리 한 건이 섞이면 평균이 통째로 들린다.
     그래서 화면은 중앙값을 먼저 보이고 평균을 함께 적는다 — 둘이 크게
     다르면 그 자체가 '큰 거래가 섞였다' 는 신호다.
 
-    거래 건수도 같이 낸다. 세 건으로 만든 평균과 삼백 건으로 만든
-    평균을 같은 색으로 칠하면 안 된다.
+    거래 건수도 같이 낸다. 세 건으로 만든 값과 삼백 건으로 만든 값을
+    같은 색으로 칠하면 안 된다.
     """
-    case = " ".join(
-        f"WHEN land_use LIKE '%{like}%' THEN '{name}'"
-        for name, like in LANDPRICE_GROUPS)
     with db.connect(read_only=True) as con:
         df = con.execute(f"""
-            SELECT sigungu_cd, deal_year AS y,
-                   CASE {case} ELSE NULL END AS grp,
-                   count(*) AS n,
-                   median(price_per_m2) AS p50,
-                   avg(price_per_m2) AS avg
-            FROM trade
-            WHERE kind = 'land' AND {TRADE_WHERE}
-              AND sigungu_cd IS NOT NULL AND deal_year IS NOT NULL
-            GROUP BY 1, 2, 3
-            HAVING grp IS NOT NULL
-            ORDER BY 1, 2
+            WITH t AS (
+                SELECT sigungu_cd, deal_year, coalesce(deal_month, 0) AS m,
+                       price_per_m2,
+                       CASE {_landprice_case()} ELSE NULL END AS grp
+                FROM trade
+                WHERE kind = 'land' AND {TRADE_WHERE}
+                  AND sigungu_cd IS NOT NULL AND deal_year IS NOT NULL
+            ),
+            r AS (
+                SELECT *, row_number() OVER (
+                    PARTITION BY sigungu_cd, grp
+                    ORDER BY deal_year DESC, m DESC, price_per_m2) AS rn
+                FROM t WHERE grp IS NOT NULL
+            )
+            SELECT sigungu_cd, grp, {_landprice_windows_sql(latest_year)}
+            FROM r GROUP BY 1, 2 ORDER BY 1, 2
         """).fetchdf()
     if df.empty:
         return {}
-    years = sorted(int(y) for y in df["y"].unique())
-    idx = {y: i for i, y in enumerate(years)}
     out: dict[str, dict] = {}
     for r in df.itertuples(index=False):
-        g = out.setdefault(str(r.grp), {})
-        cell = g.setdefault(str(r.sigungu_cd), {
-            "n": [0] * len(years),
-            "p50": [None] * len(years),
-            "avg": [None] * len(years),
-        })
-        i = idx[int(r.y)]
-        cell["n"][i] = int(r.n)
-        cell["p50"][i] = int(round(float(r.p50)))
-        cell["avg"][i] = int(round(float(r.avg)))
+        cell = _landprice_cell(r)
+        if cell:
+            out.setdefault(str(r.grp), {})[str(r.sigungu_cd)] = cell
     n_cells = sum(len(v) for v in out.values())
-    print(f"  행정구역 땅값 {len(out)}개 용도지역 × {n_cells:,}개 시군구칸"
-          f" · {years[0]}~{years[-1]}")
-    return {"years": years, "groups": out}
+    print(f"  행정구역 땅값 {len(out)}개 용도지역 × {n_cells:,}개 시군구칸")
+    return {
+        "latest_year": latest_year,
+        "windows": [{"key": k, "label": la, "kind": ki, "span": sp}
+                    for k, la, ki, sp in LANDPRICE_WINDOWS],
+        "default_group": DEFAULT_LANDPRICE_GROUP,
+        "default_window": DEFAULT_LANDPRICE_WINDOW,
+        "groups": out,
+    }
+
+
+def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
+    """읍면동 × 용도지역. **용도지역마다 파일을 따로 낸다.**
+
+    한 파일에 담으면 안 된다. 읍면동 칸은 시군구의 스무 배가 넘어서,
+    다 담으면 휴대폰이 고른 적도 없는 용도지역 넷을 같이 내려받는다.
+    고른 것만 받게 하면 그 몫이 5분의 1이 된다.
+
+    좌표는 그 읍면동 거래들의 평균이다. 법정동 경계의 중심이 아니라
+    **거래가 실제로 일어난 자리의 한가운데**다 — 우리가 가진 것이
+    그것이고, 이 화면에서는 오히려 그쪽이 맞다.
+    """
+    with db.connect(read_only=True) as con:
+        df = con.execute(f"""
+            WITH t AS (
+                SELECT sigungu_cd, sigungu, umd,
+                       deal_year, coalesce(deal_month, 0) AS m,
+                       price_per_m2, lat, lon,
+                       CASE {_landprice_case()} ELSE NULL END AS grp
+                FROM trade
+                WHERE kind = 'land' AND {TRADE_WHERE}
+                  AND sigungu_cd IS NOT NULL AND deal_year IS NOT NULL
+                  AND umd IS NOT NULL AND umd <> ''
+            ),
+            r AS (
+                SELECT *, row_number() OVER (
+                    PARTITION BY sigungu_cd, umd, grp
+                    ORDER BY deal_year DESC, m DESC, price_per_m2) AS rn
+                FROM t WHERE grp IS NOT NULL
+            )
+            SELECT sigungu_cd, umd, grp,
+                   any_value(sigungu) AS sigungu,
+                   avg(lat) AS lat, avg(lon) AS lon,
+                   count(*) AS n_all,
+                   {_landprice_windows_sql(latest_year)}
+            FROM r GROUP BY 1, 2, 3 ORDER BY 1, 2, 3
+        """).fetchdf()
+    files: dict[str, dict] = {name: {"group": name, "cells": []}
+                              for name, _like, _key in LANDPRICE_GROUPS}
+    if df.empty:
+        return files
+    thin = 0
+    for r in df.itertuples(index=False):
+        if int(r.n_all) < UMD_MIN_TRADES:
+            thin += 1
+            continue
+        cell = _landprice_cell(r)
+        if not cell:
+            continue
+        files[str(r.grp)]["cells"].append({
+            "nm": _text(r.umd),
+            "sg": str(r.sigungu_cd),
+            "sgnm": _text(r.sigungu),
+            "lat": round(float(r.lat), 5),
+            "lon": round(float(r.lon), 5),
+            "w": cell,
+        })
+    got = sum(len(v["cells"]) for v in files.values())
+    print(f"  읍면동 땅값 {got:,}칸"
+          f" (거래 {UMD_MIN_TRADES}건 미만이라 뺀 칸 {thin:,}개)")
+    for name, _like, _key in LANDPRICE_GROUPS:
+        print(f"    {name} {len(files[name]['cells']):,}칸")
+    return files
 
 
 def _regions() -> list[dict]:
@@ -890,18 +1036,30 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     # **화면에서 조용히 사라진다** — 오류도 빈 칸도 안 남기고 그냥 없다.
     # 그래서 여기서 센다. run 46 에서 여덟 코드(화성시 4개 구, 인천 신설
     # 구 4곳)가 그렇게 빠져 계획관리 거래의 4.5% 를 잃고 있었다.
-    landprice = _land_price_by_region()
+    latest_year = _latest_trade_year()
+    landprice = _land_price_by_region(latest_year) if latest_year else {}
     known = {r["sigungu_cd"] for r in regions}
     orphan: dict[str, int] = {}
     for cells in landprice.get("groups", {}).values():
         for cd, cell in cells.items():
             if cd not in known:
-                orphan[cd] = orphan.get(cd, 0) + sum(cell["n"])
+                # 창마다 건수가 다르므로 가장 넓은 창의 건수로 센다.
+                orphan[cd] = max(orphan.get(cd, 0),
+                                 max((w[0] for w in cell.values()), default=0))
     if orphan:
         top = ", ".join(f"{cd} {n:,}건" for cd, n
                         in sorted(orphan.items(), key=lambda kv: -kv[1])[:8])
         print(f"  ⚠ 좌표가 없어 땅값 지도에서 빠지는 시군구 {len(orphan)}곳"
               f" · 거래 {sum(orphan.values()):,}건 — {top}")
+
+    # 읍면동은 용도지역마다 따로 낸다. 화면이 고른 것 하나만 받는다.
+    umd_files = {}
+    if landprice:
+        for name, _like, key in LANDPRICE_GROUPS:
+            umd_files[name] = f"landprice-umd-{key}.json"
+        for name, payload in _land_price_by_umd(latest_year).items():
+            _write(umd_files[name], payload)
+        landprice["umd_files"] = umd_files
     _write("landprice.json", landprice)
     _write("traffic.json", _traffic_ranking())
     _write("chart.json", _chart_series())

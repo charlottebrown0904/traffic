@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260908a">
+<link rel="stylesheet" href="/app/style.css?v=20260908b">
 </head>
 <body>
 
@@ -153,21 +153,21 @@
          호갱노노의 분위지도처럼, 지역을 값으로 칠하고 연도를 밀어 본다. -->
     <div class="land-price-bar" id="lp-bar" hidden>
       <label class="field">
-        <span>땅값 테마</span>
+        <span>용도지역</span>
         <select id="lp-group">
           <option value="">끄기</option>
         </select>
       </label>
       <label class="field">
-        <span>기준</span>
+        <span>최근 기준</span>
+        <select id="lp-window"></select>
+      </label>
+      <label class="field">
+        <span>대푯값</span>
         <select id="lp-stat">
           <option value="p50">중앙값</option>
           <option value="avg">평균</option>
         </select>
-      </label>
-      <label class="field lp-year">
-        <span>거래 연도 <output id="lp-year-out"></output></span>
-        <input type="range" id="lp-year" min="0" max="0" step="1">
       </label>
       <p class="hint" id="lp-note"></p>
     </div>
