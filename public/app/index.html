@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260908f">
+<link rel="stylesheet" href="/app/style.css?v=20260908g">
 </head>
 <body>
 
@@ -66,9 +66,9 @@
          찾는다.** 조작부만 남기고 설명은 눌러야 나오게 한다. -->
     <section class="rail-block">
       <h2>IC 교통량
-        <button type="button" class="why" aria-expanded="false"
+        <button type="button" class="info-dot" aria-expanded="false"
                 aria-label="설명 보기">?</button></h2>
-      <div class="why-body" hidden>
+      <div class="info-pop" hidden>
         <p>영업소를 통과한 <strong>하루 평균 통행량</strong>입니다.
           공장·물류 수요는 화물(3·4·5종)이 가장 직접 반영합니다.</p>
       </div>
@@ -84,9 +84,9 @@
     </section>
     <section class="rail-block">
       <h2>실거래 표시
-        <button type="button" class="why" aria-expanded="false"
+        <button type="button" class="info-dot" aria-expanded="false"
                 aria-label="설명 보기">?</button></h2>
-      <div class="why-body" hidden>
+      <div class="info-pop" hidden>
         <p><strong>공장·창고</strong>가 분석의 기준 물건입니다. 토지는
           지목·형상·도로 조건에 따라 물건마다 값이 크게 흔들려 효과를
           가려내기 어렵습니다. 공장은 <em>지어질 수 있는 땅에만</em>
@@ -101,9 +101,9 @@
 
       <div id="land-box">
         <h3 class="rail-sub">토지 — 개발단계
-          <button type="button" class="why" aria-expanded="false"
+          <button type="button" class="info-dot" aria-expanded="false"
                   aria-label="설명 보기">?</button></h3>
-        <div class="why-body" hidden>
+        <div class="info-pop" hidden>
           <p>전·답·임야는 개발 가능 여부·도로접·모양에 따라 같은 동네에서도
             값이 몇 배 벌어집니다. 실거래 자료가 그 셋을 안 알려주므로,
             <strong>개발이 끝난 지목</strong>(대·공장용지·창고용지 등)을
@@ -112,9 +112,9 @@
         <div class="checks" id="stage-filters"></div>
 
         <h3 class="rail-sub">토지 — 도로 접함
-          <button type="button" class="why" aria-expanded="false"
+          <button type="button" class="info-dot" aria-expanded="false"
                   aria-label="설명 보기">?</button></h3>
-        <div class="why-body" hidden>
+        <div class="info-pop" hidden>
           <p>차가 들어가는 땅과 못 들어가는 땅은 같은 동네에서도 단가가
             <strong>1.7배</strong> 벌어집니다 (남이천 +66% · 안성 +67% 실측).
             필지 특성은 전국을 나눠 받는 중이라 아직 대부분이
@@ -127,9 +127,9 @@
         </label>
 
         <h3 class="rail-sub">토지 — 용도지역
-          <button type="button" class="why" aria-expanded="false"
+          <button type="button" class="info-dot" aria-expanded="false"
                   aria-label="설명 보기">?</button></h3>
-        <div class="why-body" hidden>
+        <div class="info-pop" hidden>
           <p>여기서 켠 용도지역이 <strong>지도의 땅값 글자</strong>도
             정합니다. 처음에는 계획관리·생산관리·자연녹지 셋만 켭니다 —
             분석이 쓰는 것도 이 셋입니다.</p>
@@ -151,9 +151,9 @@
     </section>
     <section class="rail-block">
       <h2>거리 밴드
-        <button type="button" class="why" aria-expanded="false"
+        <button type="button" class="info-dot" aria-expanded="false"
                 aria-label="설명 보기">?</button></h2>
-      <div class="why-body" hidden>
+      <div class="info-pop" hidden>
         <p>지도에서 영업소를 누르면 그 반경이 그려집니다.</p>
       </div>
       <div class="legend" id="band-legend"></div>

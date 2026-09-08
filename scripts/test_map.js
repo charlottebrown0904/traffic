@@ -634,8 +634,8 @@ const FAKE_LEAFLET = () => {
     // 파묻혀 있으면 읽지도 않고 만지지도 못한다. **지우지 않고 접는다** —
     // 지우면 '왜 계획관리만 켜져 있나' 를 물을 곳이 없어진다.
     const why = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('.rail .why')];
-      const bodies = [...document.querySelectorAll('.rail .why-body')];
+      const btns = [...document.querySelectorAll('.rail .info-dot')];
+      const bodies = [...document.querySelectorAll('.rail .info-pop')];
       const vis = (e) => !!(e && !e.hidden && e.offsetParent !== null);
       return {
         buttons: btns.length,
@@ -671,7 +671,7 @@ const FAKE_LEAFLET = () => {
           /건/.test(why.live) && why.live.length > 10, why.live.slice(0, 70));
 
     const whyOpen = await page.evaluate(() => {
-      const b = document.querySelector('.rail .why');
+      const b = document.querySelector('.rail .info-dot');
       b.click();
       const body = b.closest('h2, h3').nextElementSibling;
       return { open: !body.hidden, on: b.classList.contains('is-on'),
@@ -681,11 +681,28 @@ const FAKE_LEAFLET = () => {
           whyOpen.open && whyOpen.on && whyOpen.aria === 'true',
           JSON.stringify(whyOpen));
     const whyShut = await page.evaluate(() => {
-      const b = document.querySelector('.rail .why');
+      const b = document.querySelector('.rail .info-dot');
       b.click();
       return b.closest('h2, h3').nextElementSibling.hidden;
     });
     check('다시 누르면 접힌다', whyShut);
+    // **이름을 .why 로 지으면 안 된다.** 그 이름은 가설 판정 카드의 근거
+    // 문단과 추이 비교의 계열 설명이 이미 쓰고 있다. 우리 규칙의 box
+    // 부분을 물려받아 그것들이 16px 동그라미가 된다 — 이 저장소에서
+    // .listing 으로 이미 한 번 겪은 종류의 사고다.
+    const clash = await page.evaluate(() => {
+      const p2 = document.createElement('p');
+      p2.className = 'why';
+      p2.textContent = '근거 문단';
+      document.body.appendChild(p2);
+      const cs = getComputedStyle(p2);
+      const got = { w: cs.width, radius: cs.borderRadius };
+      p2.remove();
+      return got;
+    });
+    check('설명 단추 이름이 다른 곳의 .why 를 안 부순다',
+          clash.radius !== '50%' && clash.w !== '16px',
+          `.why 문단 → 폭 ${clash.w} 반지름 ${clash.radius}`);
 
     console.log();
     console.log('4-B. 지도 위 범례를 걷어냈다');

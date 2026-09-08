@@ -217,10 +217,10 @@ function showFatal(message) {
  * 지우지 않고 접는다. 지우면 '왜 계획관리만 켜져 있나' 를 물을 곳이
  * 없어진다. */
 function wireWhy() {
-  document.querySelectorAll('.why').forEach((btn) => {
+  document.querySelectorAll('.info-dot').forEach((btn) => {
     // 설명은 제목 **다음 형제**다. 그래야 표시가 제목 옆에 붙는다.
     const body = btn.closest('h2, h3').nextElementSibling;
-    if (!body || !body.classList.contains('why-body')) return;
+    if (!body || !body.classList.contains('info-pop')) return;
     btn.addEventListener('click', () => {
       const open = body.hidden;
       body.hidden = !open;
