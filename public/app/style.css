@@ -1017,3 +1017,32 @@ body.picking .leaflet-container{cursor:crosshair}
    접어 두고 안에서 굴린다. */
 .scroll-box { max-height: 190px; overflow-y: auto; padding-right: 4px; }
 .checks .n { color: var(--muted); font-weight: 400; font-size: 11.5px; }
+
+
+/* ── 필지 진단 카드 (2026-09-08 방향 전환) ──
+   "어떤 토지이든 나쁜 토지는 없다. 어떤 방향으로 개발할 지가 문제다."
+
+   레이더는 넓이를 점수로 읽히게 두면 안 된다 — 축 순서만 바꿔도 넓이가
+   달라진다. 그래서 면은 옅게 깔고, 축마다 백분위와 원값을 글자로 적는다. */
+.parcel-card { font-size: 13px; }
+.pc-head { display: flex; align-items: baseline; gap: .5rem; }
+.pc-head b { font-size: 15px; }
+.pc-head span { color: var(--muted); font-size: 12px; }
+.pc-size { color: var(--muted); font-size: 12.5px; margin-bottom: .4rem; }
+.pc-size em { font-style: normal; }
+.radar { display: block; margin: .2rem auto .5rem; overflow: visible; }
+.pc-axes { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.pc-axes th {
+  text-align: left; font-weight: 600; padding: 3px 8px 3px 0; white-space: nowrap;
+}
+.pc-axes td { padding: 3px 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+.pc-axes td.raw {
+  text-align: right; color: var(--muted); font-size: 11.5px;
+  padding-left: 8px; font-variant-numeric: normal;
+}
+.pc-axes em { font-style: normal; color: var(--faint); }
+.pc-peer {
+  margin: .55rem 0 0; padding-top: .5rem; border-top: 1px solid var(--border);
+  font-size: 11.5px; color: var(--muted);
+}
+.pc-note { margin: .35rem 0 0; font-size: 11px; color: var(--faint); line-height: 1.5; }

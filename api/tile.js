@@ -40,6 +40,29 @@
 // 안 걸린다.
 
 const VWORLD_WMS = "https://api.vworld.kr/req/wms";
+// 토지특성(dt_d194) — 도로접·형상·지세·공시지가. WMS 가 아니라 WFS 다.
+// 파이프라인은 이것을 칸 단위로 훑어 parcel 표에 담는데(collect/landchar),
+// 전국이 아직 22.3% 뿐이라 **누른 그 필지 하나는 즉석에서 물어본다.**
+// 미리 다 받아 둘 필요가 없다.
+const VWORLD_WFS = "https://api.vworld.kr/req/wfs";
+const PARCEL_TYPENAME = "dt_d194";
+// 누른 점 둘레 몇 도를 볼 것인가. 0.0006도 ≈ 60m — 필지 하나가 확실히
+// 들어오면서 이웃을 수십 개씩 끌고 오지는 않는 크기다.
+const PARCEL_HALF_DEG = 0.0006;
+// 우리가 쓰는 칸 이름. collect/landchar.FIELDS 와 같은 것을 본다 —
+// 둘이 어긋나면 화면과 분석이 다른 땅을 말한다.
+const PARCEL_FIELDS = {
+  pnu: "pnu",
+  jimok: "lndcgr_code_nm",
+  land_use: "prpos_area_1_nm",
+  use_situation: "lad_use_sittn_nm",
+  area_m2: "lndpcl_ar",
+  road_side: "road_side_code_nm",
+  shape: "tpgrph_frm_code_nm",
+  slope: "tpgrph_hg_code_nm",
+  official_price: "pblntf_pclnd",
+  stdr_year: "stdr_year",
+};
 
 // 화면에 깔 수 있는 것. 목적지를 받지 않고 이 표에서만 고른다.
 const LAYERS = {
@@ -162,7 +185,7 @@ function mercBbox(z, x, y) {
 }
 
 /** 브이월드를 부른다. 인증키는 여기서만 붙고 밖으로 안 나간다. */
-async function callVworld(params) {
+async function callVworld(params, base) {
   const key = process.env.VWORLD_KEY;
   if (!key) return { keyMissing: true };
   // 브이월드 키는 '웹사이트' 유형으로 서비스URL 이 등록돼 있다. WMS 는
@@ -170,7 +193,7 @@ async function callVworld(params) {
   // 브라우저처럼 Referer 가 안 붙으므로 등록된 주소를 실어 보낸다
   // (api/relay.js 가 같은 이유로 같은 값을 쓴다).
   const referer = process.env.VWORLD_REFERER || "https://sado-toji.vercel.app/";
-  const url = `${VWORLD_WMS}?` + new URLSearchParams({ ...params, key });
+  const url = `${base || VWORLD_WMS}?` + new URLSearchParams({ ...params, key });
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), TIMEOUT_MS);
   try {
@@ -232,6 +255,85 @@ async function featureInfo(req, res, layers) {
   res.status(200).json(info ? { zoning: info } : { zoning: null });
 }
 
+/** 점이 다각형 안에 드는가 (광선 교차). 이웃 필지를 걸러낸다. */
+function inRing(ring, lon, lat) {
+  let inside = false;
+  for (let i = 0, n = ring.length; i < n; i += 1) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % n];
+    if ((y1 > lat) !== (y2 > lat)) {
+      const cut = x1 + ((lat - y1) * (x2 - x1)) / ((y2 - y1) || 1e-12);
+      if (lon < cut) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function hitsPoint(geom, lon, lat) {
+  if (!geom) return false;
+  const polys = geom.type === "MultiPolygon" ? geom.coordinates
+              : geom.type === "Polygon" ? [geom.coordinates] : [];
+  return polys.some((rings) => rings.length && inRing(rings[0], lon, lat));
+}
+
+/** 누른 자리의 **필지 특성**을 돌려준다 (도로접·형상·지세·공시지가). */
+async function parcelInfo(req, res) {
+  const lat = decimal(String(req.query.lat ?? ""));
+  const lon = decimal(String(req.query.lon ?? ""));
+  if (lat === null || lon === null) return fail(res, 400, "lat·lon 이 필요합니다");
+  if (lat < KOREA.latMin || lat > KOREA.latMax ||
+      lon < KOREA.lonMin || lon > KOREA.lonMax) {
+    return fail(res, 400, "한반도 밖입니다");
+  }
+  const h = PARCEL_HALF_DEG;
+  const out = await callVworld({
+    SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "2.0.0",
+    TYPENAME: PARCEL_TYPENAME,
+    BBOX: [lon - h, lat - h, lon + h, lat + h].join(","),
+    SRSNAME: "EPSG:4326",
+    // GML 로 요청하면 중계기가 죽는다 (docs/land-price-fallback.md).
+    OUTPUT: "application/json",
+    MAXFEATURES: "10", RESULTTYPE: "results",
+    DOMAIN: process.env.VWORLD_REFERER || "https://sado-toji.vercel.app/",
+  }, VWORLD_WFS);
+  if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
+  if (!out.upstream) {
+    return fail(res, out.timedOut ? 504 : 502,
+      out.timedOut ? `브이월드 응답 없음 (${TIMEOUT_MS / 1000}초 초과)`
+                   : "브이월드 호출 실패");
+  }
+  const upstream = out.upstream;
+  const type = upstream.headers.get("content-type") || "";
+  const text = await upstream.text();
+  // 한도 초과·키 오류는 JSON 이 아니라 XML 로 온다. 본문을 그대로 돌려주면
+  // 안 된다 — 우리가 보낸 요청 URL 이 실려 오고 거기에 인증키가 붙어 있다.
+  if (!upstream.ok || /xml/i.test(type)) {
+    return fail(res, 502, `브이월드가 필지를 주지 않았습니다 (HTTP ${upstream.status})`);
+  }
+  let feats = [];
+  try {
+    feats = (JSON.parse(text) || {}).features || [];
+  } catch (e) {
+    return fail(res, 502, "브이월드 응답을 읽지 못했습니다");
+  }
+  // **누른 점을 품는 필지**를 고른다. bbox 로 부르면 이웃이 같이 온다.
+  const hit = feats.find((f) => hitsPoint(f.geometry, lon, lat)) || null;
+  res.setHeader("cache-control", hit ? CACHE_OK : CACHE_BAD);
+  if (!hit) return res.status(200).json({ parcel: null });
+  const props = hit.properties || {};
+  const parcel = {};
+  for (const [ours, theirs] of Object.entries(PARCEL_FIELDS)) {
+    const v = props[theirs];
+    parcel[ours] = v === undefined || v === "" ? null : v;
+  }
+  for (const num of ["area_m2", "official_price"]) {
+    const n = Number(parcel[num]);
+    parcel[num] = Number.isFinite(n) ? n : null;
+  }
+  // 도형은 안 싣는다. 응답이 수십 KB로 커지는데 화면은 쓰지 않는다.
+  res.status(200).json({ parcel });
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") return fail(res, 405, "GET 만 허용합니다");
 
@@ -242,6 +344,11 @@ module.exports = async function handler(req, res) {
   // 좌표계도 여기서 정한다 — 밖에서 받는 것은 위경도뿐이다.
   if (String(req.query.mode || "") === "info") {
     return featureInfo(req, res, layers);
+  }
+  // 누른 자리의 필지 특성. 레이어 화이트리스트와 무관한 다른 서비스라
+  // 위의 layers 를 쓰지 않는다.
+  if (String(req.query.mode || "") === "parcel") {
+    return parcelInfo(req, res);
   }
 
   const z = whole(String(req.query.z ?? ""));
@@ -289,6 +396,8 @@ module.exports = async function handler(req, res) {
 // 그림은 오는데 땅이 어긋난다 — 눈으로는 잡기 어려운 종류다.
 module.exports.mercBbox = mercBbox;
 module.exports.LAYERS = LAYERS;
+module.exports.hitsPoint = hitsPoint;
+module.exports.PARCEL_FIELDS = PARCEL_FIELDS;
 // 파서도 검사가 직접 확인한다. 응답 모양이 바뀌면 화면에 이름이
 // 안 뜨는데, 오류가 아니라 빈 값으로 조용히 나타난다.
 module.exports.parseInfo = parseInfo;

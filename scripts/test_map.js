@@ -406,6 +406,53 @@ const FAKE_LEAFLET = () => {
     // 어느 조각을 실제로 받았는지 센다. '보이는 것만 받는다' 는 말은
     // 그리는 것이 아니라 **받는 것**을 세야 확인된다.
     const lpUmdHits = [];
+    // 필지 진단(레이더) — 또래 분포와 누른 필지.
+    const FAKE_STATS = {
+      min_peer: 30,
+      traffic: { radius_km: 10, min_km: 0.5 },
+      axes: [{ key: 'road' }, { key: 'traffic' }, { key: 'zoning' },
+             { key: 'price' }, { key: 'land' }],
+      shape_grade: { 정방형: 5, 가로장방: 4, 사다리: 3, 부정형: 1, 자루형: 0 },
+      slope_grade: { 평지: 5, 완경사: 4, 급경사: 2, 고지: 1, 저지: 1 },
+      zone_ladder: { 계획관리: 5, 생산관리: 3, 자연녹지: 3, 보전관리: 1, 농림: 1 },
+      peers: {
+        '41111|계획관리': { n: 120, road: [.05, .15, .3, .5, .7, .93],
+          land: [.05, .2, .4, .6, .8, .95],
+          price: [1e4, 5e4, 9e4, 13e4, 17e4, 21e4, 25e4, 29e4, 33e4, 37e4, 41e4],
+          traffic: [0, 50, 120, 300, 700, 1500, 3000, 6000, 12000, 25000, 50000] },
+        // 시군구 또래가 얇으면(4건) 시도로 물러난다.
+        '47940|계획관리': { n: 4, road: [.5, .5, .5, .5, .5, .5],
+          land: [.5, .5, .5, .5, .5, .5], price: [1, 2], traffic: [1, 2] },
+        '47|계획관리': { n: 900, road: [.1, .2, .3, .4, .5, .6],
+          land: [.1, .2, .3, .4, .5, .6],
+          price: [1e4, 2e4, 3e4, 4e4, 5e4, 6e4, 7e4, 8e4, 9e4, 10e4, 11e4],
+          traffic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10] },
+      },
+      zone_pct: { 41111: [.02, .1, .2, .35, .6, .88], 47940: [.1, .3, .4, .5, .6, .7] },
+    };
+    await page.route('**/app/data/parcelstats.json*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify(FAKE_STATS),
+    }));
+    let parcelHits = 0;
+    await page.route('**/api/tile?mode=parcel*', (r) => {
+      parcelHits += 1;
+      const u = new URL(r.request().url());
+      // 바다를 누르면 필지가 없다. 오류가 아니다.
+      if (Number(u.searchParams.get('lat')) > 38) {
+        return r.fulfill({ status: 200, contentType: 'application/json',
+          body: JSON.stringify({ parcel: null }) });
+      }
+      return r.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ parcel: {
+          pnu: '4111110300100010000', jimok: '전', land_use: '계획관리지역',
+          use_situation: '전', area_m2: 1653, road_side: '중로한면',
+          shape: '가로장방형', slope: '평지', official_price: 250000,
+          stdr_year: '2025',
+        } }),
+      });
+    });
     await page.route('**/app/data/landprice-umd-*.json*', (r) => {
       const m = r.request().url().match(/landprice-umd-\w+-(\d+)\.json/);
       const p = m ? m[1] : '41';
@@ -1290,6 +1337,79 @@ const FAKE_LEAFLET = () => {
     await page.evaluate(() => { window.__zoom = 7; });
 
     console.log();
+    console.log('9-C. 필지 진단 — 다섯 축을 또래 안 백분위로');
+    /* 사장님 지시(2026-09-08): "해당 필지를 클릭하면 스파이더 차트를 통해
+     * 여러가지 인자들을 분석하여 어떤 방향이 좋을 지 판단할 수 있도록"
+     * "(어떤 토지이든 나쁜 토지는 없다. 어떤 방향으로 개발할 지가 문제다)" */
+    const clickMap = async (lat, lon) => {
+      await page.evaluate((p) => {
+        window.__zoom = 15;
+        const fns = ((window.__mapOn || {}).click) || [];
+        fns.forEach((fn) => fn({ latlng: { lat: p.lat, lng: p.lon },
+                                 originalEvent: { target: null } }));
+      }, { lat, lon });
+      await page.waitForTimeout(400);
+      return page.evaluate(() => ({
+        html: (document.getElementById('detail') || {}).innerHTML || '',
+        peek: window.__parcel || null,
+      }));
+    };
+
+    const pc = await clickMap(37.304, 127.011);
+    check('지도를 누르면 그 필지를 물어본다', parcelHits > 0, `${parcelHits}회`);
+    check('오른쪽에 필지 카드가 열린다',
+          /parcel-card/.test(pc.html) && /계획관리지역/.test(pc.html),
+          pc.html.slice(0, 80));
+    check('레이더를 그린다 (다섯 축)',
+          /<svg class="radar"/.test(pc.html)
+          && (pc.peek.diag.axes || []).length === 5,
+          (pc.peek.diag.axes || []).map((a) => a.key).join(','));
+
+    const byKey = {};
+    (pc.peek.diag.axes || []).forEach((a) => { byKey[a.key] = a; });
+    // 중로한면 = 등급 4 → 또래 누적 .7
+    check('도로 축이 또래 사다리를 탄다',
+          Math.abs(byKey.road.pct - 0.7) < 1e-6, String(byKey.road.pct));
+    // 공시지가 25만 = 분위 경계의 6번째(0..10) → 0.6
+    check('가격 축이 분위 경계를 선형으로 읽는다',
+          Math.abs(byKey.price.pct - 0.6) < 1e-6, String(byKey.price.pct));
+    // 계획관리 = 사다리 5 → 시군구 zone_pct[5] = .88
+    check('개발 여지는 또래가 아니라 시군구 안에서 잰다',
+          Math.abs(byKey.zoning.pct - 0.88) < 1e-6, String(byKey.zoning.pct));
+    // 가로장방형(4) + 평지(5) → 반올림 5 → land[5] = .95
+    check('모양·지세를 한 축으로 묶는다',
+          Math.abs(byKey.land.pct - 0.95) < 1e-6, String(byKey.land.pct));
+    check('축마다 원값을 같이 적는다',
+          /중로한면/.test(pc.html) && /가로장방형/.test(pc.html),
+          byKey.road.raw);
+
+    // **점수를 만들지 않는다.** 이것이 이 제품이 땅박사와 갈리는 지점이다.
+    check('다섯 축을 더한 점수를 안 만든다',
+          !/총점|종합 점수|[0-9]+점/.test(pc.html)
+          && pc.peek.diag.score === undefined,
+          pc.html.match(/총점|종합 점수|\d+점/) ? '점수가 있다' : '없음');
+    check('합산하지 않는다는 것을 화면에도 적는다',
+          /하나의 점수로 만들지 않습니다/.test(pc.html));
+    // 또래가 어디까지 물러났는지 밝힌다. 안 밝히면 '전국 상위 10%' 를
+    // '우리 동네 상위 10%' 로 읽는다.
+    check('어느 또래와 견줬는지 말한다',
+          /같은 시군구의 계획관리 거래 120건/.test(pc.html),
+          (pc.html.match(/[^>]*견줬습니다/) || ['없음'])[0]);
+
+    // 얇은 또래(4건)는 시도로 물러난다.
+    const thin = await clickMapPeer(page, '47940');
+    check('또래가 얇으면 시·도로 물러난다',
+          thin && /같은 시·도의 계획관리 거래 900건/.test(thin.html),
+          thin ? (thin.html.match(/[^>]*견줬습니다/) || ['없음'])[0] : '없음');
+
+    // 바다·도로를 누른 것은 오류가 아니다.
+    const sea = await clickMap(38.5, 128.5);
+    check('필지가 없으면 이유를 적는다 (오류가 아니다)',
+          /필지 자료를\s*못 받았습니다/.test(sea.html) && sea.peek === null,
+          sea.html.slice(0, 90));
+    await page.evaluate(() => { window.__zoom = 7; });
+
+    console.log();
     console.log('8. 세 가설 판정 — 무엇을 말할 수 있고 없는지');
     // 이 탭은 숫자를 하나 더 보여주는 곳이 아니다. 계수가 유의해도 위약
     // 밴드가 같이 유의하면 IC 효과가 아니고, 표본이 모자라면 '효과 없음'
@@ -1875,3 +1995,34 @@ const FAKE_LEAFLET = () => {
   console.log(failed ? `실패 ${failed}건` : '모두 통과');
   process.exit(failed ? 1 : 0);
 })();
+
+/** 또래가 얇은 시군구(47940)를 눌러 본다. pnu 앞 다섯 자리가 시군구 코드다. */
+async function clickMapPeer(page, code) {
+  // 이 덧씌운 길은 뒤 절까지 남는다. 바다 규칙(위도 38 위는 필지 없음)을
+  // 여기에도 넣지 않으면 다음 검사가 '바다에서 필지가 나온다' 로 깨진다.
+  await page.route('**/api/tile?mode=parcel*', (r) => {
+    const u = new URL(r.request().url());
+    if (Number(u.searchParams.get('lat')) > 38) {
+      return r.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ parcel: null }) });
+    }
+    return r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ parcel: {
+        pnu: `${code}10300100010000`, jimok: '전', land_use: '계획관리지역',
+        area_m2: 1000, road_side: '중로한면', shape: '가로장방형',
+        slope: '평지', official_price: 50000, stdr_year: '2025',
+      } }),
+    });
+  });
+  await page.evaluate(() => {
+    window.__zoom = 15;
+    (((window.__mapOn || {}).click) || []).forEach((fn) =>
+      fn({ latlng: { lat: 37.484, lng: 130.905 }, originalEvent: { target: null } }));
+  });
+  await page.waitForTimeout(400);
+  return page.evaluate(() => ({
+    html: (document.getElementById('detail') || {}).innerHTML || '',
+    peek: window.__parcel || null,
+  }));
+}

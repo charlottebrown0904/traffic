@@ -316,6 +316,97 @@ const call = async (query, method = 'GET') => {
   check('아무것도 없으면 null', handler.parseInfo('no features were found') === null);
 
   console.log();
+  console.log('14. 누른 필지의 특성을 즉석에서 받아온다 (mode=parcel)');
+  // 사장님 지시(2026-09-08): "해당 필지를 클릭하면 스파이더 차트를 통해
+  // 여러가지 인자들을 분석". 필지 특성은 전국의 22.3% 만 미리 받아 뒀다.
+  // 나머지는 **누른 그 필지 하나만** 즉석에서 물어본다.
+  const PARCEL = (extra = {}) => ({
+    type: 'FeatureCollection',
+    features: [
+      // 이웃 필지 — bbox 로 부르면 같이 온다. 점을 안 품으므로 빠져야 한다.
+      { properties: { pnu: '9999', road_side_code_nm: '맹지' },
+        geometry: { type: 'Polygon',
+          coordinates: [[[127.0, 37.0], [127.0004, 37.0],
+                         [127.0004, 37.0004], [127.0, 37.0004], [127.0, 37.0]]] } },
+      // 누른 점을 품는 필지
+      { properties: Object.assign({
+          pnu: '4155025300100010000', lndcgr_code_nm: '전',
+          prpos_area_1_nm: '계획관리지역', lad_use_sittn_nm: '전',
+          lndpcl_ar: '1653.0', road_side_code_nm: '세로한면(가)',
+          tpgrph_frm_code_nm: '가로장방형', tpgrph_hg_code_nm: '평지',
+          pblntf_pclnd: '132000', stdr_year: '2025',
+          ag_geom: '아주 긴 도형 문자열',
+        }, extra),
+        geometry: { type: 'Polygon',
+          coordinates: [[[127.0008, 37.0008], [127.0016, 37.0008],
+                         [127.0016, 37.0016], [127.0008, 37.0016],
+                         [127.0008, 37.0008]]] } },
+    ],
+  });
+  const parcelReply = (body) => ({
+    ok: true, status: 200,
+    headers: { get: (k) => (k === 'content-type' ? 'application/json' : null) },
+    text: async () => JSON.stringify(body),
+  });
+
+  stubFetch(parcelReply(PARCEL()));
+  const pr = await call({ mode: 'parcel', lat: '37.0012', lon: '127.0012' });
+  const wfsUrl = (calls[0] || {}).url || '';
+  check('WFS 로 토지특성을 부른다',
+        /\/req\/wfs\?/.test(wfsUrl) && /TYPENAME=dt_d194/.test(wfsUrl),
+        wfsUrl.replace(KEY, '<KEY>').slice(0, 90) || '없음');
+  check('누른 점을 품는 필지를 고른다 (이웃을 안 준다)',
+        pr.json_ && pr.json_.parcel && pr.json_.parcel.pnu.startsWith('41550'),
+        JSON.stringify(pr.json_ && pr.json_.parcel));
+  check('레이더에 쓸 칸을 다 준다',
+        ['road_side', 'shape', 'slope', 'official_price', 'land_use', 'area_m2']
+          .every((k) => pr.json_.parcel[k] !== undefined
+                        && pr.json_.parcel[k] !== null),
+        Object.keys(pr.json_.parcel).join(','));
+  check('숫자는 숫자로 준다 (화면이 문자열을 더하지 않게)',
+        pr.json_.parcel.official_price === 132000
+        && pr.json_.parcel.area_m2 === 1653,
+        `${typeof pr.json_.parcel.official_price} ${typeof pr.json_.parcel.area_m2}`);
+  // 도형은 수십 KB다. 화면이 안 쓰는 것을 휴대폰에 내려보내지 않는다.
+  check('도형은 안 싣는다', !/ag_geom|coordinates/.test(pr.body || ''));
+  check('인증키가 응답에 안 섞인다', !(pr.body || '').includes(KEY));
+
+  // 빈 땅을 누른 것은 오류가 아니다. 화면이 "여기는 필지 자료가 없습니다"
+  // 라고 말하면 된다.
+  stubFetch(parcelReply({ type: 'FeatureCollection', features: [] }));
+  const noParcel = await call({ mode: 'parcel', lat: '37.0012', lon: '127.0012' });
+  check('아무것도 없으면 200 에 null',
+        noParcel.code === 200 && noParcel.json_.parcel === null,
+        String(noParcel.code));
+  check('그 실패는 길게 캐시하지 않는다',
+        /s-maxage=60/.test(noParcel.headers['cache-control'] || ''),
+        noParcel.headers['cache-control']);
+
+  // 한도 초과·키 오류는 JSON 이 아니라 XML 로 온다. 그것을 그대로
+  // 돌려주면 우리가 보낸 요청 URL 이 실려 나가고 거기에 키가 붙어 있다.
+  stubFetch({
+    ok: false, status: 400,
+    headers: { get: () => 'application/xml' },
+    text: async () => `<ServiceException>키 오류 ${KEY}</ServiceException>`,
+  });
+  const badXml = await call({ mode: 'parcel', lat: '37.0012', lon: '127.0012' });
+  check('XML(한도 초과)은 502 로 알린다', badXml.code === 502, String(badXml.code));
+  check('그 본문을 그대로 돌려주지 않는다', !(badXml.body || '').includes(KEY));
+
+  stubFetch(parcelReply(PARCEL()));
+  const outsideKr = await call({ mode: 'parcel', lat: '10.0', lon: '127.0' });
+  check('한반도 밖은 부르지 않는다',
+        outsideKr.code === 400 && calls.length === 0,
+        `${outsideKr.code} · 호출 ${calls.length}회`);
+
+  // 점-다각형 판정을 직접 본다. 이것이 틀리면 이웃 필지의 도로접이
+  // 내 땅의 것으로 붙는다 — 오류 없이 **틀린 값**이 나오는 종류다.
+  const ring = { type: 'Polygon',
+    coordinates: [[[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]] };
+  check('점-다각형 판정: 안', handler.hitsPoint(ring, 5, 5));
+  check('점-다각형 판정: 밖', !handler.hitsPoint(ring, 15, 5));
+
+  console.log();
   console.log('7. GET 만 받는다');
   stubFetch(pngReply);
   const post = await call({ z: '12', y: '5', x: '5' }, 'POST');

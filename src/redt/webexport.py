@@ -993,10 +993,23 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
             SELECT t.tollgate_id, t.name, t.route_no, t.lat, t.lon,
                    t.sido, t.sigungu,
                    coalesce(t.operator_cd, '') AS operator_cd,
-                   (v.tollgate_id IS NULL) AS no_traffic
+                   (v.tollgate_id IS NULL) AS no_traffic,
+                   -- 화물(3·4·5종) 가장 최근 해의 일평균. 화면이 필지
+                   -- 진단의 교통 축을 **내보내기와 같은 식**으로 계산해야
+                   -- 같은 값이 나온다 (parcelscore.build 참조).
+                   coalesce(f.avg_daily, 0) AS freight
             FROM tollgate t
             LEFT JOIN (SELECT DISTINCT tollgate_id FROM traffic) v
                    ON v.tollgate_id = t.tollgate_id
+            LEFT JOIN (
+                SELECT tollgate_id, avg_daily FROM (
+                    SELECT tollgate_id, avg_daily,
+                           row_number() OVER (PARTITION BY tollgate_id
+                                              ORDER BY year DESC) AS rn
+                    FROM traffic
+                    WHERE vehicle_type IN (3, 4, 5) AND avg_daily IS NOT NULL
+                ) WHERE rn = 1
+            ) f ON f.tollgate_id = t.tollgate_id
             WHERE t.lat IS NOT NULL
             ORDER BY t.tollgate_id
         """).fetchdf()
@@ -1216,6 +1229,20 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
                 stale.unlink()
                 print(f"  낡은 읍면동 파일 삭제: {stale.name}")
     _write("landprice.json", landprice)
+
+    # 필지 진단(레이더)의 또래 분포. 사장님 지시(2026-09-08):
+    # "해당 필지를 클릭하면 스파이더 차트를 통해 여러가지 인자들을 분석".
+    #
+    # **점수를 만들지 않는다** — 비교 대상의 분포만 만든다. 땅에 0~100 점
+    # 하나를 매기면 가짜 정밀도가 된다. 같은 필지가 물류창고에는 A급이고
+    # 전원주택에는 C급인데, 하나의 숫자로 뭉개면 그 사실이 사라진다.
+    try:
+        from .parcelscore import build as _peer_build
+        _write("parcelstats.json",
+               _peer_build([(name, like) for name, like, _k in LANDPRICE_GROUPS]))
+    except Exception as exc:                       # noqa: BLE001
+        # 조인 표가 없는 실행(캐시가 비었을 때)에서도 나머지는 나가야 한다.
+        print(f"  ⚠ 필지 진단 또래 분포를 못 만들었습니다: {exc}")
     _write("traffic.json", _traffic_ranking())
     _write("chart.json", _chart_series())
     _write("tollgates.json", _records(merged))

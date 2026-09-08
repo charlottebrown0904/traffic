@@ -1357,7 +1357,10 @@ function buildMap() {
     if (t && t.closest && t.closest('.leaflet-interactive')) return;
     // 용도지역을 켜 놓았을 때만. 꺼 놓았으면 색면이 없으니 누를 이유도
     // 없고, 누를 때마다 브이월드를 부르는 것은 한도를 태우는 일이다.
-    if (state.zoning && map.getZoom() >= ZONING_MIN_ZOOM) askZoning(e.latlng);
+    // 필지 진단(레이더)을 연다. 배율이 낮으면 어느 필지를 누른 것인지
+    // 알 수 없으므로 그때는 예전처럼 용도지역만 말한다.
+    if (map.getZoom() >= ZONING_MIN_ZOOM) askParcel(e.latlng);
+    else if (state.zoning) askZoning(e.latlng);
   });
 
   if (withCoords.length) {
@@ -2830,6 +2833,285 @@ function wireLandPrice() {
     });
   }
   lpSyncChips();
+}
+
+
+/* ─────────── 필지 진단 (레이더) ─────────── */
+/* 사장님 지시(2026-09-08):
+ *   "해당 필지를 클릭하면 스파이더 차트를 통해 여러가지 인자들을 분석하여
+ *    어떤 방향이 좋을 지 판단할 수 있도록 보여주는 방향으로 변경하겠습니다.
+ *    (어떤 토지이든 나쁜 토지는 없다. 어떤 방향으로 개발할 지가 문제다)"
+ *
+ * **점수를 만들지 않는다.** 땅에 0~100 점 하나를 매기면 가짜 정밀도가
+ * 된다 — 같은 필지가 물류창고에는 A급이고 전원주택에는 C급인데, 하나의
+ * 숫자로 뭉개면 그 사실이 사라진다. 레이더는 "무엇이 강하고 무엇이
+ * 약한가" 만 말한다.
+ *
+ * 그래서 다섯 축을 전부 **또래 안의 백분위**로 통일한다. 단위가 같아지고
+ * (전부 %), 넓이를 점수로 안 쓰므로 축 순서도 해롭지 않다. 또래는
+ * 같은 시군구·같은 용도지역에서 실제로 거래된 땅이다 — 전국 대비로 재면
+ * 시골 땅은 전부 찌그러진 별이 되어 아무것도 못 읽는다. */
+
+/* 두 점 사이 거리(km). 교통 축이 이것으로 중력을 계산한다.
+ * 내보내기 쪽은 조인 표의 distance_km 를 쓰는데, 그것도 같은 하버사인
+ * 으로 만든 값이다 (transform/link). 두 자가 달라지면 백분위가 딴 것을
+ * 가리킨다. */
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371.0088;
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+}
+
+let parcelStats = null;
+let parcelStatsTried = false;
+
+async function loadParcelStats() {
+  if (parcelStats || parcelStatsTried) return parcelStats;
+  parcelStatsTried = true;
+  try {
+    const r = await fetch('/app/data/parcelstats.json', { cache: 'no-cache' });
+    if (r.ok) parcelStats = await r.json();
+  } catch (e) { /* 없으면 진단만 못 보여준다. 지도는 그대로 돈다. */ }
+  return parcelStats;
+}
+
+/* 값 → 또래 안 백분위. 분위 경계 사이를 선형으로 읽는다. */
+function pctFromQuantiles(v, breaks) {
+  if (!Array.isArray(breaks) || breaks.length < 2 || !(v >= 0)) return null;
+  if (v <= breaks[0]) return 0;
+  const last = breaks.length - 1;
+  if (v >= breaks[last]) return 1;
+  for (let i = 0; i < last; i += 1) {
+    if (v <= breaks[i + 1]) {
+      const span = breaks[i + 1] - breaks[i];
+      const frac = span > 0 ? (v - breaks[i]) / span : 0;
+      return (i + frac) / last;
+    }
+  }
+  return 1;
+}
+
+/* 우리 다섯 묶음 중 이 용도지역이 어디에 드는가. */
+function parcelGroup(landUse) {
+  const groups = Object.keys(((state.landPrice || {}).groups) || {});
+  return groups.find((g) => String(landUse || '').indexOf(g) >= 0) || null;
+}
+
+/* 또래를 고른다. 시군구 → 시도 → 전국으로 물러나고, **어디까지
+ * 물러났는지 함께 돌려준다** — 그것을 안 밝히면 '전국 상위 10%' 를
+ * '우리 동네 상위 10%' 로 읽는다. */
+function pickPeer(sigunguCd, group) {
+  const st = parcelStats;
+  if (!st || !group) return null;
+  const min = st.min_peer || 30;
+  const tries = [
+    { key: `${sigunguCd}|${group}`, level: '같은 시군구' },
+    { key: `${String(sigunguCd).slice(0, 2)}|${group}`, level: '같은 시·도' },
+    { key: `*|${group}`, level: '전국' },
+  ];
+  for (const t of tries) {
+    const p = st.peers[t.key];
+    if (p && p.n >= min) return { ...p, level: t.level, group };
+  }
+  const last = st.peers[`*|${group}`];
+  return last ? { ...last, level: '전국', group } : null;
+}
+
+/* 교통 축 — 10km 안 영업소의 화물 통행량을 거리 제곱으로 나눠 더한다.
+ * 김진유(2011)의 대도시접근성지수와 같은 꼴(질량/거리)이고, 우리는
+ * 인구 대신 **실제로 지나가는 화물 대수**를 쓴다.
+ *
+ * 내보내기(parcelscore.build)와 **같은 식·같은 반경**이어야 한다.
+ * 어긋나면 백분위가 딴 자를 대는 셈이 된다. */
+function trafficGravity(lat, lon) {
+  const cfg = (parcelStats || {}).traffic || { radius_km: 10, min_km: 0.5 };
+  let sum = 0;
+  let near = null;
+  (state.tollgates || []).forEach((t) => {
+    if (!t.lat || !t.freight) return;
+    const d = haversine(lat, lon, t.lat, t.lon);
+    if (d > cfg.radius_km) return;
+    sum += t.freight / Math.pow(Math.max(d, cfg.min_km), 2);
+    if (!near || d < near.km) near = { km: d, name: t.name, freight: t.freight };
+  });
+  return { grav: sum, near };
+}
+
+/* 필지 하나 → 다섯 축. 값이 없는 축은 **비워 둔다** (0 이 아니다) —
+ * 조사가 안 된 것과 나쁜 것은 다르다. */
+function parcelAxes(parcel, at) {
+  const st = parcelStats;
+  if (!st) return null;
+  const code = String(parcel.pnu || '').slice(0, 5);
+  const group = parcelGroup(parcel.land_use);
+  const peer = pickPeer(code, group);
+  const out = { peer, group, axes: [] };
+
+  const grade = (table, text) => {
+    if (!text) return null;
+    const hit = Object.keys(table).find((k) => String(text).indexOf(k) >= 0);
+    return hit === undefined ? null : table[hit];
+  };
+
+  // 1) 도로
+  const rg = roadGradeOf(parcel.road_side);
+  out.axes.push({
+    key: 'road', label: '도로',
+    pct: (peer && rg !== null) ? peer.road[rg] : null,
+    raw: parcel.road_side || '조사 안 됨',
+  });
+
+  // 2) 교통
+  const tg = trafficGravity(at[0], at[1]);
+  out.axes.push({
+    key: 'traffic', label: '교통',
+    pct: peer ? pctFromQuantiles(tg.grav, peer.traffic) : null,
+    raw: tg.near
+      ? `${tg.near.name} ${tg.near.km.toFixed(1)}km · 화물 ${Math.round(tg.near.freight).toLocaleString('ko-KR')}대/일`
+      : '10km 안에 영업소 없음',
+  });
+
+  // 3) 개발 여지 — **또래가 아니라 시군구 안에서** 잰다. 또래는 용도지역
+  //    으로 묶여 있어서 그 안에서 재면 늘 같은 값이 나온다.
+  const zg = grade(st.zone_ladder, parcel.land_use);
+  const zp = (st.zone_pct || {})[code];
+  out.axes.push({
+    key: 'zoning', label: '개발 여지',
+    pct: (zp && zg !== null) ? zp[zg] : null,
+    raw: parcel.land_use || '용도 미상',
+  });
+
+  // 4) 가격 수준 — 높다고 좋은 것도 낮다고 좋은 것도 아니다.
+  out.axes.push({
+    key: 'price', label: '가격 수준',
+    pct: (peer && parcel.official_price)
+      ? pctFromQuantiles(parcel.official_price, peer.price) : null,
+    raw: parcel.official_price
+      ? `공시지가 ㎡당 ${Math.round(parcel.official_price).toLocaleString('ko-KR')}원`
+      : '공시지가 없음',
+  });
+
+  // 5) 모양·지세
+  const sg = grade(st.shape_grade, parcel.shape);
+  const lg = grade(st.slope_grade, parcel.slope);
+  const got = [sg, lg].filter((g) => g !== null);
+  const land = got.length ? Math.round(got.reduce((a, b) => a + b, 0) / got.length) : null;
+  out.axes.push({
+    key: 'land', label: '모양·지세',
+    pct: (peer && land !== null) ? peer.land[land] : null,
+    raw: [parcel.shape, parcel.slope].filter(Boolean).join(' · ') || '조사 안 됨',
+  });
+  return out;
+}
+
+/* 도로접 사다리. usage.road_grade 와 **같은 규칙**이다 — 둘이 어긋나면
+ * 화면과 분석이 다른 땅을 말한다. */
+function roadGradeOf(text) {
+  if (!text || typeof text !== 'string') return null;
+  const t = text.trim();
+  if (!t || t.indexOf('지정되지') >= 0 || t.indexOf('미상') >= 0) return null;
+  if (t.indexOf('맹지') >= 0) return 0;
+  if (t.indexOf('광대') >= 0) return 5;
+  if (t.indexOf('중로') >= 0) return 4;
+  if (t.indexOf('소로') >= 0) return 3;
+  if (t.indexOf('세로') >= 0 || t.indexOf('세각') >= 0) {
+    return t.indexOf('불') >= 0 ? 1 : 2;
+  }
+  return null;
+}
+
+/* 레이더 그림. **넓이를 점수로 쓰지 않는다** — 축 순서만 바꿔도 넓이가
+ * 달라지므로 그것을 값처럼 읽게 두면 안 된다. 그래서 색을 옅게 깔고
+ * 축마다 백분위 숫자를 따로 적는다. */
+function radarSvg(axes) {
+  const R = 62; const CX = 84; const CY = 78;
+  const n = axes.length;
+  const ang = (i) => (Math.PI * 2 * i) / n - Math.PI / 2;
+  const at = (i, r) => [CX + Math.cos(ang(i)) * r, CY + Math.sin(ang(i)) * r];
+  const rings = [0.25, 0.5, 0.75, 1].map((f) =>
+    `<polygon points="${axes.map((_, i) => at(i, R * f).map((v) => v.toFixed(1)).join(',')).join(' ')}"
+      fill="none" stroke="var(--border)" stroke-width="1"/>`).join('');
+  const spokes = axes.map((_, i) =>
+    `<line x1="${CX}" y1="${CY}" x2="${at(i, R)[0].toFixed(1)}" y2="${at(i, R)[1].toFixed(1)}"
+      stroke="var(--border)" stroke-width="1"/>`).join('');
+  // 값이 없는 축은 가운데로 끌어당기지 않는다. 그러면 '나쁜 땅' 으로
+  // 보이는데 실제로는 **조사가 안 된 것**이다. 점선으로 끊어 둔다.
+  const known = axes.filter((a) => a.pct !== null && a.pct !== undefined);
+  const poly = known.length >= 3
+    ? `<polygon points="${axes.map((a, i) =>
+        at(i, R * (a.pct == null ? 0 : a.pct)).map((v) => v.toFixed(1)).join(',')).join(' ')}"
+        fill="rgba(59,115,196,.22)" stroke="#2454A6" stroke-width="2"
+        stroke-linejoin="round"/>` : '';
+  const dots = axes.map((a, i) => (a.pct == null ? '' :
+    `<circle cx="${at(i, R * a.pct)[0].toFixed(1)}" cy="${at(i, R * a.pct)[1].toFixed(1)}"
+      r="2.6" fill="#123B7A"/>`)).join('');
+  const labels = axes.map((a, i) => {
+    const [x, y] = at(i, R + 14);
+    const anchor = Math.abs(x - CX) < 6 ? 'middle' : (x > CX ? 'start' : 'end');
+    return `<text x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="${anchor}"
+      font-size="10.5" fill="var(--muted)">${escapeHtml(a.label)}</text>`;
+  }).join('');
+  return `<svg class="radar" viewBox="0 0 168 160" width="168" height="160"
+    role="img" aria-label="필지 다섯 축 진단">${rings}${spokes}${poly}${dots}${labels}</svg>`;
+}
+
+function parcelCard(parcel, diag, at) {
+  const won = (v) => Math.round(v).toLocaleString('ko-KR');
+  const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
+  const rows = (diag ? diag.axes : []).map((a) => {
+    const pct = a.pct == null ? null : Math.round(a.pct * 100);
+    return `<tr><th>${escapeHtml(a.label)}</th>`
+      + `<td>${pct == null ? '<em>조사 안 됨</em>' : `상위 ${100 - pct}%`}</td>`
+      + `<td class="raw">${escapeHtml(a.raw)}</td></tr>`;
+  }).join('');
+  const peer = diag && diag.peer;
+  return '<div class="parcel-card">'
+    + `<div class="pc-head"><b>${escapeHtml(parcel.land_use || '용도 미상')}</b>`
+    + `<span>${escapeHtml(parcel.jimok || '')}</span></div>`
+    + `<div class="pc-size">${parcel.area_m2 ? `${won(parcel.area_m2)}㎡` : '면적 미상'}`
+    + (py ? ` <em>(${won(py)}평)</em>` : '') + '</div>'
+    + (diag ? radarSvg(diag.axes) : '')
+    + (rows ? `<table class="pc-axes"><tbody>${rows}</tbody></table>` : '')
+    + (peer
+       ? `<p class="pc-peer">${escapeHtml(peer.level)}의 `
+         + `${escapeHtml(peer.group)} 거래 ${peer.n.toLocaleString('ko-KR')}건과 견줬습니다.</p>`
+       : '<p class="pc-peer">견줄 또래를 못 찾았습니다.</p>')
+    // **합산하지 않는다**는 것을 화면에도 적는다. 이것이 이 제품이
+    // 땅박사와 갈리는 지점이고, 적어 두지 않으면 사람은 넓이를 점수로
+    // 읽는다.
+    + '<p class="pc-note">다섯 축을 더해 하나의 점수로 만들지 않습니다. '
+    + '같은 땅이 창고에는 좋고 주택에는 나쁠 수 있어서, 그 차이가 '
+    + '점수 하나로 뭉개지면 사라집니다.</p>'
+    + '</div>';
+}
+
+/* 지도를 눌렀을 때. 용도지역 말풍선 대신 **오른쪽에 필지 카드**를 연다. */
+async function askParcel(latlng) {
+  const box = document.getElementById('detail');
+  if (!box) return;
+  const lat = latlng.lat.toFixed(6);
+  const lon = latlng.lng.toFixed(6);
+  box.innerHTML = '<div class="detail-empty"><p>필지를 확인하는 중…</p></div>';
+  const [stats, res] = await Promise.all([
+    loadParcelStats(),
+    fetch(`/api/tile?mode=parcel&lat=${lat}&lon=${lon}`)
+      .then((r) => r.json()).catch(() => null),
+  ]);
+  const parcel = res && res.parcel;
+  if (!parcel) {
+    box.innerHTML = '<div class="detail-empty"><p>여기서는 필지 자료를 '
+      + '못 받았습니다.</p><p class="hint">바다·도로처럼 지적이 없는 곳이거나, '
+      + '브이월드가 잠시 응답하지 않은 것입니다.</p></div>';
+    window.__parcel = null;
+    return;
+  }
+  const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng]) : null;
+  box.innerHTML = parcelCard(parcel, diag, [latlng.lat, latlng.lng]);
+  window.__parcel = { parcel, diag };
 }
 
 /* ─────────── 세 가설 판정 ─────────── */
