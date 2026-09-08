@@ -249,7 +249,14 @@ function openSheet(cat) {
   document.querySelectorAll('.cat').forEach((b) => {
     b.classList.toggle('is-on', !same && b.dataset.cat === cat);
   });
-  if (same) { sheet.hidden = true; sheet.dataset.cat = ''; return; }
+  const side = document.getElementById('side');
+  if (same) {
+    sheet.hidden = true; sheet.dataset.cat = '';
+    if (side) side.classList.remove('is-open');
+    if (map) setTimeout(() => map.invalidateSize(), 200);
+    return;
+  }
+  if (side) side.classList.add('is-open');
   sheet.hidden = false;
   sheet.dataset.cat = cat;
   const title = document.getElementById('sheet-title');
@@ -257,8 +264,8 @@ function openSheet(cat) {
   sheet.querySelectorAll('.sheet-pane').forEach((p) => {
     p.hidden = p.dataset.cat !== cat;
   });
-  // 시트가 지도의 아래쪽을 덮는다. Leaflet 에 알려주지 않으면 새로
-  // 드러난/가려진 부분이 회색으로 남는다.
+  // 왼쪽 칸이 벌어지면 지도 폭이 바뀐다. Leaflet 에 알려주지 않으면
+  // 새로 드러난 부분이 회색으로 남는다.
   if (map) setTimeout(() => map.invalidateSize(), 220);
 }
 
@@ -271,6 +278,8 @@ function wireSheet() {
     close.addEventListener('click', () => {
       const sheet = document.getElementById('sheet');
       if (sheet) { sheet.hidden = true; sheet.dataset.cat = ''; }
+      const side = document.getElementById('side');
+      if (side) side.classList.remove('is-open');
       document.querySelectorAll('.cat').forEach((b) => b.classList.remove('is-on'));
       if (map) setTimeout(() => map.invalidateSize(), 220);
     });
@@ -417,6 +426,8 @@ function buildFilters() {
     input.type = 'checkbox';
     // 처음에는 꺼 둔다 (state.activeKinds 가 비어 있는 것과 짝이 맞아야 한다).
     input.checked = state.activeKinds.has(key);
+    // 토지 하위 필터가 이 칸을 찾아 켤 수 있어야 한다 (ensureLandOn).
+    input.dataset.key = key;
     input.addEventListener('change', () => {
       input.checked ? state.activeKinds.add(key) : state.activeKinds.delete(key);
       refreshMap();
@@ -428,6 +439,27 @@ function buildFilters() {
     label.append(input, span);
     kinds.append(label);
   });
+
+  /* **토지 하위 필터를 만지면 토지를 켠다.**
+   *
+   * 사장님 지적(2026-09-08): "제2종일반주거지역 처럼 일부 용도지역 클릭 시
+   * 지도에 표기되지 않습니다."
+   *
+   * 고장이 아니라 덫이었다. 용도지역·개발단계·도로접은 **토지에만 거는
+   * 조건**인데, 물건 종류에서 '토지' 가 꺼져 있으면(처음이 그렇다) 아무리
+   * 켜도 걸러낼 토지가 없다. 화면은 아무 말도 안 하고 비어 있다.
+   *
+   * 조건을 켠 사람은 그것을 보고 싶은 것이다. 토지를 같이 켠다. */
+  function ensureLandOn() {
+    if (state.activeKinds.has('land')) return;
+    state.activeKinds.add('land');
+    const box = document.getElementById('kind-filters');
+    if (box) {
+      box.querySelectorAll('input').forEach((i) => {
+        if (i.dataset.key === 'land') i.checked = true;
+      });
+    }
+  }
 
   /* ── 토지: 개발단계 · 용도지역 ──
    *
@@ -455,6 +487,10 @@ function buildFilters() {
     input.dataset.key = key;
     input.addEventListener('change', () => {
       input.checked ? set.add(key) : set.delete(key);
+      // 토지 하위 조건을 켰는데 토지가 꺼져 있으면 아무것도 안 보인다.
+      if (input.checked && (set === state.activeLandUse || set === state.activeStages)) {
+        ensureLandOn();
+      }
       refreshMap();
     });
     const span = el('span');
@@ -505,6 +541,8 @@ function buildFilters() {
     rsel.disabled = !known;
     rsel.addEventListener('change', () => {
       state.roadFilter = rsel.value;
+      // 도로 접함도 토지에만 거는 조건이다 (ensureLandOn 참조).
+      if (rsel.value !== 'all') ensureLandOn();
       refreshMap();
     });
   }
@@ -531,6 +569,7 @@ function buildFilters() {
   };
   $('#lu-all').addEventListener('click', () => {
     luNames.forEach((n) => state.activeLandUse.add(n));
+    ensureLandOn();
     syncLuBoxes();
   });
   $('#lu-none').addEventListener('click', () => {
@@ -545,6 +584,7 @@ function buildFilters() {
     luNames.forEach((n) => {
       if (CORE_LAND_USE.test(n)) state.activeLandUse.add(n);
     });
+    ensureLandOn();
     syncLuBoxes();
   });
 

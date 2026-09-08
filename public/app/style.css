@@ -1048,52 +1048,55 @@ body.picking .leaflet-container{cursor:crosshair}
 .pc-note { margin: .35rem 0 0; font-size: 11px; color: var(--faint); line-height: 1.5; }
 
 
-/* ── 큰 분류 셋 + 아래 시트 (사장님 지시 2026-09-08) ──
+/* ── 큰 분류 셋 + 왼쪽 칸 (사장님 지시 2026-09-08) ──
    "왼쪽 필터를 큰 분류별로 묶어주세요 (호갱노노 참조).
     실거래 표시 / IC / 실거래 가격 으로 묶어주고,
     선택하면 하단에 현재 필터들을 선택할 수 있도록"
+   그리고 뒤이어:
+   "왼쪽 위에 (+)(-)와 필터가 겹칩니다. 클릭 시 화면 아래로 표시되는데
+    이건 왼쪽으로 기존 처럼 옮겨주세요."
 
-   왼쪽 레일을 없앤 자리를 지도가 다 쓴다. 필터는 한 번에 한 묶음만
-   아래에서 올라온다. */
+   처음에는 지도 위에 칩을 띄우고 아래에서 시트를 올렸는데 둘 다
+   문제였다 — 칩이 Leaflet 의 +/- 단추와 겹쳤고, 시트는 지도의 아래쪽을
+   덮었다. 지도 **밖**의 왼쪽 칸으로 옮기면 둘 다 없어진다.
+
+   닫혀 있을 때는 칩 줄만큼만 좁다. 열면 필터 폭으로 벌어진다. */
+.side {
+  flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0;
+  width: 8.2rem; background: var(--surface);
+  border-right: 1px solid var(--border);
+  transition: width .15s;
+}
+.side.is-open { width: 17rem; }
 .cat-bar {
-  position: absolute; top: .6rem; left: .6rem; z-index: 500;
-  display: flex; gap: .35rem; flex-wrap: wrap;
+  display: flex; flex-direction: column; gap: .35rem;
+  padding: .6rem; border-bottom: 1px solid var(--border);
 }
 .cat {
-  font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer;
-  padding: .4rem .85rem; border-radius: 999px;
+  font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer;
+  padding: .45rem .7rem; border-radius: .45rem; text-align: left;
   background: var(--surface); color: var(--ink);
-  border: 1px solid var(--border-strong); box-shadow: var(--shadow);
+  border: 1px solid var(--border-strong);
 }
 .cat:hover { border-color: #3B73C4; }
 .cat.is-on { background: #3B73C4; border-color: #3B73C4; color: #fff; }
 
-.sheet {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 550;
-  max-height: 62%; display: flex; flex-direction: column;
-  background: var(--surface); border-top: 1px solid var(--border);
-  border-radius: 14px 14px 0 0; box-shadow: 0 -6px 24px -12px rgba(16,32,64,.4);
-}
+.sheet { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .sheet-head {
   display: flex; align-items: center; justify-content: space-between;
-  padding: .6rem .9rem .4rem; border-bottom: 1px solid var(--border);
+  padding: .55rem .7rem .4rem; border-bottom: 1px solid var(--border);
 }
-.sheet-head b { font-size: .92rem; }
+.sheet-head b { font-size: .88rem; }
 .sheet-close {
-  font: inherit; font-size: .8rem; font-weight: 600; cursor: pointer;
+  font: inherit; font-size: .78rem; font-weight: 600; cursor: pointer;
   background: none; border: 0; color: var(--accent); padding: .2rem .3rem;
 }
-.sheet-body { overflow: auto; padding: .7rem .9rem 1rem; }
+.sheet-body { overflow: auto; padding: .7rem; }
 .sheet-pane h3 {
-  font-size: .74rem; letter-spacing: .06em; text-transform: uppercase;
+  font-size: .72rem; letter-spacing: .06em; text-transform: uppercase;
   color: var(--faint); margin: .9rem 0 .45rem;
 }
 .sheet-pane h3:first-child { margin-top: 0; }
-/* 넓은 화면에서는 두 칸으로. 한 줄씩 쌓으면 시트가 끝없이 길어진다. */
-@media (min-width: 56rem) {
-  .sheet-body { columns: 2; column-gap: 1.6rem; }
-  .sheet-pane > * { break-inside: avoid; }
-}
 
 /* 연도 범위 — 좌/우 손잡이 (호갱노노 참조).
    <input type=range> 둘을 겹쳐 놓는다. 위에 놓인 것이 누름을 다 먹으므로
@@ -1128,4 +1131,16 @@ body.picking .leaflet-container{cursor:crosshair}
   pointer-events: auto;
   width: 18px; height: 18px; border-radius: 50%;
   background: var(--surface); border: 2px solid #3B73C4; cursor: pointer;
+}
+
+/* 좁은 화면에서는 왼쪽 칸이 위로 올라가 가로로 눕는다 — 세로로 두면
+   지도가 오른쪽 조각으로 남는다. */
+@media (max-width: 56rem) {
+  #view-explore.is-active { flex-direction: column; }
+  .side, .side.is-open { width: 100%; border-right: none;
+    border-bottom: 1px solid var(--border); }
+  .cat-bar { flex-direction: row; }
+  .cat { flex: 1; text-align: center; font-size: .78rem; }
+  .sheet-body { max-height: 44vh; }
+  .map-wrap { flex: 1 1 auto; min-height: 24rem; }
 }

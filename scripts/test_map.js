@@ -679,12 +679,37 @@ const FAKE_LEAFLET = () => {
     const cats = await page.evaluate(() => ({
       // 왼쪽 레일을 없앴다 — 필터가 지도 옆에 늘 펼쳐져 있으면 지도가
       // 그만큼 좁아지는데 실제로 만지는 것은 한 번에 한 묶음뿐이다.
-      rail: !!document.querySelector('.rail'),
       chips: [...document.querySelectorAll('.cat')].map((b) => b.dataset.cat),
       labels: [...document.querySelectorAll('.cat')].map((b) => b.textContent.trim()),
       sheetShut: (document.getElementById('sheet') || {}).hidden,
     }));
-    check('왼쪽 레일이 없다 (지도가 그 자리를 쓴다)', !cats.rail);
+    // 사장님 지적(2026-09-08): "왼쪽 위에 (+)(-)와 필터가 겹칩니다.
+    // 클릭 시 화면 아래로 표시되는데 이건 왼쪽으로 기존 처럼 옮겨주세요."
+    //
+    // 처음에는 지도 **위에** 칩을 띄우고 아래에서 시트를 올렸는데 둘 다
+    // 문제였다 — 칩이 Leaflet 의 +/- 단추와 겹쳤고, 시트는 지도의
+    // 아래쪽을 덮었다. 지도 **밖**의 왼쪽 칸으로 옮기면 둘 다 없어진다.
+    const place = await page.evaluate(() => {
+      const bar = document.querySelector('.cat-bar');
+      const mapEl = document.getElementById('map');
+      const zoom = document.querySelector('.leaflet-control-zoom')
+        || { getBoundingClientRect: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) };
+      const b = bar.getBoundingClientRect();
+      const z = zoom.getBoundingClientRect();
+      const overlap = !(b.right <= z.left || b.left >= z.right
+                        || b.bottom <= z.top || b.top >= z.bottom);
+      return {
+        inSide: !!bar.closest('.side'),
+        overMap: !!bar.closest('.map-wrap'),
+        overlap,
+        // 왼쪽에 있어야 한다 — 지도보다 왼쪽에서 시작한다.
+        leftOfMap: b.left < mapEl.getBoundingClientRect().left + 1,
+      };
+    });
+    check('필터가 지도 위가 아니라 왼쪽 칸에 있다',
+          place.inSide && !place.overMap, JSON.stringify(place));
+    check('확대·축소 단추와 안 겹친다', !place.overlap);
+    check('지도보다 왼쪽에 있다 (기존 자리)', place.leftOfMap);
     check('큰 분류가 셋이다',
           cats.chips.join(',') === 'trade,ic,price', cats.chips.join(','));
     check('이름이 지시하신 그대로다',
@@ -714,6 +739,9 @@ const FAKE_LEAFLET = () => {
           `"${oTrade.title}"`);
     check('한 번에 한 묶음만 보인다', oTrade.others === 0,
           `다른 묶음 ${oTrade.others}개 열림`);
+    check('열면 왼쪽 칸이 벌어진다',
+          await page.evaluate(() =>
+            document.getElementById('side').classList.contains('is-open')));
     // 옮기면서 조작부를 흘리면 안 된다. 하나라도 없으면 그 필터는
     // 화면에서 사라진 것이고, 사라진 줄도 모른다.
     const moved = await page.evaluate(() => ({
@@ -738,6 +766,48 @@ const FAKE_LEAFLET = () => {
           `"${oIc.title}"`);
     const again = await openCat('ic');
     check('같은 분류를 다시 누르면 닫힌다', again.shut && !again.chipOn);
+
+    console.log();
+    console.log('4-C. 토지 하위 필터를 켜면 토지도 같이 켜진다');
+    // 사장님 지적(2026-09-08): "제2종일반주거지역 처럼 일부 용도지역
+    // 클릭 시 지도에 표기되지 않습니다."
+    //
+    // 고장이 아니라 덫이었다. 용도지역·개발단계·도로접은 **토지에만 거는
+    // 조건**인데, 물건 종류에서 '토지' 가 꺼져 있으면(처음이 그렇다)
+    // 아무리 켜도 걸러낼 토지가 없다. 화면은 아무 말도 안 하고 비어 있다.
+    await openCat('trade');
+    const trap = await page.evaluate(() => {
+      const kinds = document.getElementById('kind-filters');
+      const land = [...kinds.querySelectorAll('input')]
+        .find((i) => i.dataset.key === 'land');
+      // 일부러 토지를 끈 채로 시작한다 (처음 화면이 그렇다).
+      if (land.checked) land.click();
+      const before = land.checked;
+      const lu = [...document.querySelectorAll('#land-use-filters input')]
+        .find((i) => /제2종일반주거/.test(i.dataset.key || ''))
+        || document.querySelector('#land-use-filters input');
+      lu.click();
+      return { before, after: land.checked, picked: lu.dataset.key };
+    });
+    check('토지가 꺼진 채로 시작한다 (그것이 덫이었다)', trap.before === false);
+    check('용도지역을 켜면 토지도 켜진다',
+          trap.after === true, `${trap.picked} → 토지 ${trap.after}`);
+    const trap2 = await page.evaluate(() => {
+      const kinds = document.getElementById('kind-filters');
+      const land = [...kinds.querySelectorAll('input')]
+        .find((i) => i.dataset.key === 'land');
+      if (land.checked) land.click();
+      document.getElementById('lu-core').click();
+      return land.checked;
+    });
+    check('"분석 대상만" 단추도 토지를 켠다', trap2);
+    // 뒤 절들이 '처음 화면' 을 본다. 여기서 켠 것을 되돌려 놓는다 —
+    // 안 그러면 이 검사가 다음 검사를 깨뜨린다.
+    await page.evaluate(() => {
+      const land = [...document.querySelectorAll('#kind-filters input')]
+        .find((i) => i.dataset.key === 'land');
+      if (land.checked) land.click();
+    });
 
     console.log();
     console.log('4-B. 거래 연도를 좌/우 손잡이로');
