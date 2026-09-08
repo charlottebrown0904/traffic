@@ -62,6 +62,15 @@ DATA_API = "https://api.vworld.kr/req/data"
 
 WFS_LAYERS = ["lp_pa_cbnd_bubun", "lp_pa_cbnd_bonbun", "dt_d194"]
 
+# 시험용 네모 — 안성 시가지. 위경도 0.02도.
+#
+# 이 크기를 정해 놓아야 '한 번에 몇 필지' 를 면적으로 환산할 수 있다.
+# 위도 37도에서 경도 1도는 약 89km, 위도 1도는 약 111km.
+BBOX = "127.26,36.99,127.28,37.01"
+BOX_KM2 = (0.02 * 89) * (0.02 * 111)     # 약 3.95 km²
+LAND_KM2 = 100_400                        # 대한민국 육지 면적
+MAXF = 1000
+
 # 통째로 내려받는 길. 중계기 허용목록(api/relay.js 의 ALLOW)에 없는
 # 호스트는 미국 러너에서 직접 나가므로 지오블록에 막힐 수 있다.
 # **막히는 것도 결과다** — 어디를 중계기에 추가해야 하는지 알려준다.
@@ -80,7 +89,11 @@ BJD = [
     ("브이월드 행정구역 WFS (읍면동)",
      WFS, {"SERVICE": "WFS", "REQUEST": "GetFeature", "VERSION": "2.0.0",
            "TYPENAME": "lt_c_ademd", "MAXFEATURES": "3",
-           "OUTPUT": "application/json"}),
+           "OUTPUT": "application/json",
+           # **도형을 빼고 묻는다.** 지난 탐침은 읍면동 3건에 9.5MB 를
+           # 받았다 — 우리가 원한 것은 코드와 이름 두 칸뿐인데 경계
+           # 폴리곤이 통째로 딸려왔다. 전국 5천 읍면동이면 GB 단위다.
+           "PROPERTYNAME": "emd_cd,emd_kor_nm,sgg_oid,col_adm_se"}),
 ]
 
 
@@ -96,6 +109,16 @@ def shape(resp) -> str:
     body = resp.text or ""
     peek = re.sub(r"\s+", " ", body[:120])
     return f"{resp.status_code} · {ct} · {len(body):,}B · {peek}"
+
+
+def feats(resp) -> tuple[int, list[dict]]:
+    """FeatureCollection 이면 몇 개가 왔는지. 아니면 (0, [])."""
+    try:
+        d = resp.json()
+    except Exception:
+        return 0, []
+    fs = d.get("features") or []
+    return len(fs), [f.get("properties") or {} for f in fs[:3]]
 
 
 def pnu(bjd10: str, jibun: str) -> str | None:
@@ -134,13 +157,13 @@ def main() -> int:
         con = duckdb.connect(str(DB_PATH), read_only=True)
         try:
             rows = con.execute(
-                "SELECT umd, jibun FROM trades WHERE sigungu_cd = ? "
+                "SELECT umd, jibun FROM trade WHERE sigungu_cd = ? "
                 "AND jibun IS NOT NULL LIMIT ?", [sigungu, SAMPLE]).fetchall()
             total, ok = con.execute(
                 "SELECT count(*), count(*) FILTER (WHERE "
                 "  regexp_matches(trim(replace(jibun,'산','')), "
                 "                 '^[0-9]{1,4}(-[0-9]{1,4})?$')) "
-                "FROM trades WHERE jibun IS NOT NULL").fetchone()
+                "FROM trade WHERE jibun IS NOT NULL").fetchone()
         except Exception as exc:
             print(f"  DB 를 못 읽었습니다: {type(exc).__name__}: {exc}")
         finally:
@@ -156,7 +179,7 @@ def main() -> int:
             print("  좌표 단위별 거래 수 (전국)")
             for lvl, n in con.execute(
                     "SELECT coalesce(geocode_level,'(좌표 없음)'), count(*) "
-                    "FROM trades GROUP BY 1 ORDER BY 2 DESC").fetchall():
+                    "FROM trade GROUP BY 1 ORDER BY 2 DESC").fetchall():
                 print(f"    {lvl:<12} {n:>12,}")
         except Exception as exc:
             print(f"  좌표 단위를 못 셌습니다: {type(exc).__name__}: {exc}")
@@ -179,22 +202,42 @@ def main() -> int:
     print("  만들려면 시군구코드(5) + 읍면동(3) + 리(2) 코드가 필요합니다.")
     for name, url, params in BJD:
         try:
-            print(f"  · {name}\n      {shape(get_once(url, params))}")
+            resp = get_once(url, params)
+            n, sample = feats(resp)
+            print(f"  · {name}\n      {shape(resp)}")
+            if n:
+                print(f"      기록 {n}건. 첫 건의 칸 이름: "
+                      f"{', '.join(list(sample[0])[:8])}")
         except Exception as exc:
             print(f"  · {name}\n      막힘 — {type(exc).__name__}: {str(exc)[:120]}")
 
     # ── 3. 연속지적도 자체 ──────────────────────────────────────────
-    head("3. 연속지적도 — API 로 한 필지씩")
+    head("3. 연속지적도 — API 한 번에 몇 필지가 오는가")
+    print("  '한 필지씩' 이 아니라 **네모 하나에 든 필지 전부**가 옵니다.")
+    print("  그래서 이 숫자가 곧 필요한 호출 수를 정합니다.\n")
     key = os.environ.get("VWORLD_KEY", "")
     for layer in WFS_LAYERS:
         params = {"SERVICE": "WFS", "REQUEST": "GetFeature", "VERSION": "2.0.0",
-                  "TYPENAME": layer, "MAXFEATURES": "2",
+                  "TYPENAME": layer, "MAXFEATURES": str(MAXF),
                   "OUTPUT": "application/json", "SRSNAME": "EPSG:4326",
-                  "BBOX": "127.26,36.99,127.28,37.01"}
+                  "BBOX": BBOX}
         if key:
             params["key"] = key
         try:
-            print(f"  · {layer}\n      {shape(get_once(WFS, params))}")
+            resp = get_once(WFS, params, timeout=60)
+            n, sample = feats(resp)
+            print(f"  · {layer}\n      {shape(resp)}")
+            if n:
+                per_km2 = n / BOX_KM2
+                print(f"      필지 {n:,}건 / {BOX_KM2:.1f}km² "
+                      f"= {per_km2:,.0f}필지/km²")
+                if n >= MAXF:
+                    print(f"      ⚠ MAXFEATURES({MAXF})에 걸렸습니다 — "
+                          f"실제로는 더 있습니다. 네모를 잘게 쪼개야 합니다.")
+                print(f"      전국 육지 {LAND_KM2:,}km² 를 이 크기로 덮으면 "
+                      f"약 {int(LAND_KM2 / BOX_KM2):,}번")
+                print(f"      첫 건의 칸 이름: "
+                      f"{', '.join(list(sample[0])[:10])}")
         except Exception as exc:
             print(f"  · {layer}\n      막힘 — {type(exc).__name__}: {str(exc)[:120]}")
 
