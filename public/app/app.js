@@ -26,7 +26,9 @@ const state = {
   trend: { id: null, scale: 'index', base: null, on: new Set() },
   activeTiers: new Set([0, 1, 2, 3, 'new', 'none']),
   // 용도지역 배경은 기본으로 켜 둔다 — 사장님이 요청하신 화면이다.
-  zoning: true,
+  // 용도지역 색면은 **꺼진 채로 시작한다** (사장님 지시 2026-09-08).
+  // 색면이 깔리면 그 위의 땅값 글자와 거래 점이 묻힌다.
+  zoning: false,
   tgYear: null, tgVehicle: 'total',
   dealYear: 'all', tradeCache: {}, tradesShown: null,
   activeStages: new Set(), activeLandUse: new Set(),
@@ -46,7 +48,9 @@ const state = {
   // 거래 연도 범위 (좌/우 손잡이). yearWide 면 전 기간 표본으로 물러난 것이다.
   yearFrom: null, yearTo: null, yearWide: false,
   // 땅값 분위지도 (2026-09-08 지시)
-  landPrice: null, lpGroup: '', lpStat: 'p50', lpWindow: '',
+  landPrice: null, lpStat: 'p50', lpWindow: '',
+  // 땅값 글자의 용도지역. 거래 점 필터(activeLandUse)와 **따로 논다**.
+  lpGroupSet: new Set(),
 };
 
 let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, popLayer, lpLayer;
@@ -1721,10 +1725,9 @@ function refreshMap() {
   }
 
   drawTrades();
-  // **땅값 글자도 같이 다시 그린다.** 용도지역 고르기가 왼쪽 필터 하나로
-  // 합쳐졌으므로(사장님 지시 2026-09-08), 그것을 만지면 거래 점과 땅값
-  // 글자가 함께 움직여야 한다. 안 그러면 둘이 서로 다른 땅을 말한다.
-  drawLandPrice();
+  // **땅값 글자는 여기서 다시 그리지 않는다.** 거래 점 필터와 따로 놀기로
+  // 했다(사장님 지시 2026-09-08) — 점을 걸러 볼 때마다 바탕의 중앙값이
+  // 함께 흔들리면 견줄 수가 없다. 배율·이동과 자기 칸에서만 다시 그린다.
   // 검사용 들여다보기 창. window.__bands 와 같은 취지다 — 지도는 CDN
   // 의 Leaflet 이 있어야 그려져서, 그리는 값 자체를 밖에서 볼 길이
   // 없으면 '색이 안 보인다' 같은 지적을 검사로 못 옮긴다.
@@ -1911,7 +1914,9 @@ function tradePopup(t) {
 
   const per = won(t.price_per_m2);
   const perPy = won(t.price_per_m2 * PYEONG_M2);
-  if (per) add('단가', `㎡당 ${per} <span class="mut">· 평당 ${perPy}</span>`);
+  // won() 이 이미 '원' 을 붙여 준다 ('165만원'). 여기서 또 붙이면
+  // '165만원원/평' 이 된다.
+  if (per) add('단가', `${perPy}/평 <span class="mut">· ${per}/㎡</span>`);
 
   // 지번·지목·용도지역·거래유형은 자료에서 그대로 온다. HTML 에
   // 넣기 전에 막는다.
@@ -1939,7 +1944,7 @@ function tradePopup(t) {
     // 공시지가 대비 배수. 스크리닝에서 '비싸게 샀나' 를 가장 빨리
     // 가늠하는 값이라 함께 적는다.
     const mult = t.price_per_m2 ? t.price_per_m2 / t.official_price : null;
-    add('공시지가', `㎡당 ${won(t.official_price)}`
+    add('공시지가', `${won(t.official_price)}/㎡`
         + (mult && isFinite(mult)
            ? ` <span class="mut">(실거래가 ${mult.toFixed(1)}배)</span>` : ''));
   }
@@ -2466,14 +2471,19 @@ function lpWindow() {
   return ws.find((w) => w.key === state.lpWindow) || ws[0] || null;
 }
 
-/* **왼쪽 필터에서 켜진 용도지역 묶음.**
+/* **땅값 글자의 용도지역은 거래 점 필터와 따로 논다.**
  *
- * 왼쪽은 '계획관리지역' 처럼 전체 이름이고 우리 묶음은 '계획관리' 다.
- * 이름이 들어 있으면 그 묶음이 켜진 것으로 본다. */
+ * 사장님 지시(2026-09-08): "실거래 표시에 용도지역과 실거래 가격의
+ * 용도지역을 구분하여, 지도에 표시된 중앙값은 실거래 표시와 무관하게
+ * 나타낼 수 있도록 수정해주세요."
+ *
+ * 앞서 하나로 합쳤던 것을 다시 가른다. 합쳐 두면 거래 점을 걸러 볼
+ * 때마다 지도의 중앙값이 함께 흔들린다 — **바탕이 움직이면 견줄 수가
+ * 없다.** 점은 찾는 도구이고 중앙값은 자로 삼는 것이라, 자가 손을
+ * 따라 움직이면 안 된다. */
 function lpGroups() {
   const have = Object.keys((state.landPrice || {}).groups || {});
-  const on = [...(state.activeLandUse || [])];
-  return have.filter((g) => on.some((n) => n.indexOf(g) >= 0));
+  return have.filter((g) => state.lpGroupSet.has(g));
 }
 
 /* 한 칸의 창 값. [건수, 중앙값, 평균, 시작연도]. */
@@ -2733,7 +2743,14 @@ function lpTip(it, level, w) {
   const stat = state.lpStat === 'avg' ? '평균' : '중앙값';
   let html = `<div class="lp-tip-h">${escapeHtml(it.full || it.name)}`
     + `${it.sub ? ` <em>${escapeHtml(it.sub)}</em>` : ''}</div>`
-    + `<div class="lp-tip-v"><b>평당 ${py}원</b> <em>㎡당 ${per}원 · ${stat}</em></div>`
+    // 사장님 지시(2026-09-08): "xx원/평, xx원/㎡ 으로 수정해 주시고
+    // 미터당 가격은 평단가 아랫줄로 내려주세요."
+    //
+    // '평당 592,441원 ㎡당 179,213원' 처럼 한 줄에 두 값을 이어 놓으면
+    // 어느 숫자가 어느 단위인지 눈이 못 잡는다. 값과 단위를 붙여 쓰고
+    // 줄을 나눈다.
+    + `<div class="lp-tip-v"><b>${py}원/평</b></div>`
+    + `<div class="lp-tip-v2">${per}원/㎡ · ${stat}</div>`
     + `<div class="lp-tip-m">${escapeHtml(w ? w.label : '')}`
     + ` · 거래 ${it.n.toLocaleString('ko-KR')}건`
     // 건수 기준은 시점이 지역마다 다르다. 몇 년치인지 안 밝히면
@@ -2747,7 +2764,7 @@ function lpTip(it, level, w) {
   if ((it.byGroup || []).length) {
     html += '<div class="lp-tip-g">'
       + it.byGroup.slice().sort((a, b2) => b2.n - a.n)
-        .map((g) => `<span>${escapeHtml(g.group)} ${lpMoney(g.v)}`
+        .map((g) => `<span>${escapeHtml(g.group)} ${lpMoney(g.v)}원/평`
           + ` <em>${g.n.toLocaleString('ko-KR')}건</em></span>`).join('')
       + '</div>';
     if (it.byGroup.length > 1 && state.lpStat !== 'avg') {
@@ -2795,7 +2812,7 @@ function drawLandPrice() {
         className: 'lp-card-wrap',
         html: `<span class="lp-card" style="background:${fill}">`
           + `<b>${escapeHtml(short)}</b>`
-          + `<i>${escapeHtml(lpMoney(it.v))}</i></span>`,
+          + `<i>${escapeHtml(lpMoney(it.v))}<u>/평</u></i></span>`,
         iconSize: null,
       }),
     });
@@ -2820,8 +2837,7 @@ function updateLpNote(info) {
   if (!el) return;
   const groups = lpGroups();
   if (!info || !groups.length) {
-    el.textContent = '왼쪽에서 용도지역을 켜면 그 땅의 최근 실거래 단가로'
-      + ' 지역을 칠합니다.';
+    el.textContent = '용도지역을 켜면 그 땅의 최근 실거래 단가를 지역마다 적습니다.';
     lpSuggest(null);
     return;
   }
@@ -2965,24 +2981,60 @@ function wireLandPrice() {
     if (!e.target.closest('.lp-filter')) lpCloseMenus(null);
   });
 
+  // 땅값 글자의 용도지역 칸. **거래 점 필터와 따로 놓는다.**
+  const gbox = document.getElementById('lp-groups');
+  if (gbox) {
+    const kinds = (lp && lp.zone_kinds) || {};
+    const have = Object.keys((lp && lp.groups) || {});
+    const first = (lp && lp.default_group) || '계획관리';
+    have.sort((a, b) => (a === first ? -1 : b === first ? 1 : a.localeCompare(b, 'ko')));
+    // 처음에는 분석이 쓰는 셋. 사장님이 처음부터 그 셋을 말씀하셨다.
+    ['계획관리', '생산관리', '자연녹지'].forEach((g) => {
+      if (have.includes(g)) state.lpGroupSet.add(g);
+    });
+    let lastKind = '';
+    have.forEach((g) => {
+      const kind = kinds[g] || '';
+      // 도시지역과 비도시지역을 갈라 놓는다. 한 목록에 평평하게 늘어놓으면
+      // 부천의 자연녹지와 안성의 계획관리를 같은 종류로 나란히 놓게 된다.
+      if (kind && kind !== lastKind) {
+        const h = document.createElement('div');
+        h.className = 'lp-menu-head';
+        h.textContent = kind;
+        gbox.appendChild(h);
+        lastKind = kind;
+      }
+      const label = document.createElement('label');
+      label.className = 'check';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.dataset.group = g;
+      input.checked = state.lpGroupSet.has(g);
+      input.addEventListener('change', () => {
+        input.checked ? state.lpGroupSet.add(g) : state.lpGroupSet.delete(g);
+        drawLandPrice();
+      });
+      const span = document.createElement('span');
+      span.textContent = g;
+      label.append(input, span);
+      gbox.appendChild(label);
+    });
+  }
+
   const swap = document.getElementById('lp-swap');
   if (swap) {
     swap.addEventListener('click', () => {
       const g = swap.dataset.group;
       if (!g) return;
-      // **왼쪽 필터를 켠다.** 땅값 글자와 거래 점이 같은 땅을 말해야 한다.
-      const box = document.getElementById('land-use-filters');
-      let hit = false;
+      // 여기서 켜는 것은 **땅값 글자의 용도지역**이다. 거래 점은 안 건드린다.
+      state.lpGroupSet.add(g);
+      const box = document.getElementById('lp-groups');
       if (box) {
         box.querySelectorAll('input').forEach((i) => {
-          if (String(i.dataset.key || '').indexOf(g) >= 0) {
-            i.checked = true;
-            state.activeLandUse.add(i.dataset.key);
-            hit = true;
-          }
+          if (i.dataset.group === g) i.checked = true;
         });
       }
-      if (hit) refreshMap(); else drawLandPrice();
+      drawLandPrice();
     });
   }
   lpSyncChips();
@@ -3144,7 +3196,7 @@ function parcelAxes(parcel, at) {
     pct: (peer && parcel.official_price)
       ? pctFromQuantiles(parcel.official_price, peer.price) : null,
     raw: parcel.official_price
-      ? `공시지가 ㎡당 ${Math.round(parcel.official_price).toLocaleString('ko-KR')}원`
+      ? `공시지가 ${Math.round(parcel.official_price).toLocaleString('ko-KR')}원/㎡`
       : '공시지가 없음',
   });
 

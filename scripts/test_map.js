@@ -1246,13 +1246,12 @@ const FAKE_LEAFLET = () => {
      * 실거래가격 트랜드 표시 / 용도지역 선택 시 선택된 용도지역의
      * 중간값으로 가격 변환 (초기는 계획관리, 자연녹지, 생산관리 기준)" */
 
-    // 왼쪽 용도지역 필터를 직접 만진다. **땅값 글자는 이것을 따른다** —
-    // 고르는 곳이 두 군데면 둘이 어긋난 채로 보게 되고, 그러면 지도의
-    // 점과 글자가 서로 다른 땅을 말한다.
+    // 땅값 글자의 용도지역. **거래 점 필터와 따로 논다** (사장님 지시
+    // 2026-09-08) — 점을 걸러 볼 때마다 바탕의 중앙값이 함께 흔들리면
+    // 견줄 수가 없다.
     const lpRail = async (names) => page.evaluate((want) => {
-      const box = document.getElementById('land-use-filters');
-      box.querySelectorAll('input').forEach((i) => {
-        const on = want.some((w) => String(i.dataset.key).indexOf(w) >= 0);
+      document.querySelectorAll('#lp-groups input').forEach((i) => {
+        const on = want.indexOf(i.dataset.group) >= 0;
         if (i.checked !== on) i.click();
       });
     }, names);
@@ -1335,7 +1334,7 @@ const FAKE_LEAFLET = () => {
     // 옆으로 늘어나 서로 겹친다.
     check('사각형 표찰에 이름이 위, 값이 아래다',
           lp1.html.every((h) => /class="lp-card"/.test(h)
-                               && /<b>[^<]+<\/b><i>[^<]+<\/i>/.test(h)),
+                               && /<b>[^<]+<\/b><i>/.test(h)),
           (lp1.html[0] || '없음').slice(0, 100));
     const lp1Fills = fillsOf(lp1.html);
     check('색이 파란 계열이다 (빨강·노랑이 없다)',
@@ -1350,16 +1349,26 @@ const FAKE_LEAFLET = () => {
           /순위로 색을 폄/.test(lp1.note), lp1.note);
     check('안내문이 지금 보는 용도지역을 말한다',
           /^계획관리 ·/.test(lp1.note), lp1.note);
+    // 사장님 지시(2026-09-08): "xx원/평, xx원/㎡ 으로 수정".
+    // 값만 있으면 평인지 ㎡인지 알 수 없다.
+    check('표찰에 단위를 붙인다 (평인지 ㎡인지 알 수 있게)',
+          lp1.html.every((h) => /<u>\/평<\/u>/.test(h)),
+          lp1.html.find((h) => /장안구/.test(h)) || '없음');
     check('글자는 평당으로 접어 쓴다',
           lp1.html.some((h) => /33\.1만|33만/.test(h)),
           lp1.html.find((h) => /장안구/.test(h)) || '없음');
 
     // ── 말풍선: 정보 + 실거래가 추이 ──
     const tipJan = lp1.tips.find((t) => /수원시 장안구/.test(t)) || '';
-    check('말풍선이 평당·㎡당·건수·기준을 적는다',
-          /평당/.test(tipJan) && /㎡당/.test(tipJan)
-          && /거래/.test(tipJan) && /최근 3년/.test(tipJan),
-          tipJan.slice(0, 110));
+    // ㎡ 단가는 평단가 **아랫줄**로 (사장님 지시). 한 줄에 두 값을
+    // 이어 놓으면 어느 숫자가 어느 단위인지 눈이 못 잡는다.
+    check('평단가가 위, ㎡단가가 아랫줄이다',
+          /<div class="lp-tip-v"><b>[\d,]+원\/평<\/b><\/div>/.test(tipJan)
+          && /<div class="lp-tip-v2">[\d,]+원\/㎡/.test(tipJan),
+          tipJan.slice(0, 130));
+    check('말풍선이 건수와 기준을 적는다',
+          /거래/.test(tipJan) && /최근 3년/.test(tipJan),
+          tipJan.slice(0, 130));
     // 값 하나만 보면 오르는 중인지 내리는 중인지 알 수 없다. 같은 평당
     // 80만원이라도 3년째 오르는 80만과 꺾여 내려온 80만은 다른 물건이다.
     check('말풍선에 최근 추이 꺾은선이 있다',
@@ -1381,7 +1390,7 @@ const FAKE_LEAFLET = () => {
           lpMix2.note);
     // 장안구 계획관리 10만(10건) + 자연녹지 29만(60건) → 가중 26.3만
     check('여러 용도지역을 거래 건수로 가중해 섞는다',
-          /262,857원/.test(lpMix2.tips.find((t) => /장안구/.test(t)) || ''),
+          /262,857원\/㎡/.test(lpMix2.tips.find((t) => /장안구/.test(t)) || ''),
           (lpMix2.tips.find((t) => /장안구/.test(t)) || '').slice(0, 140));
     check('무엇을 섞었는지 용도지역별로 보여준다',
           /계획관리/.test(lpMix2.tips[0]) && /자연녹지/.test(lpMix2.tips[0]),
@@ -1402,7 +1411,7 @@ const FAKE_LEAFLET = () => {
           (lpC.tips.find((t) => /울릉군/.test(t)) || '없음').slice(0, 120));
     const lpMed = await lpPick('y3', 'p50');
     const lpMean = await lpPick('y3', 'avg');
-    const val = (t) => (t.match(/평당 ([\d,]+)원/) || [])[1];
+    const val = (t) => (t.match(/<b>([\d,]+)원\/평<\/b>/) || [])[1];
     check('평균으로 바꾸면 값이 달라진다',
           val(lpMed.tips.find((t) => /장안구/.test(t)) || '')
           !== val(lpMean.tips.find((t) => /장안구/.test(t)) || ''),
@@ -1419,7 +1428,7 @@ const FAKE_LEAFLET = () => {
     // 경기도 = 장안구(10만, 10건) + 권선구(20만, 20건) → 가중 16.7만.
     check('묶을 때 거래 건수로 가중한다 (합치지 않는다)',
           lpWide.tips.some((t) => /^<div class="lp-tip-h">경기도/.test(t)
-                                  && /166,667원/.test(t)),
+                                  && /550,964원\/평/.test(t)),
           (lpWide.tips.find((t) => /경기도/.test(t)) || '없음').slice(0, 140));
 
     // ── 읍·면·동 → 리·동 ──
@@ -1907,9 +1916,10 @@ const FAKE_LEAFLET = () => {
             land ? land.popup.slice(0, 60) : '없음');
       check('말풍선에 거래금액이 들어 있다',
             !!land && /3\.7억원/.test(land.popup));
+      // 사장님 지시(2026-09-08): "xx원/평, xx원/㎡ 으로 수정".
       check('말풍선에 평당가가 들어 있다',
-            !!land && /평당/.test(land.popup) && /165만원/.test(land.popup),
-            land ? (land.popup.match(/평당[^<]*/) || [''])[0] : '없음');
+            !!land && /165만원\/평/.test(land.popup),
+            land ? (land.popup.match(/[\d,만억]+원\/[평㎡][^<]*/g) || []).join(' ') : '없음');
       check('말풍선에 면적을 평으로도 적는다',
             !!land && /224평/.test(land.popup),
             land ? (land.popup.match(/[\d,]+평/g) || []).join(' ') : '없음');

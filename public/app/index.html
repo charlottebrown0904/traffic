@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260909b">
+<link rel="stylesheet" href="/app/style.css?v=20260909c">
 </head>
 <body>
 
@@ -127,8 +127,10 @@
             <button type="button" class="info-dot" aria-expanded="false"
                     aria-label="설명 보기">?</button></h3>
           <div class="info-pop" hidden>
-            <p>여기서 켠 용도지역이 <strong>지도의 땅값 글자</strong>도
-              정합니다. 처음에는 계획관리·생산관리·자연녹지 셋만 켭니다.</p>
+            <p>여기서 켠 것은 <strong>지도의 거래 점</strong>만 정합니다.
+              지도에 적히는 중앙값은 '실거래 가격' 에서 따로 고릅니다.</p>
+            <p>처음에는 계획관리·생산관리·자연녹지 셋만 켭니다 — 분석이
+              쓰는 것도 이 셋입니다.</p>
             <p><strong>관리지역</strong>은 2006~2010년 거래에만 있습니다.
               세분화(계획·생산·보전)가 끝나기 전이라 그냥 '관리지역'으로
               신고된 것입니다.</p>
@@ -181,10 +183,14 @@
                   aria-label="설명 보기">?</button></h3>
         <div class="info-pop" hidden>
           <p>배율에 따라 시·도 → 시·군 → 구 → 읍·면·동 → 리·동으로 잘게
-            나뉩니다. <strong>용도지역은 '실거래 표시' 에서 켠 것을 따릅니다.</strong></p>
-          <p>여러 용도지역을 켜면 거래 건수로 가중해 섞습니다. 중앙값끼리
-            섞은 것은 근사입니다 — 말풍선에 그렇게 적습니다.</p>
+            나뉩니다.</p>
+          <p><strong>여기서 고른 용도지역은 '실거래 표시' 와 따로 놉니다.</strong>
+            거래 점을 이리저리 걸러 봐도 지도의 중앙값은 그대로 남습니다 —
+            바탕이 흔들리면 견줄 수가 없습니다.</p>
+          <p>여러 개를 켜면 거래 건수로 가중해 섞습니다. 중앙값끼리 섞은
+            것은 근사입니다 — 말풍선에 그렇게 적습니다.</p>
         </div>
+        <div class="checks" id="lp-groups"></div>
         <div class="lp-chips">
           <div class="lp-filter" data-filter="window">
             <button type="button" class="lp-pill" aria-expanded="false">
@@ -226,10 +232,12 @@
         <input type="checkbox" id="pop-bg">
         <span>인구</span>
       </label>
-      <!-- 용도지역(지적편집도) 배경. 12배율 아래에서는 색면이 지도를
-           통째로 덮으므로 켜져 있어도 안 그려진다. -->
+      <!-- 용도지역(지적편집도) 배경. **꺼진 채로 시작한다**
+           (사장님 지시 2026-09-08). 색면이 깔리면 그 위의 땅값 글자와
+           거래 점이 묻힌다 — 이 화면의 주인공은 값이다. 12배율 아래
+           에서는 켜도 안 그려진다(색면이 지도를 통째로 덮으므로). -->
       <label class="map-switch">
-        <input type="checkbox" id="zoning-bg" checked>
+        <input type="checkbox" id="zoning-bg">
         <span>용도지역</span>
       </label>
     </div>
