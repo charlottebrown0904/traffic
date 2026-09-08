@@ -39,7 +39,10 @@ const state = {
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
   apiAvailable: false, verdicts: null,
   verdictSets: {}, verdictKind: 'land',
-  regions: null, showPop: true, popYear: null,
+  // 인구·영업소는 **꺼진 채로 시작한다** (사장님 지시 2026-09-08).
+  // 땅값이 이 화면의 주인공인데, 인구 원과 영업소 점이 함께 깔리면
+  // 처음 여는 사람은 무엇을 봐야 할지 모른다.
+  regions: null, showPop: false, popYear: null, showGates: false,
   // 땅값 분위지도 (2026-09-08 지시)
   landPrice: null, lpGroup: '', lpStat: 'p50', lpWindow: '',
 };
@@ -1554,7 +1557,10 @@ function refreshMap() {
   if (!map) return;
   tollgateLayer.clearLayers();
   const rank = (state.tiers || {}).rank || new Map();
+  // 영업소를 끄면 점도 이름도 안 그린다 (기본 꺼짐).
+  if (!state.showGates) { syncTollgateLabels(); }
   state.tollgates.forEach((t) => {
+    if (!state.showGates) return;
     const marker = markers.get(t.tollgate_id);
     if (!marker) return;
     const tier = rank.get(String(t.tollgate_id));
@@ -2298,7 +2304,22 @@ const LP_LABELS = ['가장 싼 20%', '', '가운데', '', '가장 비싼 20%'];
  *
  * 13 부터 읍면동으로 내려간다. 이 단위는 regions.json 이 아니라
  * landprice-umd-*.json 에서 온다 — 용도지역을 고른 뒤에 그 파일만 받는다. */
-const LP_UMD_ZOOM = 13;
+/* 어느 배율에서 얼마나 잘게 보여줄 것인가.
+ *
+ * 사장님 확인(2026-09-08): "군, 구만 활성화되는 것 확인 완료,
+ * 면/리, 동까지 세분화 될 수 있도록 해주세요."
+ *
+ * 자료는 이미 리 단위로 있다 — '광혜원면 광혜원리' 처럼 온다. 막고
+ * 있던 것은 문턱 하나였다(13). 진천군 한 화면이 대략 배율 11~12 인데,
+ * 그 자리에서는 군 이름 하나만 떴다.
+ *
+ *   11~12   읍·면·동  — 리를 면으로 묶는다 ('광혜원면')
+ *   13 이상  리·동     — 그대로 ('광혜원면 광혜원리')
+ *
+ * 도시의 법정동은 애초에 한 마디('정자동')라 두 단계가 같아진다.
+ * 그것이 맞다 — 도시에는 리가 없다. */
+const LP_UMD_ZOOM = 12;
+const LP_RI_ZOOM = 13;
 /* 한 화면에 글자를 몇 개까지 놓을 것인가. 넘으면 거래가 많은 곳부터
  * 남긴다 — 표본이 두꺼운 값이 먼저 보이는 것이 맞다. */
 const LP_MAX_LABELS = 90;
@@ -2369,7 +2390,9 @@ function lpUmdChunks(group) {
 function lpLevel(zoom) {
   if (zoom >= LP_UMD_ZOOM
       && lpUmdChunks(state.lpGroup).some((c) => lpUmdCache[`${state.lpGroup}|${c.p}`])) {
-    return { key: 'umd', label: '읍·면·동' };
+    return zoom >= LP_RI_ZOOM
+      ? { key: 'ri', label: '리·동' }
+      : { key: 'umd', label: '읍·면·동' };
   }
   return popLevel(zoom);
 }
@@ -2414,21 +2437,51 @@ function lpItemsRegion(levelKey) {
   }));
 }
 
-/* 읍·면·동 — 좌표가 칸마다 들어 있다. 묶지 않는다. */
-function lpItemsUmd() {
-  const out = [];
+/* 읍·면·동 / 리·동.
+ *
+ * 리 단계('광혜원면 광혜원리')는 칸을 그대로 쓴다. 면 단계는 첫 마디로
+ * 묶는다 — 값은 **거래 건수로 가중해 섞고**, 좌표는 같은 무게로 평균낸다.
+ * 도시 법정동은 마디가 하나라 두 단계가 저절로 같아진다. */
+function lpItemsUmd(levelKey) {
+  const cells = [];
   lpUmdChunks(state.lpGroup).forEach((c) => {
-    (lpUmdCache[`${state.lpGroup}|${c.p}`] || []).forEach((cell) => {
-      const got = lpValue(cell.w);
+    (lpUmdCache[`${state.lpGroup}|${c.p}`] || []).forEach((x) => cells.push(x));
+  });
+  if (levelKey === 'ri') {
+    const out = [];
+    cells.forEach((c) => {
+      const got = lpValue(c.w);
       if (!got) return;
       out.push({
-        name: cell.nm, sub: cell.sgnm,
+        name: c.nm, sub: c.sgnm,
         v: got.v, n: got.n, from: got.from, parts: 1,
-        at: [cell.lat, cell.lon],
+        at: [c.lat, c.lon],
       });
     });
+    return out;
+  }
+  const groups = new Map();
+  cells.forEach((c) => {
+    const got = lpValue(c.w);
+    if (!got) return;
+    const myeon = String(c.nm).split(' ')[0];
+    const key = `${c.sg}|${myeon}`;
+    if (!groups.has(key)) {
+      groups.set(key, { name: myeon, sub: c.sgnm, wsum: 0, vsum: 0, n: 0,
+                        from: got.from, lat: 0, lon: 0, parts: 0 });
+    }
+    const g = groups.get(key);
+    g.wsum += got.n;
+    g.vsum += got.v * got.n;
+    g.n += got.n;
+    g.from = Math.min(g.from, got.from);
+    g.lat += c.lat; g.lon += c.lon; g.parts += 1;
   });
-  return out;
+  return [...groups.values()].map((g) => ({
+    name: g.name, sub: g.sub,
+    v: g.vsum / g.wsum, n: g.n, from: g.from, parts: g.parts,
+    at: [g.lat / g.parts, g.lon / g.parts],
+  }));
 }
 
 /* **이 화면에서 용도지역마다 몇 곳이 잡히는가.**
@@ -2514,7 +2567,12 @@ async function lpLoadUmd(group) {
   await Promise.all(want.map(async (c) => {
     const key = `${group}|${c.p}`;
     try {
-      const r = await fetch(`data/${c.f}`, { cache: 'no-cache' });
+      // **절대 경로여야 한다.** 다른 자료는 전부 '/app/data/...' 로
+      // 받는데 여기만 상대 경로였다. 주소에 뒷슬래시가 없으면
+      // (…/app) '/data/...' 로 풀려 404 가 나고, 그러면 조각이 영영
+      // 안 와서 지도는 조용히 시·군 단위로 물러난다 — 사장님이
+      // "군, 구만 활성화된다" 고 하신 것이 이것이었다.
+      const r = await fetch(`/app/data/${c.f}`, { cache: 'no-cache' });
       if (r.ok) {
         const payload = await r.json();
         lpUmdCache[key] = payload.cells || [];
@@ -2540,7 +2598,8 @@ function drawLandPrice() {
   const zoom = map.getZoom();
   if (zoom >= LP_UMD_ZOOM) lpLoadUmd(state.lpGroup);
   const level = lpLevel(zoom);
-  const all = level.key === 'umd' ? lpItemsUmd() : lpItemsRegion(level.key);
+  const all = (level.key === 'umd' || level.key === 'ri')
+    ? lpItemsUmd(level.key) : lpItemsRegion(level.key);
   if (!all.length) { updateLpNote({ n: 0, level: level.label }); return; }
 
   // **색은 화면에 보이는 것끼리 끊는다.** 전국 분위로 칠하면 경기도만
@@ -2572,7 +2631,10 @@ function drawLandPrice() {
       // **몇 년치를 긁어온 값인지 밝힌다.** 어떤 군의 '최근 20건' 은
       // 십수 년치다. 그것을 안 보여주면 '최근' 이라는 말이 거짓이 된다.
       + (w && w.kind === 'count' ? ` · ${it.from}년부터` : '')
-      + (it.parts > 1 ? `<br><em>${it.parts}개 시군구를 건수로 가중해 섞음</em>` : ''),
+      + (it.parts > 1
+         ? `<br><em>${it.parts}개 ${level.key === 'umd' ? '리·동' : '시군구'}`
+           + `를 건수로 가중해 섞음</em>`
+         : ''),
       { direction: 'top' });
     lpLayer.addLayer(marker);
   });
@@ -2638,76 +2700,133 @@ function lpSuggest(info) {
   btn.dataset.group = best.group;
 }
 
-function wireLandPrice() {
-  const sel = document.getElementById('lp-group');
-  const win = document.getElementById('lp-window');
-  const stat = document.getElementById('lp-stat');
-  if (!sel || !win) return;
-  const lp = state.landPrice;
-  const groups = Object.keys((lp && lp.groups) || {});
-  // 자료에 있는 것만 칸을 만든다. 계획관리를 먼저 놓는다 — 사장님이
-  // 콕 집으신 것이고, 공장·창고가 실제로 들어가는 땅이다.
-  const first = (lp && lp.default_group) || '계획관리';
-  groups.sort((a, b) => (a === first ? -1 : b === first ? 1 : a.localeCompare(b, 'ko')));
-  // **도시지역과 비도시지역을 갈라 놓는다.** 한 목록에 평평하게
-  // 늘어놓으면 부천의 자연녹지와 안성의 계획관리를 같은 종류인 것처럼
-  // 나란히 놓게 된다. 둘은 다른 제도의 땅이다.
-  const kinds = (lp && lp.zone_kinds) || {};
-  const boxes = {};
-  groups.forEach((g) => {
-    const kind = kinds[g] || '';
-    let parent = sel;
-    if (kind) {
-      if (!boxes[kind]) {
-        boxes[kind] = document.createElement('optgroup');
-        boxes[kind].label = kind;
-        sel.appendChild(boxes[kind]);
-      }
-      parent = boxes[kind];
-    }
-    const o = document.createElement('option');
-    o.value = g; o.textContent = g;
-    parent.appendChild(o);
+/* 필터 세 개를 **누르면 열리는 칩**으로 만든다 (사장님 지시 2026-09-08:
+ * "필터를 호갱노노처럼 클릭하면선택할 수 있도록").
+ *
+ * <select> 를 안 쓰는 이유는 취향이 아니다. 휴대폰의 <select> 는 화면
+ * 바닥에서 굴림판이 올라오고, 무엇을 고를 수 있는지 열기 전에는 안
+ * 보이며, optgroup 이 기기마다 다르게 그려진다. 칩은 **지금 고른 값을
+ * 늘 보여주고**, 열면 선택지가 한눈에 펼쳐진다. */
+function lpMenuItems(kind) {
+  const lp = state.landPrice || {};
+  if (kind === 'group') {
+    const kinds = lp.zone_kinds || {};
+    const first = lp.default_group || '계획관리';
+    const groups = Object.keys(lp.groups || {}).sort(
+      (a, b) => (a === first ? -1 : b === first ? 1 : a.localeCompare(b, 'ko')));
+    const out = [];
+    // **도시지역과 비도시지역을 갈라 놓는다.** 한 목록에 평평하게
+    // 늘어놓으면 부천의 자연녹지와 안성의 계획관리를 같은 종류인
+    // 것처럼 나란히 놓게 된다. 둘은 다른 제도의 땅이다.
+    ['비도시지역', '도시지역', ''].forEach((kd) => {
+      const mine = groups.filter((g) => (kinds[g] || '') === kd);
+      if (!mine.length) return;
+      if (kd) out.push({ head: kd });
+      mine.forEach((g) => out.push({ value: g, label: g }));
+    });
+    out.push({ value: '', label: '끄기' });
+    return out;
+  }
+  if (kind === 'window') {
+    return lpWindows().map((w) => ({ value: w.key, label: w.label }));
+  }
+  return [{ value: 'p50', label: '중앙값' }, { value: 'avg', label: '평균' }];
+}
+
+const LP_FILTER_STATE = {
+  group: () => state.lpGroup,
+  window: () => state.lpWindow,
+  stat: () => state.lpStat,
+};
+
+function lpPickFilter(kind, value) {
+  if (kind === 'group') {
+    state.lpGroup = value;
+    if (map && map.getZoom() >= LP_UMD_ZOOM) lpLoadUmd(state.lpGroup);
+  } else if (kind === 'window') {
+    state.lpWindow = value;
+  } else {
+    state.lpStat = value;
+  }
+  lpSyncChips();
+  drawLandPrice();
+}
+
+/* 칩에 지금 고른 값을 적고, 열려 있는 판의 선택 표시를 맞춘다. */
+function lpSyncChips() {
+  document.querySelectorAll('.lp-filter').forEach((box) => {
+    const kind = box.dataset.filter;
+    const now = LP_FILTER_STATE[kind]();
+    const items = lpMenuItems(kind);
+    const picked = items.find((i) => i.value === now);
+    const val = box.querySelector('.lp-pill-val');
+    if (val) val.textContent = picked ? picked.label : '끄기';
+    box.querySelectorAll('.lp-opt').forEach((b) => {
+      b.classList.toggle('is-on', b.dataset.value === now);
+    });
   });
+}
+
+function lpCloseMenus(except) {
+  document.querySelectorAll('.lp-filter').forEach((box) => {
+    if (box === except) return;
+    box.querySelector('.lp-menu').hidden = true;
+    box.querySelector('.lp-pill').setAttribute('aria-expanded', 'false');
+  });
+}
+
+function wireLandPrice() {
+  const lp = state.landPrice;
+  const first = (lp && lp.default_group) || '계획관리';
   // **기본이 계획관리다** (사장님 지시). 끄기로 시작하면 사장님이 매번
   // 골라야 하고, 그러면 이 화면이 있는 줄도 모르고 지나간다.
-  if (groups.includes(first)) {
-    state.lpGroup = first;
-    sel.value = first;
-  }
-  lpWindows().forEach((w) => {
-    const o = document.createElement('option');
-    o.value = w.key; o.textContent = w.label;
-    win.appendChild(o);
-  });
-  const dw = (lp && lp.default_window) || (lpWindows()[0] || {}).key || '';
-  state.lpWindow = dw;
-  win.value = dw;
+  if (Object.keys((lp && lp.groups) || {}).includes(first)) state.lpGroup = first;
+  state.lpWindow = (lp && lp.default_window) || (lpWindows()[0] || {}).key || '';
 
-  sel.addEventListener('change', () => {
-    state.lpGroup = sel.value;
-    if (map && map.getZoom() >= LP_UMD_ZOOM) lpLoadUmd(state.lpGroup);
-    drawLandPrice();
-  });
-  win.addEventListener('change', () => {
-    state.lpWindow = win.value;
-    drawLandPrice();
-  });
-  if (stat) {
-    stat.addEventListener('change', () => {
-      state.lpStat = stat.value;
-      drawLandPrice();
+  document.querySelectorAll('.lp-filter').forEach((box) => {
+    const kind = box.dataset.filter;
+    const menu = box.querySelector('.lp-menu');
+    const pill = box.querySelector('.lp-pill');
+    menu.innerHTML = '';
+    lpMenuItems(kind).forEach((item) => {
+      if (item.head) {
+        const h = document.createElement('div');
+        h.className = 'lp-menu-head';
+        h.textContent = item.head;
+        menu.appendChild(h);
+        return;
+      }
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lp-opt';
+      b.dataset.value = item.value;
+      b.textContent = item.label;
+      b.addEventListener('click', () => {
+        lpPickFilter(kind, item.value);
+        menu.hidden = true;
+        pill.setAttribute('aria-expanded', 'false');
+      });
+      menu.appendChild(b);
     });
-  }
+    pill.addEventListener('click', () => {
+      const open = menu.hidden;
+      lpCloseMenus(box);
+      menu.hidden = !open;
+      pill.setAttribute('aria-expanded', String(open));
+    });
+  });
+  // 바깥을 누르면 닫힌다. 열어 놓고 지도를 만지면 판이 지도를 가린다.
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.lp-filter')) lpCloseMenus(null);
+  });
+
   const swap = document.getElementById('lp-swap');
   if (swap) {
     swap.addEventListener('click', () => {
-      const g = swap.dataset.group;
-      if (!g) return;
-      sel.value = g;
-      sel.dispatchEvent(new Event('change'));
+      if (swap.dataset.group) lpPickFilter('group', swap.dataset.group);
     });
   }
+  lpSyncChips();
 }
 
 /* ─────────── 세 가설 판정 ─────────── */
@@ -3207,6 +3326,22 @@ document.addEventListener('keydown', (e) => {
     pbox.addEventListener('change', () => {
       state.showPop = pbox.checked;
       drawPopulation();
+    });
+  }
+
+  // IC·영업소도 끌 수 있다 (기본 꺼짐, 사장님 지시 2026-09-08).
+  const gbox = document.getElementById('gate-bg');
+  if (gbox) {
+    gbox.checked = state.showGates;
+    gbox.addEventListener('change', () => {
+      state.showGates = gbox.checked;
+      // 영업소를 끄면 선택도 풀어야 한다. 안 그러면 안 보이는 영업소의
+      // 반경만 지도에 남아 '이게 뭔가' 가 된다.
+      if (!state.showGates && state.selected) {
+        state.selected = null;
+        if (bandLayer) bandLayer.clearLayers();
+      }
+      refreshMap();
     });
   }
 

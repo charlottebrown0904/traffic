@@ -864,7 +864,39 @@ body.picking .leaflet-container{cursor:crosshair}
   background: var(--surface); border: 1px solid var(--border);
   box-shadow: var(--shadow); font-size: .8rem;
 }
-.land-price-bar .field { min-width: 7.5rem; }
+
+/* 호갱노노식 필터 칩 (사장님 지시 2026-09-08).
+   <select> 를 안 쓰는 이유 — 휴대폰의 <select> 는 굴림판이 화면 바닥에서
+   올라오고, 열기 전에는 무엇을 고를 수 있는지 안 보이며, optgroup 이
+   기기마다 다르게 그려진다. 칩은 지금 고른 값을 늘 보여준다. */
+.lp-chips { display: flex; flex-wrap: wrap; gap: .4rem; flex-basis: 100%; }
+.lp-filter { position: relative; }
+.lp-pill {
+  font: inherit; font-weight: 700; cursor: pointer;
+  padding: .35rem .8rem; border-radius: 999px;
+  border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--ink); white-space: nowrap;
+}
+.lp-pill::after { content: ' ⌄'; color: var(--muted); font-weight: 400; }
+.lp-pill[aria-expanded="true"] { border-color: #3B73C4; color: #123B7A; background: #EEF4FC; }
+.lp-menu {
+  position: absolute; bottom: calc(100% + .35rem); left: 0; z-index: 600;
+  min-width: 9rem; padding: .3rem; border-radius: 10px;
+  background: var(--surface); border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.lp-menu-head {
+  font-size: .7rem; font-weight: 800; color: var(--muted);
+  padding: .35rem .5rem .15rem; letter-spacing: .02em;
+}
+.lp-opt {
+  display: block; width: 100%; text-align: left; font: inherit;
+  padding: .35rem .6rem; border: 0; border-radius: 7px;
+  background: none; color: var(--ink); cursor: pointer; white-space: nowrap;
+}
+.lp-opt:hover { background: #EEF4FC; }
+.lp-opt.is-on { background: #3B73C4; color: #fff; font-weight: 700; }
+
 .land-price-bar .hint { flex-basis: 100%; margin: 0; }
 /* 이 화면에 더 맞는 용도지역이 있을 때 뜨는 단추.
    서울을 계획관리로 보면 지도가 비는데, 자연녹지로 바꾸면 바로 보인다.

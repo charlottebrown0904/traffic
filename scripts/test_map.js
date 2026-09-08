@@ -323,9 +323,18 @@ const FAKE_LEAFLET = () => {
       zone_kinds: { 계획관리: '비도시지역', 농림: '비도시지역', 자연녹지: '도시지역' },
       umd_index: {
         계획관리: [
-          { p: '41', f: 'landprice-umd-gyehoek-41.json', n: 2,
-            bbox: [37.24, 126.97, 37.31, 127.02] },
+          { p: '41', f: 'landprice-umd-gyehoek-41.json', n: 3,
+            bbox: [37.10, 126.97, 37.31, 127.42] },
           { p: '47', f: 'landprice-umd-gyehoek-47.json', n: 1,
+            bbox: [37.48, 130.90, 37.49, 130.91] },
+        ],
+        // 조각 고르기를 **아직 안 받은 용도지역**에서 본다. 계획관리는
+        // 앞 절들이 배율을 올리며 이미 받아 놨을 수 있어서, 그것으로
+        // 세면 '안 받았다' 와 '이미 있다' 를 구별하지 못한다.
+        자연녹지: [
+          { p: '41', f: 'landprice-umd-jayeon-41.json', n: 2,
+            bbox: [37.24, 126.97, 37.31, 127.02] },
+          { p: '47', f: 'landprice-umd-jayeon-47.json', n: 1,
             bbox: [37.48, 130.90, 37.49, 130.91] },
         ],
       },
@@ -359,8 +368,12 @@ const FAKE_LEAFLET = () => {
         cells: [
           { nm: '정자동', sg: '41111', sgnm: '수원시 장안구', lat: 37.304, lon: 127.011,
             w: { y1: [8, 130000, 130000, 2025], y3: [9, 120000, 120000, 2023] } },
-          { nm: '권선동', sg: '41113', sgnm: '수원시 권선구', lat: 37.241, lon: 126.971,
-            w: { y1: [30, 220000, 220000, 2025], y3: [40, 210000, 210000, 2023] } },
+          // **같은 면의 리 둘.** 면 단계에서는 하나로 묶여야 하고,
+          // 리 단계에서는 따로 서야 한다.
+          { nm: '백곡면 사송리', sg: '43750', sgnm: '진천군', lat: 37.10, lon: 127.40,
+            w: { y3: [10, 100000, 100000, 2023] } },
+          { nm: '백곡면 명암리', sg: '43750', sgnm: '진천군', lat: 37.12, lon: 127.42,
+            w: { y3: [30, 200000, 200000, 2023] } },
         ],
       },
       47: {
@@ -782,6 +795,12 @@ const FAKE_LEAFLET = () => {
      * 전국을 볼 때 247개 원이 겹쳐 있으면 아무것도 안 읽힌다. 그때
      * 필요한 것은 17개다. 세 배율을 실제로 흔들어 본다 — 하나만 보고
      * 통과라고 말하면 나머지 둘은 안 본 것이다. */
+    // 인구는 이제 **꺼진 채로 시작한다** (사장님 지시 2026-09-08).
+    // 이 절은 인구 겹 자체를 보는 곳이므로 먼저 켠다.
+    await page.evaluate(() => {
+      const b = document.getElementById('pop-bg');
+      if (b && !b.checked) { b.checked = true; b.dispatchEvent(new Event('change')); }
+    });
     const popAt = async (z) => page.evaluate((zoom) => {
       window.__zoom = zoom;
       (((window.__mapOn || {}).zoomend) || []).forEach((fn) => fn());
@@ -918,44 +937,70 @@ const FAKE_LEAFLET = () => {
     await popAt(7);
 
     console.log();
+    // **자료 주소는 전부 절대 경로여야 한다.** 상대 경로로 받으면
+    // 주소에 뒷슬래시가 없을 때(…/app) '/data/...' 로 풀려 404 가 나고,
+    // 화면은 오류 없이 조용히 덜 자세한 단위로 물러난다. 실제로 그렇게
+    // 읍면동 조각이 영영 안 온 적이 있다.
+    {
+      const src = require('fs').readFileSync(
+        require('path').join(__dirname, '..', 'public', 'app', 'app.js'), 'utf8');
+      const bad = [...src.matchAll(/fetch\(([`'"])(?!\/|https?:)[^`'"]*data\//g)];
+      check('자료를 상대 경로로 받지 않는다 (…/app 에서 404 가 난다)',
+            bad.length === 0, `상대 경로 ${bad.length}곳`);
+    }
     console.log('9-B. 땅값 지도 — 최근 실거래 기준 · 축척별 · 파란 계열');
     /* 사장님 지시(2026-09-08): "정보들은 필터로 넣고 간결하게 최근
      * 실거래가격(기간 또는 건수) 기준으로(기본은 계획관리) 축척에따라
      * 보여줍니다. 색상은 파란계열로합니다." */
     const lpUi = await page.evaluate(() => {
-      const sel = document.getElementById('lp-group');
-      const win = document.getElementById('lp-window');
+      const pill = (k) => document.querySelector(
+        `.lp-filter[data-filter="${k}"] .lp-pill-val`).textContent;
+      const opts = (k) => [...document.querySelectorAll(
+        `.lp-filter[data-filter="${k}"] .lp-opt`)].map((b) => b.dataset.value);
       return {
         barShown: !(document.getElementById('lp-bar') || {}).hidden,
-        groups: [...sel.options].map((o) => o.value),
-        picked: sel.value,
-        windows: [...win.options].map((o) => o.value),
-        window: win.value,
+        groups: opts('group'),
+        picked: pill('group'),
+        windows: opts('window'),
+        window: pill('window'),
+        stat: pill('stat'),
+        // <select> 가 하나도 안 남아 있어야 한다. 남아 있으면 둘 중
+        // 하나는 죽은 조작부다.
+        selects: document.querySelectorAll('#lp-bar select').length,
         note: document.getElementById('lp-note').textContent,
       };
     });
     check('땅값 막대가 보인다 (자료가 있을 때만)', lpUi.barShown);
+    // 사장님 지시(2026-09-08): "필터를 호갱노노처럼 클릭하면 선택할 수
+    // 있도록". 휴대폰의 <select> 는 열기 전에 무엇을 고를 수 있는지
+    // 안 보인다. 칩은 지금 고른 값을 늘 보여준다.
+    check('필터가 눌러서 고르는 칩이다 (드롭다운이 아니다)',
+          lpUi.selects === 0, `남은 select ${lpUi.selects}개`);
     // 계획관리를 먼저 놓는다 — 사장님이 콕 집으신 것이고 공장·창고가
     // 실제로 들어가는 땅이다.
     check('용도지역 칸이 자료에서 만들어지고 계획관리가 맨 앞이다',
-          lpUi.groups[0] === '' && lpUi.groups[1] === '계획관리'
-          && lpUi.groups.includes('농림'), lpUi.groups.join(','));
+          lpUi.groups[0] === '계획관리' && lpUi.groups.includes('농림')
+          && lpUi.groups[lpUi.groups.length - 1] === '',
+          lpUi.groups.join(','));
     // **기본이 계획관리다.** 끄기로 시작하면 이 화면이 있는 줄도 모르고
-    // 지나간다.
-    check('켠 채로 시작하고 기본이 계획관리다', lpUi.picked === '계획관리',
-          `고른 것 "${lpUi.picked}"`);
+    // 지나간다. 그리고 칩에 그 값이 적혀 있어야 열지 않고도 읽힌다.
+    check('켠 채로 시작하고 칩에 지금 값이 적혀 있다', lpUi.picked === '계획관리',
+          `칩 "${lpUi.picked}"`);
     check('최근 기준을 기간과 건수 둘 다 준다',
           lpUi.windows.includes('y3') && lpUi.windows.includes('c20'),
           lpUi.windows.join(','));
-    check('기본 기준이 자료가 말한 것으로 잡힌다', lpUi.window === 'y3', lpUi.window);
+    check('기본 기준이 자료가 말한 것으로 잡힌다', lpUi.window === '최근 3년',
+          lpUi.window);
 
     const lpPick = async (group, win, stat) => page.evaluate((a) => {
-      const sel = document.getElementById('lp-group');
-      const wi = document.getElementById('lp-window');
-      const st = document.getElementById('lp-stat');
-      if (a.group !== null) { sel.value = a.group; sel.dispatchEvent(new Event('change')); }
-      if (a.win) { wi.value = a.win; wi.dispatchEvent(new Event('change')); }
-      if (a.stat) { st.value = a.stat; st.dispatchEvent(new Event('change')); }
+      const hit = (k, v) => {
+        const b = document.querySelector(
+          `.lp-filter[data-filter="${k}"] .lp-opt[data-value="${v}"]`);
+        if (b) b.click();
+      };
+      if (a.group !== null) hit('group', a.group);
+      if (a.win) hit('window', a.win);
+      if (a.stat) hit('stat', a.stat);
       const marks = (window.__map.groups || []).flatMap((g) => g._items)
         .filter((m) => m.options && m.options.pane === 'lpPane');
       return {
@@ -964,13 +1009,15 @@ const FAKE_LEAFLET = () => {
         html: marks.map((m) => (m.options.icon || {}).options.html || ''),
         tips: marks.map((m) => m.__tooltip || ''),
         note: document.getElementById('lp-note').textContent,
+        pill: document.querySelector(
+          '.lp-filter[data-filter="group"] .lp-pill-val').textContent,
       };
     }, { group, win, stat });
     const fillsOf = (htmls) => htmls
       .map((h) => (h.match(/background:(#[0-9A-Fa-f]{6})/) || [])[1]).filter(Boolean);
 
-    // 배율 12 = 구 단위. 세 시군구가 따로 선다.
-    await page.evaluate(() => { window.__zoom = 12; });
+    // 배율 11 = 구 단위. 세 시군구가 따로 선다. (12 부터는 읍·면·동)
+    await page.evaluate(() => { window.__zoom = 11; });
     const lp1 = await lpPick('계획관리', 'y3', 'p50');
     check('용도지역을 고르면 지역이 칠해진다', lp1.n === 3 && lp1.peek.on,
           `${lp1.n}곳 · on=${lp1.peek.on}`);
@@ -1039,30 +1086,60 @@ const FAKE_LEAFLET = () => {
           lpWide.tips.some((t) => /^경기도/.test(t) && /166,667원/.test(t)),
           lpWide.tips.find((t) => /^경기도/.test(t)) || '없음');
 
-    // **배율을 더 당기면 읍·면·동으로 내려간다.** 그 자료는 고른
-    // 용도지역 중 **화면에 걸치는 시도 조각만** 받는다.
+    // **배율을 당기면 읍·면·동으로, 더 당기면 리·동으로 내려간다.**
+    //
+    // 사장님 확인(2026-09-08): "군, 구만 활성화되는 것 확인 완료,
+    // 면/리, 동까지 세분화 될 수 있도록 해주세요." 자료는 이미 리
+    // 단위로 있었다 — 막고 있던 것은 문턱 하나(13)였다. 진천군 한
+    // 화면이 대략 배율 11~12 인데 거기서 군 이름 하나만 떴다.
     await page.evaluate(() => { window.__bbox = [37.0, 126.5, 37.6, 127.5]; });
-    await page.evaluate(() => { window.__zoom = 14; });
+    lpUmdHits.length = 0;          // 여기서부터 받은 조각만 센다
+    await page.evaluate(() => { window.__zoom = 12; });
     await lpPick(null, 'y3', null);
     await page.waitForTimeout(300);          // 조각을 받아 오는 동안
+    const lpMyeon = await lpPick(null, 'y3', null);
+    check('배율 12 에서 읍·면·동이 뜬다 (군 이름 하나로 안 끝난다)',
+          lpMyeon.peek.level === 'umd' && lpMyeon.n === 2,
+          `${lpMyeon.peek.level} · ${lpMyeon.n}곳`);
+    // 면 단계에서는 리를 면으로 묶는다. '백곡면 사송리' → '백곡면'.
+    check('면 단계는 리를 면으로 묶는다',
+          lpMyeon.html.some((h) => />백곡면</.test(h))
+          && !lpMyeon.html.some((h) => /사송리/.test(h)),
+          lpMyeon.html.map((h) => (h.match(/<b>([^<]*)/) || [])[1]).join(','));
+    // 두 리를 묶었으면 건수는 합이고, 값은 건수로 가중한 것이다.
+    check('묶을 때 리 개수와 함께 건수로 가중한다',
+          /2개 리·동/.test(lpMyeon.tips.find((t) => /백곡면/.test(t)) || ''),
+          lpMyeon.tips.find((t) => /백곡면/.test(t)) || '없음');
+
+    await page.evaluate(() => { window.__zoom = 14; });
     const lpUmd = await lpPick(null, 'y3', null);
-    check('더 당기면 읍·면·동으로 내려간다',
-          lpUmd.peek.level === 'umd' && lpUmd.n === 2,
+    check('더 당기면 리·동까지 내려간다',
+          lpUmd.peek.level === 'ri' && lpUmd.n === 3,
           `${lpUmd.peek.level} · ${lpUmd.n}곳`);
-    check('읍면동 이름과 그 시군구를 같이 말한다',
-          lpUmd.html.some((h) => /정자동/.test(h))
-          && lpUmd.tips.some((t) => /정자동/.test(t) && /수원시 장안구/.test(t)),
-          lpUmd.tips.find((t) => /정자동/.test(t)) || '없음');
-    // **화면 밖 조각은 받지도 않는다.** 그리지 않는 것만으로는 부족하다 —
-    // 실측(run 48)에서 계획관리 읍면동이 통짜로 3.0MB 였다. 경기도를
-    // 보는데 제주도 자료를 내려받으면 그 몇 초가 그대로 '느린 앱' 이다.
-    check('화면 밖 시도 조각은 아예 안 받는다',
-          lpUmdHits.includes('41') && !lpUmdHits.includes('47'),
-          `받은 조각 ${lpUmdHits.join(',') || '없음'}`);
+    check('리 이름과 그 시군구를 같이 말한다',
+          lpUmd.html.some((h) => /백곡면 사송리/.test(h))
+          && lpUmd.tips.some((t) => /사송리/.test(t) && /진천군/.test(t)),
+          lpUmd.tips.find((t) => /사송리/.test(t)) || '없음');
+
     check('울릉도는 그리지도 않는다',
           !lpUmd.tips.some((t) => /울릉/.test(t)),
           lpUmd.tips.map((t) => t.split('<')[0]).join(','));
-    await page.evaluate(() => { window.__bbox = null; window.__zoom = 12; });
+
+    // **화면 밖 조각은 받지도 않는다.** 그리지 않는 것만으로는 부족하다 —
+    // 실측(run 48)에서 계획관리 읍면동이 통짜로 3.0MB 였다. 경기도를
+    // 보는데 제주도 자료를 내려받으면 그 몇 초가 그대로 '느린 앱' 이다.
+    //
+    // 아직 안 받은 용도지역으로 본다. 계획관리는 앞 절들이 배율을
+    // 올리며 이미 받아 놨을 수 있어서, 그것으로 세면 '안 받았다' 와
+    // '이미 있다' 를 구별하지 못한다.
+    lpUmdHits.length = 0;
+    await lpPick('자연녹지', null, null);
+    await page.waitForTimeout(300);
+    check('화면 밖 시도 조각은 아예 안 받는다',
+          lpUmdHits.includes('41') && !lpUmdHits.includes('47'),
+          `받은 조각 ${lpUmdHits.join(',') || '없음'}`);
+    await lpPick('계획관리', null, null);
+    await page.evaluate(() => { window.__bbox = null; window.__zoom = 11; });
 
     // **도시는 계획관리가 없다** (사장님 지적, 2026-09-08). 우리 자료가
     // 그것을 확인해 줬다 — 인구 15만에서 자연녹지 비중이 6% → 65% 로
@@ -1071,15 +1148,14 @@ const FAKE_LEAFLET = () => {
     //
     // 화면이 '자료가 없다' 와 '그런 땅이 여기 없다' 를 구별해 주지
     // 않으면 사람은 빈 화면을 고장으로 읽는다.
-    const lpKinds = await page.evaluate(() => {
-      const sel = document.getElementById('lp-group');
-      return [...sel.querySelectorAll('optgroup')]
-        .map((g) => `${g.label}:${[...g.children].map((o) => o.value).join('+')}`);
-    });
+    const lpKinds = await page.evaluate(() => [...document.querySelectorAll(
+      '.lp-filter[data-filter="group"] .lp-menu > *')]
+      .map((el) => (el.className === 'lp-menu-head' ? `[${el.textContent}]`
+                                                    : el.dataset.value)));
     check('용도지역 목록이 도시·비도시로 갈려 있다',
-          lpKinds.some((k) => /^비도시지역:.*계획관리/.test(k))
-          && lpKinds.some((k) => /^도시지역:자연녹지/.test(k)),
-          lpKinds.join(' | '));
+          /\[비도시지역\],계획관리/.test(lpKinds.join(','))
+          && /\[도시지역\],자연녹지/.test(lpKinds.join(',')),
+          lpKinds.join(' '));
 
     // 최근 1년으로 좁히면 계획관리는 두 곳, 자연녹지는 세 곳이다.
     // 두 배가 안 벌어지므로 **권하지 않는다** — 잔소리가 된다.
