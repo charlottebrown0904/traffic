@@ -347,11 +347,15 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # 연속지적도 탐침. 수집을 건드리지 않고 읽기만 한다 —
+      # 연속지적도 탐침. 수집을 건드리지 않고 **읽기만 한다** —
       # 브이월드 지오코더 한도(하루 3만~4만)를 호출 0 으로 대체할 수
-      # 있는지 본다. 실거래 329만 건에 좌표를 붙이는 유일한 병목이다.
+      # 있는지 본다. 실거래에 좌표를 붙이는 유일한 병목이다.
+      #
+      # stage 를 안 본다. 읽기만 하는 탐침 하나를 보려고 조인 9분과
+      # 분석을 같이 돌 이유가 없다 — 캐시는 어느 stage 에서나 복원되므로
+      # `stage: web` 과 함께 켜면 4분이면 답이 나온다.
       - name: 연속지적도 탐침
-        if: inputs.stage != 'web' && inputs.probe == 'cadastral'
+        if: inputs.probe == 'cadastral'
         continue-on-error: true
         run: python scripts/cadastral_probe.py
 

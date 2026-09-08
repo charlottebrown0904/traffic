@@ -113,7 +113,7 @@ PNU(19) + 위도 + 경도 + 면적 + 둘레   ≈ 40 B/필지
 돌리는 법 — GitHub → Actions → 수집 → Run workflow
 
 ```
-stage : analyze        (수집·지오코딩을 건너뛴다. 캐시만 읽는다)
+stage : web            (캐시만 복원하고 탐침만 돈다 — 약 4분)
 probe : cadastral
 ```
 
