@@ -184,6 +184,10 @@ check("stage" in _inputs, "무엇까지 돌릴지 고를 수 있다 (stage)")
 if "stage" in _inputs:
     _opts = _inputs["stage"].get("options") or []
     check("analyze" in _opts, f"분석만 돌리는 선택지가 있다 ({_opts})")
+    # 화면 코드만 고쳤을 때를 위한 것 (사장님 지시 2026-09-08: "너무
+    # 오래 걸리면 우선 테마부터 푸쉬하는 걸 추천합니다"). 라이브(main)는
+    # 이 워크플로만 앞당기므로, CSS 한 줄에도 40분을 기다려야 했다.
+    check("web" in _opts, f"화면만 돌리는 선택지가 있다 ({_opts})")
 
 _steps = _y["jobs"]["collect"]["steps"]
 _named = {s.get("name"): s for s in _steps if s.get("name")}
@@ -194,18 +198,72 @@ _col = next((s for n, s in _named.items() if "실거래가 수집" in n), None)
 check(_col is not None and "stage == 'all'" in str(_col.get("if", "")),
       "분석만 돌 때는 수집도 건너뛴다")
 
+# web 이 실제로 가벼운가. 이름만 만들어 놓고 다 돌면 아무 뜻이 없다.
+_HEAVY = ("공간 조인", "가설3 자료 적재", "분석 패널", "다섯 가설 판정",
+          "필지 특성", "캐시 앞 정리")
+_still = [n for n in _named
+          if any(h in n for h in _HEAVY)
+          and "stage != 'web'" not in str(_named[n].get("if", ""))]
+check(not _still, f"web 은 무거운 단계를 건너뛴다 (아직 도는 것 {_still})")
+# 그런데 화면은 반드시 다시 만들어야 한다 — 안 그러면 낡은 JSON 이
+# 새 코드와 함께 나간다.
+_exp = next((s2 for n, s2 in _named.items() if "화면용 JSON" in n), None)
+check(_exp is not None and "stage != 'web'" not in str(_exp.get("if", "")),
+      "web 도 화면 JSON 은 다시 만든다")
+_live = next((s2 for n, s2 in _named.items() if "라이브 반영" in n), None)
+check(_live is not None and "stage != 'web'" not in str(_live.get("if", "")),
+      "web 도 main 을 앞당긴다 (그게 목적이다)")
+
 # 캐시는 한 번만 저장한다. 한 번이 2.36GB 인데 GitHub 한도는 10GB 라,
 # 두 번씩 저장하면 실행 두 번치밖에 안 남는다. 넘치면 오래된 것부터
 # 지워지고, 지오코딩 3시간이 든 캐시가 밀려나면 그 3시간을 다시 쓴다.
 _saves = [s for s in _steps if "cache/save" in str(s.get("uses", ""))]
 check(len(_saves) == 1, f"캐시 저장은 실행당 한 번이다 ({len(_saves)}회)")
 if _saves:
-    # **stage 로 가르지 않는다.** 예전에는 stage=all 일 때만 저장했다.
-    # "분석만 도는 실행은 새로 산 것이 없으므로" 라는 이유였고 그때는
-    # 맞았는데, 필지 특성과 관청 좌표가 파이프라인에 들어오면서 틀린
-    # 말이 됐다. run 37~40 이 3,000칸씩 훑고 네 번 다 버렸다.
-    check("stage" not in str(_saves[0].get("if", "")),
-          f"stage 와 무관하게 저장한다 (if: {_saves[0].get('if')})")
+    # **뭔가 산 실행은 반드시 저장한다.**
+    #
+    # 예전에는 stage=all 일 때만 저장했다. "분석만 도는 실행은 새로 산
+    # 것이 없으므로" 라는 이유였고 그때는 맞았는데, 필지 특성과 관청
+    # 좌표가 파이프라인에 들어오면서 틀린 말이 됐다. run 37~40 이
+    # 3,000칸씩 훑고 네 번 다 버렸다.
+    #
+    # 그래서 "stage 를 절대 안 본다" 로 막아 뒀었는데, 그것은 규칙을
+    # 너무 좁게 적은 것이다. 아무것도 안 사는 단계(web — 화면만 다시
+    # 만든다)까지 2GB 를 다시 저장하면 10GB 한도가 그만큼 빨리 찬다.
+    #
+    # 진짜 규칙은 이것이다 — **저장을 건너뛰는 stage 에서는 사는 단계도
+    # 하나도 안 돌아야 한다.** 그것을 실제로 계산해서 본다.
+    def _runs_in(cond, stage):
+        """이 조건이 그 stage 에서 참인가. 우리가 쓰는 세 모양만 푼다."""
+        c = str(cond or "").strip()
+        if not c:
+            return True
+        ok = True
+        for part in c.split("&&"):
+            part = part.strip()
+            if part in ("always()", ""):
+                continue
+            if part.startswith("inputs.stage =="):
+                ok = ok and (part.split("'")[1] == stage)
+            elif part.startswith("inputs.stage !="):
+                ok = ok and (part.split("'")[1] != stage)
+            # 그 밖의 조건(landchar_tiles 등)은 stage 와 무관하므로 둔다
+        return ok
+
+    # 자료를 '사는' 단계. 이 중 하나라도 도는 stage 에서 저장을 건너뛰면
+    # 그 실행이 산 것은 그대로 버려진다.
+    BUYS = ("실거래가 수집", "지오코딩", "영업소 마스터", "영업소 보충",
+            "교통량 적재", "전국 시군구 코드", "필지 특성", "관청 좌표")
+    _save_if = _saves[0].get("if")
+    _bad = []
+    for stage in _opts:
+        if _runs_in(_save_if, stage):
+            continue
+        for name, st in _named.items():
+            if any(b in name for b in BUYS) and _runs_in(st.get("if"), stage):
+                _bad.append(f"{stage}:{name}")
+    check(not _bad,
+          f"사는 단계가 도는 stage 에서는 반드시 저장한다 (버려지는 것 {_bad})")
     check("always()" in str(_saves[0].get("if", "")),
           "뒤 단계가 죽어도 산 것은 지킨다 (always)")
 
