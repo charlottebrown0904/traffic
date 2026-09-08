@@ -94,6 +94,7 @@ async function boot() {
   // CDN(Leaflet·폰트)이 느리거나 막히면 app.js 실행 자체가 몇 초 밀려서
   // 이 틈이 눈에 띄게 벌어진다.
   wireTabs();
+  wireWhy();
   try {
     const [meta, tollgates, trades, series] = await Promise.all(
       ['meta', 'tollgates', 'trades', 'series'].map((n) =>
@@ -204,6 +205,29 @@ function showFatal(message) {
        <p style="color:#5B6875">먼저 <code>make web</code> 를 실행해 <code>public/app/data/</code> 를 생성하세요.
        파일을 직접 열면(<code>file://</code>) 브라우저가 차단하므로 로컬 서버로 열어야 합니다.</p>
      </div>`;
+}
+
+/* 물음표 하나에 설명 한 덩이 (사장님 지시 2026-09-08:
+ * "지금은 무슨 책같아서 뭘 봐야할 지 모르겠습니다").
+ *
+ * 설명이 틀린 것은 아니었다 — 왜 이 셋만 켜 두는지, 도로접이 왜 1.7배인지는
+ * 알아야 한다. 다만 **처음 여는 사람이 조작부를 못 찾는다.** 필터가
+ * 열두 줄짜리 설명 사이에 파묻혀 있으면, 읽지도 않고 만지지도 못한다.
+ *
+ * 지우지 않고 접는다. 지우면 '왜 계획관리만 켜져 있나' 를 물을 곳이
+ * 없어진다. */
+function wireWhy() {
+  document.querySelectorAll('.why').forEach((btn) => {
+    // 설명은 제목 **다음 형제**다. 그래야 표시가 제목 옆에 붙는다.
+    const body = btn.closest('h2, h3').nextElementSibling;
+    if (!body || !body.classList.contains('why-body')) return;
+    btn.addEventListener('click', () => {
+      const open = body.hidden;
+      body.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+      btn.classList.toggle('is-on', open);
+    });
+  });
 }
 
 function wireTabs() {

@@ -625,7 +625,70 @@ const FAKE_LEAFLET = () => {
     }
 
     console.log();
-    console.log('4. 지도 위 범례를 걷어냈다');
+    console.log('4. 왼쪽 설명을 물음표 뒤로 접었다');
+    // 사장님 지시(2026-09-08): "왼쪽 스크롤에 있는 문장들은 물음표 원
+    // 표시 아이콘(?) 만들어서 마우스 클릭하면 나타나도록... 지금은 무슨
+    // 책같아서 뭘 봐야할 지 모르겠습니다."
+    //
+    // 설명이 틀린 것은 아니었다. 다만 필터가 열두 줄짜리 설명 사이에
+    // 파묻혀 있으면 읽지도 않고 만지지도 못한다. **지우지 않고 접는다** —
+    // 지우면 '왜 계획관리만 켜져 있나' 를 물을 곳이 없어진다.
+    const why = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('.rail .why')];
+      const bodies = [...document.querySelectorAll('.rail .why-body')];
+      const vis = (e) => !!(e && !e.hidden && e.offsetParent !== null);
+      return {
+        buttons: btns.length,
+        labels: btns.map((b) => b.textContent.trim()),
+        openAtStart: bodies.filter(vis).length,
+        // 접었어도 글은 남아 있어야 한다.
+        text: bodies.map((b) => b.textContent).join(' '),
+        // 접고 나서 화면에 남는 **줄글**. 필터가 파묻히면 안 된다.
+        //
+        // #deal-year-note 는 뺀다. 그것은 설명이 아니라 **살아 있는
+        // 수치**다 — 지금 몇 건 중 몇 건을 표본으로 받았고 화면에 몇 개를
+        // 그렸는지. 이 줄이 없으면 '2019년 계획관리 거래는 이 열 점이
+        // 전부' 로 읽히고, 스크리닝 도구에서 그 오해는 곧바로 투자
+        // 판단으로 이어진다.
+        loose: [...document.querySelectorAll('.rail p.hint')]
+          .filter((e) => e.id !== 'deal-year-note')
+          .filter((e) => vis(e) && e.textContent.trim().length > 40).length,
+        live: (document.getElementById('deal-year-note') || {}).textContent || '',
+      };
+    });
+    check('제목마다 물음표 단추가 있다', why.buttons >= 5, `${why.buttons}개`);
+    check('단추가 물음표 하나다', why.labels.every((t) => t === '?'),
+          why.labels.join(''));
+    check('처음에는 다 접혀 있다 (필터부터 보이게)', why.openAtStart === 0,
+          `${why.openAtStart}개 펼쳐짐`);
+    check('접어도 설명은 지우지 않는다', /1\.7배/.test(why.text) && /계획관리/.test(why.text));
+    // 관리지역이 왜 따로 있는지도 여기서 답한다 (2006~2010년의 잔재).
+    check('관리지역이 왜 따로 있는지 적어 둔다', /2006~2010/.test(why.text));
+    check('접고 나면 긴 줄글이 안 남는다', why.loose === 0, `${why.loose}줄`);
+    // 설명은 접되 **표본 수치는 남긴다.** 그것을 같이 접으면 사람은
+    // 화면의 점 몇 개를 그 해 거래 전부로 읽는다.
+    check('표본이 몇 건인지는 접지 않는다',
+          /건/.test(why.live) && why.live.length > 10, why.live.slice(0, 70));
+
+    const whyOpen = await page.evaluate(() => {
+      const b = document.querySelector('.rail .why');
+      b.click();
+      const body = b.closest('h2, h3').nextElementSibling;
+      return { open: !body.hidden, on: b.classList.contains('is-on'),
+               aria: b.getAttribute('aria-expanded') };
+    });
+    check('누르면 그 자리에서 펼쳐진다',
+          whyOpen.open && whyOpen.on && whyOpen.aria === 'true',
+          JSON.stringify(whyOpen));
+    const whyShut = await page.evaluate(() => {
+      const b = document.querySelector('.rail .why');
+      b.click();
+      return b.closest('h2, h3').nextElementSibling.hidden;
+    });
+    check('다시 누르면 접힌다', whyShut);
+
+    console.log();
+    console.log('4-B. 지도 위 범례를 걷어냈다');
     // 사장님 지시(2026-09-08): "좌측 범례 삭제".
     //
     // 지도 왼쪽 아래를 12줄짜리 범례가 덮고 있었다. 지도를 키워 놓고 그

@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260908e">
+<link rel="stylesheet" href="/app/style.css?v=20260908f">
 </head>
 <body>
 
@@ -56,8 +56,22 @@
       <span class="rail-toggle-mark" aria-hidden="true"></span>
     </button>
     <div class="rail-body" id="rail-body">
+    <!-- **설명은 물음표 뒤로 접는다** (사장님 지시 2026-09-08:
+         "왼쪽 스크롤에 있는 문장들은 물음표 원 표시 아이콘(?) 만들어서
+          마우스 클릭하면 나타나도록 간략하게... 지금은 무슨 책같아서
+          뭘 봐야할 지 모르겠습니다").
+
+         설명이 틀린 것은 아니었다 — 왜 이 셋만 켜 두는지, 도로접이 왜
+         1.7배인지는 알아야 한다. 다만 **처음 여는 사람이 필터를 못
+         찾는다.** 조작부만 남기고 설명은 눌러야 나오게 한다. -->
     <section class="rail-block">
-      <h2>IC 교통량</h2>
+      <h2>IC 교통량
+        <button type="button" class="why" aria-expanded="false"
+                aria-label="설명 보기">?</button></h2>
+      <div class="why-body" hidden>
+        <p>영업소를 통과한 <strong>하루 평균 통행량</strong>입니다.
+          공장·물류 수요는 화물(3·4·5종)이 가장 직접 반영합니다.</p>
+      </div>
       <label class="field">
         <span>기준 연도</span>
         <select id="tg-year"></select>
@@ -69,13 +83,16 @@
       <div class="quad-filters" id="tier-filters"></div>
     </section>
     <section class="rail-block">
-      <h2>실거래 표시</h2>
+      <h2>실거래 표시
+        <button type="button" class="why" aria-expanded="false"
+                aria-label="설명 보기">?</button></h2>
+      <div class="why-body" hidden>
+        <p><strong>공장·창고</strong>가 분석의 기준 물건입니다. 토지는
+          지목·형상·도로 조건에 따라 물건마다 값이 크게 흔들려 효과를
+          가려내기 어렵습니다. 공장은 <em>지어질 수 있는 땅에만</em>
+          들어서므로 입지가 가격에 그대로 드러납니다.</p>
+      </div>
       <div class="checks" id="kind-filters"></div>
-      <p class="hint"><strong>공장·창고</strong>가 분석의 기준 물건입니다.
-        토지는 지목·형상·도로 조건에 따라 물건마다 값이 크게 흔들려,
-        교통량·산단·인구·IC 신설의 효과를 가려내기 어렵습니다.
-        공장은 <em>지어질 수 있는 땅에만</em> 들어서므로 입지 조건이
-        가격에 그대로 드러납니다.</p>
       <label class="field">
         <span>거래 연도</span>
         <select id="deal-year"></select>
@@ -83,28 +100,43 @@
       <p class="hint" id="deal-year-note"></p>
 
       <div id="land-box">
-        <h3 class="rail-sub">토지 — 개발단계</h3>
-        <p class="hint">전·답·임야는 개발 가능 여부·도로접·모양에 따라
-          같은 동네에서도 값이 몇 배 벌어집니다. 그 셋을 실거래 자료는
-          알려주지 않으므로, <strong>개발이 끝난 지목</strong>(대·공장용지·
-          창고용지 등)을 따로 봅니다.</p>
+        <h3 class="rail-sub">토지 — 개발단계
+          <button type="button" class="why" aria-expanded="false"
+                  aria-label="설명 보기">?</button></h3>
+        <div class="why-body" hidden>
+          <p>전·답·임야는 개발 가능 여부·도로접·모양에 따라 같은 동네에서도
+            값이 몇 배 벌어집니다. 실거래 자료가 그 셋을 안 알려주므로,
+            <strong>개발이 끝난 지목</strong>(대·공장용지·창고용지 등)을
+            따로 봅니다.</p>
+        </div>
         <div class="checks" id="stage-filters"></div>
 
-        <h3 class="rail-sub">토지 — 도로 접함</h3>
-        <p class="hint">차가 들어가는 땅과 못 들어가는 땅은 같은 동네에서도
-          단가가 <strong>1.7배</strong> 벌어집니다 (남이천 +66% · 안성 +67%
-          실측). 필지 특성은 전국을 나눠 받는 중이라 아직 대부분이
-          <strong>조사 안 됨</strong>입니다 — 그 거래까지 보시려면
-          <strong>전체</strong>로 두십시오.</p>
+        <h3 class="rail-sub">토지 — 도로 접함
+          <button type="button" class="why" aria-expanded="false"
+                  aria-label="설명 보기">?</button></h3>
+        <div class="why-body" hidden>
+          <p>차가 들어가는 땅과 못 들어가는 땅은 같은 동네에서도 단가가
+            <strong>1.7배</strong> 벌어집니다 (남이천 +66% · 안성 +67% 실측).
+            필지 특성은 전국을 나눠 받는 중이라 아직 대부분이
+            <strong>조사 안 됨</strong>입니다 — 그 거래까지 보시려면
+            <strong>전체</strong>로 두십시오.</p>
+        </div>
         <label class="field">
           <span>도로 접함</span>
           <select id="road-filter"></select>
         </label>
 
-        <h3 class="rail-sub">토지 — 용도지역</h3>
-        <p class="hint">처음에는 <strong>계획관리·생산관리·자연녹지</strong>만
-          켜 둡니다. 분석이 쓰는 것도 이 셋이라, 지도에서 보시는 것과
-          판정표의 숫자가 같은 표본입니다.</p>
+        <h3 class="rail-sub">토지 — 용도지역
+          <button type="button" class="why" aria-expanded="false"
+                  aria-label="설명 보기">?</button></h3>
+        <div class="why-body" hidden>
+          <p>여기서 켠 용도지역이 <strong>지도의 땅값 글자</strong>도
+            정합니다. 처음에는 계획관리·생산관리·자연녹지 셋만 켭니다 —
+            분석이 쓰는 것도 이 셋입니다.</p>
+          <p><strong>관리지역</strong>은 2006~2010년 거래에만 있습니다.
+            세분화(계획·생산·보전)가 끝나기 전이라 그냥 '관리지역'으로
+            신고된 것이고, 2014년 이후로는 거의 없습니다.</p>
+        </div>
         <div class="field-row">
           <button type="button" class="mini-btn" id="lu-all">전체</button>
           <button type="button" class="mini-btn" id="lu-none">해제</button>
@@ -118,8 +150,12 @@
       </label>
     </section>
     <section class="rail-block">
-      <h2>거리 밴드</h2>
-      <p class="hint">영업소를 선택하면 반경이 표시됩니다.</p>
+      <h2>거리 밴드
+        <button type="button" class="why" aria-expanded="false"
+                aria-label="설명 보기">?</button></h2>
+      <div class="why-body" hidden>
+        <p>지도에서 영업소를 누르면 그 반경이 그려집니다.</p>
+      </div>
       <div class="legend" id="band-legend"></div>
     </section>
     </div>
