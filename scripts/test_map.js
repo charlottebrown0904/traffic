@@ -505,7 +505,7 @@ const FAKE_LEAFLET = () => {
     const errs = [];
     page.on('pageerror', (e) => errs.push(String(e)));
     await page.goto(`${BASE}/app/`, { waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('#all-bands', { timeout: 20000 });
+    await page.waitForSelector('#gate-bg', { timeout: 20000 });
     await page.waitForTimeout(3500);
 
     check('지도 코드가 예외 없이 돈다', errs.length === 0, errs.slice(0, 2).join(' / '));
@@ -943,16 +943,19 @@ const FAKE_LEAFLET = () => {
     check('거리 밴드 범례는 왼쪽 필터에 남는다', legend.bands >= 3,
           `${legend.bands}줄`);
 
-    console.log('5. 전체 IC 반경');
-    const before = (await page.evaluate(() => window.__map.circles)).length;
-    await page.check('#all-bands');
-    await page.waitForTimeout(1200);
-    const after = (await page.evaluate(() => window.__map.circles)).length;
-    check('켜면 원이 크게 늘어난다', after > before * 10, `${before} → ${after}`);
-    await page.uncheck('#all-bands');
-    await page.waitForTimeout(800);
-    const off = (await page.evaluate(() => window.__map.circles)).length;
-    check('끄면 되돌아온다', off < after / 10, `${after} → ${off}`);
+    /* 5절('전체 IC 반경')은 스위치와 함께 사라졌다 —
+       사장님 지시 2026-09-08: "화면 상단 인구 및 IC범위 체크는 삭제합니다".
+       스위치가 없으니 켜고 끌 것도 없다. 지워졌다는 것만 못 박는다. */
+    const gone = await page.evaluate(() => ({
+      allBands: !!document.getElementById('all-bands'),
+      popBox: !!document.getElementById('pop-bg'),
+      popSwitch: !!document.getElementById('pop-switch'),
+      switches: document.querySelectorAll('.map-tools .map-switch').length,
+    }));
+    check('상단에서 전체 IC 반경 스위치가 사라졌다', !gone.allBands);
+    check('상단에서 인구 스위치가 사라졌다', !gone.popBox && !gone.popSwitch);
+    check('남은 것은 둘뿐이다 (IC·영업소 · 용도지역)', gone.switches === 2,
+          `${gone.switches}개`);
 
     console.log();
     console.log('7. 거래 점이 배경에서 보인다 · 도로 위계가 살아 있다');
@@ -1102,142 +1105,150 @@ const FAKE_LEAFLET = () => {
           satHit && Number(satHit[1]) >= .5, sat || '(필터 없음)');
 
     console.log();
-    console.log('9. 행정구역 인구 — 배율에 따라 도 → 시·군 → 구');
-    /* 사장님 지시(2026-09-07): "지도 화면 축적/크기에 따라 도/광역시
-     * 기준, 시(광역시 포함)/군 기준, 구 기준으로 반영이 가능할까요?"
+    console.log('9. 인구는 원이 아니라 땅값 글자 옆의 (XX만)');
+    /* 사장님 지시(2026-09-08):
+     *   "도, 광역시, 시, 군, 읍, 동, 리 사각에서 상단에 이름 옆에 인구를
+     *    아주 작게 표시해 주세요. (XX만) 단위는 만명"
+     *   "추가로 화면 상단 인구 및 IC범위 체크는 삭제합니다."
      *
-     * 전국을 볼 때 247개 원이 겹쳐 있으면 아무것도 안 읽힌다. 그때
-     * 필요한 것은 17개다. 세 배율을 실제로 흔들어 본다 — 하나만 보고
-     * 통과라고 말하면 나머지 둘은 안 본 것이다. */
-    // 인구는 이제 **꺼진 채로 시작한다** (사장님 지시 2026-09-08).
-    // 이 절은 인구 겹 자체를 보는 곳이므로 먼저 켠다.
-    await page.evaluate(() => {
-      const b = document.getElementById('pop-bg');
-      if (b && !b.checked) { b.checked = true; b.dispatchEvent(new Event('change')); }
-    });
-    const popAt = async (z) => page.evaluate((zoom) => {
+     * 원을 지운 자리를 글자가 대신한다. 원이 정말 사라졌는지, 그리고
+     * **묶인 시군구를 합친 값인지**를 본다 — 경기도 칸에 수원시 인구만
+     * 적히면 그 숫자는 거짓말이다. */
+    const popPeek = async (z) => page.evaluate((zoom) => {
       window.__zoom = zoom;
-      (((window.__mapOn || {}).zoomend) || []).forEach((fn) => fn());
-      const marks = (window.__map.groups || [])
-        .flatMap((g) => g._items)
-        .filter((m) => m.__opts && m.__opts.pane === 'popPane');
+      const on = window.__mapOn || {};
+      (on.zoomend || []).forEach((fn) => fn());
+      (on.moveend || []).forEach((fn) => fn());
+      const all = (window.__map.groups || []).flatMap((g) => g._items);
       return {
-        peek: window.__pop || {},
-        n: marks.length,
-        radii: marks.map((m) => m.__opts.radius),
-        tips: marks.map((m) => m.__tooltip || ''),
-        at: marks.map((m) => m.__latlng),
+        circles: all.filter((m) => (m.options || m.__opts || {}).pane
+                                   === 'popPane').length,
+        cards: all.filter((m) => m.options && m.options.pane === 'lpPane')
+          .map((m) => ((m.options.icon || {}).options || {}).html || ''),
       };
     }, z);
 
-    const base = await page.evaluate(() => ({
-      pane: (window.__map.panes && window.__map.panes.popPane)
-        ? Number(window.__map.panes.popPane.style.zIndex) : null,
-      switchShown: !(document.getElementById('pop-switch') || {}).hidden,
-    }));
-    check('인구 스위치가 보인다 (자료가 있을 때만)', base.switchShown);
-    check('인구 원을 IC 아래 판에 그린다 (200 < z < 400)',
-          base.pane !== null && base.pane > 200 && base.pane < 400,
-          `z-index ${base.pane}`);
+    const wide = await popPeek(7);
+    check('인구 원을 더는 그리지 않는다', wide.circles === 0,
+          `${wide.circles}개`);
+    const withPop = wide.cards.filter((h) => /<em>[\d.]+만<\/em>/.test(h));
+    check('시·도 칸에 인구가 (XX만) 으로 붙는다', withPop.length > 0,
+          `${withPop.length}/${wide.cards.length}칸`);
 
-    // ① 전국이 보이는 배율 — 도·광역시 하나에 원 하나.
-    const wide = await popAt(7);
-    check('멀리서는 도·광역시로 묶는다',
-          wide.n === 3 && wide.peek.level === 'sido',
-          `${wide.n}개 · ${wide.peek.level}`);
-    check('도 하나가 그 안의 시군구를 합친 값이다',
-          wide.tips.some((t) => /경기도/.test(t) && /1,108,000명/.test(t)),
-          wide.tips.join(' | ').slice(0, 200));
-    check('몇 곳을 합친 것인지 말한다',
-          wide.tips.some((t) => /4개 시군구를 합친/.test(t)),
-          wide.tips.find((t) => /경기도/.test(t)) || '없음');
+    // 합쳤는가. **거래가 있는 시군구만 더하면 안 된다** — 인구는 행정구역의
+    // 인구지 '거래가 있는 곳의 인구' 가 아니다. 처음 구현이 여기서 틀려서
+    // 경기도가 110만이 아니라 65만(값이 있는 두 구의 합)으로 나왔다.
+    const wantMan = (() => {
+      const y = '2025';
+      const sum = FAKE_REGIONS.filter((r) => r.sido === '경기도')
+        .reduce((a, r) => a + ((r.pop || {})[y] || 0), 0) / 10000;
+      return sum >= 10 ? String(Math.round(sum)) : sum.toFixed(1);
+    })();
+    const gy = wide.cards.find((h) => /경기도/.test(h));
+    const gyMan = gy && /<em>([\d.]+)만<\/em>/.exec(gy);
+    check('경기도 칸이 도 전체 인구다 (값 없는 시군구도 센다)',
+          !!gyMan && gyMan[1] === wantMan,
+          `${gyMan ? gyMan[1] : '(없음)'}만 · 기대 ${wantMan}만`);
 
-    // ② 중간 배율 — 시(광역시 포함)·군.
-    const mid = await popAt(10);
-    check('가까이 가면 시·군으로 나뉜다',
-          mid.n === 5 && mid.peek.level === 'si', `${mid.n}개 · ${mid.peek.level}`);
-    check('시 아래 구는 그 시로 묶인다 (수원시 장안구 + 권선구)',
-          mid.tips.some((t) => /^수원시 ·/.test(t) && /650,000명/.test(t)),
-          mid.tips.join(' | ').slice(0, 200));
-    // "시(광역시 포함)" — 서울을 25개 구로 흩어 놓으면 부산·대구와
-    // 나란히 못 본다.
-    check('광역시는 하나로 묶는다',
-          mid.tips.some((t) => /^서울특별시 ·/.test(t) && /687,000명/.test(t))
-          && !mid.tips.some((t) => /^종로구/.test(t)),
-          mid.tips.join(' | ').slice(0, 200));
+    // 10만 아래는 소수점 한 자리를 남긴다 — 안 남기면 작은 군이 전부
+    // '0만' 이 된다.
+    const small = wide.cards.concat((await popPeek(10)).cards)
+      .map((h) => (/<em>([\d.]+)만<\/em>/.exec(h) || [])[1])
+      .filter(Boolean).filter((v) => Number(v) < 10);
+    check('10만 아래는 소수점 한 자리를 남긴다',
+          !small.length || small.every((v) => /\./.test(v)),
+          small.slice(0, 3).join(' · ') || '(해당 없음)');
 
-    // ③ 가장 가까운 배율 — 자치구까지.
-    const near = await popAt(12);
-    check('더 가까이 가면 구까지 나뉜다',
-          near.n === 7 && near.peek.level === 'gu',
-          `${near.n}개 · ${near.peek.level}`);
-    check('그때는 종로구·강남구가 따로 선다',
-          near.tips.some((t) => /^종로구/.test(t))
-          && near.tips.some((t) => /^강남구/.test(t)),
-          near.tips.join(' | ').slice(0, 200));
+    // 읍·면·동과 리에는 인구가 **없다**. KOSIS 는 시군구까지만 준다.
+    // 없는 것을 시군구 값으로 채우면 리 하나가 20만인 것처럼 읽힌다.
+    // 읍·면·동 조각이 아직 안 왔으면 화면은 시군구로 물러난다. 그때는
+    // 인구가 붙는 것이 **맞다** — 시군구 인구니까. 그러니 단계를 보고
+    // 따진다. 단계를 안 보고 '14배율이면 없어야 한다' 고 하면, 늦게 온
+    // 날에 검사가 거짓으로 빨개진다.
+    const fine = await popPeek(14);
+    const fineLvl = await page.evaluate(() => (window.__lp || {}).level);
+    check('읍·면·동/리 칸에는 인구를 안 적는다 (자료가 없다)',
+          (fineLvl !== 'umd' && fineLvl !== 'ri')
+          || !fine.cards.some((h) => /<em>[\d.]+만<\/em>/.test(h)),
+          `${fineLvl} · ${fine.cards.length}칸`);
 
-    // 크기는 **네 단**이다. 235가지 크기를 눈으로 가를 수는 없다.
-    // 구 단위에서 넷이 다 나오도록 자료를 넣어 두었다.
-    const R = [...new Set(near.radii)].sort((a, b) => b - a);
-    check('크기가 네 단으로 끊긴다', R.length === 4, near.radii.join(' / '));
-    // 단위가 바뀌면 자르는 자리도 바뀐다. 시군구 기준 5만·20만·50만을
-    // 시도에 그대로 쓰면 17곳이 전부 맨 위 칸에 들어가 원이 다 같아진다.
-    check('묶음 단위가 바뀌면 자르는 자리도 바뀐다',
-          new Set(wide.radii).size > 1,
-          `시도 반지름 ${wide.radii.join('/')}`);
+    await popPeek(7);
 
-    // 예전에는 여기서 지도 위 범례가 원 크기와 인구를 짝지어 말하는지
-    // 봤다. **그 범례는 없앴다** (사장님 지시 2026-09-08: "좌측 범례
-    // 삭제"). 대신 원마다 말풍선이 인구를 숫자로 말하는지 본다 —
-    // 크기만 남고 숫자가 없으면 큰 원과 작은 원의 차이를 못 읽는다.
-    check('원마다 인구를 숫자로 말한다',
-          near.tips.length > 0 && near.tips.every((t) => /명/.test(t)),
-          (near.tips[0] || '없음').slice(0, 80));
-    check('어느 해 인구인지 말풍선에 적는다',
-          !!near.peek.year
-          && near.tips.some((t) => t.includes(String(near.peek.year))),
-          (near.tips[0] || '없음').slice(0, 80));
+    console.log();
+    console.log('9-A. 용도지역 칸이 목록이 아니라 범례다');
+    /* 사장님 지시(2026-09-08):
+     *   "전체 용도지역이 아직 안나오네요. 전부 반영하고 체크하면 가격이
+     *    반영될 수 있도록 해주세요."
+     *   "용도 지역 선택하면 체크가 아니라 용도 지역 범례 표시
+     *    (색상과 패턴)이 들어 가도록 해주세요."
+     *
+     * '전부' 를 숫자로 못 박으면 자료가 늘 때마다 검사가 깨진다. 대신
+     * **자료가 가진 것을 하나도 빠뜨리지 않는가**를 본다 — 이쪽이
+     * 사장님이 보신 증상('안 나온다')을 정확히 잡는다. */
+    const zoneUI = await page.evaluate(async () => {
+      const lp = await (await fetch('/app/data/landprice.json')).json();
+      const btns = [...document.querySelectorAll('#lp-groups .zone-opt')];
+      const heads = [...document.querySelectorAll('#lp-groups .lp-menu-head')]
+        .map((h) => h.textContent);
+      return {
+        dataGroups: Object.keys(lp.groups || {}),
+        shown: btns.map((b) => b.dataset.group),
+        heads,
+        // 색이 실제로 칠해졌는가. 무늬는 겹배경이라 background 에 함께 온다.
+        swatches: btns.slice(0, 40).map((b) => {
+          const sw = b.querySelector('.zone-sw');
+          const cs = sw ? getComputedStyle(sw) : null;
+          return cs ? (cs.backgroundImage !== 'none' ? cs.backgroundImage
+                                                     : cs.backgroundColor) : '';
+        }),
+        pressed: btns.filter((b) => b.getAttribute('aria-pressed') === 'true')
+          .map((b) => b.dataset.group),
+        checkboxes: document.querySelectorAll('#lp-groups input').length,
+      };
+    });
+    const missing = zoneUI.dataGroups.filter((g) => !zoneUI.shown.includes(g));
+    check('자료에 있는 용도지역이 하나도 안 빠진다', !missing.length,
+          missing.length ? `빠진 것: ${missing.join(', ')}`
+                         : `${zoneUI.shown.length}개 전부`);
+    check('체크상자가 아니라 범례 칸이다', zoneUI.checkboxes === 0
+          && zoneUI.shown.length > 0, `input ${zoneUI.checkboxes}개`);
+    const painted = zoneUI.swatches.filter(
+      (v) => v && v !== 'rgba(0, 0, 0, 0)' && v !== 'transparent');
+    check('칸마다 색이 칠해져 있다', painted.length === zoneUI.shown.length,
+          `${painted.length}/${zoneUI.shown.length}`);
+    // 색이 다 같으면 범례가 아니라 장식이다.
+    check('보이는 칸의 색이 서로 다르다',
+          new Set(zoneUI.swatches).size === zoneUI.swatches.length,
+          `${new Set(zoneUI.swatches).size}/${zoneUI.swatches.length}가지`);
 
-    /* ── 원의 중심은 관청 소재지 (2026-09-07 지시) ──
-     * "인구 표시 원의 중심은 도청/시청/구청/군청 소재지가 중심이 되도록."
-     * 그 전에는 우리 거래 좌표에서 만든 대표점이라, 거래가 없는 동네가
-     * 많은 시군구는 그만큼 끌려갔다. */
-    const near2 = await popAt(12);
-    const jangan = near2.at[near2.tips.findIndex((t) => /^수원시 장안구/.test(t))];
-    check('구 단위 원이 그 구청 위에 선다',
-          !!jangan && Math.abs(jangan[0] - 37.3040) < 1e-4
-          && Math.abs(jangan[1] - 127.0101) < 1e-4,
-          JSON.stringify(jangan));
-    check('관청 위에 찍혔다고 말한다',
-          near2.tips.some((t) => /^수원시 장안구/.test(t)
-                                 && /점 위치는 관청 소재지/.test(t)),
-          near2.tips.find((t) => /^수원시 장안구/.test(t)) || '없음');
-    // 못 받은 곳은 사라지지 않고, 관청 위인 척하지도 않는다.
-    check('관청을 못 받은 곳도 원은 그린다',
-          near2.tips.some((t) => /^울릉군/.test(t)));
-    check('그 원은 대표점이라고 말한다',
-          near2.tips.some((t) => /^울릉군/.test(t)
-                                 && /인구로 가중한 대표점/.test(t)),
-          near2.tips.find((t) => /^울릉군/.test(t)) || '없음');
-
-    // 묶은 단위는 **묶은 단위의 관청**이다. 시군구 관청의 평균을 쓰면
-    // 그것은 다시 대표점이다 — 경기도청은 수원에 있지 경기도 한가운데
-    // 있지 않다.
-    const wide2 = await popAt(7);
-    const gg = wide2.at[wide2.tips.findIndex((t) => /^경기도/.test(t))];
-    check('시·도 원이 도청 위에 선다',
-          !!gg && Math.abs(gg[0] - 37.274975) < 1e-4
-          && Math.abs(gg[1] - 127.009235) < 1e-4,
-          JSON.stringify(gg));
-    const mid2 = await popAt(10);
-    const suwon = mid2.at[mid2.tips.findIndex((t) => /^수원시 ·/.test(t))];
-    check('시 원이 시청 위에 선다',
-          !!suwon && Math.abs(suwon[0] - 37.263434) < 1e-4
-          && Math.abs(suwon[1] - 127.028653) < 1e-4,
-          JSON.stringify(suwon));
-
-    // 다음 절이 기본 배율을 가정하므로 되돌린다.
-    await popAt(7);
+    // 팔레트 자체를 본다 — **오늘 자료가 무엇을 담았든**. 지금 화면에
+    // 세 용도지역만 있다고 나머지 스물둘의 색을 안 보면, 정작 자료가
+    // 늘어난 날에 겹친 색을 그때 발견하게 된다.
+    const pal = await page.evaluate(() => {
+      const names = Object.keys(ZONE_STYLE);
+      return {
+        n: names.length,
+        css: names.map((g) => zoneSwatch(g)),
+        // 같은 계열 안에서 무늬가 갈라주는가 (초록 여섯, 주거 여덟).
+        patterned: names.filter((g) => /gradient/.test(zoneSwatch(g))).length,
+        fallback: zoneSwatch('있을 리 없는 용도지역'),
+      };
+    });
+    check('팔레트가 스물 넘게 있다', pal.n >= 20, `${pal.n}개`);
+    check('팔레트 안에 같은 칸이 없다',
+          new Set(pal.css).size === pal.n,
+          `${new Set(pal.css).size}/${pal.n}`);
+    // 색만으로는 색약인 사람이 초록 여섯을 못 가른다.
+    check('무늬(사선·점)로도 가른다', pal.patterned >= 5, `${pal.patterned}개`);
+    check('모르는 용도지역도 색이 있다 (빈 칸으로 두지 않는다)',
+          !!pal.fallback, pal.fallback);
+    check('도시지역·비도시지역으로 갈라 놓는다', zoneUI.heads.length >= 2,
+          zoneUI.heads.join(' / '));
+    check('처음 켜지는 것은 계획관리·생산관리·자연녹지',
+          ['계획관리', '생산관리', '자연녹지']
+            .every((g) => !zoneUI.dataGroups.includes(g)
+                          || zoneUI.pressed.includes(g)),
+          zoneUI.pressed.join(', '));
 
     console.log();
     console.log('9-B. 땅값 지도 — 사각형 표찰 · 왼쪽 필터를 따름 · 추이');
@@ -1249,10 +1260,11 @@ const FAKE_LEAFLET = () => {
     // 땅값 글자의 용도지역. **거래 점 필터와 따로 논다** (사장님 지시
     // 2026-09-08) — 점을 걸러 볼 때마다 바탕의 중앙값이 함께 흔들리면
     // 견줄 수가 없다.
+    // 이제 체크상자가 아니라 **범례 칸**이다 (사장님 지시 2026-09-08).
     const lpRail = async (names) => page.evaluate((want) => {
-      document.querySelectorAll('#lp-groups input').forEach((i) => {
-        const on = want.indexOf(i.dataset.group) >= 0;
-        if (i.checked !== on) i.click();
+      document.querySelectorAll('#lp-groups .zone-opt').forEach((b) => {
+        const on = want.indexOf(b.dataset.group) >= 0;
+        if ((b.getAttribute('aria-pressed') === 'true') !== on) b.click();
       });
     }, names);
 
@@ -1333,8 +1345,9 @@ const FAKE_LEAFLET = () => {
     // **사각형 표찰: 이름 위, 값 아래.** 알약에 나란히 쓰면 이름이 길수록
     // 옆으로 늘어나 서로 겹친다.
     check('사각형 표찰에 이름이 위, 값이 아래다',
+          // 이름 뒤에 <em>인구</em> 가 붙을 수 있다 (사장님 지시 2026-09-08).
           lp1.html.every((h) => /class="lp-card"/.test(h)
-                               && /<b>[^<]+<\/b><i>/.test(h)),
+                               && /<b>[^<]+(<em>[^<]*<\/em>)?<\/b><i>/.test(h)),
           (lp1.html[0] || '없음').slice(0, 100));
     const lp1Fills = fillsOf(lp1.html);
     check('색이 파란 계열이다 (빨강·노랑이 없다)',

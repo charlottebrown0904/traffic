@@ -37,14 +37,14 @@ const state = {
   // 훑었으므로, 여기서 걸면 조사 안 된 거래가 통째로 사라진다.
   roadFilter: 'all',
   activeKinds: new Set(),
-  parcelOnly: false, selected: null, showAllBands: false, tiers: null,
+  parcelOnly: false, selected: null, tiers: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
   apiAvailable: false, verdicts: null,
   verdictSets: {}, verdictKind: 'land',
   // 인구·영업소는 **꺼진 채로 시작한다** (사장님 지시 2026-09-08).
   // 땅값이 이 화면의 주인공인데, 인구 원과 영업소 점이 함께 깔리면
   // 처음 여는 사람은 무엇을 봐야 할지 모른다.
-  regions: null, showPop: false, popYear: null, showGates: false,
+  regions: null, popYear: null, showGates: false,
   // 거래 연도 범위 (좌/우 손잡이). yearWide 면 전 기간 표본으로 물러난 것이다.
   yearFrom: null, yearTo: null, yearWide: false,
   // 땅값 분위지도 (2026-09-08 지시)
@@ -53,7 +53,7 @@ const state = {
   lpGroupSet: new Set(),
 };
 
-let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, popLayer, lpLayer;
+let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, lpLayer;
 const markers = new Map();
 
 /* ─────────── 유틸 ─────────── */
@@ -194,7 +194,6 @@ async function boot() {
   buildRank();
   buildTrend();
   buildMap();
-  drawPopulation();
   wireLandPrice();
   drawLandPrice();
   buildLegend();
@@ -1309,7 +1308,6 @@ function recolorTollgates() {
   refreshMap();
   // 인구도 같은 해를 본다. 교통량은 2026년인데 인구는 2025년이면
   // 화면 두 곳이 다른 해를 말하게 된다.
-  drawPopulation();
   drawLandPrice();
   buildLegend();
 }
@@ -1416,7 +1414,6 @@ function buildMap() {
   // 배율이 바뀌면 인구를 묶는 단위가 바뀐다 (시도 → 시군 → 구).
   // 다시 그리지 않으면 확대해 들어가도 전국 원 17개가 그대로 남는다.
   map.on('zoomend', () => {
-    drawPopulation();
     drawLandPrice();
     // 범례의 원 크기와 '몇 만 이하' 도 단위에 맞춰 다시 그린다.
     // 자료가 오기 전이면 그릴 것이 없다.
@@ -1444,12 +1441,7 @@ function buildMap() {
 
   addZoningLayer();
 
-  // 인구 원은 **가장 아래**에 깐다. 배경 맥락이지 읽을 값이 아니라,
-  // 영업소나 거래를 가리면 안 된다. 370 은 배경 타일(200)보다 위,
-  // 거래(380)와 밴드·영업소(400)보다 아래다.
-  map.createPane('popPane').style.zIndex = 370;
-  popLayer = L.layerGroup().addTo(map);
-  // 땅값 분위지도. 인구보다 위, 거래보다 아래.
+  // 땅값 분위지도. 배경 타일(200)보다 위, 거래(380)보다 아래.
   map.createPane('lpPane').style.zIndex = 375;
   lpLayer = L.layerGroup().addTo(map);
   bandLayer = L.layerGroup().addTo(map);
@@ -1533,22 +1525,6 @@ function bandRing(lat, lon, hi, i, isControl, faint) {
   });
 }
 
-/* 상단에서 '전체 IC 반경' 을 켜면 모든 영업소의 반경을 한 번에 그린다.
- * 어디가 비어 있는지, 어디가 겹치는지를 전국 단위로 보려는 용도라
- * 선을 얇게 하고 음영도 더 옅게 깐다 — 442곳을 진하게 그리면 지도가
- * 통째로 덮인다. */
-function drawAllBands() {
-  if (!map || !bandLayer) return;
-  if (!state.showAllBands) return;
-  bandLayer.clearLayers();
-  const bands = shownBands();
-  state.tollgates.forEach((t) => {
-    if (!t.lat || !t.lon) return;
-    for (let i = bands.length - 1; i >= 0; i--) {
-      bandLayer.addLayer(bandRing(t.lat, t.lon, bands[i][1], i, false, true));
-    }
-  });
-}
 
 /* 고른 해의 거래를 받아 온다. 한 번 받은 해는 다시 안 받는다.
  *
@@ -1718,11 +1694,6 @@ function refreshMap() {
     }
   });
   syncTollgateLabels();
-  // 필터를 만질 때마다 밴드를 다시 그린다. 선택이 있으면 선택이 이긴다.
-  if (state.showAllBands) {
-    if (state.selected) selectTollgate(state.selected);
-    else { bandLayer.clearLayers(); drawAllBands(); }
-  }
 
   drawTrades();
   // **땅값 글자는 여기서 다시 그리지 않는다.** 거래 점 필터와 따로 놀기로
@@ -2038,15 +2009,7 @@ function selectTollgate(id) {
   if (!map) return;
 
   markers.forEach((m, key) => m.setStyle({ weight: key === id ? 4 : 2 }));
-  // 전체 보기 중이면 얇은 밴드를 지우지 않고 그 위에 진하게 얹는다.
-  // 지우면 '전체' 를 켜 둔 채로 하나를 눌렀을 때 나머지가 사라져,
-  // 스위치가 꺼진 것처럼 보인다.
-  if (state.showAllBands) {
-    bandLayer.clearLayers();
-    drawAllBands();
-  } else {
-    bandLayer.clearLayers();
-  }
+  bandLayer.clearLayers();
   const bands = shownBands();
   // 큰 원부터 그린다 — 작은 원이 위에 오게.
   for (let i = bands.length - 1; i >= 0; i--) {
@@ -2206,23 +2169,6 @@ function buildBoardTable() {
   });
 }
 
-/* 인구 원은 크기가 곧 값이다. 색 스와치로는 설명이 안 되므로 **원 세 개**를
-   실제 크기 비율로 그려 둔다 — 큰 것·중간·작은 것이 각각 몇 명인지. */
-function popLegendRows() {
-  const info = window.__pop || {};
-  if (!state.showPop || !info.year) return '';
-  // 지도와 **같은 크기**로 그린다. 범례 원이 지도 원보다 크거나 작으면
-  // 짝을 못 맞춘다 — 크기가 곧 값인 표시라 그것이 유일한 단서다.
-  // 묶음 단위가 배율에 따라 바뀌므로 **자르는 자리도 함께 바뀐다.**
-  // 범례가 지금 어느 단위를 보고 있는지 말하지 않으면, 원 크기가
-  // 확대만 했는데 달라진 이유를 알 수 없다.
-  const level = POP_LEVELS.find((lv) => lv.key === info.level) || POP_LEVELS[0];
-  return `<div class="grp">행정구역 인구 · ${info.year}년`
-    + ` <span class="mut">${level.label} 기준</span></div>` +
-    level.tiers.map((t) =>
-      `<div class="row"><span class="sw sw-pop" style="width:${t.r * 2}px;`
-      + `height:${t.r * 2}px"></span>${t.label}</div>`).join('');
-}
 
 /* ─────────── 행정구역 인구 ─────────── */
 /* 시군구 대표점에 인구만큼 원을 그린다.
@@ -2282,9 +2228,6 @@ function popLevel(zoom) {
   POP_LEVELS.forEach((lv) => { if (zoom >= lv.minZoom) out = lv; });
   return out;
 }
-
-const popTier = (v, level) =>
-  level.tiers.find((t) => v <= t.max) || level.tiers[level.tiers.length - 1];
 
 /* 특별시·광역시·특별자치시. '시·군' 단위에서 이들은 **하나로 묶는다** —
  * 사장님 지시의 "시(광역시 포함)" 가 그 뜻이다. 서울을 25개 구로 흩어
@@ -2350,76 +2293,14 @@ function popCenter(group, levelKey, year) {
   };
 }
 
-function drawPopulation() {
-  const have = Array.isArray(state.regions) && state.regions.length > 0;
-  // 자료가 없으면 스위치를 아예 안 보여준다. 눌러도 아무 일이 없는
-  // 스위치가 있으면 사람은 고장으로 읽는다.
-  const pswitch = document.getElementById('pop-switch');
-  const pbox = document.getElementById('pop-bg');
-  if (pswitch) pswitch.hidden = !have;
-  if (pbox) pbox.checked = state.showPop && have;
+/* 인구 원은 사라졌다 (사장님 지시 2026-09-08).
 
-  if (!map || !popLayer) return;
-  popLayer.clearLayers();
-  window.__pop = { year: null, n: 0, max: 0, level: null };
-  if (!state.showPop || !have) return;
+   "화면 상단 인구 및 IC범위 체크는 삭제합니다."
 
-  const year = popYear();
-  if (!year) return;
-  const level = popLevel(map.getZoom());
-
-  // 묶는다. 같은 열쇠를 가진 시군구가 한 원이 된다.
-  const groups = new Map();
-  state.regions.forEach((r) => {
-    const v = (r.pop || {})[year];
-    if (!(typeof v === 'number' && v > 0)) return;
-    const key = popGroupKey(r, level.key);
-    if (!groups.has(key)) groups.set(key, { name: key, pop: 0, members: [] });
-    const g = groups.get(key);
-    g.pop += v;
-    g.members.push(r);
-  });
-  if (!groups.size) return;
-
-  let max = 0;
-  let onOffice = 0;
-  groups.forEach((g) => {
-    const c = popCenter(g, level.key, year);
-    const [lat, lon] = c.at;
-    if (c.office) onOffice += 1;
-    max = Math.max(max, g.pop);
-    const marker = L.circleMarker([lat, lon], {
-      pane: 'popPane',
-      radius: popTier(g.pop, level).r,
-      color: cssVar('--pop-ring'),
-      weight: 1,
-      fillColor: cssVar('--pop-fill'),
-      fillOpacity: .22,
-      opacity: .55,
-    });
-    // 몇 곳을 묶은 것인지 말한다. '경기도 1,360만' 만 적어 두면 그것이
-    // 한 시군구인지 43곳의 합인지 읽는 사람은 알 수 없다.
-    const rolled = g.members.length > 1
-      ? `<br>${g.members.length}개 시군구를 합친 값입니다`
-      : '';
-    // 관청 위에 찍힌 원과 물러난 원이 같아 보이면 안 된다. 앞의 것은
-    // 실제 소재지고 뒤의 것은 몇 km 어긋날 수 있는 짐작이다.
-    const where = c.office
-      ? '<br><em>점 위치는 관청 소재지입니다</em>'
-      : '<br><em>관청 좌표를 아직 못 받아, 인구로 가중한 대표점에'
-        + ' 찍었습니다</em>';
-    marker.bindTooltip(
-      `${escapeHtml(g.name)} · ${year}년 인구 ${g.pop.toLocaleString('ko-KR')}명`
-      + rolled + where,
-      { direction: 'top' });
-    popLayer.addLayer(marker);
-  });
-  window.__pop = {
-    year, level: level.key, levelLabel: level.label,
-    n: popLayer.getLayers ? popLayer.getLayers().length : 0, max,
-    onOffice,
-  };
-}
+   원을 지우면서 인구를 버리지는 않는다 — **땅값 글자 옆으로 옮겼다**
+   (lpItemsRegion 의 pop). 원은 크기가 곧 값이라 서로 겹쳐 가렸고,
+   정작 옆에 적힌 땅값과 견주려면 눈이 두 번 오갔다. 같은 자리에
+   나란히 적으면 한 번에 읽힌다. */
 
 /* ─────────── 땅값 지도 ─────────── */
 /* 사장님 지시(2026-09-08, 넷째 묶음):
@@ -2481,6 +2362,92 @@ function lpWindow() {
  * 때마다 지도의 중앙값이 함께 흔들린다 — **바탕이 움직이면 견줄 수가
  * 없다.** 점은 찾는 도구이고 중앙값은 자로 삼는 것이라, 자가 손을
  * 따라 움직이면 안 된다. */
+/* 용도지역 범례 — 색과 무늬.
+ *
+ * 사장님 지시(2026-09-08): "용도 지역 선택하면 체크가 아니라 용도 지역
+ * 범례 표시 (색상과 패턴)이 들어 가도록 해주세요."
+ *
+ * 체크상자 스물다섯 개는 목록이지 범례가 아니다. 무엇을 켰는지는
+ * 알려주지만 **그것이 무슨 땅인지**는 안 알려준다. 색을 칸에 직접
+ * 칠하면 목록이 곧 범례가 된다.
+ *
+ * 색만으로는 모자란 이유가 둘이다.
+ *   · 주거 다섯, 상업 넷, 공업 셋은 같은 계열이라 색만으로 못 가른다.
+ *     한 계열 안에서 진하기로 서열을 주고, **무늬로 갈래를 표시**한다.
+ *   · 남성 스무 명 중 한 명은 적록색약이다. 초록 계열 여섯이 색상만
+ *     다르면 그 사람에게는 전부 같은 칸이다. 무늬는 색을 안 탄다.
+ *
+ * 무늬는 셋만 쓴다 — 없음 / 사선 / 점. 넷을 넘기면 12px 칸에서 서로
+ * 구별이 안 되어 무늬가 오히려 잡음이 된다.
+ *
+ * **브이월드 지적편집도와 같은 색이 아니다.** 색면은 브이월드가 서버에서
+ * 칠해 보내주므로 우리에게 팔레트가 없다. 여기 색은 우리 것이고,
+ * 국토계획법 관례(주거 노랑·상업 분홍·공업 보라·녹지 초록)만 따른다.
+ */
+const ZONE_STYLE = {
+  // 비도시지역 — 흙빛·연녹
+  '계획관리':       { c: '#E4D9A6', p: '' },
+  '생산관리':       { c: '#CBDFA4', p: 'd' },
+  '보전관리':       { c: '#A6C888', p: 'o' },
+  '농림':           { c: '#BCD79C', p: '' },
+  '자연환경보전':   { c: '#8AC3B2', p: 'o' },
+  '관리(미세분)':   { c: '#D9D0AC', p: 'd' },
+  // 도시지역 · 녹지
+  '자연녹지':       { c: '#A3CE8A', p: '' },
+  '생산녹지':       { c: '#BBDA9C', p: 'd' },
+  '보전녹지':       { c: '#7FB06C', p: 'o' },
+  // 도시지역 · 주거 (노랑, 종이 올라갈수록 진하게)
+  '제1종전용주거':  { c: '#FFF1BC', p: 'o' },
+  '제2종전용주거':  { c: '#FFE79C', p: 'o' },
+  '제1종일반주거':  { c: '#FFDF8C', p: '' },
+  '제2종일반주거':  { c: '#FFCE62', p: '' },
+  '제3종일반주거':  { c: '#FFB937', p: '' },
+  '준주거':         { c: '#FFAB7C', p: '' },
+  '전용주거(미세분)': { c: '#FFF3CC', p: 'd' },
+  '일반주거(미세분)': { c: '#FFDCA2', p: 'd' },
+  // 도시지역 · 상업 (분홍)
+  '중심상업':       { c: '#EF5F92', p: '' },
+  '일반상업':       { c: '#F48EB0', p: '' },
+  '근린상업':       { c: '#F9BCD0', p: '' },
+  '유통상업':       { c: '#E0A8C6', p: 'd' },
+  // 도시지역 · 공업 (보라)
+  '전용공업':       { c: '#9A79C2', p: '' },
+  '일반공업':       { c: '#B69AD4', p: '' },
+  '준공업':         { c: '#D1BCE6', p: '' },
+  // 용도구역
+  '개발제한구역':   { c: '#9DB7A5', p: 'd' },
+};
+
+const ZONE_FALLBACK = { c: '#C9CDD4', p: '' };
+
+/* 칸 하나의 배경. 무늬는 색 위에 얹는 겹배경으로 그린다 —
+   따로 요소를 두면 12px 칸 안에서 자리가 안 나온다. */
+function zoneSwatch(g) {
+  const st = ZONE_STYLE[g] || ZONE_FALLBACK;
+  if (st.p === 'd') {
+    return `repeating-linear-gradient(45deg,`
+      + `rgba(0,0,0,.22) 0 1.5px, transparent 1.5px 4.5px), ${st.c}`;
+  }
+  if (st.p === 'o') {
+    return `radial-gradient(rgba(0,0,0,.28) 1px, transparent 1.2px)`
+      + ` 0 0/4px 4px, ${st.c}`;
+  }
+  return st.c;
+}
+
+/* 인구를 **만명** 단위로 (사장님 지시 2026-09-08).
+
+   "이름 옆에 인구를 아주 작게 표시해 주세요. (XX만) 단위는 만명"
+
+   10만 위는 소수점을 뗀다 — '136.0만' 의 .0 은 자리만 먹고 알려주는
+   것이 없다. 10만 아래는 한 자리를 남긴다. 안 남기면 안성(19만)과
+   울릉(0.9만)이 둘 다 '0만' 이 된다. */
+function popMan(v) {
+  if (!(typeof v === 'number' && v > 0)) return '';
+  const man = v / 10000;
+  return (man >= 10 ? Math.round(man) : man.toFixed(1)) + '만';
+}
+
 function lpGroups() {
   const have = Object.keys((state.landPrice || {}).groups || {});
   return have.filter((g) => state.lpGroupSet.has(g));
@@ -2591,8 +2558,24 @@ function lpItemsRegion(levelKey) {
     });
   });
   const year = String(popYear() || '');
+  // 인구 원이 사라진 자리를 이 숫자가 대신한다 (사장님 지시 2026-09-08).
+  //
+  // **거래가 있는 시군구만 더하면 안 된다.** g.members 에는 켠 용도지역의
+  // 값이 있는 시군구만 들어 있다. 경기도는 47곳인데 계획관리 거래가 있는
+  // 곳만 세면 도시 쪽 구가 통째로 빠진다 — 검사 fixture 에서 경기도가
+  // 110만이 아니라 65만으로 나온 것이 그것이었다. 인구는 행정구역의
+  // 인구지 '거래가 있는 곳의 인구' 가 아니다. 그러니 **묶음 열쇠가 같은
+  // 시군구를 전부** 더한다.
+  const popByKey = new Map();
+  (state.regions || []).forEach((r) => {
+    const v = (r.pop || {})[year];
+    if (!(typeof v === 'number' && v > 0)) return;
+    const k = popGroupKey(r, levelKey);
+    popByKey.set(k, (popByKey.get(k) || 0) + v);
+  });
   return [...bag.values()].map((g) => ({
     name: g.name,
+    pop: popByKey.get(g.name) || 0,
     v: g.vsum / g.wsum, n: g.n, from: g.from, parts: g.members.length,
     at: popCenter(g, levelKey, year).at,
     byGroup: [...g.parts.entries()].map(([k, o]) => ({ group: k, v: o.v / o.w, n: o.w })),
@@ -2811,7 +2794,12 @@ function drawLandPrice() {
       icon: L.divIcon({
         className: 'lp-card-wrap',
         html: `<span class="lp-card" style="background:${fill}">`
-          + `<b>${escapeHtml(short)}</b>`
+          + `<b>${escapeHtml(short)}`
+          // 읍·면·동과 리에는 인구가 **없다**. 우리가 가진 인구는 KOSIS
+          // 시군구 단위가 전부다. 그 자리에 시군구 인구를 적으면 리 하나가
+          // 20만인 것처럼 읽히므로, 없으면 아무것도 안 적는다.
+          + (it.pop ? `<em>${popMan(it.pop)}</em>` : '')
+          + `</b>`
           + `<i>${escapeHtml(lpMoney(it.v))}<u>/평</u></i></span>`,
         iconSize: null,
       }),
@@ -3004,20 +2992,25 @@ function wireLandPrice() {
         gbox.appendChild(h);
         lastKind = kind;
       }
-      const label = document.createElement('label');
-      label.className = 'check';
-      const input = document.createElement('input');
-      input.type = 'checkbox';
-      input.dataset.group = g;
-      input.checked = state.lpGroupSet.has(g);
-      input.addEventListener('change', () => {
-        input.checked ? state.lpGroupSet.add(g) : state.lpGroupSet.delete(g);
+      // 체크상자가 아니라 **범례 칸**이다 (사장님 지시 2026-09-08).
+      // aria-pressed 로 눌림을 알린다 — 색만으로는 화면낭독기가 못 읽고,
+      // 색약인 사람에게는 켠 것과 끈 것이 같아 보인다. 켠 칸에는 테두리와
+      // 체크 표시도 함께 준다.
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'zone-opt';
+      btn.dataset.group = g;
+      const on = state.lpGroupSet.has(g);
+      btn.setAttribute('aria-pressed', String(on));
+      btn.innerHTML = `<i class="zone-sw" style="background:${zoneSwatch(g)}"></i>`
+        + `<span>${escapeHtml(g)}</span>`;
+      btn.addEventListener('click', () => {
+        const now = !(btn.getAttribute('aria-pressed') === 'true');
+        btn.setAttribute('aria-pressed', String(now));
+        now ? state.lpGroupSet.add(g) : state.lpGroupSet.delete(g);
         drawLandPrice();
       });
-      const span = document.createElement('span');
-      span.textContent = g;
-      label.append(input, span);
-      gbox.appendChild(label);
+      gbox.appendChild(btn);
     });
   }
 
@@ -3030,8 +3023,8 @@ function wireLandPrice() {
       state.lpGroupSet.add(g);
       const box = document.getElementById('lp-groups');
       if (box) {
-        box.querySelectorAll('input').forEach((i) => {
-          if (i.dataset.group === g) i.checked = true;
+        box.querySelectorAll('.zone-opt').forEach((b) => {
+          if (b.dataset.group === g) b.setAttribute('aria-pressed', 'true');
         });
       }
       drawLandPrice();
@@ -3771,23 +3764,12 @@ document.addEventListener('keydown', (e) => {
 /* 레일 접기 로직은 레일과 함께 사라졌다 (2026-09-08). 필터는 이제
    아래 시트에 있고, 시트는 닫혀서 시작하므로 접을 것이 없다. */
 
-/* 상단 '전체 IC 반경' 스위치. */
-(function allBandsSwitch() {
+/* 지도 위 스위치 — 이제 둘뿐이다 (IC·영업소 · 용도지역). */
+(function mapSwitches() {
   const zbox = document.getElementById('zoning-bg');
   if (zbox) {
     zbox.checked = state.zoning;
     zbox.addEventListener('change', () => toggleZoning(zbox.checked));
-  }
-
-  // 이 함수는 스크립트를 읽자마자 돈다 — 자료를 받기 **전**이다.
-  // 그래서 여기서는 누름만 잇고, 보일지 말지는 drawPopulation 이 정한다.
-  // 여기서 state.regions 를 보면 항상 비어 있어 스위치가 영영 안 뜬다.
-  const pbox = document.getElementById('pop-bg');
-  if (pbox) {
-    pbox.addEventListener('change', () => {
-      state.showPop = pbox.checked;
-      drawPopulation();
-    });
   }
 
   // IC·영업소도 끌 수 있다 (기본 꺼짐, 사장님 지시 2026-09-08).
@@ -3806,19 +3788,6 @@ document.addEventListener('keydown', (e) => {
     });
   }
 
-  const box = document.getElementById('all-bands');
-  if (!box) return;
-  box.addEventListener('change', () => {
-    state.showAllBands = box.checked;
-    if (!map || !bandLayer) return;
-    bandLayer.clearLayers();
-    if (box.checked) {
-      drawAllBands();
-    } else if (state.selected) {
-      // 켜기 전에 고른 영업소가 있으면 그것만 다시 그린다.
-      selectTollgate(state.selected);
-    }
-  });
 })();
 
 boot();
