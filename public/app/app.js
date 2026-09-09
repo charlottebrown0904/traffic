@@ -29,7 +29,10 @@ const state = {
   // 용도지역 색면은 **꺼진 채로 시작한다** (사장님 지시 2026-09-08).
   // 색면이 깔리면 그 위의 땅값 글자와 거래 점이 묻힌다.
   zoning: false,
-  tgYear: null, tgVehicle: 'total',
+  tgYear: null,
+  // 고른 차종. **여럿 고를 수 있다** (사장님 지시 2026-09-09).
+  // 처음에는 다 켠다 — 예전 '전체 차종' 과 같은 화면으로 시작한다.
+  tgVehicles: new Set([1, 2, 3, 4, 5, 6]),
   dealYear: 'all', tradeCache: {}, tradesShown: null,
   activeStages: new Set(), activeLandUse: new Set(),
   hasStageFilter: false, hasLandUseFilter: false,
@@ -335,20 +338,7 @@ function buildFilters() {
     recolorTollgates();
   });
 
-  const vSel = $('#tg-vehicle');
-  [['total', '전체 차종']].concat(
-    ((state.traffic || {}).vehicle_types || [])
-      .map((v) => [String(v.code), v.label])
-  ).forEach(([val, label]) => {
-    const o = el('option', null, label);
-    o.value = val;
-    vSel.append(o);
-  });
-  vSel.value = state.tgVehicle;
-  vSel.addEventListener('change', () => {
-    state.tgVehicle = vSel.value;
-    recolorTollgates();
-  });
+  buildVehiclePicker();
 
   // 구간 필터 — 예전 '분면 필터'(저평가·과열 등) 자리다. 분면은 평가라
   // 오해를 부르고, 지도 색과 뜻이 달라 혼란스러웠다. 지도 색과 필터가
@@ -481,13 +471,19 @@ function buildFilters() {
    * 유일한 단서가 지목이라, 지목으로 개발단계를 갈라 놓고 고르게 한다.
    *
    * 칸은 자료에서 만든다. 없는 것은 칸도 안 생긴다. */
-  const stageBox = $('#stage-filters');
   const luBox = $('#land-use-filters');
   const landBox = document.getElementById('land-box');
   const stageMix = state.meta.stage_mix || {};
   const luMix = state.meta.land_use_mix || {};
   // 토지가 아예 없으면 이 묶음을 통째로 숨긴다.
-  if (landBox) landBox.hidden = !Object.keys(stageMix).length;
+  //
+  // **둘 다 비었을 때만 숨긴다.** 예전에는 stage_mix 만 봤는데, 개발단계
+  // 칸을 뺀 지금(2026-09-09) 그 하나에 매달아 두면 개발단계 자료가
+  // 없다는 이유로 도로접함·용도지역까지 통째로 사라진다.
+  if (landBox) {
+    landBox.hidden = !Object.keys(stageMix).length
+                     && !Object.keys(luMix).length;
+  }
 
   const nfmt = (v) => v.toLocaleString('ko-KR');
   const checkRow = (box, key, text, n, set, title) => {
@@ -500,7 +496,7 @@ function buildFilters() {
     input.addEventListener('change', () => {
       input.checked ? set.add(key) : set.delete(key);
       // 토지 하위 조건을 켰는데 토지가 꺼져 있으면 아무것도 안 보인다.
-      if (input.checked && (set === state.activeLandUse || set === state.activeStages)) {
+      if (input.checked && set === state.activeLandUse) {
         ensureLandOn();
       }
       refreshMap();
@@ -513,22 +509,11 @@ function buildFilters() {
     return input;
   };
 
-  // 개발단계 — 처음부터 다 켠다. 켜져 있어야 '토지' 를 켰을 때
-  // 예전과 같은 것이 보인다. 끄는 것은 사용자가 정한다.
-  const STAGE_HINT = {
-    '개발완료': '대·공장용지·창고용지·잡종지 등. 건축이 가능하고 도로가'
-              + ' 붙어 있는 것이 지목의 전제라 값이 덜 흔들립니다.',
-    '원지': '전·답·임야·과수원 등. 개발 가능 여부·도로접·모양에 따라'
-          + ' 같은 동네에서도 값이 몇 배 벌어집니다.',
-    '그 밖': '도로·구거·하천·묘지 등. 거래는 되지만 성격이 다릅니다.',
-  };
-  ['개발완료', '원지', '그 밖', '지목 미상'].forEach((name) => {
-    if (!stageMix[name]) return;
-    state.activeStages.add(name);
-    checkRow(stageBox, name, name, stageMix[name], state.activeStages,
-             STAGE_HINT[name]);
-  });
-  state.hasStageFilter = state.activeStages.size > 0;
+  // 개발단계 칸은 뺐다 (사장님 지시 2026-09-09: "토지-개발단계는 선택
+  // 제외"). state.hasStageFilter 가 false 로 남으므로 visibleTrades 가
+  // 이 조건을 통째로 건너뛴다 — **필터가 없는 것**이지 전부 끈 것이
+  // 아니다. 그 둘은 다르고, 그 구분을 검사가 이미 못 박아 두었다.
+  state.hasStageFilter = false;
 
   /* 도로 접함 — 사장님 지시(2026-09-07): "도로를 접하는 가가 제일
    * 중요합니다." 실측이 크기까지 확인했다: 차가 들어가느냐가 단가를
@@ -588,17 +573,10 @@ function buildFilters() {
     state.activeLandUse.clear();
     syncLuBoxes();
   });
-  // 분석이 실제로 쓰는 세 가지. settings.yaml 의 land_use_filter 와 같다 —
-  // 화면에서 '분석과 같은 것' 을 한 번에 고를 수 있어야, 지도에서 본
-  // 것과 판정표의 숫자가 같은 표본인지 확인할 수 있다.
-  $('#lu-core').addEventListener('click', () => {
-    state.activeLandUse.clear();
-    luNames.forEach((n) => {
-      if (CORE_LAND_USE.test(n)) state.activeLandUse.add(n);
-    });
-    ensureLandOn();
-    syncLuBoxes();
-  });
+  // '분석 대상만' 단추는 뺐다 (사장님 지시 2026-09-09). 분석이 쓰는
+  // 세 가지를 한 번에 고르는 단추였는데, 화면에서 땅을 고르는 사람이
+  // 분석 표본을 맞출 일이 흔치 않다. 기준 자체는 CORE_LAND_USE 에
+  // 그대로 남아 있어 판정표 쪽은 달라지지 않는다.
 
   // ── 실거래 연도 — 좌/우 손잡이로 범위 ──
   //
@@ -615,11 +593,16 @@ function buildFilters() {
     const lo = dealYears[0];
     const hi = dealYears[dealYears.length - 1];
     [from, to].forEach((el) => { el.min = String(lo); el.max = String(hi); el.step = '1'; });
-    // 기본은 가장 최근 한 해. 전 기간을 기본으로 두면 처음 보는 화면이
-    // 늘 성긴 표본이라 '거래가 이것뿐인가' 로 읽힌다.
-    from.value = String(hi);
+    // 기본은 **최근 두 해** (사장님 지시 2026-09-09: "거래 연도는
+    // 2024~2025년 기본 세팅").
+    //
+    // 한 해로 두면 처음 보는 화면이 성겨서 '거래가 이것뿐인가' 로
+    // 읽히고, 전 기간으로 두면 파일을 다섯 개씩 받는다. 두 해가
+    // 그 사이다 — 자료가 한 해뿐이면 자연히 한 해로 줄어든다.
+    const lo2 = Math.max(lo, hi - 1);
+    from.value = String(lo2);
     to.value = String(hi);
-    state.yearFrom = hi;
+    state.yearFrom = lo2;
     state.yearTo = hi;
 
     const paint = () => {
@@ -734,6 +717,139 @@ function buildRank() {
   renderVehicleTables();
   state.rank.vehicle = 'g:total';
   renderRank();
+}
+
+/* ── 차종 고르기 (사장님 지시 2026-09-09) ──────────────────────────
+ *
+ * "차종 선택을 여러개를 선택 할 수 있게 펼쳐 주시고 (용도지역처럼)
+ *  1종, 2종 등 차종에 따른 이미지 및 간략 설명 넣어주세요."
+ *
+ * 드롭다운이라 **하나만** 고를 수 있었습니다. 그런데 이 제품이 보는
+ * 것은 화물(3·4·5종)이라, 그것을 보려면 세 번 나눠 보고 머릿속에서
+ * 더해야 했습니다. 펼쳐 놓고 여럿 고르게 합니다.
+ *
+ * ## 그림은 장식이 아닙니다
+ *
+ * 한국도로공사 차종은 **축 수와 크기**로 갈립니다(유료도로법 시행령
+ * 별표1). '4종 대형화물' 이라는 이름만으로는 그것이 3축 10~20톤이라는
+ * 것을 알 수 없습니다. 그래서 축 수와 덩치를 그대로 그립니다 — 그림이
+ * 곧 그 차종의 정의입니다.
+ *
+ *   6종 경차      작은 몸통 · 2축
+ *   1종 승용      승용차 · 2축
+ *   2종 중형      조금 큼 · 2축
+ *   3종 대형      큼 · 2축
+ *   4종 대형화물  길고 · **3축**
+ *   5종 특수화물  가장 길고 · **4축**
+ */
+const VEHICLE_ART = {
+  6: { w: 26, h: 11, axles: 2, box: false },
+  1: { w: 30, h: 11, axles: 2, box: false },
+  2: { w: 34, h: 14, axles: 2, box: true },
+  3: { w: 38, h: 16, axles: 2, box: true },
+  4: { w: 44, h: 17, axles: 3, box: true },
+  5: { w: 50, h: 18, axles: 4, box: true },
+};
+
+/* 옆에서 본 차 한 대. 축은 바퀴 수로 보인다. */
+function vehicleIcon(code) {
+  const a = VEHICLE_ART[code] || VEHICLE_ART[1];
+  const W = 54; const H = 22;
+  const x0 = (W - a.w) / 2;
+  const baseY = H - 4;
+  const bodyTop = baseY - a.h;
+  const parts = [];
+  if (a.box) {
+    // 화물·승합 — 앞칸(운전실)과 짐칸.
+    const cab = Math.max(9, a.w * 0.26);
+    parts.push(`<rect x="${x0}" y="${bodyTop + a.h * 0.28}" width="${cab}"`
+      + ` height="${a.h * 0.72}" rx="2"/>`);
+    parts.push(`<rect x="${x0 + cab + 1}" y="${bodyTop}"`
+      + ` width="${a.w - cab - 1}" height="${a.h}" rx="1.5"/>`);
+  } else {
+    // 승용 — 지붕이 얹힌 한 덩이.
+    parts.push(`<rect x="${x0}" y="${bodyTop + a.h * 0.42}" width="${a.w}"`
+      + ` height="${a.h * 0.58}" rx="3"/>`);
+    parts.push(`<rect x="${x0 + a.w * 0.22}" y="${bodyTop}"`
+      + ` width="${a.w * 0.48}" height="${a.h * 0.5}" rx="2.5"/>`);
+  }
+  // 바퀴 — **축 수가 이 차종의 정의다.** 앞 하나, 뒤에 나머지.
+  const r = 2.6;
+  const wheels = [x0 + a.w * 0.18];
+  for (let i = 0; i < a.axles - 1; i += 1) {
+    wheels.push(x0 + a.w * (0.62 + i * 0.15));
+  }
+  wheels.forEach((cx) => {
+    parts.push(`<circle cx="${cx.toFixed(1)}" cy="${baseY}" r="${r}"/>`);
+  });
+  return `<svg class="veh-art" viewBox="0 0 ${W} ${H}" width="${W}"`
+    + ` height="${H}" aria-hidden="true">${parts.join('')}</svg>`;
+}
+
+function vehicleCodes() {
+  const all = ((state.traffic || {}).vehicle_types || []).map((v) => v.code);
+  const on = all.filter((c) => state.tgVehicles.has(c));
+  // 하나도 안 고르면 전체로 읽는다. 빈 지도를 보여 주는 것보다 낫다 —
+  // 아래 안내가 '전체' 라고 말한다.
+  return on.length ? on : all;
+}
+
+function buildVehiclePicker() {
+  const box = document.getElementById('tg-vehicle');
+  if (!box) return;
+  const types = (state.traffic || {}).vehicle_types || [];
+  box.innerHTML = '';
+  types.forEach((v) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'veh-opt';
+    b.dataset.code = String(v.code);
+    b.title = v.desc || '';
+    b.setAttribute('aria-pressed', String(state.tgVehicles.has(v.code)));
+    b.innerHTML = vehicleIcon(v.code)
+      + `<b>${escapeHtml(v.label)}</b>`
+      + `<s>${escapeHtml(vehicleShort(v))}</s>`;
+    b.addEventListener('click', () => {
+      if (state.tgVehicles.has(v.code)) state.tgVehicles.delete(v.code);
+      else state.tgVehicles.add(v.code);
+      syncVehiclePicker();
+      recolorTollgates();
+    });
+    box.appendChild(b);
+  });
+  const all = document.getElementById('veh-all');
+  if (all) {
+    all.addEventListener('click', () => {
+      const every = types.every((v) => state.tgVehicles.has(v.code));
+      state.tgVehicles.clear();
+      if (!every) types.forEach((v) => state.tgVehicles.add(v.code));
+      syncVehiclePicker();
+      recolorTollgates();
+    });
+  }
+  syncVehiclePicker();
+}
+
+/* 칸에 적을 한 줄. 자료의 desc 는 두세 문장이라 칸에 안 들어간다 —
+   **첫 마디만** 적고 나머지는 마우스를 올렸을 때 보인다. */
+function vehicleShort(v) {
+  const d = String(v.desc || '');
+  const cut = d.split('.')[0];
+  return cut.length > 22 ? `${cut.slice(0, 22)}…` : cut;
+}
+
+function syncVehiclePicker() {
+  const types = (state.traffic || {}).vehicle_types || [];
+  document.querySelectorAll('.veh-opt').forEach((b) => {
+    b.setAttribute('aria-pressed',
+      String(state.tgVehicles.has(Number(b.dataset.code))));
+  });
+  const all = document.getElementById('veh-all');
+  if (all) {
+    all.textContent = types.every((v) => state.tgVehicles.has(v.code))
+      ? '해제' : '전체';
+  }
+  window.__veh = [...state.tgVehicles].sort((a, b) => a - b);
 }
 
 /* 선택한 차종(또는 묶음)의 합계를 낸다. 값이 하나도 없으면 0 이 아니라 null 을
@@ -1242,14 +1358,14 @@ function tollgateVolumes(year, vehicle) {
   const types = tr.types || [];
   const yi = years.indexOf(year);
   if (yi < 0) return new Map();
-  const vi = vehicle === 'total' ? -1 : types.indexOf(Number(vehicle));
+  // 고른 차종의 **합**이다. 예전에는 하나만 골랐지만 이제 여럿이다.
+  const idx = (Array.isArray(vehicle) ? vehicle : [vehicle])
+    .map((c) => types.indexOf(Number(c))).filter((i) => i >= 0);
   const out = new Map();
   (tr.rows || []).forEach((r) => {
     const yv = (r.v || [])[yi];
     if (!Array.isArray(yv)) return;
-    const total = vi < 0
-      ? yv.reduce((a, b) => a + (Number(b) || 0), 0)
-      : (Number(yv[vi]) || 0);
+    const total = idx.reduce((a, i) => a + (Number(yv[i]) || 0), 0);
     if (total > 0) out.set(String(r.id), total);
   });
   return out;
@@ -1283,7 +1399,7 @@ function newTollgates(year) {
  * 나란히 놓고 비교할 수 있다는 뜻이다. */
 function buildTiers() {
   const year = state.tgYear;
-  const vol = tollgateVolumes(year, state.tgVehicle);
+  const vol = tollgateVolumes(year, vehicleCodes());
   const fresh = newTollgates(year);
   const tier = new Map();
   vol.forEach((v, id) => {

@@ -128,17 +128,6 @@
         <p class="hint" id="deal-year-note"></p>
 
         <div id="land-box">
-          <h3>토지 — 개발단계
-            <button type="button" class="info-dot" aria-expanded="false"
-                    aria-label="설명 보기">?</button></h3>
-          <div class="info-pop" hidden>
-            <p>전·답·임야는 개발 가능 여부·도로접·모양에 따라 같은 동네에서도
-              값이 몇 배 벌어집니다. 실거래 자료가 그 셋을 안 알려주므로,
-              <strong>개발이 끝난 지목</strong>(대·공장용지·창고용지 등)을
-              따로 봅니다.</p>
-          </div>
-          <div class="checks" id="stage-filters"></div>
-
           <h3>토지 — 도로 접함
             <button type="button" class="info-dot" aria-expanded="false"
                     aria-label="설명 보기">?</button></h3>
@@ -168,7 +157,6 @@
           <div class="field-row">
             <button type="button" class="mini-btn" id="lu-all">전체</button>
             <button type="button" class="mini-btn" id="lu-none">해제</button>
-            <button type="button" class="mini-btn" id="lu-core">분석 대상만</button>
           </div>
           <div class="checks scroll-box" id="land-use-filters"></div>
         </div>
@@ -191,10 +179,19 @@
           <span>기준 연도</span>
           <select id="tg-year"></select>
         </label>
-        <label class="field">
+        <!-- 차종. **드롭다운을 걷어냈다** (사장님 지시 2026-09-09).
+             하나만 고를 수 있어서 '화물만' 을 보려면 3·4·5종을 세 번
+             나눠 봐야 했다. 용도지역처럼 펼쳐 놓고 여럿 고른다.
+
+             그림과 한 줄 설명을 붙인다. '4종 대형화물' 이라는 이름만
+             으로는 그것이 3축 10~20톤이라는 것을 알 수 없다. 그림은
+             장식이 아니라 **법이 정한 구분(축 수·크기)** 을 그대로
+             그린 것이다 (유료도로법 시행령 별표1). -->
+        <div class="veh-head">
           <span>차종</span>
-          <select id="tg-vehicle"></select>
-        </label>
+          <button type="button" class="mini-btn" id="veh-all">전체</button>
+        </div>
+        <div class="veh-opts" id="tg-vehicle" role="group" aria-label="차종"></div>
         <div class="quad-filters" id="tier-filters"></div>
 
         <h3>거리 밴드

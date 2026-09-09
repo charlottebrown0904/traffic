@@ -896,9 +896,13 @@ const FAKE_LEAFLET = () => {
     // 옮기면서 조작부를 흘리면 안 된다. 하나라도 없으면 그 필터는
     // 화면에서 사라진 것이고, 사라진 줄도 모른다.
     const moved = await page.evaluate(() => ({
-      trade: ['kind-filters', 'year-from', 'year-to', 'stage-filters',
+      // stage-filters 는 뺐다 (사장님 지시 2026-09-09: "토지-개발단계는
+      // 선택 제외"). 목록에 남겨 두면 없어진 것을 계속 찾는다.
+      trade: ['kind-filters', 'year-from', 'year-to',
               'road-filter', 'land-use-filters', 'parcel-only']
         .filter((id) => !document.getElementById(id)),
+      gone: ['stage-filters', 'lu-core']
+        .filter((id) => document.getElementById(id)),
       ic: ['tg-year', 'tg-vehicle', 'tier-filters', 'band-legend']
         .filter((id) => !document.getElementById(id)),
       price: ['lp-note', 'lp-swap'].filter((id) => !document.getElementById(id)),
@@ -911,6 +915,10 @@ const FAKE_LEAFLET = () => {
     }));
     check('실거래 표시 묶음에 그 조작부가 다 있다',
           moved.trade.length === 0, moved.trade.join(','));
+    // 뺀 것은 **실제로 없어야** 한다. 화면에서 안 보이게만 하고 두면
+    // 다음 사람이 그것을 살아 있는 조작부로 읽는다.
+    check('뺀 조작부는 화면에 남아 있지 않다', moved.gone.length === 0,
+          moved.gone.join(',') || '없음');
     check('IC 묶음에 그 조작부가 다 있다', moved.ic.length === 0, moved.ic.join(','));
     check('실거래 가격 묶음에 땅값 칩이 있다',
           moved.price.length === 0 && moved.pills === 2,
@@ -919,6 +927,59 @@ const FAKE_LEAFLET = () => {
     // 바꾸는 줄 안다.
     check('실거래 표시 묶음에 핀 유형 칩이 있다', moved.pinPill === 1,
           `${moved.pinPill}개`);
+
+    // ── 차종 (사장님 지시 2026-09-09) ────────────────────────────
+    //
+    // "차종 선택을 여러개를 선택 할 수 있게 펼쳐 주시고 (용도지역처럼)
+    //  1종, 2종 등 차종에 따른 이미지 및 간략 설명 넣어주세요."
+    //
+    // 드롭다운이라 하나만 고를 수 있었다. 그런데 이 제품이 보는 것은
+    // 화물(3·4·5종)이라, 그것을 보려면 세 번 나눠 보고 머릿속에서
+    // 더해야 했다.
+    {
+      const veh = await page.evaluate(() => ({
+        select: document.querySelectorAll('#tg-vehicle select').length,
+        opts: [...document.querySelectorAll('.veh-opt')].map((b) => ({
+          code: b.dataset.code,
+          on: b.getAttribute('aria-pressed') === 'true',
+          art: b.querySelectorAll('.veh-art circle').length,
+          desc: (b.querySelector('s') || {}).textContent || '',
+          tip: b.title,
+        })),
+      }));
+      check('차종이 드롭다운이 아니라 펼친 칸이다',
+            veh.select === 0 && veh.opts.length === 6,
+            `select ${veh.select}개 · 칸 ${veh.opts.length}개`);
+      check('처음에는 다 켜져 있다 (예전 "전체 차종" 과 같은 화면)',
+            veh.opts.every((o) => o.on),
+            veh.opts.filter((o) => o.on).length + '개');
+      // 그림은 장식이 아니다 — 축 수가 곧 그 차종의 정의다
+      // (유료도로법 시행령 별표1). 4종은 3축, 5종은 4축.
+      const byCode = Object.fromEntries(veh.opts.map((o) => [o.code, o]));
+      check('그림이 축 수를 그대로 그린다 (4종 3축 · 5종 4축)',
+            byCode['1'].art === 2 && byCode['4'].art === 3
+            && byCode['5'].art === 4,
+            veh.opts.map((o) => `${o.code}종 ${o.art}축`).join(' · '));
+      check('칸마다 한 줄 설명이 붙는다',
+            veh.opts.every((o) => o.desc.length > 0 && o.tip.length > 0),
+            byCode['4'].desc);
+
+      // 여럿 고를 수 있어야 한다. 화물만 보려면 3·4·5를 함께 켠다.
+      const picked = await page.evaluate(() => {
+        document.querySelectorAll('.veh-opt').forEach((b) => {
+          const want = ['3', '4', '5'].indexOf(b.dataset.code) >= 0;
+          if ((b.getAttribute('aria-pressed') === 'true') !== want) b.click();
+        });
+        return window.__veh;
+      });
+      check('여럿을 골라 화물만 볼 수 있다',
+            JSON.stringify(picked) === '[3,4,5]', JSON.stringify(picked));
+      await page.evaluate(() => {
+        document.querySelectorAll('.veh-opt').forEach((b) => {
+          if (b.getAttribute('aria-pressed') !== 'true') b.click();
+        });
+      });
+    }
 
     const oIc = await openCat('ic');
     check('다른 분류를 누르면 그쪽으로 바뀐다',
@@ -952,15 +1013,29 @@ const FAKE_LEAFLET = () => {
     check('토지가 꺼진 채로 시작한다 (그것이 덫이었다)', trap.before === false);
     check('용도지역을 켜면 토지도 켜진다',
           trap.after === true, `${trap.picked} → 토지 ${trap.after}`);
+    // '분석 대상만' 단추는 뺐다 (사장님 지시 2026-09-09). 대신 '전체'
+    // 단추가 같은 덫에 걸리지 않는지를 본다 — 용도지역을 한꺼번에
+    // 켰는데 토지가 꺼져 있으면 지도는 여전히 비어 있다.
     const trap2 = await page.evaluate(() => {
       const kinds = document.getElementById('kind-filters');
       const land = [...kinds.querySelectorAll('input')]
         .find((i) => i.dataset.key === 'land');
       if (land.checked) land.click();
-      document.getElementById('lu-core').click();
-      return land.checked;
+      // **어질러 놓고 나가지 않는다.** 뒤 절이 '처음 화면' 의 용도지역
+      // 셋을 보므로, 켠 것을 그대로 두면 그 검사가 엉뚱하게 깨진다.
+      document.getElementById('lu-all').click();
+      const got = land.checked;
+      // **처음 상태로 되돌린다.** 앞 절이 제2종일반주거를 일부러 켰는데,
+      // 그대로 두면 '처음에 켜진 것이 셋' 을 보는 뒤 절이 넷을 본다.
+      // 예전에는 '분석 대상만' 단추가 우연히 이 청소를 대신하고 있었다.
+      document.getElementById('lu-none').click();
+      const core = ['계획관리지역', '생산관리지역', '자연녹지지역'];
+      document.querySelectorAll('#land-use-filters input').forEach((i) => {
+        if (core.indexOf(i.dataset.key) >= 0 && !i.checked) i.click();
+      });
+      return got;
     });
-    check('"분석 대상만" 단추도 토지를 켠다', trap2);
+    check('용도지역 "전체" 단추도 토지를 켠다', trap2);
     // 뒤 절들이 '처음 화면' 을 본다. 여기서 켠 것을 되돌려 놓는다 —
     // 안 그러면 이 검사가 다음 검사를 깨뜨린다.
     await page.evaluate(() => {
@@ -2677,10 +2752,12 @@ const FAKE_LEAFLET = () => {
       check('연도를 좌/우 손잡이로 고른다 (드롭다운이 아니다)',
             sel.selects === 0 && Number(sel.min) < Number(sel.max),
             `${sel.min}~${sel.max} · 남은 select ${sel.selects}개`);
-      // 전 기간을 기본으로 두면 처음 보는 화면이 늘 성긴 표본이라
-      // '거래가 이것뿐인가' 로 읽힌다.
-      check('기본은 가장 최근 한 해다',
-            sel.from === '2025' && sel.to === '2025' && /2025년/.test(sel.out),
+      // 사장님 지시(2026-09-09): "거래 연도는 2024~2025년 기본 세팅".
+      // 한 해는 성겨서 '거래가 이것뿐인가' 로 읽히고, 전 기간은 파일을
+      // 다섯 개씩 받는다. 두 해가 그 사이다.
+      check('기본은 최근 두 해다',
+            sel.from === '2024' && sel.to === '2025'
+            && /2024 ~ 2025년/.test(sel.out),
             `${sel.from}~${sel.to} "${sel.out}"`);
 
       // 거래는 기본이 꺼져 있다(2026-09-04 지시). 켜야 그려진다.
@@ -2692,7 +2769,8 @@ const FAKE_LEAFLET = () => {
       await page2.waitForTimeout(300);
 
       const styles = await page2.evaluate(() => window.__tradeStyles || []);
-      check('고른 해의 거래가 그려진다', styles.length === 5, `${styles.length}개`);
+      check('고른 기간의 거래가 그려진다', styles.length === 7,
+            `${styles.length}개`);
       // 반경 밖(무안군) 거래도 그려져야 한다. 예전에는 좌표가 아예 없어
       // 지도에서 통째로 빠졌다.
       check('IC 반경 밖 거래도 그려진다',
@@ -2731,7 +2809,7 @@ const FAKE_LEAFLET = () => {
       // 표본이라는 사실을 화면이 말하는가.
       const note = await page2.evaluate(() =>
         document.getElementById('deal-year-note').textContent);
-      check('안내가 그 해 실제 건수를 말한다', /400,000건/.test(note), note);
+      check('안내가 그 기간 실제 건수를 말한다', /900,000건/.test(note), note);
       check('안내가 표본임을 말한다', /무작위 표본/.test(note), note);
 
       /* ── 공장·창고 구분 (2026-09-07 지시) ──
@@ -2806,16 +2884,11 @@ const FAKE_LEAFLET = () => {
       /* ── 토지: 개발단계 · 용도지역 (2026-09-07 지시) ── */
       const landUi = await page2.evaluate(() => ({
         hidden: document.getElementById('land-box').hidden,
-        stages: [...document.querySelectorAll('#stage-filters label')]
-          .map((l) => l.textContent.replace(/\s+/g, ' ').trim()),
         uses: [...document.querySelectorAll('#land-use-filters label')]
           .map((l) => l.textContent.replace(/\s+/g, ' ').trim()),
       }));
       check('토지 필터 묶음이 보인다', landUi.hidden === false);
-      check('개발단계 칸이 건수와 함께 선다',
-            landUi.stages.some((t) => /개발완료/.test(t) && /1,500,000건/.test(t))
-            && landUi.stages.some((t) => /원지/.test(t) && /9,100,000건/.test(t)),
-            landUi.stages.join(' | '));
+      // 개발단계 칸은 뺐다 (사장님 지시 2026-09-09).
       check('용도지역이 많은 것부터 늘어선다',
             landUi.uses[0].startsWith('계획관리지역')
             && landUi.uses.length === 4,
@@ -2834,48 +2907,39 @@ const FAKE_LEAFLET = () => {
       await page2.evaluate(() => document.getElementById('lu-all').click());
       await page2.waitForTimeout(300);
 
-      // 원지를 끄면 원지 토지만 빠진다. 공장·창고는 그대로여야 한다 —
+      // 용도지역으로 걸러 본다. **공장·창고는 그대로여야 한다** —
       // 토지 칸을 만졌는데 공장이 사라지면 화면을 믿을 수 없다.
-      const before = await page2.evaluate(() => (window.__tradeStyles || []).length);
       await page2.evaluate(() => {
-        [...document.querySelectorAll('#stage-filters label')]
-          .find((l) => /원지/.test(l.textContent))
-          .querySelector('input').click();
-      });
-      await page2.waitForTimeout(300);
-      const afterRaw = await page2.evaluate(() => (window.__tradeStyles || []) .slice());
-      check('원지를 끄면 원지 토지만 빠진다',
-            afterRaw.length === before - 1
-            && afterRaw.filter((x) => x.kind === 'factory').length === 3,
-            `${before} → ${afterRaw.length}, 공장계 ${afterRaw.filter((x) => x.kind === 'factory').length}`);
-
-      // 되돌리고 용도지역으로 걸러 본다.
-      await page2.evaluate(() => {
-        [...document.querySelectorAll('#stage-filters label')]
-          .find((l) => /원지/.test(l.textContent))
-          .querySelector('input').click();
         document.getElementById('lu-none').click();
       });
       await page2.waitForTimeout(300);
       const noLu = await page2.evaluate(() => (window.__tradeStyles || []).slice());
       check('용도지역을 모두 끄면 토지가 사라진다',
             noLu.filter((x) => x.kind === 'land').length === 0
-            && noLu.filter((x) => x.kind === 'factory').length === 3,
+            && noLu.filter((x) => x.kind === 'factory').length === 4,
             `토지 ${noLu.filter((x) => x.kind === 'land').length} · 공장계 ${noLu.filter((x) => x.kind === 'factory').length}`);
 
-      // '분석 대상만' 은 settings.yaml 의 계획관리·생산관리·자연녹지다.
-      await page2.evaluate(() => document.getElementById('lu-core').click());
+      // '분석 대상만' 단추는 뺐다 (사장님 지시 2026-09-09). 칸을 직접
+      // 골라도 같은 자리에 닿는지를 본다 — 단추가 없어졌다고 **고르는
+      // 일 자체가 안 되면** 그것은 다른 문제다.
+      await page2.evaluate(() => {
+        document.querySelectorAll('#land-use-filters input').forEach((i) => {
+          const want = ['계획관리지역', '자연녹지지역'].indexOf(i.dataset.key) >= 0;
+          if (i.checked !== want) i.click();
+        });
+      });
       await page2.waitForTimeout(300);
       const core = await page2.evaluate(() => ({
         on: [...document.querySelectorAll('#land-use-filters input')]
           .filter((i) => i.checked).map((i) => i.dataset.key),
         land: (window.__tradeStyles || []).filter((x) => x.kind === 'land').length,
       }));
-      check("'분석 대상만' 이 계획관리·자연녹지를 고른다",
+      check('용도지역을 골라 켤 수 있다',
             core.on.includes('계획관리지역') && core.on.includes('자연녹지지역')
             && !core.on.includes('농림지역'),
             core.on.join(','));
-      check('그 선택이 지도에 반영된다', core.land === 2, `토지 ${core.land}건`);
+      // 계획관리 둘(2024·2025) + 자연녹지 하나.
+      check('그 선택이 지도에 반영된다', core.land === 3, `토지 ${core.land}건`);
 
       // 말풍선이 개발단계를 적는가.
       const landPop = await page2.evaluate(() =>
@@ -2917,13 +2981,14 @@ const FAKE_LEAFLET = () => {
       await page2.waitForTimeout(300);
       const roadOk = await page2.evaluate(() => (window.__tradeStyles || []).slice());
       check('차 진입 가능만 고르면 그것만 남는다',
-            roadOk.filter((x) => x.kind === 'land').length === 1
-            && roadOk.filter((x) => x.kind === 'factory').length === 3,
+            roadOk.filter((x) => x.kind === 'land').length === 2
+            && roadOk.filter((x) => x.kind === 'factory').length === 4,
             `토지 ${roadOk.filter((x) => x.kind === 'land').length} · `
             + `공장계 ${roadOk.filter((x) => x.kind === 'factory').length}`);
       check('조사 안 된 거래를 차 진입 가능으로 세지 않는다',
-            roadOk.filter((x) => x.kind === 'land').length === 1
-            && /세로한면\(가\)/.test(roadOk.find((x) => x.kind === 'land').popup),
+            roadOk.filter((x) => x.kind === 'land').length === 2
+            && roadOk.filter((x) => x.kind === 'land')
+              .every((x) => /세로한면\(가\)/.test(x.popup)),
             roadOk.filter((x) => x.kind === 'land').length + '건');
 
       await page2.selectOption('#road-filter', 'no');

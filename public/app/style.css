@@ -1341,6 +1341,43 @@ body.picking .leaflet-container{cursor:crosshair}
 /* 상세 패널은 고를 때만. 안 고른 화면에서는 지도가 전부를 쓴다. */
 .detail[hidden] { display: none; }
 
+/* ─── 차종 고르기 (사장님 지시 2026-09-09) ──────────────────────────
+   드롭다운을 걷어내고 용도지역처럼 펼쳤다. 여럿 고를 수 있어야
+   화물(3·4·5종)을 한 번에 볼 수 있다.
+
+   그림은 장식이 아니다 — 축 수와 덩치가 곧 그 차종의 정의다
+   (유료도로법 시행령 별표1). */
+.veh-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: .55rem 0 .3rem; font-size: .78rem; font-weight: 700;
+}
+.veh-opts { display: grid; grid-template-columns: 1fr 1fr; gap: .25rem; }
+.veh-opt {
+  display: grid; grid-template-columns: auto 1fr; align-items: center;
+  column-gap: .35rem; row-gap: 0; padding: .3rem .35rem; min-width: 0;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--fg);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.veh-opt .veh-art { grid-row: 1 / span 2; fill: var(--muted); }
+.veh-opt b { font-size: 11.5px; font-weight: 700; }
+/* 한 줄 설명. 칸이 좁아 넘치면 자른다 — 전체는 마우스를 올리면 뜬다. */
+.veh-opt s {
+  font-size: 9.5px; color: var(--faint); text-decoration: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* 켠 칸. **색만으로 알리지 않는다** — 테두리를 굵게 하고 배경을 바꾼다. */
+.veh-opt[aria-pressed="true"] {
+  border-color: var(--accent); border-width: 2px;
+  padding: calc(.3rem - 1px) calc(.35rem - 1px);
+  background: var(--accent-soft);
+}
+.veh-opt[aria-pressed="true"] .veh-art { fill: var(--accent); }
+.veh-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (max-width: 760px) {
+  .veh-opts { grid-template-columns: 1fr; }
+}
+
 /* ─── 배경 지도 고르기 (사장님 지시 2026-09-09) ─────────────────────
    지도 위 도구막대 안. 스위치들과 나란히 두되, 켜고 끄는 것이 아니라
    **하나를 고르는** 것이라 생김새를 다르게 한다. */
