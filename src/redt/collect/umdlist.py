@@ -126,7 +126,8 @@ def to_places(rows: list[dict]) -> list[dict]:
       sigungu_cd  5자리 (표준코드 기준. 우리 코드로 잇는 것은 적재 쪽 일)
       umd         '금남면 국곡리' / '고운동' — 우리 trade.umd 와 같은 꼴
       level       'umd' (읍·면·동) 또는 'ri' (리)
-      full        전체 주소 (시도부터). 지오코딩에 이것을 씁니다.
+      sigungu     시군구 이름 (세종처럼 없는 곳은 빈 값)
+      full_nm     전체 주소 (시도부터)
 
     **폐지된 구역은 뺍니다.** 표에는 없어진 동도 남아 있고, 그것까지
     그리면 지도에 있지도 않은 이름이 뜹니다.
@@ -159,6 +160,13 @@ def to_places(rows: list[dict]) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        out.append({"sigungu_cd": code[:5], "umd": name,
-                    "level": level, "full": full, "region_cd": code})
+        # 시군구 이름은 **앞뒤를 떼고 남는 것**이다. 첫 마디가 시·도,
+        # 끝의 한두 마디가 읍면동·리다. 세종처럼 시군구가 없는 곳은
+        # 자연히 빈 값이 되는데, 그것이 맞다 — 우리 실거래 자료도
+        # 세종의 시군구 칸이 비어 있다.
+        tail = 2 if level == "ri" else 1
+        sigungu = " ".join(parts[1:len(parts) - tail])
+        out.append({"region_cd": code, "sigungu_cd": code[:5],
+                    "sigungu": sigungu, "umd": name,
+                    "level": level, "full_nm": full})
     return out

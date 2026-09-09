@@ -1885,10 +1885,35 @@ def cmd_umd_list(args):
         sys.exit("명부가 비었습니다. 위 로그의 응답을 보세요.")
     out = ROOT / "data" / "raw" / args.out
     out.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(places).to_csv(out, index=False, encoding="utf-8-sig")
+    df = pd.DataFrame(places)
+    df.to_csv(out, index=False, encoding="utf-8-sig")
     n_umd = sum(1 for r in places if r["level"] == "umd")
     print(f"\n{out}  {len(places):,}줄 "
           f"(읍·면·동 {n_umd:,} · 리 {len(places) - n_umd:,})")
+
+    # **DB 에 넣는다.** CSV 는 사람이 보는 것이고, 좌표를 붙이고 화면으로
+    # 내보내는 것은 표에서 한다.
+    #
+    # 이미 있는 줄의 **좌표를 지우지 않는다.** 명부를 다시 받을 때마다
+    # 지오코딩을 처음부터 다시 하게 되면 하루 할당량을 통째로 태운다.
+    # 이름이 바뀌었으면 이름만 고치고 좌표는 남긴다.
+    with db.connect() as con:
+        con.execute("CREATE OR REPLACE TEMP TABLE _new AS SELECT * FROM df")
+        con.execute(
+            "INSERT INTO region_umd "
+            "  (region_cd, sigungu_cd, sigungu, umd, level, full_nm, lat, lon) "
+            "SELECT region_cd, sigungu_cd, sigungu, umd, level, full_nm, "
+            "       NULL, NULL FROM _new "
+            "ON CONFLICT (region_cd) DO UPDATE SET "
+            "  sigungu_cd = excluded.sigungu_cd, "
+            "  sigungu    = excluded.sigungu, "
+            "  umd        = excluded.umd, "
+            "  level      = excluded.level, "
+            "  full_nm    = excluded.full_nm")
+        have = con.execute(
+            "SELECT count(*), count(lat) FROM region_umd").fetchone()
+    print(f"  region_umd {have[0]:,}줄 · 좌표 있는 것 {have[1]:,}줄 "
+          f"(없는 {have[0] - have[1]:,}줄은 umd-geocode 가 채웁니다)")
 
     # **우리가 이미 아는 것과 맞대어 본다.** 숫자만 찍고 끝내면 '받았다' 와
     # '쓸 수 있다' 를 구별하지 못한다. 겹치는 것이 거의 없으면 시군구
@@ -1911,6 +1936,53 @@ def cmd_umd_list(args):
         print("  ⚠ 겹치는 비율이 낮습니다. 시군구 코드가 어긋났을 수"
               " 있습니다 (전남광주통합특별시처럼). 이름으로 잇는 손질이"
               " 필요합니다 — 그대로 쓰면 안 됩니다.")
+
+
+def cmd_umd_geocode(args):
+    """명부에서 **좌표가 없는 줄**에 좌표를 붙인다.
+
+    이름표는 좌표 위에 놓인다. 명부만으로는 지도에 아무것도 못 올린다.
+
+    **이미 아는 곳은 안 부른다.** 지오코딩 캐시가 주소 단위라, 거래가
+    있었던 동네는 캐시에서 공짜로 나온다. 브이월드에 실제로 묻는 것은
+    한 번도 안 가 본 곳뿐이다.
+
+    하루 한도(3~4만)가 있으므로 --limit 로 끊을 수 있다. 끊고 다음 날
+    다시 돌리면 이어받는다 — 좌표가 찬 줄은 다시 안 묻는다.
+    """
+    from .collect.geocode import GeocodeCache, geocode_umd
+
+    with db.connect(read_only=True) as con:
+        rows = con.execute(
+            "SELECT region_cd, sigungu, umd FROM region_umd "
+            "WHERE lat IS NULL AND umd IS NOT NULL AND umd <> '' "
+            "ORDER BY sigungu_cd, umd").fetchall()
+    if not rows:
+        print("좌표가 없는 줄이 없습니다. 할 일이 없습니다.")
+        return
+    print(f"좌표가 없는 줄 {len(rows):,}개")
+
+    cache = GeocodeCache()
+    pairs = [(str(r[1] or ""), str(r[2] or "")) for r in rows]
+    got = geocode_umd(pairs, cache=cache, limit=args.limit)
+    if not got:
+        print("한 곳도 못 받았습니다.")
+        return
+
+    fill = [(got[pair][0], got[pair][1], str(r[0]))
+            for r, pair in zip(rows, pairs) if pair in got]
+    with db.connect() as con:
+        con.executemany(
+            "UPDATE region_umd SET lat = ?, lon = ? WHERE region_cd = ?", fill)
+        have = con.execute(
+            "SELECT count(*), count(lat) FROM region_umd").fetchone()
+    print(f"\n좌표를 채운 줄 {len(fill):,}개")
+    print(f"  region_umd {have[0]:,}줄 · 좌표 있는 것 {have[1]:,}줄 "
+          f"({have[1] / max(1, have[0]):.1%})")
+    left = have[0] - have[1]
+    if left:
+        print(f"  남은 {left:,}줄은 다시 돌리면 이어받습니다 "
+              "(좌표가 찬 줄은 다시 안 묻습니다)")
 
 
 def cmd_kosis_find(args):
@@ -2434,6 +2506,12 @@ def main(argv=None):
                        help="전국 법정동 명부 받기 (행정표준코드)")
     p.add_argument("--out", default="region_umd.csv")
     p.set_defaults(func=cmd_umd_list)
+
+    p = sub.add_parser("umd-geocode",
+                       help="명부의 좌표 없는 줄에 좌표 붙이기")
+    p.add_argument("--limit", type=int, default=None,
+                   help="이번에 몇 개까지 물을까 (하루 한도용)")
+    p.set_defaults(func=cmd_umd_geocode)
 
     p = sub.add_parser("kosis-find",
                        help="이름으로 통계표 찾기 + 현재 시도 코드 확인")

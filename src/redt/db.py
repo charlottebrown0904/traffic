@@ -132,6 +132,26 @@ CREATE TABLE IF NOT EXISTS umd_pop (
     PRIMARY KEY (adm_cd, year)
 );
 
+-- 전국 법정동 명부 (행정안전부 행정표준코드 행정구역코드).
+--
+-- **왜 따로 두는가.** 우리 자료는 실거래에서 나왔다. 그래서 거래가
+-- 있었던 동네만 안다. 거래가 없던 곳은 이름조차 몰라 지도에서 통째로
+-- 빠졌다 (사장님 지적 2026-09-09: "거래가 없는 동 이름이 다 안나오네요").
+--
+-- 이 표에는 **좌표가 없다** — 표준코드가 안 준다. lat/lon 은 뒤이어
+-- 브이월드 지오코더로 채운다. 채우기 전에는 NULL 이고, NULL 인 줄은
+-- 지도에 못 올린다 (이름표는 좌표 위에 놓인다).
+CREATE TABLE IF NOT EXISTS region_umd (
+    region_cd   VARCHAR PRIMARY KEY,  -- 법정동코드 10자리
+    sigungu_cd  VARCHAR,              -- 앞 5자리
+    sigungu     VARCHAR,              -- 시군구 이름 (세종은 빈 값)
+    umd         VARCHAR,              -- '금남면 국곡리' — trade.umd 와 같은 꼴
+    level       VARCHAR,              -- 'umd'(읍·면·동) | 'ri'(리)
+    full_nm     VARCHAR,              -- 시도부터의 전체 주소
+    lat         DOUBLE,
+    lon         DOUBLE
+);
+
 -- 거래 ↔ 개발사건 공간 조인. trade_tollgate_link 와 같은 모양이다.
 CREATE TABLE IF NOT EXISTS trade_zone_link (
     trade_id    VARCHAR,

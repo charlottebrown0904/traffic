@@ -1376,6 +1376,19 @@ body.picking .leaflet-container{cursor:crosshair}
 .veh-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (max-width: 760px) {
   .veh-opts { grid-template-columns: 1fr; }
+
+  /* ── 지도 위 도구막대가 넘쳐 흘렀다 (사장님 화면 2026-09-09) ──
+     배경 지도 칩 다섯을 더하면서 이 줄이 화면 너비를 넘겼습니다.
+     한 줄에 밀어 넣으니 왼쪽 스위치가 잘리고('C·영업'), 넘친 칸이
+     확대·축소 단추를 덮었습니다.
+
+     줄을 바꾸고 **오른쪽으로 몰아** 왼쪽 위의 +/- 자리를 비웁니다. */
+  .map-tools{
+    left:3.2rem; right:.5rem; flex-wrap:wrap; justify-content:flex-end;
+    gap:.3rem;
+  }
+  .map-switch{ padding:.3rem .45rem; font-size:.7rem; gap:.3rem; }
+  .basemap-pick button{ padding:.3rem .4rem; font-size:.7rem; }
 }
 
 /* ─── 배경 지도 고르기 (사장님 지시 2026-09-09) ─────────────────────
