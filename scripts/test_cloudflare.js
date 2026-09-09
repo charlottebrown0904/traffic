@@ -197,7 +197,36 @@ async function both(handler, url, { method = 'GET', headers = {} } = {}) {
   }
 
   console.log();
-  console.log('5. _headers 가 vercel.json 과 같은 것을 말하는가');
+  console.log('5. _routes.json — 정적 파일이 Worker 를 안 거치는가');
+  /* **이것이 없으면 이사가 통째로 무의미해진다.**
+   *
+   * Pages 는 functions/ 디렉터리가 있으면 기본적으로 **모든 요청**을
+   * Function 으로 보낸다. 그러면 정적 파일 447개와 화면 자료 JSON 까지
+   * 전부 Worker 호출로 세어, 무료 10만/일을 하루도 못 가 태운다.
+   *
+   * _routes.json 으로 /api/* 만 남기면 나머지는 정적 요청이 되어
+   * **무제한·무료**다. 자동 생성해 준다고 문서에 적혀 있지만, 재려는
+   * 숫자가 걸린 파일을 자동 생성에 맡기지 않는다. */
+  const routes = JSON.parse(
+    fs.readFileSync(path.join(ROOT, 'public', '_routes.json'), 'utf8'));
+  check('include 가 /api/* 하나뿐이다',
+        Array.isArray(routes.include) && routes.include.length === 1
+        && routes.include[0] === '/api/*',
+        JSON.stringify(routes.include));
+  // functions/ 에 있는 길이 모두 include 에 덮이는가. 새 함수를 만들고
+  // 여기를 안 고치면 그 길만 조용히 404 가 된다.
+  const fnPaths = fs.readdirSync(path.join(ROOT, 'functions', 'api'))
+    .filter((f) => f.endsWith('.js')).map((f) => `/api/${f.replace(/\.js$/, '')}`);
+  check('functions/ 의 길이 모두 include 안에 든다',
+        fnPaths.length > 0 && fnPaths.every((p2) => p2.startsWith('/api/')),
+        fnPaths.join(', '));
+  // 정적 자료가 실수로 딸려 들어가면 안 된다.
+  check('화면 자료(/app/data)는 include 밖이다',
+        !routes.include.some((p2) => p2.startsWith('/app')),
+        JSON.stringify(routes.include));
+
+  console.log();
+  console.log('6. _headers 가 vercel.json 과 같은 것을 말하는가');
   const vj = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
   const hdrs = fs.readFileSync(path.join(ROOT, 'public', '_headers'), 'utf8');
   const vAll = (vj.headers || []).find((h) => h.source === '/(.*)');

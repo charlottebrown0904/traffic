@@ -28,8 +28,19 @@ Cloudflare Pages 는 무료 요금제에서 **상업적 이용을 허용**하고
     functions/_adapter.js       Vercel 핸들러를 Cloudflare 에서 그대로 돌린다
     functions/api/{relay,tile}  api/*.js 를 **복사하지 않고** 감싼다
     public/_headers             vercel.json 의 헤더
+    public/_routes.json         /api/* 만 Function 으로 (아래 참고)
     wrangler.toml               프로젝트 이름 toji · nodejs_compat
     기본 주소                   toji-gogo.vercel.app → toji.fyi (14곳)
+
+### _routes.json — 이게 없으면 이사가 무의미해집니다
+
+Pages 는 `functions/` 가 있으면 **기본적으로 모든 요청**을 Function
+으로 보냅니다. 그러면 정적 파일 447개와 화면 자료 JSON 까지 전부
+Worker 호출로 세어 **무료 10만/일을 하루도 못 가 태웁니다.**
+
+`_routes.json` 으로 `/api/*` 만 남기면 나머지는 정적 요청이 되어
+**무제한·무료**입니다. 문서에는 자동 생성해 준다고 되어 있지만,
+재려는 숫자가 걸린 파일을 자동 생성에 맡기지 않습니다.
 
 함수는 한 벌뿐입니다. `api/relay.js` 와 `api/tile.js` 가 알맹이고,
 `functions/` 는 모양만 맞추는 껍데기입니다. 키를 쥔 파일을 둘로 갈라
@@ -52,10 +63,32 @@ Vercel 은 `process.env` 를 채운 **뒤에** 파일을 읽습니다. Cloudflar
 
 ## 2. 사장님 — Pages 프로젝트
 
-1. **dash.cloudflare.com → Workers & Pages → Create → Pages → Connect to Git**
-2. 저장소 `charlottebrown0904/traffic`, 브랜치 **`main`**
+### ⚠️ Workers 흐름이 아니라 **Pages** 흐름입니다
+
+대시보드에는 길이 둘 있고 화면이 아주 비슷합니다. **다음이 보이면
+Workers 쪽이니 뒤로 나오세요:**
+
+    "Configure your Worker project"
+    Deploy command:  npx wrangler deploy
+    API token 만들기
+
+**Pages 흐름에는 이런 칸이 있습니다:**
+
+    Framework preset
+    Build command          (비움)
+    Build output directory (public)     ← 이 칸이 있으면 맞습니다
+
+우리 코드는 **Pages 전용 기능 둘**에 기대고 있습니다 —
+`functions/` 파일 기반 라우팅과 `_routes.json`. Workers 에는 둘 다
+없어서, Workers 로 만들면 `/api/*` 가 통째로 404 가 됩니다.
+
+1. **Workers & Pages → Create → Pages → Connect to Git**
+2. 저장소 `charlottebrown0904/traffic`, 프로덕션 브랜치 **`main`**
 3. **프로젝트 이름은 `toji`** — `wrangler.toml` 의 이름과 같아야 합니다
-4. **빌드 명령 비움 · 출력 디렉터리 `public`**
+4. **빌드 명령 비움 · 빌드 출력 디렉터리 `public`**
+5. **'비프로덕션 브랜치도 빌드' 는 꺼 주세요** — 우리는 작업 브랜치에
+   하루 몇 번씩 밀어 넣습니다. 켜 두면 그때마다 빌드가 돌아 무료
+   500회/월을 금방 씁니다. 우리에게 필요한 것은 `main` 뿐입니다.
 5. **Settings → Variables and Secrets → Production** 에 여섯 개.
    Vercel 에 넣으신 것과 **같은 값**입니다.
    **값을 채팅에 붙여넣지 마세요.**
