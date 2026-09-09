@@ -29,12 +29,28 @@
  *  키가 영영 안 채워지고, 화면에는 '키가 설정되지 않았습니다' 만 뜬다 —
  *  키는 멀쩡히 있는데. 검사가 바로 이 자리에서 걸렸다.
  *
- *  값 몇 개를 매번 덮어쓰는 비용은 없는 것과 같다. */
+ *  값 몇 개를 매번 덮어쓰는 비용은 없는 것과 같다.
+ *
+ *  **그리고 대입이 먹었는지 확인한다.** process.env 가 읽기 전용이면
+ *  `process.env.X = v` 가 예외 없이 조용히 무시된다. 그러면 증상이
+ *  '키를 안 넣었을 때' 와 **글자 하나까지 똑같아서**, 대시보드만
+ *  들여다보며 넣었다 지웠다를 반복하게 된다. 무시된 것이 확인되면
+ *  우리 것으로 갈아 끼운다. */
 function copyEnv(env) {
   if (!env) return;
-  for (const [k, v] of Object.entries(env)) {
-    if (typeof v === "string") process.env[k] = v;
-  }
+  const pairs = Object.entries(env).filter(([, v]) => typeof v === "string");
+  if (!pairs.length) return;
+  try {
+    for (const [k, v] of pairs) process.env[k] = v;
+    // 하나만 되짚어 본다. 먹었으면 나머지도 먹은 것이다.
+    const [k0, v0] = pairs[0];
+    if (process.env[k0] === v0) return;
+  } catch { /* 아래에서 갈아 끼운다 */ }
+  // 여기까지 왔다는 것은 process.env 에 못 썼다는 뜻이다.
+  try {
+    const bag = Object.fromEntries(pairs);
+    globalThis.process = { ...(globalThis.process || {}), env: bag };
+  } catch { /* 이것도 막히면 손쓸 것이 없다 — envcheck 가 알려 준다 */ }
 }
 
 /** Vercel 스타일 (req, res) 핸들러를 onRequest 로 바꾼다. */

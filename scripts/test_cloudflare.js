@@ -23,9 +23,13 @@ const check = (label, ok, note = '') => {
 function loadAdapter() {
   const src = fs.readFileSync(path.join(ROOT, 'functions', '_adapter.js'), 'utf8')
     .replace(/^export function adapt/m, 'function adapt');
+  // **process 를 인자로 넘기지 않는다.** 넘기면 전역이 가려져,
+  // 어댑터 안의 `process` 가 우리가 준 것만 보게 된다. 실제 Worker
+  // 에서는 전역을 매번 찾아 쓰므로, 검사도 그렇게 두어야 '전역을
+  // 갈아 끼우는' 대비책이 진짜로 도는지 볼 수 있다.
   const mod = { exports: {} };
-  new Function('module', 'exports', 'process', `${src}\nmodule.exports = adapt;`)
-    (mod, mod.exports, process);
+  new Function('module', 'exports', `${src}\nmodule.exports = adapt;`)
+    (mod, mod.exports);
   return mod.exports;
 }
 const adapt = loadAdapter();
@@ -194,6 +198,24 @@ async function both(handler, url, { method = 'GET', headers = {} } = {}) {
   } finally {
     globalThis.fetch = realFetch;
     delete process.env.VWORLD_KEY;
+  }
+
+  /* **대입이 조용히 무시되는 경우.** Workers 에서 process.env 가
+     읽기 전용이면 `process.env.X = v` 가 예외도 없이 그냥 안 먹는다.
+     그러면 증상이 '키를 안 넣었을 때' 와 글자 하나까지 똑같아서,
+     대시보드만 들여다보며 넣었다 지웠다를 반복하게 된다. */
+  const savedProcess = globalThis.process;
+  try {
+    globalThis.process = { env: Object.freeze({}) };   // 쓰기가 안 먹는 env
+    const peek2 = async (_req, res) =>
+      res.status(200).json({ v: process.env.__RO_TEST || null });
+    const ro = await adapt(peek2)({
+      request: new Request('https://toji.fyi/api/x'), env: { __RO_TEST: 'yes' },
+    });
+    check('process.env 에 못 써도 값이 닿는다 (전역을 갈아 끼운다)',
+          JSON.parse(await ro.text()).v === 'yes');
+  } finally {
+    globalThis.process = savedProcess;
   }
 
   console.log();
