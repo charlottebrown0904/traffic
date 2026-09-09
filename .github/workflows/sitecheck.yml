@@ -171,6 +171,42 @@ jobs:
           echo "  --- 브이월드가 한 말 (키는 중계기가 지웠습니다) ---"
           head -c 500 /tmp/vw.txt 2>/dev/null | sed 's/^/    /'; echo
 
+      - name: 6-C. 배경 지도 후보 (브이월드 WMTS)
+        run: |
+          # 사장님 지시(2026-09-09): "현재 것, 브이월드, 위성, 일반 등
+          # 선택할 수 있도록 해두면 좋을 것 같으나, 캐쉬 여유가 되는 지
+          # 확인하고 진행해 주세요."
+          #
+          # 재고 나서 붙입니다. 다섯 종류를 하나씩 받아 **그림이 오는지·
+          # 몇 KB 인지·몇 초인지**를 찍습니다. 무게가 곧 비용입니다 —
+          # 배경은 용도지역과 달리 화면마다 스무 장씩 깔립니다.
+          #
+          # 서울(경기 광주 언저리) 한 칸으로 고정합니다. 바다나 빈 땅을
+          # 부르면 위성이 파란 사각형 하나로 와서 무게가 거짓이 됩니다.
+          Z=12; X=3495; Y=1594
+          for L in base gray midnight satellite hybrid; do
+            printf '  %-10s ' "$L"
+            curl -sS -o "/tmp/bg-$L.bin" -D "/tmp/bg-$L.h" --max-time 40 \
+              -w 'http=%{http_code} %{size_download}B %{time_total}s ' \
+              "$BASE/api/tile?layer=$L&z=$Z&x=$X&y=$Y" || true
+            if file "/tmp/bg-$L.bin" 2>/dev/null | grep -qiE 'PNG image|JPEG image'; then
+              echo "✓ 그림"
+            else
+              echo "✗"
+              head -c 200 "/tmp/bg-$L.bin" 2>/dev/null | tr -d '\r\n' | sed 's/^/      /'
+              echo
+            fi
+          done
+          echo "  --- 두 번째 호출 (CDN 이 받아내는가) ---"
+          curl -sS -o /dev/null -D /tmp/bg2.h --max-time 40 \
+            -w '  http=%{http_code} %{time_total}s\n' \
+            "$BASE/api/tile?layer=base&z=$Z&x=$X&y=$Y" || true
+          tr -d '\r' < /tmp/bg2.h | grep -iE '^(age|x-vercel-cache|cache-control)' \
+            | sed 's/^/  /' || echo "  (캐시 헤더 없음)"
+          echo "  판정:"
+          echo "    두 번째가 age>0 이면 같은 타일은 우리 함수를 다시 안 부릅니다."
+          echo "    s-maxage=604800 — 한 타일당 이레에 한 번만 브이월드에 갑니다."
+
       - name: 7. 두 번째 타일 호출 (캐시가 먹는가)
         run: |
           curl -sS -o /dev/null -D /tmp/t2.h --max-time 60 \

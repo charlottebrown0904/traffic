@@ -72,6 +72,36 @@ const LAYERS = {
   cadastral: "lp_pa_cbnd_bubun",
 };
 
+// ── 배경 지도 (사장님 지시 2026-09-09) ─────────────────────────────
+//
+// "배경 지도를 시인성 좋은 카카오맵이나 네이버맵을 받아올 수 있나요?"
+//
+// 카카오·네이버는 **타일이 아니라 자바스크립트 지도 SDK** 입니다.
+// Leaflet 에 꽂을 타일 주소를 공개하지 않고, 타일을 뜯어 쓰는 것은
+// 양쪽 약관이 금지합니다. 상업적 이용이 전제인 서비스에서 갈 길이
+// 아닙니다. (네이버는 유료이기도 합니다.)
+//
+// 브이월드는 다릅니다 — **래스터 타일(WMTS)** 을 주고, 우리는 이미 그
+// 키와 서울 중계기를 갖고 있습니다. 한국 지명·도로 체계에 위성까지
+// 있습니다.
+//
+// 급소: WMTS 는 **키가 경로에 들어갑니다.**
+//
+//   https://api.vworld.kr/req/wmts/1.0.0/{키}/{레이어}/{z}/{y}/{x}.{확장자}
+//
+// 위의 WMS 는 키를 물음표 뒤에 붙입니다(callVworld). 그래서 같은 길로
+// 못 보내고 따로 만듭니다. 확장자도 레이어마다 다릅니다 — 위성은
+// 사진이라 jpeg 이고 나머지는 투명이 필요한 png 입니다. 여기서 틀리면
+// 그림이 아예 안 옵니다.
+const BASEMAPS = {
+  base: { name: "Base", ext: "png", label: "브이월드 일반" },
+  gray: { name: "gray", ext: "png", label: "브이월드 회색" },
+  midnight: { name: "midnight", ext: "png", label: "브이월드 야간" },
+  satellite: { name: "Satellite", ext: "jpeg", label: "위성" },
+  hybrid: { name: "Hybrid", ext: "png", label: "위성 위 지명" },
+};
+const VWORLD_WMTS = "https://api.vworld.kr/req/wmts/1.0.0";
+
 // 웹 머케이터 격자의 한쪽 끝 (m). 타일 좌표를 bbox 로 바꾸는 데 쓴다.
 const MERC_EDGE = 20037508.342789244;
 
@@ -215,6 +245,29 @@ async function callVworld(params, base, host) {
   }
 }
 
+/** 배경 타일 한 장. WMTS 는 키가 **경로**에 들어가 WMS 와 길이 다르다. */
+async function callWmts(spec, z, y, x, host) {
+  const key = process.env.VWORLD_KEY;
+  if (!key) return { keyMissing: true };
+  const referer = process.env.VWORLD_REFERER
+    || (host ? `https://${host}/` : "https://toji.fyi/");
+  const url = `${VWORLD_WMTS}/${key}/${spec.name}/${z}/${y}/${x}.${spec.ext}`;
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), TIMEOUT_MS);
+  try {
+    const upstream = await fetch(url, {
+      signal: stop.signal,
+      redirect: "manual",
+      headers: { "User-Agent": "redt-tile/1.0", Accept: "image/*", Referer: referer },
+    });
+    return { upstream };
+  } catch (err) {
+    return { timedOut: !!(err && err.name === "AbortError") };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** 누른 자리의 용도지역 이름을 돌려준다. */
 async function featureInfo(req, res, layers) {
   const lat = decimal(String(req.query.lat ?? ""));
@@ -343,8 +396,10 @@ async function parcelInfo(req, res) {
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") return fail(res, 405, "GET 만 허용합니다");
 
-  const layers = LAYERS[String(req.query.layer || "zoning")];
-  if (!layers) return fail(res, 400, "그런 레이어가 없습니다");
+  const want = String(req.query.layer || "zoning");
+  const layers = LAYERS[want];
+  const basemap = BASEMAPS[want];
+  if (!layers && !basemap) return fail(res, 400, "그런 레이어가 없습니다");
 
   // 누른 자리의 이름을 묻는 요청. 같은 화이트리스트를 쓰고, 목적지도
   // 좌표계도 여기서 정한다 — 밖에서 받는 것은 위경도뿐이다.
@@ -369,6 +424,9 @@ module.exports = async function handler(req, res) {
   const span = 2 ** z;
   if (y >= span || x >= span) return fail(res, 400, "그 배율의 격자 밖입니다");
 
+  if (basemap) return sendTile(res, await callWmts(
+    basemap, z, y, x, (req.headers || {}).host));
+
   const out = await callVworld({
     SERVICE: "WMS", REQUEST: "GetMap", VERSION: "1.3.0",
     LAYERS: layers, STYLES: "",
@@ -377,6 +435,11 @@ module.exports = async function handler(req, res) {
     WIDTH: "256", HEIGHT: "256",
     FORMAT: "image/png", TRANSPARENT: "true",
   }, null, (req.headers || {}).host);
+  return sendTile(res, out);
+};
+
+/** 브이월드가 준 것을 그림으로 돌려준다. 배경도 용도지역도 여기를 지난다. */
+async function sendTile(res, out) {
   if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
   if (!out.upstream) {
     // 오류 문구에 url 을 넣지 않는다 — 인증키가 붙어 있어 그대로 새어나간다.
@@ -396,12 +459,13 @@ module.exports = async function handler(req, res) {
   res.setHeader("content-type", type);
   res.setHeader("cache-control", CACHE_OK);
   res.status(200).send(buf);
-};
+}
 
 // 검사가 bbox 계산을 직접 확인할 수 있게 내보낸다. 이 계산이 틀리면
 // 그림은 오는데 땅이 어긋난다 — 눈으로는 잡기 어려운 종류다.
 module.exports.mercBbox = mercBbox;
 module.exports.LAYERS = LAYERS;
+module.exports.BASEMAPS = BASEMAPS;
 module.exports.hitsPoint = hitsPoint;
 module.exports.PARCEL_FIELDS = PARCEL_FIELDS;
 // 파서도 검사가 직접 확인한다. 응답 모양이 바뀌면 화면에 이름이
