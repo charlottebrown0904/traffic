@@ -1,0 +1,132 @@
+# 배포된 사이트를 **러너가 대신 열어** 본다.
+#
+# 왜 필요한가. 개발 컨테이너는 조직 이그레스 정책으로 pages.dev·
+# vercel.app 에 못 나갑니다(403). 그래서 배포 확인을 사람이 폰으로
+# 열어 화면을 찍어 보내는 식으로 하고 있었는데, 한 번 확인에 몇 분씩
+# 걸리고 오갈 때마다 맥이 끊깁니다.
+#
+# 러너는 인터넷이 열려 있습니다. 여기서 훑고 로그를 읽으면 됩니다.
+#
+# **로그에 값이 남지 않게 합니다.** envcheck 는 이름과 참·거짓만 내고,
+# 토큰은 헤더로만 실어 보냅니다(GitHub 이 로그에서 가려 줍니다).
+name: 사이트 점검 (배포 확인)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "확인할 주소 (끝에 / 없이)"
+        required: true
+        default: "https://toji-gogo.pages.dev"
+
+jobs:
+  sitecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE: ${{ inputs.base }}
+    steps:
+      - name: 1. 정적 화면
+        run: |
+          echo "대상: $BASE"
+          for p in "/" "/app" "/app/gate.js" "/app/data/meta.json"; do
+            printf '  %-22s ' "$p"
+            curl -sS -o /tmp/b.txt -D /tmp/h.txt --max-time 30 \
+              -w 'http=%{http_code} %{size_download}B type=%{content_type}\n' \
+              "$BASE$p" || echo "실패"
+          done
+          echo
+          echo "  --- meta.json 생성 시각 (배포된 자료의 나이) ---"
+          curl -sS --max-time 30 "$BASE/app/data/meta.json" \
+            | head -c 120; echo
+
+      - name: 2. 응답 헤더 (_headers 가 먹었는가)
+        run: |
+          curl -sSI --max-time 30 "$BASE/app/" | tr -d '\r' \
+            | grep -iE '^(HTTP|cache-control|x-content-type-options|referrer-policy|x-frame-options|server)' \
+            | sed 's/^/  /'
+
+      - name: 3. 환경변수 (이름과 참·거짓만)
+        run: |
+          echo "  GET $BASE/api/envcheck"
+          curl -sS -o /tmp/env.json --max-time 30 \
+            -w '  http=%{http_code}\n' "$BASE/api/envcheck" || true
+          echo "  --- 응답 ---"
+          cat /tmp/env.json 2>/dev/null | sed 's/^/  /'; echo
+          echo "  판정:"
+          if   ! grep -q 'context_has' /tmp/env.json 2>/dev/null; then
+            echo "    envcheck 를 못 찾음 — 배포가 아직 옛 커밋이거나 함수 라우팅 문제"
+          elif grep -q '"context_has": \[\]' /tmp/env.json; then
+            echo "    ✗ Cloudflare 가 변수를 안 붙였습니다"
+            echo "      → Production 에 넣었는지 · 넣은 뒤 재배포했는지 확인"
+          elif grep -q '"process_has": \[\]' /tmp/env.json; then
+            echo "    ✗ 어댑터가 못 옮겼습니다 (context 엔 있는데 process 에 없음)"
+          else
+            echo "    ✓ 변수가 코드까지 닿았습니다"
+          fi
+
+      - name: 4. 중계기 (토큰 없이)
+        run: |
+          curl -sS -o /tmp/r.txt --max-time 30 -w '  http=%{http_code}\n' \
+            "$BASE/api/relay?target=https%3A%2F%2Fkosis.kr%2Fa" || true
+          head -c 300 /tmp/r.txt | sed 's/^/  /'; echo
+          echo "  판정:"
+          if   grep -q '토큰이 일치하지 않습니다' /tmp/r.txt; then
+            echo "    ✓ RELAY_TOKEN 이 붙었습니다"
+          elif grep -q 'RELAY_TOKEN 이 설정되지' /tmp/r.txt; then
+            echo "    ✗ RELAY_TOKEN 미반영"
+          else
+            echo "    ? 함수를 못 찾았거나 다른 오류"
+          fi
+
+      - name: 5. 중계기 실호출 (토큰 있으면)
+        env:
+          TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "  건너뜀 — 토큰 시크릿 없음"; exit 0; fi
+          curl -sS -o /tmp/r2.txt --max-time 60 -w '  http=%{http_code}\n' \
+            -H "x-relay-token: $TOKEN" \
+            "$BASE/api/relay?target=https%3A%2F%2Fapis.data.go.kr%2F1613000%2FRTMSDataSvcLandTrade%2FgetRTMSDataSvcLandTrade%3FLAWD_CD%3D41220%26DEAL_YMD%3D202401%26numOfRows%3D1" || true
+          echo "  --- 응답 앞부분 ---"
+          head -c 300 /tmp/r2.txt | sed 's/^/  /'; echo
+          echo "  판정:"
+          if   grep -qi 'resultCode\|<items>\|totalCount' /tmp/r2.txt; then
+            echo "    ✓ 공공데이터까지 통했습니다 (DATA_GO_KR_KEY 정상)"
+          elif grep -q '설정되지 않았습니다' /tmp/r2.txt; then
+            echo "    ✗ 키 미반영"
+          elif grep -q '토큰이 일치하지' /tmp/r2.txt; then
+            echo "    ✗ 토큰이 서로 다릅니다 (양쪽 값을 맞추세요)"
+          else
+            echo "    ? 위 응답을 보세요"
+          fi
+
+      - name: 6. 타일 — 라우팅 · 키 · 그림
+        run: |
+          echo "  (가) 키 없이도 되는 확인"
+          curl -sS -o /tmp/t0.txt --max-time 30 -w '    http=%{http_code} ' \
+            "$BASE/api/tile?layer=nope" || true
+          head -c 120 /tmp/t0.txt; echo
+          echo "  (나) 실제 타일"
+          curl -sS -o /tmp/t1.bin -D /tmp/t1.h --max-time 60 \
+            -w '    http=%{http_code} %{size_download}B type=%{content_type}\n' \
+            "$BASE/api/tile?layer=zoning&z=12&x=3495&y=1594" || true
+          tr -d '\r' < /tmp/t1.h | grep -iE '^(cache-control|x-tile-cache|x-served-by)' \
+            | sed 's/^/    /' || true
+          echo "  판정:"
+          if   file /tmp/t1.bin 2>/dev/null | grep -qi 'PNG image'; then
+            echo "    ✓ 그림이 옵니다 — 브이월드까지 전부 통했습니다"
+          elif grep -q 'VWORLD_KEY 가 설정되지' /tmp/t1.bin 2>/dev/null; then
+            echo "    ✗ VWORLD_KEY 미반영"
+          elif grep -q '브이월드가 그림을 주지' /tmp/t1.bin 2>/dev/null; then
+            echo "    ✗ 브이월드가 거절 — 콘솔 서비스URL 에 https://toji.fyi/ 등록 확인"
+          else
+            head -c 200 /tmp/t1.bin | sed 's/^/    /'; echo
+          fi
+
+      - name: 7. 두 번째 타일 호출 (캐시가 먹는가)
+        run: |
+          curl -sS -o /dev/null -D /tmp/t2.h --max-time 60 \
+            -w '  http=%{http_code} total=%{time_total}s\n' \
+            "$BASE/api/tile?layer=zoning&z=12&x=3495&y=1594" || true
+          tr -d '\r' < /tmp/t2.h | grep -iE '^(x-tile-cache|cf-cache-status|age)' \
+            | sed 's/^/  /' || echo "  (캐시 헤더 없음)"
