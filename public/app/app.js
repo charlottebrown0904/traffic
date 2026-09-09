@@ -4182,6 +4182,7 @@ const viewers = {
   star: new Map(),   // 시군구 코드 → 주간 1등 태그 열쇠
   asked: '',         // 마지막으로 통계를 물어본 열쇠 묶음
   seen: new Set(),   // 이번 방문에 이미 센 태그 (새로고침해야 다시 센다)
+  sent: '',          // 마지막으로 채널에 실은 태그 (같으면 다시 안 싣는다)
   // 새로고침하면 바뀐다. 저장하지 않는다 — 저장하는 순간 그것이 신원이 된다.
   me: Math.random().toString(36).slice(2, 10),
 };
@@ -4277,6 +4278,8 @@ async function viewersChannel(sg) {
   // 불리면 같은 지역에 채널을 두 번 붙인다.
   viewers.sg = sg;
   viewers.live = new Map();
+  // 새 채널은 내가 어디 있는지 모른다. 태그가 그대로여도 다시 싣는다.
+  viewers.sent = '';
   if (viewers.ch) {
     const gone = viewers.ch;
     viewers.ch = null;
@@ -4306,9 +4309,20 @@ async function viewersChannel(sg) {
   });
 }
 
-/* 내가 가운데 둔 태그 하나만 싣는다. 신원도 좌표도 안 보낸다. */
+/* 내가 가운데 둔 태그 하나만 싣는다. 신원도 좌표도 안 보낸다.
+
+   **바뀌었을 때만 싣는다.** 무료 요금제의 급소는 월 200만 메시지가
+   아니라 **Presence 초당 20**이다(supabase.com/docs/guides/realtime/limits).
+   내가 한 번 실으면 그 시·군을 보는 **모든** 사람에게 갱신이 가므로,
+   같은 시·군에 네댓 명만 모여 함께 지도를 끌어도 초당 20에 닿는다.
+
+   그런데 지도를 조금만 끌어도 보이는 태그 목록이 바뀌어 이 함수가
+   불렸다 — 가운데 둔 태그는 그대로인데 같은 값을 다시 실었다. 그
+   메시지는 아무것도 안 바꾸면서 한도만 먹는다. */
 function viewersTrack() {
   if (!viewers.ch || !viewers.pk) return;
+  if (viewers.sent === viewers.pk) return;
+  viewers.sent = viewers.pk;
   try { viewers.ch.track({ p: viewers.pk }); } catch { /* 아직 안 붙었다 */ }
 }
 
