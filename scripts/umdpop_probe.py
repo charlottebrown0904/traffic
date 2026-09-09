@@ -149,31 +149,73 @@ def main() -> int:
         passed = (obj, rows)
         break
 
-    head("4. 코드가 무엇으로 오는가")
-    print("  **자릿수가 급소다.** 우리 거래에는 법정동 '이름' 만 있다.")
-    print("  KOSIS 가 행정동 코드로 주면 짝이 안 맞는다 — 행정동 '중앙동'")
-    print("  하나가 법정동 여럿을 덮는 일이 흔하다.")
-    if not passed:
-        print("\n  ⛔ 아직 통과한 조합이 없습니다.")
-        print("     (가)에서 답한 엔드포인트가 있으면 그 코드 목록으로")
-        print("     objL1 을 하나씩 넣어 다시 돌립니다.")
-        if meta_ok:
-            url, rows = meta_ok
-            print(f"\n     답한 메타: {url}  {len(rows)}건")
-        return 0
+    head("4. 축의 코드를 받아 범위를 줄인다")
+    # run 69 가 답을 줬다 —
+    #   objL1 만     err 20  축이 모자라다
+    #   objL1+objL2  err 31  **4만 셀 초과** ← 파라미터는 맞았다
+    #   objL1+2+3    err 21  잘못된 요청 변수 ← 축은 정확히 둘
+    #
+    # 그러니 남은 일은 범위를 줄이는 것뿐이다. 연령 축(objL2)을 '계'
+    # 하나로 고정하면 읍면동 5천 × 1 × 1 이라 4만 아래로 내려온다.
+    # **그 '계' 코드를 기억으로 적지 않는다** — 목록을 받아 고른다.
+    print("  축은 둘이고(지역 × 연령) objL1+objL2 가 맞는 조합이다.")
+    print("  남은 일은 4만 셀 아래로 줄이는 것 — 연령을 '계' 하나로 고정한다.")
 
-    obj, rows = passed
-    print(f"\n  통과한 조합: objL1=ALL · {obj}")
-    print(f"  {len(rows):,}행")
-    for r in rows[:6]:
-        print("      " + " | ".join(
-            f"{k}={r.get(k)}" for k in ("C1", "C1_NM", "C2", "C2_NM",
-                                        "ITM_NM", "PRD_DE", "DT")
-            if r.get(k) is not None))
-    for col in ("C1", "C2", "C3"):
-        lens = sorted({len(str(r.get(col) or "")) for r in rows}) or [0]
-        if lens != [0]:
-            print(f"      {col} 자릿수 {lens}")
+    print("\n  (다) 분류·항목 목록 — statisticsData.do 가 답한 그것")
+    try:
+        rows = kosis.fetch_meta(v["org"], v["tbl"], "ITM",
+                                url="https://kosis.kr/openapi/statisticsData.do")
+    except Exception as exc:                                # noqa: BLE001
+        print(f"      못 받음 — {type(exc).__name__}: {str(exc)[:120]}")
+        return 0
+    axes: dict[str, list[tuple[str, str]]] = {}
+    for r in rows:
+        ax = str(r.get("OBJ_ID") or "")
+        code = str(r.get("ITM_ID") or "")
+        name = str(r.get("ITM_NM") or r.get("ITM_NM_ENG") or "")
+        axes.setdefault(ax or "(ITM)", []).append((code, name))
+    for ax, vals in axes.items():
+        print(f"      {ax or '(항목)':<10} {len(vals):>6,}개  "
+              + " · ".join(f"{c}={n}" for c, n in vals[:4]))
+
+    # '계' 로 읽히는 코드를 고른다. 이름에 계·전체·합계·Total 이 든 것.
+    def is_total(name: str) -> bool:
+        return any(w in name for w in ("계", "전체", "합계", "Total", "total"))
+
+    print("\n  (라) '계' 로 보이는 코드")
+    totals: dict[str, list[tuple[str, str]]] = {}
+    for ax, vals in axes.items():
+        hit = [(c, n) for c, n in vals if is_total(n)][:5]
+        if hit:
+            totals[ax] = hit
+            print(f"      {ax or '(항목)':<10} "
+                  + " · ".join(f"{c}={n}" for c, n in hit))
+    if not totals:
+        print("      없음 — 이름으로는 못 고릅니다. 목록을 눈으로 보셔야 합니다.")
+
+    print("\n  (마) 그 코드로 실제 호출 — 4만 셀 아래로 내려오는가")
+    # 항목은 Population(T2) 하나로 고정한다. 연령 축의 '계' 후보를
+    # 하나씩 넣어 본다.
+    itm = next((c for ax, vals in axes.items() for c, n in vals
+                if "Population" in n or n == "인구"), "T2")
+    cands = [c for ax, hit in totals.items() for c, _ in hit][:4] or ["ALL"]
+    for c2 in cands:
+        try:
+            got = kosis.fetch_table(v["org"], v["tbl"], "2024", "2024",
+                                    obj_l1="ALL", itm_id=itm,
+                                    obj={"objL2": c2}, quiet=True)
+        except Exception as exc:                            # noqa: BLE001
+            print(f"      objL2={c2:<12} {type(exc).__name__}: {str(exc)[:70]}")
+            continue
+        print(f"      objL2={c2:<12} ✓ {len(got):,}행")
+        for r in got[:5]:
+            print("          " + " | ".join(
+                f"{k}={r.get(k)}" for k in ("C1", "C1_NM", "C2", "C2_NM",
+                                            "ITM_NM", "PRD_DE", "DT")
+                if r.get(k) is not None))
+        lens = sorted({len(str(r.get("C1") or "")) for r in got})
+        print(f"          C1 자릿수 {lens}")
+        break
 
     print()
     print("=" * 68)
@@ -181,10 +223,8 @@ def main() -> int:
     print("=" * 68)
     print("  1절이 비면        → 검색어를 바꾼다. 없는 것이 아니라 못 찾은 것이다.")
     print("  2절이 △ 면        → 최근 몇 해만 쓴다. 옛 해는 시군구로 남긴다.")
-    print("  3-가 가 다 막히면 → 메타 엔드포인트 이름을 더 찾는다.")
-    print("  3-나 가 err 31 이면 → **파라미터는 맞았다.** 범위만 줄이면 된다")
-    print("                       (시도별로 나눠 부른다).")
-    print("  3-나 가 err 20 이면 → 축이 아직 모자라다.")
+    print("  3-나 가 err 31 이면 → **파라미터는 맞았다.** 범위만 줄이면 된다.")
+    print("  4-마 가 통과하면   → 그 조합으로 수집기를 쓴다.")
     print("  4절 C1 이 10자리   → 법정동코드다. 그대로 붙는다.")
     print("  4절 C1 이 7~8자리  → 행정동코드다. 법정동과 1:1 이 아니다 —")
     print("                       이름으로 붙이되 못 붙는 것을 세어 밝힌다.")
