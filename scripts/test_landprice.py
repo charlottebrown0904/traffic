@@ -107,17 +107,29 @@ check([w["key"] for w in got.get("windows", [])]
       == ["y1", "y3", "y5", "c20", "c50"],
       "기간 기준 셋과 건수 기준 둘을 낸다")
 g = got.get("groups", {})
-check(set(g) == {"계획관리"},
-      f"다섯 건을 넘긴 용도지역만 실린다 — {sorted(g)}")
+# **값이 서는 것과 이름이 서는 것은 다른 일이다** (사장님 지시
+# 2026-09-09: "거래가 5건 미만이라 표시가 안되는 곳은 표시를 하면서
+# -만/평 으로"). 얇은 칸도 few 만 들고 실린다 — 값은 여전히 없다.
+def _has_value(cell):
+    return any(k != "few" for k in cell)
 
-check(sorted(g["계획관리"]) == ["41550", "41570"],
-      f"다섯 건을 넘긴 시군구만 실린다 — {sorted(g['계획관리'])}")
+vals = {name: sorted(cd for cd, cell in cells.items() if _has_value(cell))
+        for name, cells in g.items()}
+check([name for name, cds in vals.items() if cds] == ["계획관리"],
+      f"값이 실리는 용도지역은 계획관리뿐 — { {k: v for k, v in vals.items() if v} }")
+
+check(vals["계획관리"] == ["41550", "41570"],
+      f"다섯 건을 넘긴 시군구만 값이 실린다 — {vals['계획관리']}")
 
 cell = g.get("계획관리", {}).get("41550")
 check(cell is not None, "시군구 코드로 찾을 수 있다")
 if cell:
     # 안성은 최근 1년(2025)이 한 건뿐이다 — 창째로 빠진다.
-    check("y1" not in cell, f"다섯 건이 안 되는 창은 안 싣는다 — {sorted(cell)}")
+    check("y1" not in cell, f"다섯 건이 안 되는 창은 값을 안 싣는다 — {sorted(cell)}")
+    # 대신 **건수만** 따로 싣는다. 화면이 '0건' 과 '세 건뿐' 을 구별해야
+    # 한다 — 둘 다 0 으로 적으면 있던 거래를 없다고 말하는 것이 된다.
+    check(cell.get("few", {}).get("y1") == 1,
+          f"버린 창의 건수는 few 에 남는다 — {cell.get('few')}")
     # 최근 3년(2023~2025)은 다섯 건 전부. 100·200·300·500·3000
     #   중앙값 300 · 평균 820 — **평균이 큰 거래 한 건에 끌려간다.**
     check(cell["y3"] == [5, 300, 820, 2024], f"최근 3년 — {cell['y3']}")
@@ -139,8 +151,9 @@ check(kim.get("y1") == [6, 350, 350, 2025], f"최근 1년이 채워진다 — {k
 check(cell.get("s") == [[2024, 4, 250]], f"시군구에도 추이가 붙는다 — {cell.get('s')}")
 check(kim.get("s") == [[2025, 6, 350]], f"김포는 2025년 여섯 건 — {kim.get('s')}")
 
-check("제2종일반주거" not in json.dumps(got, ensure_ascii=False),
-      "한 건뿐인 용도지역은 묶음에 있어도 안 싣는다")
+check(not any(_has_value(c) for c in g.get("제2종일반주거", {}).values()),
+      "한 건뿐인 용도지역은 묶음에 있어도 값을 안 싣는다"
+      f" — {g.get('제2종일반주거')}")
 _dump = json.dumps(got, ensure_ascii=False)
 check("888888" not in _dump and "777777" not in _dump,
       "해제된 거래와 공장 거래는 안 들어간다")
@@ -152,12 +165,14 @@ check("y1" not in nong, f"2025년 농림 거래가 없으니 최근 1년 칸이 
 # **거래가 다섯 건도 안 되면 창째로 비운다.** run 49 배포본에서 계획관리
 # 최근 3년 1위가 거래 2건짜리 부천시 원미구(평당 2,199만원)였다. 지도에서
 # 가장 짙은 파랑으로 뜨는데 그것은 자료가 아니라 우연이다.
-check(nong == {}, f"한 건뿐인 농림은 어느 창에도 안 실린다 — {sorted(nong)}")
-check("농림" not in g or "41550" not in g.get("농림", {}),
-      "창이 하나도 안 남으면 칸 자체가 없다")
-# 그리고 얇은 시군구도 같은 규칙으로 빠진다 (41500 은 두 건).
-check("41500" not in g["계획관리"],
-      f"두 건짜리 시군구는 안 실린다 — {sorted(g['계획관리'])}")
+check(not _has_value(nong), f"한 건뿐인 농림은 어느 창에도 값이 없다 — {sorted(nong)}")
+check(nong.get("few"), f"그래도 거래가 있었다는 것은 남는다 — {nong.get('few')}")
+# 그리고 얇은 시군구도 같은 규칙이다 (41500 은 두 건).
+check("41500" not in vals["계획관리"],
+      f"두 건짜리 시군구는 값이 안 실린다 — {vals['계획관리']}")
+check(g["계획관리"].get("41500", {}).get("few"),
+      "그래도 이름을 그릴 수 있게 건수는 남는다"
+      f" — {g['계획관리'].get('41500')}")
 
 print()
 print("2. 읍면동 — 용도지역마다, 그리고 시·도마다 파일을 따로 낸다")

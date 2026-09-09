@@ -1121,6 +1121,102 @@ def _umd_bbox(cells: list[dict]) -> list[float]:
             round(max(lats), 4), round(max(lons), 4)]
 
 
+def _umd_roster() -> dict[str, dict]:
+    """전국 법정동 명부를 **시·도 조각**으로. 거래가 없는 곳도 이름은 남긴다.
+
+    사장님 지시(2026-09-09): "거래가 없는 동 이름이 다 안나오네요.
+    모두 나오도록 해주세요."
+
+    지금까지 읍·면·동 이름은 두 군데서만 나왔다.
+
+      1. 땅값 조각 — 거래가 UMD_MIN_TRADES 건 넘는 칸만 실린다
+      2. 검색 색인(places.json) — 거래가 세 건 넘게 있었던 곳만 있다
+
+    둘 다 **거래에서 나온 목록**이라, 거래가 한 번도 없던 법정동은
+    이름조차 없었다. 시골의 리가 통째로 여기에 해당한다.
+
+    이 함수가 읽는 region_umd 는 행정표준코드 명부(1741000/StanReginCd)
+    에서 받아 지오코더로 좌표를 붙인 표다. 거래와 무관한 **원부**다.
+
+    ## 왜 시·도로 쪼개나
+
+    18,700줄을 한 파일로 내면 1MB 가 넘는다. 사장님은 휴대폰으로 보신다.
+    읍면동으로 당길 때마다 그것을 받으면 그 몇 초가 그대로 '느린 앱'이
+    된다. 땅값 조각과 같은 방식으로 시·도마다 나누고, 경계상자를 색인에
+    실어 화면이 **보이는 조각만** 받게 한다.
+
+    ## 시군구 코드
+
+    명부는 표준코드다. 우리 실거래는 통합으로 코드가 바뀐 곳을 새 코드로
+    준다(전남광주통합 12xxx). 코드를 외워 적지 않고 _umd_pop_alias 로
+    **읍·면 이름이 겹치는지 보고** 잇는다 — 인구 표에서 쓰던 그 길이다.
+    못 이으면 명부 코드 그대로 둔다. 그 경우 태그가 땅값 칸과 안 겹쳐
+    이름이 두 번 뜰 수는 있어도, 남의 동네에 붙는 일은 없다.
+    """
+    try:
+        with db.connect(read_only=True) as con:
+            df = con.execute("""
+                SELECT region_cd, sigungu_cd, sigungu, umd, level, lat, lon
+                FROM region_umd
+                WHERE lat IS NOT NULL AND lon IS NOT NULL
+                ORDER BY sigungu_cd, umd
+            """).fetchdf()
+    except Exception as exc:                                # noqa: BLE001
+        print(f"  ⚠ 법정동 명부를 못 읽었습니다: {type(exc).__name__}: {exc}")
+        return {}
+    if df.empty:
+        print("  ⚠ 법정동 명부에 좌표가 붙은 줄이 없습니다 "
+              "(umd-list 워크플로를 geocode 로 돌리세요)")
+        return {}
+
+    theirs: dict[str, set[str]] = {}
+    for r in df.itertuples(index=False):
+        theirs.setdefault(str(r.sigungu_cd), set()).add(_umd_head(str(r.umd)))
+    alias = _umd_pop_alias(theirs)
+
+    umd_pop = _umd_pop_latest()
+    fill = _region_name_fill()
+    out: dict[str, dict] = {}
+    sgnm: dict[str, dict[str, str]] = {}
+    for r in df.itertuples(index=False):
+        code = alias.get(str(r.sigungu_cd), str(r.sigungu_cd))
+        prefix = code[:2]
+        chunk = out.setdefault(prefix, {"sido_prefix": prefix,
+                                        "sgnm": {}, "rows": []})
+        name = _text(r.umd)
+        if not name:
+            continue
+        nm_head = _umd_head(name)
+        # 인구는 **칸 이름 그대로 맞은 것만** 붙인다. '미양면 계륵리' 에
+        # 미양면 인구를 넣으면 리 하나가 면 전체 인구가 된다.
+        pop = umd_pop.get((code, name)) or 0
+        chunk["rows"].append([
+            name, code, round(float(r.lat), 5), round(float(r.lon), 5),
+            int(pop), "r" if str(r.level) == "ri" else "u",
+        ])
+        who = sgnm.setdefault(prefix, {})
+        if code not in who:
+            who[code] = (_text(r.sigungu)
+                         or str(fill.get(code, {}).get("name") or ""))
+        # 면 단계에서 쓸 인구. 리를 합친 값이 아니라 면 하나의 값이다.
+        hp = umd_pop.get((code, nm_head))
+        if hp:
+            chunk.setdefault("head_pop", {})[f"{code}|{nm_head}"] = int(hp)
+    for prefix, chunk in out.items():
+        chunk["sgnm"] = sgnm.get(prefix, {})
+        lats = [row[2] for row in chunk["rows"]]
+        lons = [row[3] for row in chunk["rows"]]
+        chunk["bbox"] = [round(min(lats), 4), round(min(lons), 4),
+                         round(max(lats), 4), round(max(lons), 4)]
+    total = sum(len(c["rows"]) for c in out.values())
+    with_pop = sum(1 for c in out.values() for row in c["rows"] if row[4])
+    print(f"  법정동 명부 {total:,}곳 · 시도 {len(out)}조각"
+          f" (인구가 붙은 곳 {with_pop:,})")
+    if alias:
+        print(f"    통합 시군구 {len(alias)}곳은 이름으로 우리 코드에 이었습니다")
+    return out
+
+
 def _regions() -> list[dict]:
     """시군구별 인구와 **대표점**.
 
@@ -1626,6 +1722,28 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
             if stale.name not in keep:
                 stale.unlink()
                 print(f"  낡은 읍면동 파일 삭제: {stale.name}")
+    # 거래가 없는 법정동도 이름은 남긴다. 땅값 조각과 똑같이 시·도로
+    # 쪼개고 경계상자를 색인에 실어, 화면이 보이는 조각만 받게 한다.
+    roster = _umd_roster()
+    if roster:
+        keep = set()
+        rows = []
+        total = 0
+        for prefix, chunk in sorted(roster.items()):
+            fname = f"umd-roster-{prefix}.json"
+            _write(fname, chunk)
+            keep.add(fname)
+            total += (WEB_DATA / fname).stat().st_size
+            rows.append({"p": prefix, "f": fname,
+                         "bbox": chunk["bbox"], "n": len(chunk["rows"])})
+        landprice["umd_roster"] = rows
+        big = max(rows, key=lambda r: r["n"])
+        print(f"    명부 {len(rows)}조각 · 합 {total / 1024:,.0f}KB"
+              f" · 가장 큰 조각 {big['p']} {big['n']:,}곳")
+        for stale in WEB_DATA.glob("umd-roster-*.json"):
+            if stale.name not in keep:
+                stale.unlink()
+                print(f"  낡은 명부 조각 삭제: {stale.name}")
     _write("landprice.json", landprice)
 
     # 필지 진단(레이더)의 또래 분포. 사장님 지시(2026-09-08):

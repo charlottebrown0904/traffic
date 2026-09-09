@@ -360,6 +360,14 @@ const FAKE_LEAFLET = () => {
         { key: 'c20', label: '최근 20건', kind: 'count', span: 20 },
       ],
       zone_kinds: { 계획관리: '비도시지역', 농림: '비도시지역', 자연녹지: '도시지역' },
+      // 명부 조각 색인. 땅값 조각과 달리 용도지역이 없다 — 시·도 하나에
+      // 파일 하나다.
+      umd_roster: [
+        { p: '41', f: 'umd-roster-41.json', n: 3,
+          bbox: [37.0, 126.9, 37.4, 127.5] },
+        { p: '47', f: 'umd-roster-47.json', n: 1,
+          bbox: [37.48, 130.90, 37.49, 130.91] },
+      ],
       umd_index: {
         계획관리: [
           { p: '41', f: 'landprice-umd-gyehoek-41.json', n: 3,
@@ -527,6 +535,39 @@ const FAKE_LEAFLET = () => {
       return r.fulfill({
         status: 200, contentType: 'application/json',
         body: JSON.stringify(FAKE_LP_UMD[p] || { cells: [] }),
+      });
+    });
+    // 전국 법정동 **명부** 조각. 땅값 조각과 달리 거래와 무관한 원부라,
+    // 거래가 한 건도 없던 법정동도 여기에는 있다. 화면은 이것으로 이름을
+    // 메운다 (사장님 지시 2026-09-09 "거래가 없는 동 이름이 다 안나오네요").
+    //
+    // 줄은 자리를 아끼려고 배열이다 — [이름, 시군구코드, 위도, 경도,
+    // 인구, 'u'(읍면동) | 'r'(리)].
+    const FAKE_ROSTER = {
+      41: {
+        sido_prefix: '41',
+        bbox: [37.0, 126.9, 37.4, 127.5],
+        sgnm: { 41111: '수원시 장안구', 43750: '진천군' },
+        head_pop: { '43750|백곡면': 2000 },
+        rows: [
+          // 땅값 조각에 이미 있는 칸. **두 번 그리면 안 된다.**
+          ['백곡면 사송리', '43750', 37.10, 127.40, 0, 'r'],
+          // 거래가 없어 땅값 조각에는 없는 리. 면 단계에서는 백곡면으로
+          // 접히므로 새 태그가 되지 않고, 리 단계에서만 이름이 선다.
+          ['백곡면 신대리', '43750', 37.11, 127.41, 0, 'r'],
+          // 거래가 한 건도 없는 동. 이름만 뜨고 값 줄이 없어야 한다.
+          ['조원동', '41111', 37.30, 127.01, 3200, 'u'],
+        ],
+      },
+    };
+    const rosterHits = [];
+    await page.route('**/app/data/umd-roster-*.json*', (r) => {
+      const m = r.request().url().match(/umd-roster-(\d+)\.json/);
+      const k = m ? m[1] : '41';
+      rosterHits.push(k);
+      return r.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify(FAKE_ROSTER[k] || { rows: [] }),
       });
     });
     await page.route('**/app/data/landprice.json*', (r) => r.fulfill({
@@ -1897,6 +1938,10 @@ const FAKE_LEAFLET = () => {
     // ── 읍·면·동 → 리·동 ──
     await page.evaluate(() => { window.__bbox = [37.0, 126.5, 37.6, 127.5]; });
     lpUmdHits.length = 0;
+    // 명부도 앞 절에서 이미 받아 놨을 수 있다. **받은 것을 세는 검사**는
+    // 캐시를 비우고 다시 세야 '안 받았다' 와 '이미 있다' 를 구별한다.
+    await page.evaluate(() => { lpRosterCache = {}; });
+    rosterHits.length = 0;
     await page.evaluate(() => { window.__zoom = 12; });
     await lpFire();
     await page.waitForTimeout(300);
@@ -1912,10 +1957,26 @@ const FAKE_LEAFLET = () => {
     // 읍·면·동 태그는 땅값 조각에서만 만들어졌는데, 그 조각에는 거래가
     // 다섯 건 넘는 칸만 실립니다. 그래서 고른 용도지역에 거래가 없는
     // 동은 재료가 없어 아예 안 그려졌습니다 — 서울에서 여덟 개만 뜬
-    // 것이 그것입니다. 검색 색인(places.json)으로 메웁니다.
+    // 것이 그것입니다.
+    //
+    // 처음에는 검색 색인(places.json)으로 메웠는데, 그 색인도 거래에서
+    // 나온 목록이라 **거래가 한 번도 없던 법정동**은 여전히 빠졌습니다.
+    // 이제는 행정표준코드 명부 조각(umd-roster-NN.json)을 씁니다.
     check('거래가 없는 읍·면·동도 이름은 나온다',
           lpMyeon.n > lpMyeon.peek.withValue,
           `태그 ${lpMyeon.n}곳 · 그중 값 있는 곳 ${lpMyeon.peek.withValue}곳`);
+    // **보이는 시·도만 받는다.** 울릉(47)은 화면 밖이라 안 받아야 한다.
+    check('명부는 화면에 걸치는 조각만 받는다',
+          rosterHits.includes('41') && !rosterHits.includes('47'),
+          `받은 조각 ${rosterHits.join(',') || '없음'}`);
+    check('명부에서 온 이름이 실제로 지도에 선다 (조원동)',
+          lpMyeon.html.some((h) => /<b>조원동/.test(h)),
+          lpMyeon.html.map((h) => (h.match(/<b>([^<]*)/) || [])[1]).join(','));
+    // 명부에는 땅값 조각에 이미 있는 칸도 들어 있다. 그것까지 그리면
+    // 같은 동네가 두 번 뜬다 — 하나는 값이 있고 하나는 없는 채로.
+    check('명부와 땅값 조각이 겹치는 곳은 한 번만 그린다',
+          lpMyeon.html.filter((h) => /<b>백곡면/.test(h)).length === 1,
+          `백곡면 태그 ${lpMyeon.html.filter((h) => /<b>백곡면/.test(h)).length}개`);
     check('메운 태그에는 값 줄이 없다 (이름만)',
           lpMyeon.html.filter((h) => !/<i>/.test(h)).length
             === lpMyeon.n - lpMyeon.peek.withValue,

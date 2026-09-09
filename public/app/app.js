@@ -2791,6 +2791,11 @@ const LP_MIN_LABEL = 5;
 let lpUmdCache = {};      // "용도지역|시도두자리" → cells
 const lpUmdPending = new Set();
 
+/* 전국 법정동 명부 조각. 땅값 조각과 달리 **용도지역이 없다** — 거래와
+ * 무관한 원부라 시·도 하나에 파일 하나다. 열쇠는 시도 두 자리. */
+let lpRosterCache = {};
+const lpRosterPending = new Set();
+
 /* ㎡ 단가를 **평당**으로 바꿔 짧게 쓴다. ㎡당 30만원은 감이 안 오지만
  * 평당 100만원은 바로 온다. */
 /* ─── 값을 적는 규칙 ───────────────────────────────────────────────
@@ -2980,6 +2985,37 @@ function lpUmdChunks(group) {
 function lpUmdReady() {
   return lpGroups().some((g) =>
     lpUmdChunks(g).some((c) => lpUmdCache[`${g}|${c.p}`]));
+}
+
+/* 지금 화면에 걸치는 명부 조각들. 색인은 landprice.json 의 umd_roster. */
+function lpRosterChunks() {
+  const idx = (state.landPrice || {}).umd_roster || [];
+  if (!map || !idx.length) return idx;
+  const b = map.getBounds();
+  const sw = b.getSouthWest ? b.getSouthWest() : null;
+  const ne = b.getNorthEast ? b.getNorthEast() : null;
+  if (!sw || !ne) return idx;
+  return idx.filter((c) => !(c.bbox[2] < sw.lat || c.bbox[0] > ne.lat
+                             || c.bbox[3] < sw.lng || c.bbox[1] > ne.lng));
+}
+
+/* 화면에 걸치는 명부 조각을 받아 둔다. */
+async function lpLoadRoster() {
+  const want = lpRosterChunks().filter(
+    (c) => !lpRosterCache[c.p] && !lpRosterPending.has(c.p));
+  if (!want.length) return;
+  want.forEach((c) => lpRosterPending.add(c.p));
+  await Promise.all(want.map(async (c) => {
+    try {
+      const r = await fetch(`/app/data/${c.f}`, { cache: 'no-cache' });
+      if (r.ok) lpRosterCache[c.p] = await r.json();
+    } catch (e) {
+      // 못 받아도 지도는 거래 있는 곳만으로 계속 돈다.
+    } finally {
+      lpRosterPending.delete(c.p);
+    }
+  }));
+  drawLandPrice();
 }
 
 /* 아직 오는 중이면 시군구로 물러난다 — 빈 화면을 보여주느니 덜 자세한
@@ -3183,36 +3219,63 @@ function lpItemsUmd(levelKey) {
  * 애초에 재료가 없어 그려질 수가 없었습니다 — 서울에서 여덟 개만 뜬
  * 것이 그것입니다.
  *
- * **우리에게 이미 명부가 있습니다.** 검색 색인(places.json)이 거래가
- * 세 건 넘게 있었던 읍·면·동 17,430곳을 이름과 좌표로 들고 있습니다.
- * 서울만 113곳입니다. 그것으로 메웁니다.
+ * 첫 손질은 검색 색인(places.json)으로 메우는 것이었습니다. 그런데 그
+ * 색인도 **거래에서 나온 목록**이라(거래 세 건 넘은 곳 17,430) 거래가
+ * 한 번도 없던 법정동은 여전히 빠졌습니다. 시골의 리가 그렇습니다.
  *
- * 아직 못 메우는 곳: **거래가 한 번도(또는 두 건 이하) 없던 법정동.**
- * 그 목록은 우리 자료에 없습니다 — 행정표준코드 명부를 받아야 하고
- * (작업 #45), 지금 data.go.kr 승인을 기다리는 중입니다. 시골 쪽 리가
- * 여기에 해당합니다. 도시의 동은 대부분 이 명부로 채워집니다. */
+ * 이제는 **명부**를 씁니다 — 행정표준코드에서 받아 좌표를 붙인
+ * region_umd 를, 시·도 조각(umd-roster-NN.json)으로 내보낸 것입니다.
+ * 거래와 무관한 원부라 빠지는 곳이 없습니다.
+ *
+ * 명부가 아직 안 실린 배포에서는 예전처럼 검색 색인으로 물러납니다 —
+ * 덜 채워지는 것과 아무것도 안 나오는 것은 다른 일입니다. */
 function lpEmptyUmd(levelKey, have) {
-  if (!findIndex || !map) return [];
+  if (!map) return [];
   const seen = new Set(have.map((it) => it.pk));
   const b = map.getBounds();
   const bag = new Map();
-  findIndex.forEach((x) => {
-    if (x.k !== 'umd' || !x.sg) return;
-    if (!b.contains([x.lat, x.lon])) return;
-    const nm = String(x.n);
+  const add = (nm, sg, sub, lat, lon, pop) => {
     const name = levelKey === 'ri' ? nm : nm.split(' ')[0];
-    const pk = `u:${x.sg}:${name}`;
+    const pk = `u:${sg}:${name}`;
     if (seen.has(pk)) return;
     if (!bag.has(pk)) {
-      bag.set(pk, { name, sg: String(x.sg), sub: x.p || '',
+      bag.set(pk, { name, sg: String(sg), sub: sub || '',
                     lat: 0, lon: 0, n: 0, pop: 0 });
     }
     const g = bag.get(pk);
-    g.lat += x.lat; g.lon += x.lon; g.n += 1;
-    // 리 줄에 실린 인구는 그 리가 아니라 **면 인구**다(webexport._places
-    // 가 면 이름으로도 맞춰 붙인다). 그래서 더하지 않고 하나를 쓴다.
-    if (!g.pop && x.pop) g.pop = x.pop;
-  });
+    g.lat += lat; g.lon += lon; g.n += 1;
+    // 리 여럿이 한 면으로 접힐 때 인구를 더하면 안 된다 — 실려 오는
+    // 값은 이미 '면 하나의 인구' 이지 리들의 합이 아니다.
+    if (!g.pop && pop) g.pop = pop;
+  };
+
+  const chunks = lpRosterChunks()
+    .map((c) => lpRosterCache[c.p]).filter(Boolean);
+  if (chunks.length) {
+    chunks.forEach((chunk) => {
+      const sgnm = chunk.sgnm || {};
+      const headPop = chunk.head_pop || {};
+      (chunk.rows || []).forEach((row) => {
+        const [nm, sg, lat, lon, pop] = row;
+        if (!b.contains([lat, lon])) return;
+        // 면 단계에서는 면 인구를, 리 단계에서는 그 리의 인구만.
+        // 리 자리에 면 인구를 넣으면 리 하나가 면 전체 인구가 된다.
+        const head = String(nm).split(' ')[0];
+        const use = levelKey === 'ri'
+          ? pop : (headPop[`${sg}|${head}`] || pop);
+        add(String(nm), sg, sgnm[sg], lat, lon, use);
+      });
+    });
+  } else if (findIndex) {
+    findIndex.forEach((x) => {
+      if (x.k !== 'umd' || !x.sg) return;
+      if (!b.contains([x.lat, x.lon])) return;
+      add(String(x.n), String(x.sg), x.p, x.lat, x.lon, x.pop);
+    });
+  } else {
+    return [];
+  }
+
   return [...bag.values()].map((g) => ({
     name: g.name, sub: g.sub, full: g.name,
     pk: `u:${g.sg}:${g.name}`, sg: g.sg,
@@ -3390,9 +3453,15 @@ function drawLandPrice() {
   const zoom = map.getZoom();
   if (zoom >= LP_UMD_ZOOM) {
     lpLoadUmd();
-    // 거래가 없는 동의 이름은 검색 색인에서 온다. **여기서 처음 받는다** —
-    // 2MB 라 첫 화면에 얹으면 지도가 그만큼 늦게 뜬다.
-    if (!findIndex && !findLoading) findLoad().then(() => drawLandPrice());
+    // 거래가 없는 동의 이름은 **명부 조각**에서 온다. 보이는 시·도만
+    // 받으므로 100KB 안팎이다.
+    if (((state.landPrice || {}).umd_roster || []).length) {
+      lpLoadRoster();
+    } else if (!findIndex && !findLoading) {
+      // 명부가 아직 안 실린 배포에서는 예전대로 검색 색인으로 메운다.
+      // 2MB 라 첫 화면에 얹지 않고 **여기서 처음 받는다**.
+      findLoad().then(() => drawLandPrice());
+    }
   }
   const level = lpLevel(zoom);
   const all = (level.key === 'umd' || level.key === 'ri')
