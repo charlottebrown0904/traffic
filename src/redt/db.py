@@ -115,6 +115,23 @@ CREATE TABLE IF NOT EXISTS region_year (
     PRIMARY KEY (sigungu_cd, year, metric)
 );
 
+-- 읍·면·동 인구 (KOSIS DT_1B04005N, 2011년~).
+--
+-- **행정동이지 법정동이 아니다.** 받은 10자리 코드는 행정동 코드고,
+-- 우리 실거래에는 법정동 이름만 있다. 그래서 코드로 못 잇고 이름으로
+-- 잇는다 — 읍·면은 거의 맞고 도시의 동은 자주 어긋난다.
+--
+-- adm_cd 를 함께 남기는 것은 나중에 행정동 → 법정동 대조표를 구했을 때
+-- 다시 이을 수 있게 하기 위해서다. 이름만 남기면 그때 처음부터 받아야 한다.
+CREATE TABLE IF NOT EXISTS umd_pop (
+    adm_cd      VARCHAR,          -- 행정동 코드 10자리
+    sigungu_cd  VARCHAR,          -- 앞 5자리
+    umd         VARCHAR,          -- 행정동 이름
+    year        INTEGER,
+    pop         BIGINT,
+    PRIMARY KEY (adm_cd, year)
+);
+
 -- 거래 ↔ 개발사건 공간 조인. trade_tollgate_link 와 같은 모양이다.
 CREATE TABLE IF NOT EXISTS trade_zone_link (
     trade_id    VARCHAR,

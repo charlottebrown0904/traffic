@@ -368,6 +368,16 @@ jobs:
         continue-on-error: true
         run: python scripts/umdpop_probe.py
 
+      # 읍·면·동 인구 (KOSIS 행정동 표 DT_1B04005N, 2011년~).
+      #
+      # 한 해가 한 번의 호출이라 값싸다 — 이미 받은 해는 건너뛴다.
+      # 실패해도 나머지를 세우지 않는다: 인구가 없으면 땅값 글자 옆
+      # (XX만)만 안 붙고 화면은 그대로 돈다.
+      - name: 읍면동 인구 (KOSIS)
+        if: inputs.stage != 'web'
+        continue-on-error: true
+        run: python -m redt.cli umd-pop --start 2011 --end 2025
+
       - name: 가설3 자료 적재
         if: inputs.stage != 'web'
         continue-on-error: true

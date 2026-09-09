@@ -843,6 +843,10 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
     if df.empty:
         return out
     trend = _landprice_trend(latest_year, "sigungu_cd, umd", "1, 2, 3, 4")
+    # 읍·면·동 인구 (사장님 지시 2026-09-09). **행정동 이름으로 잇는다** —
+    # KOSIS 는 행정동이고 우리는 법정동이라 안 맞는 것이 있고, 안 맞으면
+    # 비운다. 억지로 시군구 인구를 넣으면 리 하나가 20만이 된다.
+    umd_pop = _umd_pop_latest()
     thin = 0
     for r in df.itertuples(index=False):
         if int(r.n_all) < UMD_MIN_TRADES:
@@ -858,14 +862,18 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
         chunk = out[str(r.grp)].setdefault(code[:2], {
             "group": str(r.grp), "sido_prefix": code[:2], "cells": [],
         })
-        chunk["cells"].append({
+        item = {
             "nm": _text(r.umd),
             "sg": code,
             "sgnm": _text(r.sigungu),
             "lat": round(float(r.lat), 5),
             "lon": round(float(r.lon), 5),
             "w": cell,
-        })
+        }
+        pop = umd_pop.get((code, _text(r.umd)))
+        if pop:
+            item["pop"] = int(pop)
+        chunk["cells"].append(item)
     got = sum(len(c["cells"]) for g in out.values() for c in g.values())
     print(f"  읍면동 땅값 {got:,}칸"
           f" (거래 {UMD_MIN_TRADES}건 미만이라 뺀 칸 {thin:,}개)")
@@ -873,6 +881,27 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
         n = sum(len(c["cells"]) for c in out[name].values())
         print(f"    {name} {n:,}칸 · 시도 {len(out[name])}조각")
     return out
+
+
+def _umd_pop_latest() -> dict[tuple[str, str], int]:
+    """(시군구코드, 읍면동이름) → 가장 최근 해 인구.
+
+    표가 아직 없으면 빈 사전을 준다 — 인구가 없다고 땅값 화면을
+    통째로 세우지 않는다.
+    """
+    try:
+        with db.connect(read_only=True) as con:
+            df = con.execute("""
+                SELECT sigungu_cd, umd, sum(pop) AS pop
+                FROM umd_pop
+                WHERE year = (SELECT max(year) FROM umd_pop)
+                GROUP BY 1, 2
+            """).fetchdf()
+    except Exception as exc:                                # noqa: BLE001
+        print(f"  ⚠ 읍면동 인구를 못 읽었습니다: {type(exc).__name__}: {exc}")
+        return {}
+    return {(str(r.sigungu_cd), str(r.umd)): int(r.pop)
+            for r in df.itertuples(index=False)}
 
 
 def _umd_bbox(cells: list[dict]) -> list[float]:
@@ -1051,21 +1080,39 @@ def _places() -> list[dict]:
     눌러 봐야 지도에 아무것도 없다.
     """
     with db.connect(read_only=True) as con:
+        # 인구는 **가장 최근 해**만 붙인다. 이름 옆에 (XX만) 하나를
+        # 적는 데 15년치가 필요하지 않다.
+        #
+        # LEFT JOIN 인 이유: KOSIS 는 행정동이고 우리는 법정동이라
+        # 안 맞는 이름이 있다. 안 맞으면 **비운다** — 억지로 채우면
+        # 그 거짓이 화면에 '이 동네 인구' 로 뜬다.
         df = con.execute(f"""
-            SELECT sigungu_cd, any_value(sigungu) AS sigungu, umd,
-                   count(*) AS n,
-                   median(lat) AS lat, median(lon) AS lon
-            FROM trade
-            WHERE lat IS NOT NULL AND lon IS NOT NULL
-              AND sigungu_cd IS NOT NULL AND umd IS NOT NULL AND umd <> ''
-              AND coalesce(is_cancelled, FALSE) = FALSE
-            GROUP BY sigungu_cd, umd
-            HAVING count(*) >= {PLACE_MIN_TRADES}
-            ORDER BY sigungu_cd, umd
+            WITH latest AS (
+                SELECT max(year) AS y FROM umd_pop
+            ), pop AS (
+                SELECT sigungu_cd, umd, sum(pop) AS pop
+                FROM umd_pop WHERE year = (SELECT y FROM latest)
+                GROUP BY sigungu_cd, umd
+            ), t AS (
+                SELECT sigungu_cd, any_value(sigungu) AS sigungu, umd,
+                       count(*) AS n,
+                       median(lat) AS lat, median(lon) AS lon
+                FROM trade
+                WHERE lat IS NOT NULL AND lon IS NOT NULL
+                  AND sigungu_cd IS NOT NULL AND umd IS NOT NULL AND umd <> ''
+                  AND coalesce(is_cancelled, FALSE) = FALSE
+                GROUP BY sigungu_cd, umd
+                HAVING count(*) >= {PLACE_MIN_TRADES}
+            )
+            SELECT t.*, p.pop
+            FROM t LEFT JOIN pop p
+              ON p.sigungu_cd = t.sigungu_cd AND p.umd = t.umd
+            ORDER BY t.sigungu_cd, t.umd
         """).fetchdf()
     out = []
+    hit = 0
     for r in df.itertuples(index=False):
-        out.append({
+        row = {
             "k": "umd",
             "n": str(r.umd),
             # 어느 시군구의 '중앙동' 인지 안 적으면 같은 이름이 수십 개다.
@@ -1074,7 +1121,16 @@ def _places() -> list[dict]:
             "c": int(r.n),
             "lat": round(float(r.lat), 5),
             "lon": round(float(r.lon), 5),
-        })
+        }
+        pop = getattr(r, "pop", None)
+        if pop is not None and pd.notna(pop) and float(pop) > 0:
+            row["pop"] = int(pop)
+            hit += 1
+        out.append(row)
+    if out:
+        print(f"  읍·면·동 인구가 붙은 곳 {hit:,}/{len(out):,} "
+              f"({hit / len(out):.1%}) — 나머지는 행정동↔법정동 이름이 "
+              f"안 맞아 비웁니다")
     return out
 
 

@@ -1671,6 +1671,48 @@ def cmd_events(args):
     events.report(priced, links, kind=args.kind)
 
 
+def cmd_umd_pop(args):
+    """읍·면·동 인구를 KOSIS 에서 받아 umd_pop 에 적재한다.
+
+    한 해가 한 번의 호출이라 값싸다 (2011~2025 면 15번). 이미 받은
+    해는 건너뛴다 — 매 실행이 같은 것을 다시 받으면 그만큼 남의 API 를
+    헛되이 두드리는 것이고, 우리 시간도 그만큼 늦어진다.
+    """
+    from .collect import umdpop
+
+    with db.connect() as con:
+        have = {int(y) for (y,) in con.execute(
+            "SELECT DISTINCT year FROM umd_pop").fetchall()}
+    want = [y for y in range(max(args.start, umdpop.FIRST_YEAR), args.end + 1)
+            if args.refresh or y not in have]
+    if not want:
+        print(f"이미 있는 해 {sorted(have)} — 받을 것이 없습니다.")
+        return
+    print(f"KOSIS {umdpop.ORG_ID}/{umdpop.TBL_ID} · 받을 해 {want}")
+    df = umdpop.collect(min(want), max(want))
+    if df.empty:
+        print("받은 행이 없습니다.")
+        return
+    with db.connect() as con:
+        n = db.upsert(con, "umd_pop", df)
+        # 우리 거래의 법정동 이름과 얼마나 맞는가. **읍·면과 동을 갈라서**
+        # 센다 — 합쳐 세면 우리가 쓰는 읍·면이 잘 맞는지가 안 보인다.
+        ours = con.execute("""
+            SELECT DISTINCT sigungu_cd, umd FROM trade
+            WHERE umd IS NOT NULL AND umd <> '' AND sigungu_cd IS NOT NULL
+        """).fetchdf()
+    print(f"  적재 {n:,}행")
+    rep = umdpop.match_report(df[df["year"] == df["year"].max()], ours)
+    if rep.get("total"):
+        print(f"  우리 법정동 이름 {rep['total']:,}개 중 "
+              f"{rep['hit']:,}개가 행정동 이름과 맞습니다 "
+              f"({rep['hit'] / rep['total']:.1%})")
+        for k, (hit, tot) in sorted(rep.get("by_kind", {}).items()):
+            print(f"    {k:<8} {hit:,}/{tot:,} ({hit / tot:.1%})")
+        print("  못 맞춘 곳은 **비웁니다.** 억지로 채우면 그 거짓이 화면에")
+        print("  '이 동네 인구' 로 뜹니다 — 없는 것보다 나쁩니다.")
+
+
 def cmd_kosis_fetch(args):
     """확인된 통계표를 받아 region_*.csv 로 저장한다."""
     from .collect import kosis
@@ -2314,6 +2356,13 @@ def main(argv=None):
     p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])
     p.set_defaults(func=cmd_events)
+
+    p = sub.add_parser("umd-pop", help="읍·면·동 인구 (KOSIS 행정동 표)")
+    p.add_argument("--start", type=int, default=2011)
+    p.add_argument("--end", type=int, default=2025)
+    p.add_argument("--refresh", action="store_true",
+                   help="이미 받은 해도 다시 받는다")
+    p.set_defaults(func=cmd_umd_pop)
 
     p = sub.add_parser("kosis-fetch", help="확인된 KOSIS 표 받기 (→ region_*.csv)")
     p.add_argument("--table", default="population",

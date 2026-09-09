@@ -395,16 +395,22 @@ const FAKE_LEAFLET = () => {
             w: { y1: [8, 130000, 130000, 2025], y3: [9, 120000, 120000, 2023] } },
           // **같은 면의 리 둘.** 면 단계에서는 하나로 묶여야 하고,
           // 리 단계에서는 따로 서야 한다.
+          // 인구는 **있는 것과 없는 것**을 섞어 둔다. KOSIS 는 행정동이고
+          // 우리는 법정동이라 이름이 안 맞는 곳이 실제로 있다 — 그때
+          // 비우는지, 그리고 면 단계에서 리 둘을 합치는지를 본다.
           { nm: '백곡면 사송리', sg: '43750', sgnm: '진천군', lat: 37.10, lon: 127.40,
+            pop: 1200,
             w: { y3: [10, 100000, 100000, 2023],
                  s: [[2023, 4, 90000], [2024, 3, 95000], [2025, 3, 100000]] } },
           { nm: '백곡면 명암리', sg: '43750', sgnm: '진천군', lat: 37.12, lon: 127.42,
+            pop: 800,
             w: { y3: [30, 200000, 200000, 2023] } },
         ],
       },
       47: {
         group: '계획관리', sido_prefix: '47', bbox: [37.48, 130.90, 37.49, 130.91],
         cells: [
+          // 이름이 안 맞아 인구가 없는 칸 (pop 없음).
           { nm: '울릉읍', sg: '47940', sgnm: '울릉군', lat: 37.484, lon: 130.905,
             w: { y3: [6, 30000, 30000, 2023] } },
         ],
@@ -460,6 +466,9 @@ const FAKE_LEAFLET = () => {
         } }),
       });
     });
+    // 검사가 fixture 와 화면을 맞대어 볼 수 있게 페이지에도 심는다.
+    await page.addInitScript((f) => { window.__lpUmdFixture = f; },
+                             FAKE_LP_UMD);
     await page.route('**/app/data/landprice-umd-*.json*', (r) => {
       const m = r.request().url().match(/landprice-umd-\w+-(\d+)\.json/);
       const p = m ? m[1] : '41';
@@ -1166,18 +1175,17 @@ const FAKE_LEAFLET = () => {
           !small.length || small.every((v) => /\./.test(v)),
           small.slice(0, 3).join(' · ') || '(해당 없음)');
 
-    // 읍·면·동과 리에는 인구가 **없다**. KOSIS 는 시군구까지만 준다.
-    // 없는 것을 시군구 값으로 채우면 리 하나가 20만인 것처럼 읽힌다.
-    // 읍·면·동 조각이 아직 안 왔으면 화면은 시군구로 물러난다. 그때는
-    // 인구가 붙는 것이 **맞다** — 시군구 인구니까. 그러니 단계를 보고
-    // 따진다. 단계를 안 보고 '14배율이면 없어야 한다' 고 하면, 늦게 온
-    // 날에 검사가 거짓으로 빨개진다.
+    // 읍·면·동과 리는 **9-B 가 본다** — 2026-09-09 부터 KOSIS 행정동
+    // 인구가 거기 붙는다. 여기서는 조각이 아직 안 와 시군구로 물러났을
+    // 때에도 인구가 붙는지만 본다. 단계를 안 보고 '14배율이면 이래야
+    // 한다' 고 하면, 조각이 늦게 온 날에 검사가 거짓으로 빨개진다.
     const fine = await popPeek(14);
     const fineLvl = await page.evaluate(() => (window.__lp || {}).level);
-    check('읍·면·동/리 칸에는 인구를 안 적는다 (자료가 없다)',
-          (fineLvl !== 'umd' && fineLvl !== 'ri')
-          || !fine.cards.some((h) => /<em>[\d.]+만<\/em>/.test(h)),
-          `${fineLvl} · ${fine.cards.length}칸`);
+    if (fineLvl !== 'umd' && fineLvl !== 'ri') {
+      check('조각이 오기 전 시군구로 물러나도 인구는 붙는다',
+            fine.cards.some((h) => /<em>[\d.]+만<\/em>/.test(h)),
+            `${fineLvl} · ${fine.cards.length}칸`);
+    }
 
     await popPeek(7);
 
@@ -1463,9 +1471,15 @@ const FAKE_LEAFLET = () => {
           lpMyeon.peek.level === 'umd' && lpMyeon.n === 2,
           `${lpMyeon.peek.level} · ${lpMyeon.n}곳`);
     check('면 단계는 리를 면으로 묶는다',
-          lpMyeon.html.some((h) => /<b>백곡면<\/b>/.test(h))
+          lpMyeon.html.some((h) => /<b>백곡면(<em>|<\/b>)/.test(h))
           && !lpMyeon.html.some((h) => /사송리/.test(h)),
           lpMyeon.html.map((h) => (h.match(/<b>([^<]*)/) || [])[1]).join(','));
+    // 읍·면·동 인구 (사장님 지시 2026-09-09). 면은 리 둘을 **합친다** —
+    // 1,200 + 800 = 2,000 → 0.2만. 하나만 적으면 그 면 전체인 줄 읽힌다.
+    check('면 인구는 리를 합친 값이다',
+          /<b>백곡면<em>0\.2만<\/em>/.test(
+            lpMyeon.html.find((h) => /백곡면/.test(h)) || ''),
+          (lpMyeon.html.find((h) => /백곡면/.test(h)) || '없음').slice(0, 90));
     check('묶을 때 리 개수와 함께 건수로 가중한다',
           /2개 리·동 합침/.test(lpMyeon.tips.find((t) => /백곡면/.test(t)) || ''),
           (lpMyeon.tips.find((t) => /백곡면/.test(t)) || '없음').slice(0, 140));
@@ -1478,9 +1492,36 @@ const FAKE_LEAFLET = () => {
           `${lpRi.peek.level} · ${lpRi.n}곳`);
     // **표찰에는 리 이름만.** 어느 읍인지는 지도 바탕에 이미 적혀 있다.
     check('표찰에는 리 이름만 쓴다 (앞의 면 이름을 뗀다)',
-          lpRi.html.some((h) => /<b>사송리<\/b>/.test(h))
-          && !lpRi.html.some((h) => /<b>백곡면 사송리<\/b>/.test(h)),
+          lpRi.html.some((h) => /<b>사송리(<em>|<\/b>)/.test(h))
+          && !lpRi.html.some((h) => /<b>백곡면 사송리/.test(h)),
           lpRi.html.map((h) => (h.match(/<b>([^<]*)/) || [])[1]).join(','));
+    // 리 단계도 인구가 붙는다. 그리고 **이름이 안 맞아 인구가 없는 칸은
+    // 비운다** — KOSIS 는 행정동이고 우리는 법정동이라 실제로 있는 일이다.
+    check('리 칸에 인구가 붙는다 (1,200명 → 0.1만)',
+          /<em>0\.1만<\/em>/.test(lpRi.html.find((h) => /사송리/.test(h)) || ''),
+          (lpRi.html.find((h) => /사송리/.test(h)) || '없음').slice(0, 90));
+    // **fixture 와 맞대어 본다.** '울릉읍 카드에 <em> 이 없다' 만 보면
+    // 그 카드가 화면 밖일 때 검사가 저절로 통과한다 — 아무것도 안 본
+    // 것이 초록으로 보인다. 그리는 칸마다 fixture 의 pop 과 짝을 맞춘다.
+    const riPop = await page.evaluate(() => {
+      const want = {};
+      Object.values(window.__lpUmdFixture || {}).forEach((chunk) => {
+        (chunk.cells || []).forEach((c) => {
+          want[String(c.nm).split(' ').pop()] = c.pop || 0;
+        });
+      });
+      return want;
+    });
+    const mismatched = lpRi.html.filter((h) => {
+      const nm = (h.match(/<b>([^<]*)/) || [])[1];
+      if (!nm || !(nm in riPop)) return false;
+      const shown = /<em>[\d.]+만<\/em>/.test(h);
+      return shown !== (riPop[nm] > 0);
+    });
+    check('인구가 있는 칸에만 (XX만) 을 적는다',
+          !mismatched.length && lpRi.html.length > 0,
+          mismatched.map((h) => (h.match(/<b>([^<]*)/) || [])[1]).join(',')
+          || `${lpRi.html.length}칸 맞대어 봄`);
     // 그래도 말풍선은 전체 이름과 시군구를 말해야 한다 — 같은 이름의
     // 리가 전국에 여럿이다.
     check('말풍선은 전체 이름과 시군구를 말한다',

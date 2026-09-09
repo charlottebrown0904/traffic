@@ -2650,6 +2650,10 @@ function lpItemsUmd(levelKey) {
     if (levelKey === 'ri') {
       out.push({
         name: info.nm, sub: info.sgnm, full: info.nm,
+        // 읍·면·동 인구 (사장님 지시 2026-09-09). **없으면 안 적는다** —
+        // KOSIS 는 행정동이고 우리는 법정동이라 이름이 안 맞는 곳이
+        // 있다. 그 자리에 시군구 인구를 넣으면 리 하나가 20만이 된다.
+        pop: info.pop || 0,
         v: got.v, n: got.n, from: got.from, parts: 1,
         at: [info.lat, info.lon],
         byGroup: got.parts, trend: got.trend,
@@ -2660,13 +2664,16 @@ function lpItemsUmd(levelKey) {
     const key = `${info.sg}|${myeon}`;
     if (!bag.has(key)) {
       bag.set(key, { name: myeon, sub: info.sgnm, wsum: 0, vsum: 0, n: 0,
-                     from: got.from, lat: 0, lon: 0, parts: 0,
+                     from: got.from, lat: 0, lon: 0, parts: 0, pop: 0,
                      years: new Map(), byGroup: new Map() });
     }
     const g = bag.get(key);
     g.wsum += got.n; g.vsum += got.v * got.n; g.n += got.n;
     g.from = Math.min(g.from, got.from);
     g.lat += info.lat; g.lon += info.lon; g.parts += 1;
+    // 면 하나에 리가 여럿이다. 인구는 **합친다** — 그중 하나만 적으면
+    // 그 면 전체 인구인 줄로 읽힌다 (시·도에서 이미 한 번 틀렸던 곳).
+    g.pop += info.pop || 0;
     got.parts.forEach((pt) => {
       const cur = g.byGroup.get(pt.group) || { w: 0, v: 0 };
       cur.w += pt.n; cur.v += pt.v * pt.n;
@@ -2680,6 +2687,7 @@ function lpItemsUmd(levelKey) {
   });
   bag.forEach((g) => out.push({
     name: g.name, sub: g.sub, full: g.name,
+    pop: g.pop || 0,
     v: g.vsum / g.wsum, n: g.n, from: g.from, parts: g.parts,
     at: [g.lat / g.parts, g.lon / g.parts],
     byGroup: [...g.byGroup.entries()].map(([k, o]) => ({ group: k, v: o.v / o.w, n: o.w })),
