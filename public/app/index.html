@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260910c">
+<link rel="stylesheet" href="/app/style.css?v=20260910d">
 </head>
 <body>
 
@@ -41,18 +41,6 @@
     <button class="tab" role="tab" data-view="verdict" aria-selected="false">가설 판정</button>
     <button class="tab" role="tab" data-view="listings" aria-selected="false">매물</button>
   </nav>
-  <!-- 검색이 가이드 자리를 넘겨받았다 (사장님 지시 2026-09-09:
-       "검색해서 찾는 것을 A(토지·건축 가이드) 삭제 후 이동").
-
-       지도 위에 얹었더니 지도의 윗줄을 먹었다. 머리띠로 올리면 지도가
-       그만큼 넓어지고, 탭을 옮겨도 자리가 안 바뀐다. -->
-  <div class="map-find">
-    <input type="search" id="find-q" autocomplete="off" spellcheck="false"
-           placeholder="지역 이름으로 찾기 (예: 안성시, 공도읍)"
-           aria-label="지역 이름으로 찾기"
-           role="combobox" aria-expanded="false" aria-controls="find-list">
-    <ul class="find-list" id="find-list" role="listbox" hidden></ul>
-  </div>
   <div class="meta-stamp" id="meta-stamp"></div>
 </header>
 
@@ -284,6 +272,36 @@
            거치므로, 고르는 사람만 그 값을 씁니다. -->
       <div class="basemap-pick" id="basemap-pick" role="group"
            aria-label="배경 지도"></div>
+
+      <!-- 면책 문구와 가이드가 여기로 들어왔다 (사장님 지시 2026-09-10).
+           지도 아래에 상주하며 120px 을 먹고 있었는데, 늘 읽는 글이
+           아니라 한 번 확인하는 글이다. 단추 하나로 줄이면 그 120px 이
+           그대로 지도가 된다. -->
+      <button type="button" class="map-btn" id="map-note-btn"
+              aria-expanded="false" aria-controls="map-note"
+              title="자료 출처와 가이드">ⓘ</button>
+
+      <!-- 전체화면. 폰에서 가장 크게 체감되는 것이 이것이다 — 머리띠·
+           탭·필터가 접히고 지도만 남는다. Esc 로도 빠져나온다. -->
+      <button type="button" class="map-btn" id="map-full"
+              aria-pressed="false" title="지도만 보기">⛶</button>
+    </div>
+
+    <div class="map-note" id="map-note" hidden>
+      <p class="map-note-txt" id="disclaimer"></p>
+      <a class="guide-link" href="/guide">토지·건축 가이드 →</a>
+    </div>
+
+    <!-- 지역 검색. **지도 조작이지 페이지 요소가 아니다** — 호갱노노·
+         부동산플래닛도 지도 위에 얹는다. 머리띠에서 내리면 65px 이
+         지도로 돌아온다. Leaflet 의 +/- 는 오른쪽 아래로 옮겨서
+         이 자리를 비웠다 (app.js). -->
+    <div class="map-find">
+      <input type="search" id="find-q" autocomplete="off" spellcheck="false"
+             placeholder="지역 이름으로 찾기 (예: 안성시, 공도읍)"
+             aria-label="지역 이름으로 찾기"
+             role="combobox" aria-expanded="false" aria-controls="find-list">
+      <ul class="find-list" id="find-list" role="listbox" hidden></ul>
     </div>
 
     <div id="map"></div>
@@ -616,12 +634,6 @@
   </div>
 </main>
 
-<footer class="disclaimer" id="disclaimer"></footer>
-<!-- 가이드는 화면 제일 아래로 (사장님 지시 2026-09-09). 늘 필요한 것이
-     아니라 한 번 읽어 두는 것이라, 머리띠에서 자리를 차지할 이유가 없다. -->
-<div class="page-foot">
-  <a class="guide-link" href="/guide">토지·건축 가이드</a>
-</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="/app/config.js?v=20260905a"></script>

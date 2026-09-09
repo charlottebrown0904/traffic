@@ -205,6 +205,7 @@ async function boot() {
   buildRank();
   buildTrend();
   buildMap();
+  wireMapChrome();
   wireBaseMap();
   wireLandPrice();
   drawLandPrice();
@@ -1526,8 +1527,15 @@ function buildMap() {
     return;
   }
   const withCoords = state.tollgates.filter((t) => t.lat && t.lon);
-  map = L.map('map', { zoomControl: true, preferCanvas: true })
+  // **+/- 는 오른쪽 아래다** (사장님 지시 2026-09-10).
+  //
+  // Leaflet 의 기본 자리는 왼쪽 위인데, 그 자리를 지역 검색칸에
+  // 내줬다. 검색은 지도 조작이지 페이지 요소가 아니라서 지도 위에
+  // 얹었고(머리띠에서 65px 이 돌아왔다), 두 개를 같은 자리에 놓을
+  // 수는 없다. 오른쪽 아래는 폰에서 엄지가 닿는 자리이기도 하다.
+  map = L.map('map', { zoomControl: false, preferCanvas: true })
     .setView([36.5, 127.8], 7);
+  L.control.zoom({ position: 'bottomright' }).addTo(map);
   // 보이는 영역만 그리므로, 움직이면 다시 그려야 한다. moveend 는
   // 확대·축소 뒤에도 온다.
   map.on('moveend', () => {
@@ -1959,6 +1967,56 @@ function setBaseMap(key, first) {
   // 하면 매번 같은 수고를 시킨다. 못 써도(사생활 보호 창 등) 그만이다.
   if (!first) { try { localStorage.setItem('toji.basemap', spec.key); } catch (e) { /* 무시 */ } }
   window.__basemap = spec.key;
+}
+
+/* 지도 위 작은 단추 둘 (사장님 지시 2026-09-10).
+ *
+ * 폰에서 지도가 쓰는 높이를 재 보면 위에 255px, 아래에 120px 이
+ * 붙어 있었다. 지도가 쓸 수 있는 것이 절반뿐이었다는 뜻이다.
+ *
+ *   ⓘ   면책 문구와 가이드. 지도 아래에 상주하던 120px 을 단추
+ *        하나로 줄인다. 늘 읽는 글이 아니라 한 번 확인하는 글이다.
+ *   ⛶   지도만 보기. 머리띠·탭·필터·상세가 접힌다.
+ *
+ * **빠져나갈 길을 둘 준다** — 같은 단추를 다시 누르는 것과 Esc.
+ * 전체화면에서 나가는 법을 못 찾으면 그것은 갇힌 것이다. */
+function wireMapChrome() {
+  const note = $('#map-note');
+  const noteBtn = $('#map-note-btn');
+  if (note && noteBtn) {
+    const setNote = (on) => {
+      note.hidden = !on;
+      noteBtn.setAttribute('aria-expanded', on ? 'true' : 'false');
+    };
+    noteBtn.addEventListener('click', () => setNote(note.hidden));
+    // 바깥을 누르면 닫는다. 지도 위에 뜬 것이라 안 닫히면 지도를 가린다.
+    document.addEventListener('click', (e) => {
+      if (note.hidden) return;
+      if (note.contains(e.target) || noteBtn.contains(e.target)) return;
+      setNote(false);
+    });
+  }
+
+  const full = $('#map-full');
+  if (full) {
+    const setFull = (on) => {
+      document.body.classList.toggle('is-mapmax', on);
+      full.setAttribute('aria-pressed', on ? 'true' : 'false');
+      full.title = on ? '원래대로' : '지도만 보기';
+      full.textContent = on ? '✕' : '⛶';
+      // **크기가 바뀐 것을 Leaflet 에 알려야 한다.** 안 알리면 타일이
+      // 예전 크기 그대로 남아 오른쪽·아래가 회색으로 빈다.
+      if (map) setTimeout(() => map.invalidateSize(), 60);
+    };
+    full.addEventListener('click', () => {
+      setFull(!document.body.classList.contains('is-mapmax'));
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && document.body.classList.contains('is-mapmax')) {
+        setFull(false);
+      }
+    });
+  }
 }
 
 function wireBaseMap() {

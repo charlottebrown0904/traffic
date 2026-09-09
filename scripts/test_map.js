@@ -46,7 +46,8 @@ const check = (label, ok, note = '') => {
 };
 
 const FAKE_LEAFLET = () => {
-  const rec = { circles: [], markers: [], tiles: [], tradeOpts: [], panes: {} };
+  const rec = { circles: [], markers: [], tiles: [], tradeOpts: [],
+                panes: {}, zoomCtl: null };
   window.__map = rec;
   // 무리(layerGroup)마다 자기가 담은 것을 따로 들고 있어야 한다.
   // 예전에는 모두가 rec 하나에 밀어 넣어서, 밴드 무리가 clearLayers 를
@@ -139,6 +140,14 @@ const FAKE_LEAFLET = () => {
       },
     }),
     tileLayer: (url) => { rec.tiles.push(url); return chain(); },
+    // +/- 는 오른쪽 아래로 옮겼다 (왼쪽 위는 검색칸 자리다).
+    // 어디에 붙였는지 검사가 볼 수 있게 기록해 둔다.
+    control: {
+      zoom: (opts) => {
+        rec.zoomCtl = (opts || {}).position || 'topleft';
+        return { addTo() { return this; } };
+      },
+    },
     layerGroup: grp,
     circle: (ll, opts) => chain({ __circle: true, __opts: opts }),
     circleMarker: (ll, opts) => {
@@ -2220,17 +2229,91 @@ const FAKE_LEAFLET = () => {
     console.log();
     console.log('9-E. 화면 자리 정리 (2026-09-09 지시 A~E)');
 
-    // A·C — 가이드는 아래로, 검색은 그 자리로.
+    // A·C — 가이드와 면책은 ⓘ 단추 안으로, 검색은 지도 위로
+    // (사장님 지시 2026-09-10 ①②).
+    //
+    // **자리를 잃은 것이 아니라 높이를 돌려받은 것이다.** 폰에서 지도가
+    // 쓰는 높이를 재 보면 위에 255px, 아래에 120px 이 붙어 있었다.
+    // 면책·가이드가 아래 120px 이고, 검색칸이 위 65px 이었다.
     const chrome = await page.evaluate(() => ({
       guideInHeader: !!document.querySelector('.topbar .guide-link'),
       guideAtFoot: !!document.querySelector('.page-foot .guide-link'),
+      guideInNote: !!document.querySelector('.map-note .guide-link'),
+      footerLeft: !!document.querySelector('body > footer.disclaimer'),
+      noteBtn: !!document.querySelector('.map-tools #map-note-btn'),
       findInHeader: !!document.querySelector('.topbar .map-find #find-q'),
-      findOverMap: !!document.querySelector('.map-wrap .map-find'),
+      findOverMap: !!document.querySelector('.map-wrap .map-find #find-q'),
     }));
     check('가이드가 머리띠에서 빠졌다', !chrome.guideInHeader);
-    check('가이드는 화면 제일 아래에 있다', chrome.guideAtFoot);
-    check('검색이 그 자리로 올라왔다', chrome.findInHeader);
-    check('검색이 지도 위를 안 덮는다', !chrome.findOverMap);
+    check('가이드·면책이 지도 아래 자리를 비웠다',
+          !chrome.guideAtFoot && !chrome.footerLeft);
+    check('그 둘은 ⓘ 단추 안에 있다', chrome.noteBtn && chrome.guideInNote);
+    check('검색은 지도 위에 있다', chrome.findOverMap && !chrome.findInHeader);
+
+    // ⓘ 는 눌러야 열린다. 열린 채로 시작하면 지도를 가린다.
+    const noteState = await page.evaluate(() => {
+      const pop = document.getElementById('map-note');
+      const was = pop.hidden;
+      document.getElementById('map-note-btn').click();
+      const opened = !pop.hidden;
+      document.getElementById('map-note-btn').click();
+      return { was, opened, closedAgain: pop.hidden };
+    });
+    check('ⓘ 는 닫힌 채로 시작하고 눌러야 열린다',
+          noteState.was && noteState.opened && noteState.closedAgain,
+          `처음닫힘=${noteState.was} 열림=${noteState.opened}`
+          + ` 다시닫힘=${noteState.closedAgain}`);
+
+    // ③ 전체화면. **빠져나갈 길이 둘 있어야 한다** — 같은 단추와 Esc.
+    // 나가는 법을 못 찾으면 그것은 갇힌 것이다.
+    const full = await page.evaluate(() => {
+      const btn = document.getElementById('map-full');
+      const seen = {};
+      btn.click();
+      seen.on = document.body.classList.contains('is-mapmax');
+      seen.barHidden = getComputedStyle(document.querySelector('.topbar')).display === 'none';
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      seen.escOut = !document.body.classList.contains('is-mapmax');
+      btn.click();
+      seen.on2 = document.body.classList.contains('is-mapmax');
+      btn.click();
+      seen.off = !document.body.classList.contains('is-mapmax');
+      return seen;
+    });
+    check('⛶ 를 누르면 머리띠가 접히고 지도만 남는다',
+          full.on && full.barHidden,
+          `켜짐=${full.on} 머리띠숨김=${full.barHidden}`);
+    check('Esc 로 빠져나온다', full.escOut);
+    check('같은 단추로도 빠져나온다', full.on2 && full.off);
+
+    // **폰 폭에서 실제로 재 본다.** '넓어졌다' 는 말은 재야 말이 된다.
+    // 390×844 는 아이폰 기준선이다.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(150);
+    const phone = await page.evaluate(() => {
+      const h = () => {
+        const r = document.querySelector('.map-wrap').getBoundingClientRect();
+        return Math.round(r.height);
+      };
+      const normal = h();
+      document.getElementById('map-full').click();
+      const max = h();
+      document.getElementById('map-full').click();
+      return { normal, max, vh: window.innerHeight };
+    });
+    // 74dvh 로 잡아 뒀으므로 평소에도 화면의 3분의 2는 넘어야 한다.
+    check('폰에서 지도가 화면의 3분의 2를 넘게 쓴다',
+          phone.normal / phone.vh > 0.66,
+          `지도 ${phone.normal}px / 화면 ${phone.vh}px`
+          + ` (${(phone.normal / phone.vh * 100).toFixed(0)}%)`);
+    check('⛶ 를 누르면 화면을 통째로 쓴다',
+          phone.max / phone.vh > 0.98,
+          `지도 ${phone.max}px / 화면 ${phone.vh}px`
+          + ` (${(phone.max / phone.vh * 100).toFixed(0)}%)`);
+    // 재고 나면 되돌린다. 뒤 절들이 넓은 화면을 전제한다.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.waitForTimeout(150);
+    await lpFire();
 
     // B — 고르기 전에는 상세 패널이 없다.
     //
