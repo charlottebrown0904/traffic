@@ -21,7 +21,7 @@ const check = (label, ok, note = '') => {
 
 const KEY = 'SECRET-VWORLD-KEY-0000';
 process.env.VWORLD_KEY = KEY;
-const KEY_REFERER = 'https://toji-gogo.vercel.app/';
+const KEY_REFERER = 'https://toji.fyi/';
 process.env.VWORLD_REFERER = KEY_REFERER;
 
 const handler = require(path.join('..', 'api', 'tile.js'));
@@ -104,7 +104,7 @@ const call = async (query, method = 'GET', headers = {}) => {
   const res = fakeRes();
   // 진짜 요청에는 늘 host 헤더가 있다. 없으면 코드가 그것을 읽다 죽는데,
   // 그 죽음이 배포에서만 안 나므로 검사에서도 늘 실어 준다.
-  await handler({ method, query, headers: { host: 'toji-gogo.vercel.app', ...headers } }, res);
+  await handler({ method, query, headers: { host: 'toji.fyi', ...headers } }, res);
   return res;
 };
 
@@ -132,7 +132,7 @@ const call = async (query, method = 'GET', headers = {}) => {
   check('상류 주소에는 키가 붙어 있다 (실제로 인증은 한다)',
         calls.length === 1 && calls[0].url.includes(KEY));
   check('등록된 Referer 를 실어 보낸다 (웹사이트 유형 키)',
-        calls[0].headers.Referer === 'https://toji-gogo.vercel.app/',
+        calls[0].headers.Referer === 'https://toji.fyi/',
         String(calls[0].headers.Referer));
 
   console.log();
@@ -216,7 +216,7 @@ const call = async (query, method = 'GET', headers = {}) => {
         `${q.get('REQUEST')} ${q.get('VERSION')}`);
   // ④ 등록 도메인을 Referer 로 실어야 WMS 가 열린다.
   check('등록된 Referer 를 싣는다',
-        calls[0].headers.Referer === 'https://toji-gogo.vercel.app/');
+        calls[0].headers.Referer === 'https://toji.fyi/');
 
   console.log();
   console.log('9. 타일 좌표 → 머케이터 bbox 가 맞는가');
@@ -416,9 +416,9 @@ const call = async (query, method = 'GET', headers = {}) => {
   // 오류**를 준다. 원인이 화면에 안 나타나서 찾기가 어렵다.
   delete process.env.VWORLD_REFERER;
   stubFetch(pngReply);
-  await call({ z: '12', y: '5', x: '5' }, 'GET', { host: 'toji-gogo.vercel.app' });
+  await call({ z: '12', y: '5', x: '5' }, 'GET', { host: 'toji.fyi' });
   check('환경변수가 없으면 지금 요청이 온 호스트를 쓴다',
-        (calls[0] || {}).headers.Referer === 'https://toji-gogo.vercel.app/',
+        (calls[0] || {}).headers.Referer === 'https://toji.fyi/',
         (calls[0] || {}).headers.Referer);
   stubFetch(pngReply);
   await call({ z: '12', y: '5', x: '5' }, 'GET', { host: 'somewhere-else.vercel.app' });
@@ -427,7 +427,7 @@ const call = async (query, method = 'GET', headers = {}) => {
         (calls[0] || {}).headers.Referer);
   process.env.VWORLD_REFERER = KEY_REFERER;
   stubFetch(pngReply);
-  await call({ z: '12', y: '5', x: '5' }, 'GET', { host: 'toji-gogo.vercel.app' });
+  await call({ z: '12', y: '5', x: '5' }, 'GET', { host: 'toji.fyi' });
   check('환경변수가 있으면 그것이 이긴다 (콘솔 등록 주소와 맞춰야 한다)',
         (calls[0] || {}).headers.Referer === KEY_REFERER,
         (calls[0] || {}).headers.Referer);

@@ -2,7 +2,7 @@
 #
 # 이 파일은 **Vercel 과 무관하다.** Vercel 은 vercel.json 을 보고,
 # 이것을 무시한다. 둘을 나란히 띄워 두는 동안 서로 건드리지 않는다.
-name = "toji-gogo"
+name = "toji"
 pages_build_output_dir = "public"
 
 # nodejs_compat 이 있어야 process.env 와 Buffer 가 산다. 우리 함수 둘이

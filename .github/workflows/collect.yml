@@ -574,7 +574,7 @@ jobs:
       # 라이브 반영 — main 을 이 브랜치로 fast-forward 합니다.
       #
       # **Vercel 은 main 만 프로덕션으로 배포합니다.** 브랜치에 푸시하면
-      # preview URL 만 생기고 toji-gogo.vercel.app 은 그대로입니다. 그래서
+      # preview URL 만 생기고 toji.fyi 는 그대로입니다. 그래서
       # 9월 3~4일 사이 19개 커밋(거래 점 가시성·도로 위계·용도지역 색·
       # 순위 탭 수정·run 21 데이터)이 전부 라이브에 없었습니다. 배포 목록에
       # READY 라고 떠도 target 이 preview 면 사장님 화면은 안 바뀝니다.
@@ -637,7 +637,7 @@ jobs:
           {
             echo "### ✅ 라이브 반영 완료"
             echo "main 을 \`${{ github.ref_name }}\` 로 올렸습니다."
-            echo "잠시 뒤 https://toji-gogo.vercel.app/ 에 반영됩니다."
+            echo "잠시 뒤 https://toji.fyi/ 에 반영됩니다."
           } >> "$GITHUB_STEP_SUMMARY"
 
       # 커밋이 막혀도 결과물은 손에 쥘 수 있게 올려 둔다. run 13 은 수집을

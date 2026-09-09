@@ -27,7 +27,7 @@ RELAY = os.environ.get("RELAY_URL", "").rstrip("/")
 TOKEN = os.environ.get("RELAY_TOKEN", "")
 # 브이월드 콘솔에 등록된 서비스 주소. 배포 주소가 바뀌면
 # 콘솔에도 더해야 한다 (2026-09-08 사도 토지 → 토지 고고).
-DOMAIN = os.environ.get("VWORLD_DOMAIN", "toji-gogo.vercel.app")
+DOMAIN = os.environ.get("VWORLD_DOMAIN", "toji.fyi")
 
 # 화성 향남 일대. 계획관리·공장이 실제로 많은 곳이라 0건이면 코드 문제다.
 BBOX = "126.87,37.06,126.93,37.11"

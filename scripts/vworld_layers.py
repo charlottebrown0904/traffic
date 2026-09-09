@@ -32,7 +32,7 @@ TOKEN = os.environ.get("RELAY_TOKEN", "")
 # 실어 보내도록 고쳤고, 브이월드가 따로 받는 domain 파라미터도 같이 시험한다.
 # 브이월드 콘솔에 등록된 서비스 주소. 배포 주소가 바뀌면
 # 콘솔에도 더해야 한다 (2026-09-08 사도 토지 → 토지 고고).
-DOMAIN = os.environ.get("VWORLD_DOMAIN", "toji-gogo.vercel.app")
+DOMAIN = os.environ.get("VWORLD_DOMAIN", "toji.fyi")
 BASE = {"SERVICE": "WFS", "REQUEST": "GetCapabilities"}
 
 CANDIDATES = [

@@ -150,7 +150,54 @@ async function both(handler, url, { method = 'GET', headers = {} } = {}) {
   check('헤더 이름을 소문자로 맞춘다', JSON.parse(await cased.text()).t === 'ABC');
 
   console.log();
-  console.log('4. _headers 가 vercel.json 과 같은 것을 말하는가');
+  console.log('4. 환경변수를 **요청 시점에** 읽는가');
+  /* 이것이 이 어댑터의 급소다.
+   *
+   * Vercel 은 process.env 를 채워 둔 뒤에 파일을 읽으므로, 모듈 맨
+   * 위에서 process.env.X 를 상수로 받아 두어도 잘 돈다. Cloudflare 는
+   * 반대다 — 파일을 먼저 읽고, 환경변수는 요청이 와야 들어온다
+   * (context.env). 그래서 상수로 받아 두면 **영원히 undefined** 이고,
+   * 옆에 적어 둔 기본값이 이긴다.
+   *
+   * api/relay.js 의 브이월드 Referer 가 정확히 그 모양이었다. 그대로
+   * 두었으면 VWORLD_REFERER 를 아무리 넣어도 무시되고, 브이월드가
+   * Referer 를 보고 거절해 지도가 통째로 비었을 것이다. Vercel 에서는
+   * 멀쩡히 도니 **눈으로는 절대 못 잡는다.** */
+  const vworld = 'https://api.vworld.kr/req/wfs?a=1';
+  let sent = null;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (_u, init) => {
+    sent = (init && init.headers) || {};
+    return new Response('ok', { status: 200, headers: { 'content-type': 'text/plain' } });
+  };
+  try {
+    process.env.VWORLD_KEY = 'k';
+    delete process.env.VWORLD_REFERER;
+    await adapt(relay)({
+      request: new Request(
+        `https://toji.fyi/api/relay?target=${encodeURIComponent(vworld)}`,
+        { headers: { 'x-relay-token': 'test-token-1234567890' } }),
+      env: { VWORLD_REFERER: 'https://toji.fyi/', RELAY_TOKEN: 'test-token-1234567890' },
+    });
+    check('Pages 환경변수의 Referer 가 실제로 실린다',
+          sent.Referer === 'https://toji.fyi/', sent.Referer || '(안 실림)');
+
+    sent = null;
+    await adapt(relay)({
+      request: new Request(
+        `https://toji.fyi/api/relay?target=${encodeURIComponent(vworld)}`,
+        { headers: { 'x-relay-token': 'test-token-1234567890' } }),
+      env: { VWORLD_REFERER: 'https://다른곳.example/', RELAY_TOKEN: 'test-token-1234567890' },
+    });
+    check('값을 바꾸면 바뀐 값이 실린다 (한 번 읽고 굳지 않는다)',
+          sent.Referer === 'https://다른곳.example/', sent.Referer || '(안 실림)');
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.VWORLD_KEY;
+  }
+
+  console.log();
+  console.log('5. _headers 가 vercel.json 과 같은 것을 말하는가');
   const vj = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
   const hdrs = fs.readFileSync(path.join(ROOT, 'public', '_headers'), 'utf8');
   const vAll = (vj.headers || []).find((h) => h.source === '/(.*)');

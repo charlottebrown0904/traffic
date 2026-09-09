@@ -197,7 +197,7 @@ async function callVworld(params, base, host) {
   // 보내게 된다. 환경변수가 있으면 그것을 쓰고, 없으면 지금 요청이 온
   // 그 호스트를 쓴다. 브이월드 콘솔에 등록된 주소와 맞아야 한다.
   const referer = process.env.VWORLD_REFERER
-    || (host ? `https://${host}/` : "https://toji-gogo.vercel.app/");
+    || (host ? `https://${host}/` : "https://toji.fyi/");
   const url = `${base || VWORLD_WMS}?` + new URLSearchParams({ ...params, key });
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), TIMEOUT_MS);
@@ -300,7 +300,7 @@ async function parcelInfo(req, res) {
     OUTPUT: "application/json",
     MAXFEATURES: "10", RESULTTYPE: "results",
     DOMAIN: process.env.VWORLD_REFERER
-      || `https://${(req.headers || {}).host || "toji-gogo.vercel.app"}/`,
+      || `https://${(req.headers || {}).host || "toji.fyi"}/`,
   }, VWORLD_WFS, (req.headers || {}).host);
   if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
   if (!out.upstream) {

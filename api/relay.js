@@ -23,8 +23,13 @@ const ALLOW = {
   // 요청이 그 도메인에서 왔는지를 Referer 로 본다. 중계기는 서버라 브라우저
   // 처럼 Referer 를 붙이지 않으므로, 등록된 주소를 직접 실어 보낸다.
   // 지오코더는 이것을 따지지 않아 지금까지 드러나지 않았다.
+  // referer 는 **함수로 둔다.** 상수로 두면 이 파일을 읽는 순간
+  // process.env 를 읽는데, Cloudflare Pages 에서는 그때 아직 환경변수가
+  // 안 들어와 있다 (functions/_adapter.js 가 요청마다 부어 준다).
+  // 상수로 두면 VWORLD_REFERER 를 아무리 넣어도 무시되고 아래 기본값이
+  // 영원히 이긴다 — 그러면 브이월드가 Referer 를 보고 거절한다.
   "api.vworld.kr":   { param: "key",        env: "VWORLD_KEY",
-                       referer: process.env.VWORLD_REFERER || "https://toji-gogo.vercel.app/" },
+                       referer: () => process.env.VWORLD_REFERER || DEFAULT_REFERER },
   "data.ex.co.kr":   { param: "key",        env: "EX_API_KEY" },
   "www.data.go.kr":  {},
   // 경매·공매 원천 확인용. 둘 다 키가 없는 공개 페이지라 통과만 시킨다.
@@ -42,6 +47,10 @@ const ALLOW = {
   // 어긋난다. env 를 지정하면 STRIP 이 들어온 키를 지우고 우리 것으로 덮는다.
   "kosis.kr":        { param: "apiKey",     env: "KOSIS_KEY" },
 };
+
+// 브이월드 콘솔에 등록된 서비스 주소. 환경변수(VWORLD_REFERER)가 있으면
+// 그것이 이긴다 — 주소가 또 바뀔 때 코드를 안 고치기 위해서다.
+const DEFAULT_REFERER = "https://toji.fyi/";
 
 const STRIP = ["serviceKey", "key", "apiKey", "authKey", "accessKey"];
 const TIMEOUT_MS = 25_000;
@@ -113,7 +122,7 @@ module.exports = async function handler(req, res) {
       headers: {
         "User-Agent": "redt-relay/1.0",
         Accept: "*/*",
-        ...(rule.referer ? { Referer: rule.referer } : {}),
+        ...(rule.referer ? { Referer: rule.referer() } : {}),
       },
     });
     if (upstream.status >= 300 && upstream.status < 400) {
