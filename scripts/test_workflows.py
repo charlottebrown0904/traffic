@@ -46,6 +46,10 @@ print("1. 결과를 되돌려 놓는 브랜치를 고정하지 않는다")
 HARDCODED = re.compile(r"git\s+push\s+\S+\s+[\"']?HEAD:(?!\$)(\w+)")
 GUARD = "merge-base --is-ancestor"
 
+# 라이브 주소. 이사를 하면 여기 한 줄만 고치고, 검사가 나머지를 잡는다.
+LIVE_ORIGIN = "https://toji.fyi"
+DEAD_ORIGIN = "toji-gogo.pages.dev"      # 은퇴한 Cloudflare Pages
+
 
 def _run_blocks(text: str) -> list[str]:
     """워크플로의 run 스크립트를 하나씩 꺼낸다.
@@ -316,6 +320,24 @@ _li = next((i for i, n in enumerate(_an_names) if "재연결" in n), None)
 _pi = next((i for i, n in enumerate(_an_names) if "분석 패널" in n), None)
 if None not in (_li, _pi):
     check(_li < _pi, f"재연결이 패널보다 먼저다 ({_li} < {_pi})")
+
+# 점검은 **살아 있는 주소**를 두드려야 한다.
+#
+# 2026-09-10 까지 sitecheck 의 기본 주소가 은퇴한 Cloudflare Pages
+# 주소였다. 점검은 초록으로 끝나는데 브이월드 타일만 전부 502·520 이라
+# '브이월드가 죽었다' 로 읽혔다 — 실제로는 없는 집을 두드린 것이었다.
+# 같은 시각 toji.fyi 는 같은 타일을 200·image/jpeg 로 줬다.
+_sc = _yamllib.safe_load(
+    (ROOT / ".github/workflows/sitecheck.yml").read_text(encoding="utf-8"))
+_sc_on = _sc.get("on", _sc.get(True))
+_sc_base = _sc_on["workflow_dispatch"]["inputs"]["base"].get("default", "")
+check(_sc_base == LIVE_ORIGIN,
+      f"점검이 라이브 주소를 본다 (지금 {_sc_base!r})")
+# 은퇴한 주소가 어느 워크플로에도 남아 있으면 안 된다.
+_dead = sorted(f.name for f in (ROOT / ".github/workflows").glob("*.yml")
+               if DEAD_ORIGIN in f.read_text(encoding="utf-8"))
+check(not _dead, f"은퇴한 주소가 남아 있지 않다 — {_dead}" if _dead
+      else "은퇴한 주소가 남아 있지 않다")
 
 print()
 print("7. 라이브 반영 — 브랜치에만 쌓이고 사이트는 그대로이던 것")
