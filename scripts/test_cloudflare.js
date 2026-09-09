@@ -226,7 +226,28 @@ async function both(handler, url, { method = 'GET', headers = {} } = {}) {
         JSON.stringify(routes.include));
 
   console.log();
-  console.log('6. _headers 가 vercel.json 과 같은 것을 말하는가');
+  console.log('6. wrangler.toml — 비밀이 새지 않는가');
+  /* 공개 저장소다. 인증키가 이 파일에 들어가면 그대로 세상에 나간다.
+   * 대시보드가 Secret 만 받게 된 뒤로 '변수는 wrangler.toml 에' 라는
+   * 흐름이 생겼는데, 그 흐름에 키까지 딸려 들어가는 것이 이 파일의
+   * 가장 위험한 실수다. */
+  const toml = fs.readFileSync(path.join(ROOT, 'wrangler.toml'), 'utf8');
+  const SECRETS = ['DATA_GO_KR_KEY', 'VWORLD_KEY', 'RELAY_TOKEN',
+                   'KOSIS_KEY', 'EX_API_KEY'];
+  const leaked = SECRETS.filter((k) => new RegExp(`^\\s*${k}\\s*=`, 'm').test(toml));
+  check('인증키가 wrangler.toml 에 없다', leaked.length === 0,
+        leaked.join(', ') || '없음');
+  // 비밀 아닌 값은 반대로 **있어야** 한다. 없으면 Referer 가 코드의
+  // 기본값으로 떨어지는데, 그 둘이 어긋나면 브이월드가 거절한다.
+  const declared = (toml.match(/^\s*VWORLD_REFERER\s*=\s*"([^"]+)"/m) || [])[1];
+  const src = fs.readFileSync(path.join(ROOT, 'api', 'relay.js'), 'utf8');
+  const fallback = (src.match(/DEFAULT_REFERER\s*=\s*"([^"]+)"/) || [])[1];
+  check('VWORLD_REFERER 가 선언돼 있다', !!declared, declared || '(없음)');
+  check('그 값이 코드의 기본값과 같다', declared === fallback,
+        `wrangler "${declared}" · relay.js "${fallback}"`);
+
+  console.log();
+  console.log('7. _headers 가 vercel.json 과 같은 것을 말하는가');
   const vj = JSON.parse(fs.readFileSync(path.join(ROOT, 'vercel.json'), 'utf8'));
   const hdrs = fs.readFileSync(path.join(ROOT, 'public', '_headers'), 'utf8');
   const vAll = (vj.headers || []).find((h) => h.source === '/(.*)');

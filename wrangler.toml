@@ -12,3 +12,18 @@ pages_build_output_dir = "public"
 # 그 둘을 쓴다 (api/relay.js 의 node:crypto, api/tile.js 의 Buffer).
 compatibility_date = "2026-09-09"
 compatibility_flags = ["nodejs_compat"]
+
+# 비밀이 아닌 값은 **여기**에 둔다.
+#
+# wrangler.toml 이 있으면 Cloudflare 대시보드는 Secret(암호화 변수)만
+# 받습니다. 나머지는 이 파일이 맡습니다 — 그래서 비밀도 아닌 값을
+# 대시보드에 넣을 이유가 없고, 여기 두면 코드와 함께 버전이 남습니다.
+#
+# 인증키 다섯(DATA_GO_KR_KEY · VWORLD_KEY · RELAY_TOKEN · KOSIS_KEY ·
+# EX_API_KEY)은 **절대 여기 적지 않습니다.** 공개 저장소입니다.
+# 그것들은 대시보드에 Secret 으로 넣습니다.
+#
+# Referer 는 **어느 주소가 서빙하든 이 값**으로 나갑니다. 브이월드
+# 콘솔에 toji.fyi 가 등록돼 있으면 pages.dev 로 접속해도 통과합니다.
+[vars]
+VWORLD_REFERER = "https://toji.fyi/"

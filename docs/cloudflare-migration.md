@@ -90,18 +90,25 @@ Workers 쪽이니 뒤로 나오세요:**
 5. **'비프로덕션 브랜치도 빌드' 는 꺼 주세요** — 우리는 작업 브랜치에
    하루 몇 번씩 밀어 넣습니다. 켜 두면 그때마다 빌드가 돌아 무료
    500회/월을 금방 씁니다. 우리에게 필요한 것은 `main` 뿐입니다.
-5. **Settings → Variables and Secrets → Production** 에 여섯 개.
-   Vercel 에 넣으신 것과 **같은 값**입니다.
+5. **Settings → Variables and Secrets → Production** 에 **다섯 개**.
+   Type 은 전부 **Secret** 입니다. Vercel 에 넣으신 것과 같은 값입니다.
    **값을 채팅에 붙여넣지 마세요.**
 
-   | 이름              | 값                     |
-   | ----------------- | ---------------------- |
-   | `DATA_GO_KR_KEY`  | Vercel 것과 같음       |
-   | `VWORLD_KEY`      | 같음                   |
-   | `RELAY_TOKEN`     | 같음                   |
-   | `KOSIS_KEY`       | 같음                   |
-   | `EX_API_KEY`      | 같음                   |
-   | `VWORLD_REFERER`  | `https://toji.fyi/`    |
+   | 이름              | Type   |
+   | ----------------- | ------ |
+   | `DATA_GO_KR_KEY`  | Secret |
+   | `VWORLD_KEY`      | Secret |
+   | `RELAY_TOKEN`     | Secret |
+   | `KOSIS_KEY`       | Secret |
+   | `EX_API_KEY`      | Secret |
+
+   `VWORLD_REFERER` 는 **넣지 않습니다** — 비밀이 아니라 `wrangler.toml`
+   의 `[vars]` 에 있습니다. wrangler.toml 이 있으면 대시보드는 Secret 만
+   받고 나머지는 파일이 맡습니다. 그래서 비밀 아닌 값은 파일에 두어
+   코드와 함께 버전이 남게 했습니다.
+
+   **인증키 다섯은 절대 wrangler.toml 에 적지 않습니다** — 공개
+   저장소입니다. `scripts/test_cloudflare.js` 가 그것을 감시합니다.
 
 ## 3. 먼저 pages.dev 로 확인
 
