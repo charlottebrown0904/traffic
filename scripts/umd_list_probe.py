@@ -156,7 +156,20 @@ def probe_stan_regin() -> None:
     # StanOrgCd2(기관코드)인데, 그것은 **정부기관** 코드표입니다 —
     # 시청·군청·교육청 같은. 우리가 필요한 것은 행정구역(법정동)
     # 코드표(StanReginCd)입니다. 둘은 다른 서비스라 활용신청도 따로
-    # 받습니다. 그래서 **둘 다 두드려** 무엇이 열렸는지 눈으로 봅니다.
+    # 받습니다.
+    #
+    # 2026-09-09 실측:
+    #
+    #   StanReginCd/getStanReginCdList   403 등록되지 않은 서비스키
+    #   StanOrgCd2/getStanOrgCdList      400 그런 서비스가 없거나 폐기됨
+    #
+    # **아랫줄은 사장님 등록을 부정하지 않습니다.** 제가 오퍼레이션
+    # 이름(getStanOrgCdList)을 기술문서 없이 지어냈고, 400 은 '그런
+    # 이름이 없다' 는 뜻입니다. 키 문제인지 이름 문제인지 이 응답으로는
+    # 못 가릅니다 — 그러니 이것으로 무엇을 주장하면 안 됩니다.
+    #
+    # 어차피 기관코드는 우리에게 필요 없습니다. 판단에 쓰는 것은 윗줄
+    # 하나뿐입니다: **행정구역코드가 아직 우리 키에 안 붙어 있다.**
     for path in ("1741000/StanReginCd/getStanReginCdList",
                  "1741000/StanOrgCd2/getStanOrgCdList",
                  "1741000/StanReginCd5/getStanReginCdList"):
