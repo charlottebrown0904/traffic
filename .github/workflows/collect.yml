@@ -98,9 +98,11 @@ on:
         #   office     도청·시청·군청·구청 좌표를 어디서 받을 수 있는가
         #   cadastral  연속지적도로 지오코딩을 대체할 수 있는가
         #              (사장님 지시 2026-09-08: "탐침해봅시다")
+        #   umdpop     읍·면·동 인구를 KOSIS 에서 받을 수 있는가
+        #              (사장님 지시 2026-09-09: "적용합니다")
         description: "원천 탐침 (없으면 none)"
         type: choice
-        options: [none, office, cadastral]
+        options: [none, office, cadastral, umdpop]
         default: none
       geocode_limit:
         # 4,000 은 근거 없이 박아둔 숫자였다. 브이월드 안내는 하루 3만건이고
@@ -358,6 +360,13 @@ jobs:
         if: inputs.probe == 'cadastral'
         continue-on-error: true
         run: python scripts/cadastral_probe.py
+
+      # 읍·면·동 인구. 표 ID 를 기억으로 적지 않는다 — KOSIS 검색으로
+      # 찾아서 쓴다. 코드가 법정동인지 행정동인지가 급소다.
+      - name: 읍면동 인구 탐침
+        if: inputs.probe == 'umdpop'
+        continue-on-error: true
+        run: python scripts/umdpop_probe.py
 
       - name: 가설3 자료 적재
         if: inputs.stage != 'web'

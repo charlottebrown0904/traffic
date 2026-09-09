@@ -1027,6 +1027,57 @@ def _regions() -> list[dict]:
     return out
 
 
+# ── 검색 색인 ────────────────────────────────────────────────────────
+#
+# 사장님 지시(2026-09-09): "첫 화면이 전국인데, 정작 쓸 사람은 자기
+# 지역부터 봅니다" 에 대해 "3번 진행합니다".
+#
+# 지도를 확대해 눈으로 찾게 하면 안 된다. 이름을 치면 그리로 가야 한다.
+# 그런데 **필지 단위로는 못 간다** — 실거래 지번이 마스킹돼 있어(1**)
+# 어느 필지인지 특정할 수가 없다(scripts/cadastral_probe.py 1절).
+# 갈 수 있는 가장 아래가 읍·면·동이고, 거기까지를 색인으로 낸다.
+#
+# 좌표는 **그 이름으로 신고된 거래들의 중앙점**이다. 법정동 중심점이
+# 섞여 있어 ±1~2km 어긋날 수 있지만, 화면을 그 동네로 옮기는 데는
+# 충분하다. 필지를 짚는 데 쓰는 값이 아니다.
+PLACE_MIN_TRADES = 3
+
+
+def _places() -> list[dict]:
+    """이름 → 좌표. 시·도 / 시·군·구 / 읍·면·동 세 단계.
+
+    한 줄이 곧 검색 결과 한 칸이므로 **작게 유지한다.** 이름과 좌표와
+    거래 수만 싣는다. 거래가 두 건뿐인 동네까지 넣으면 목록만 길어지고,
+    눌러 봐야 지도에 아무것도 없다.
+    """
+    with db.connect(read_only=True) as con:
+        df = con.execute(f"""
+            SELECT sigungu_cd, any_value(sigungu) AS sigungu, umd,
+                   count(*) AS n,
+                   median(lat) AS lat, median(lon) AS lon
+            FROM trade
+            WHERE lat IS NOT NULL AND lon IS NOT NULL
+              AND sigungu_cd IS NOT NULL AND umd IS NOT NULL AND umd <> ''
+              AND coalesce(is_cancelled, FALSE) = FALSE
+            GROUP BY sigungu_cd, umd
+            HAVING count(*) >= {PLACE_MIN_TRADES}
+            ORDER BY sigungu_cd, umd
+        """).fetchdf()
+    out = []
+    for r in df.itertuples(index=False):
+        out.append({
+            "k": "umd",
+            "n": str(r.umd),
+            # 어느 시군구의 '중앙동' 인지 안 적으면 같은 이름이 수십 개다.
+            "p": str(r.sigungu or ""),
+            "sg": str(r.sigungu_cd),
+            "c": int(r.n),
+            "lat": round(float(r.lat), 5),
+            "lon": round(float(r.lon), 5),
+        })
+    return out
+
+
 def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     band = band or primary_band()
     panel_path = PROCESSED / "panel.parquet"
@@ -1296,6 +1347,15 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     except Exception as exc:                       # noqa: BLE001
         # 조인 표가 없는 실행(캐시가 비었을 때)에서도 나머지는 나가야 한다.
         print(f"  ⚠ 필지 진단 또래 분포를 못 만들었습니다: {exc}")
+    # 검색 색인. 실패해도 나머지 화면은 살린다 — 검색이 없는 것과
+    # 화면이 죽는 것은 사용자에게 전혀 다른 일이다.
+    try:
+        places = _places()
+        _write("places.json", {"places": places})
+        print(f"  검색 색인 {len(places):,}곳 (읍·면·동)")
+    except Exception as exc:                                # noqa: BLE001
+        print(f"  ⚠ 검색 색인을 못 만들었습니다: {type(exc).__name__}: {exc}")
+
     _write("traffic.json", _traffic_ranking())
     _write("chart.json", _chart_series())
     _write("tollgates.json", _records(merged))

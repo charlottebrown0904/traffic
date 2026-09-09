@@ -1533,6 +1533,125 @@ const FAKE_LEAFLET = () => {
     await page.evaluate(() => { window.__zoom = 7; });
 
     console.log();
+    console.log('9-D. 단위 규칙 · 5분위 눈금 · 지역 검색 (2026-09-09 지시)');
+
+    // ── 단위: 평이 먼저다 ──────────────────────────────────────────
+    // 사장님 지적: "지도 카드는 86.9만/평, 말풍선은 592,441원/평,
+    // 필지 카드는 250,000원/㎡." 셋을 머릿속에서 환산하게 두면 안 된다.
+    const units = await page.evaluate(() => ({
+      card: lpMoney(250000),
+      py: perPy(250000),
+      m2: perM2Str(250000),
+    }));
+    check('훑는 자리는 평당 만/억으로 줄인다', /만$|억$/.test(units.card),
+          units.card);
+    // 250,000원/㎡ × 3.3058 ≒ 826,446원/평. 평이 ㎡ 보다 크다는 것이
+    // 곧 '평으로 환산했다' 는 증거다.
+    check('짚는 자리는 평당 원 그대로',
+          Number(units.py.replace(/,/g, '')) > 250000 * 3,
+          `${units.py}원/평 · ${units.m2}원/㎡`);
+
+    // ── 5분위 눈금 ────────────────────────────────────────────────
+    await page.evaluate(() => { window.__zoom = 11; });
+    await lpFire();
+    const scale = await page.evaluate(() => {
+      const el = document.getElementById('lp-scale');
+      return {
+        hidden: !el || el.hidden,
+        peek: window.__lpScale || null,
+        cells: el ? el.querySelectorAll('.lps-cell').length : 0,
+        ticks: el ? [...el.querySelectorAll('.lps-ticks span')]
+          .map((x) => x.textContent) : [],
+        text: el ? el.textContent : '',
+        // 오른쪽 아래는 Leaflet 출처 표시 자리다. 겹치면 둘 다 못 읽는다.
+        box: el && !el.hidden ? el.getBoundingClientRect().toJSON() : null,
+      };
+    });
+    check('눈금이 지도에 뜬다', !scale.hidden && !!scale.peek);
+    if (scale.peek && scale.peek.kind === 'quantile') {
+      check('칸이 다섯이고 눈금이 여섯이다',
+            scale.cells === 5 && scale.ticks.length === 6,
+            `칸 ${scale.cells} · 눈금 ${scale.ticks.length}`);
+      // 끊는 자리는 올라가야 한다. 뒤집혀 있으면 색과 값이 어긋난다.
+      const nums = scale.ticks.map((t) => {
+        const m2 = /([\d.]+)(억|만)?/.exec(t);
+        if (!m2) return NaN;
+        return Number(m2[1]) * (m2[2] === '억' ? 10000 : 1);
+      });
+      check('끊는 자리가 오름차순이다',
+            nums.every((v, i) => i === 0 || !(v < nums[i - 1])),
+            scale.ticks.join(' · '));
+    } else {
+      check('분위를 못 낼 때는 그렇다고 말한다', /순위/.test(scale.text),
+            scale.text.slice(0, 60));
+    }
+    // "왜 이 색인가" 를 말해야 한다 — 그것이 이 눈금의 존재 이유다.
+    check('화면 안에서 끊는다는 것을 적는다', /이 화면 안에서/.test(scale.text),
+          scale.text.slice(0, 40));
+
+    // ── 지역 검색 ─────────────────────────────────────────────────
+    const find = await page.evaluate(async () => {
+      const q = document.getElementById('find-q');
+      q.value = '평택';
+      q.dispatchEvent(new Event('input'));
+      await new Promise((r) => setTimeout(r, 400));
+      const list = document.getElementById('find-list');
+      const items = [...list.querySelectorAll('li[data-i]')];
+      const before = { zoom: window.__zoom, at: window.__center };
+      if (items[0]) items[0].dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 200));
+      return {
+        n: items.length,
+        first: items[0] ? items[0].textContent : '',
+        went: window.__find || null,
+        before,
+      };
+    });
+    check('이름을 치면 후보가 뜬다', find.n > 0, `${find.n}개 · ${find.first}`);
+    check('첫 후보가 친 글자로 시작한다', /평택/.test(find.first), find.first);
+    check('고르면 그리로 간다', !!find.went,
+          find.went ? `${find.went.went} (${find.went.level})` : '(안 감)');
+
+    // 없는 이름. **조용히 비면 안 된다** — 사용자는 고장으로 읽는다.
+    // 그리고 왜 지번이 안 되는지도 그 자리에서 말해야 한다.
+    const none = await page.evaluate(async () => {
+      const q = document.getElementById('find-q');
+      q.value = '있을리없는지명';
+      q.dispatchEvent(new Event('input'));
+      await new Promise((r) => setTimeout(r, 300));
+      return document.getElementById('find-list').textContent;
+    });
+    check('없으면 없다고 말한다', /없습니다/.test(none), none.slice(0, 40));
+    check('지번을 못 찾는 이유를 그 자리에서 밝힌다',
+          /읍·면·동까지/.test(none) && /가려져/.test(none), none.slice(0, 80));
+
+    // 겹침을 **실제로 잰다.** 지난번에 칩이 Leaflet +/- 와 겹쳐 지적받았다.
+    const overlap = await page.evaluate(() => {
+      const box = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return (r.width && r.height) ? r : null;
+      };
+      const hit = (a, b) => !!(a && b) && !(a.right <= b.left || b.right <= a.left
+                                            || a.bottom <= b.top || b.bottom <= a.top);
+      const find2 = box('.map-find');
+      return {
+        zoomCtl: hit(find2, box('.leaflet-control-zoom')),
+        tools: hit(find2, box('.map-tools')),
+        scaleAttr: hit(box('.lp-scale'), box('.leaflet-control-attribution')),
+      };
+    });
+    check('검색칸이 +/- 단추와 안 겹친다', !overlap.zoomCtl);
+    check('검색칸이 상단 스위치와 안 겹친다', !overlap.tools);
+    check('눈금이 출처 표시와 안 겹친다', !overlap.scaleAttr);
+
+    // 검색 뒤 배율이 바뀌었으므로 되돌린다.
+    await page.evaluate(() => { window.__zoom = 11; });
+    await lpFire();
+
+    console.log();
     console.log('9-C. 필지 진단 — 다섯 축을 또래 안 백분위로');
     /* 사장님 지시(2026-09-08): "해당 필지를 클릭하면 스파이더 차트를 통해
      * 여러가지 인자들을 분석하여 어떤 방향이 좋을 지 판단할 수 있도록"

@@ -146,7 +146,7 @@ async function boot() {
   } catch (err) {
     state.chart = null;
   }
-  // 행정구역 인구. 없으면 그 스위치만 숨긴다.
+  // 행정구역. 인구와 관청 좌표가 여기서 온다.
   try {
     const r = await fetch('/app/data/regions.json');
     if (r.ok) state.regions = await r.json();
@@ -2334,6 +2334,23 @@ const lpUmdPending = new Set();
 
 /* ㎡ 단가를 **평당**으로 바꿔 짧게 쓴다. ㎡당 30만원은 감이 안 오지만
  * 평당 100만원은 바로 온다. */
+/* ─── 값을 적는 규칙 ───────────────────────────────────────────────
+ *
+ * 사장님 지적(2026-09-09): "값의 단위가 화면마다 다릅니다. 지도 카드는
+ * 86.9만/평, 말풍선은 592,441원/평, 필지 카드는 250,000원/㎡."
+ *
+ * 규칙은 둘이고, 여기서만 정한다.
+ *
+ *   훑는 자리(지도 카드·요약·눈금)   → 평당, 만/억으로 줄여서   lpMoney()
+ *   짚는 자리(말풍선·상세)           → 평당 원 그대로, ㎡ 는 아랫줄
+ *                                      perPy() / perM2()
+ *
+ * **㎡ 를 먼저 적지 않는다.** 토지·공장을 실제로 사고파는 자리에서는
+ * 평으로 값을 셈한다. ㎡ 는 공부(公簿)의 단위라 확인용으로 뒤에 붙인다.
+ */
+const perPy = (perM2) => Math.round(perM2 * PYEONG_M2).toLocaleString('ko-KR');
+const perM2Str = (perM2) => Math.round(perM2).toLocaleString('ko-KR');
+
 function lpMoney(perM2) {
   const py = perM2 * PYEONG_M2;
   if (py >= 100000000) return `${(py / 100000000).toFixed(py >= 1000000000 ? 0 : 1)}억`;
@@ -2721,8 +2738,8 @@ function lpSpark(trend) {
 }
 
 function lpTip(it, level, w) {
-  const per = Math.round(it.v).toLocaleString('ko-KR');
-  const py = Math.round(it.v * PYEONG_M2).toLocaleString('ko-KR');
+  const per = perM2Str(it.v);
+  const py = perPy(it.v);
   const stat = state.lpStat === 'avg' ? '평균' : '중앙값';
   let html = `<div class="lp-tip-h">${escapeHtml(it.full || it.name)}`
     + `${it.sub ? ` <em>${escapeHtml(it.sub)}</em>` : ''}</div>`
@@ -2820,7 +2837,60 @@ function drawLandPrice() {
   updateLpNote({ n: shown.length, total: all.length, level: level.label, scale, w });
 }
 
+/* 5분위 눈금 (사장님 지시 2026-09-09, 2번).
+ *
+ * "왜 이 색인가 가 지도에 안 적혀 있습니다. 경기도를 보다 충북으로
+ *  넘어가면 같은 평당 80만원이 짙은 파랑에서 옅은 파랑으로 바뀝니다."
+ *
+ * 맞다. 색은 **화면 안에서** 끊는다 — 그래야 그 지역 안에서 어디가 비싼지
+ * 보인다. 전국 분위로 칠하면 경기도만 봤을 때 전부 짙은 파랑이 된다.
+ * 다만 그 설계를 화면이 말하지 않으면 고장으로 읽힌다. 끊는 자리를
+ * 숫자로 적고, **'이 화면 안에서' 라는 말을 함께 적는다.**
+ *
+ * 곳이 다섯도 안 되면 분위를 못 낸다. 그때는 순위로 색을 펴는데, 그것도
+ * 그렇다고 말한다 — 눈금 없이 색만 있으면 없는 정밀도를 있는 것처럼
+ * 보이게 한다. */
+function drawLpScale(info) {
+  const el = document.getElementById('lp-scale');
+  if (!el) return;
+  const groups = lpGroups();
+  if (!info || !info.n || !groups.length || !info.scale) {
+    el.hidden = true;
+    window.__lpScale = null;
+    return;
+  }
+  const sc = info.scale;
+  if (sc.kind !== 'quantile') {
+    el.hidden = false;
+    el.innerHTML = '<div class="lps-h">이 화면 안에서 순위로 색을 폅니다</div>'
+      + `<div class="lps-note">비교할 곳이 ${sc.sorted.length}곳뿐이라`
+      + ' 5분위를 못 냅니다.</div>';
+    window.__lpScale = { kind: 'rank', n: sc.sorted.length };
+    return;
+  }
+  // 칸 다섯의 경계. 맨 아래와 맨 위는 실제 최소·최대를 적는다 —
+  // '0원부터' 라고 적으면 없는 칸을 있는 것처럼 보이게 한다.
+  const lo = sc.sorted[0];
+  const hi = sc.sorted[sc.sorted.length - 1];
+  const edges = [lo, ...sc.breaks, hi];
+  el.hidden = false;
+  el.innerHTML = '<div class="lps-h">이 화면 안에서 5분위 · 평당</div>'
+    + '<div class="lps-bar">'
+    + LP_COLORS.map((c, i) =>
+      `<span class="lps-cell" style="background:${c}" title="${
+        escapeHtml(lpMoney(edges[i]))}~${escapeHtml(lpMoney(edges[i + 1]))}"></span>`)
+      .join('') + '</div>'
+    + '<div class="lps-ticks">'
+    + edges.map((v, i) => `<span${i === 0 ? ' class="is-first"' : ''}${
+      i === edges.length - 1 ? ' class="is-last"' : ''}>${
+      escapeHtml(lpMoney(v))}</span>`).join('')
+    + '</div>'
+    + '<div class="lps-note">지역을 옮기면 끊는 자리도 함께 바뀝니다.</div>';
+  window.__lpScale = { kind: 'quantile', edges };
+}
+
 function updateLpNote(info) {
+  drawLpScale(info);
   const el = document.getElementById('lp-note');
   if (!el) return;
   const groups = lpGroups();
@@ -3188,8 +3258,12 @@ function parcelAxes(parcel, at) {
     key: 'price', label: '가격 수준',
     pct: (peer && parcel.official_price)
       ? pctFromQuantiles(parcel.official_price, peer.price) : null,
+    // **평이 먼저다** (사장님 지적 2026-09-09: 화면마다 단위가 다르다).
+    // 여기만 ㎡ 로 적혀 있어서, 옆 카드의 '86.9만/평' 과 견주려면 읽는
+    // 사람이 3.3 을 곱해야 했다.
     raw: parcel.official_price
-      ? `공시지가 ${Math.round(parcel.official_price).toLocaleString('ko-KR')}원/㎡`
+      ? `공시지가 ${perPy(parcel.official_price)}원/평`
+        + ` (${perM2Str(parcel.official_price)}원/㎡)`
       : '공시지가 없음',
   });
 
@@ -3764,6 +3838,152 @@ document.addEventListener('keydown', (e) => {
 /* 레일 접기 로직은 레일과 함께 사라졌다 (2026-09-08). 필터는 이제
    아래 시트에 있고, 시트는 닫혀서 시작하므로 접을 것이 없다. */
 
+/* ─── 지역 검색 ───────────────────────────────────────────────────
+ *
+ * 사장님 지시(2026-09-09, 3번): "첫 화면이 전국인데, 정작 쓸 사람은
+ * 자기 지역부터 봅니다."
+ *
+ * **필지로는 못 간다.** 실거래 지번이 마스킹돼 있어(1**) 어느 필지인지
+ * 특정할 수가 없다(scripts/cadastral_probe.py 1절). 갈 수 있는 가장
+ * 아래가 읍·면·동이고, 안내문이 그것을 밝힌다.
+ *
+ * 색인(places.json)은 **누르기 전까지 안 받는다.** 첫 화면에 5천 줄을
+ * 얹으면 지도가 그만큼 늦게 뜨는데, 검색은 대부분의 방문에서 안 쓰인다.
+ */
+const FIND_MAX = 8;
+const FIND_ZOOM = { sido: 9, sigungu: 11, umd: 13 };
+let findIndex = null;
+let findLoading = null;
+
+async function findLoad() {
+  if (findIndex) return findIndex;
+  if (findLoading) return findLoading;
+  findLoading = (async () => {
+    const rows = [];
+    // 시·도와 시·군·구는 이미 받아 둔 regions.json 에 있다. 같은 것을
+    // 두 번 받지 않는다.
+    const sido = new Map();
+    (state.regions || []).forEach((r) => {
+      rows.push({ k: 'sigungu', n: r.name, p: r.sido || '',
+                  lat: r.office_lat || r.lat, lon: r.office_lon || r.lon });
+      const sd = r.sido || '';
+      if (sd && !sido.has(sd)) sido.set(sd, { lat: r.lat, lon: r.lon, n: 0 });
+      if (sd) { const g = sido.get(sd); g.n += 1; }
+    });
+    sido.forEach((v, k) => rows.push({ k: 'sido', n: k, p: '',
+                                       lat: v.lat, lon: v.lon }));
+    try {
+      const r = await fetch('/app/data/places.json');
+      if (r.ok) {
+        const body = await r.json();
+        (body.places || []).forEach((x) => rows.push(x));
+      }
+    } catch (err) {
+      // 읍·면·동이 없어도 시·군·구까지는 찾을 수 있다. 통째로 죽이지 않는다.
+    }
+    findIndex = rows.filter((x) => typeof x.lat === 'number'
+                                   && typeof x.lon === 'number');
+    return findIndex;
+  })();
+  return findLoading;
+}
+
+/* 앞에서 맞는 것을 먼저. '동' 을 쳤을 때 '공도읍' 보다 '동면' 이
+   위로 와야 한다 — 사람은 자기가 친 글자로 시작하는 것을 먼저 찾는다. */
+function findMatch(rows, q) {
+  const s2 = q.trim();
+  if (s2.length < 1) return [];
+  const starts = [];
+  const inside = [];
+  for (const r of rows) {
+    const name = String(r.n || '');
+    const i = name.indexOf(s2);
+    if (i === 0) starts.push(r);
+    else if (i > 0) inside.push(r);
+    else if (String(r.p || '').indexOf(s2) === 0) inside.push(r);
+    if (starts.length >= FIND_MAX * 3) break;
+  }
+  const rank = { sido: 0, sigungu: 1, umd: 2 };
+  const by = (a, b) => (rank[a.k] - rank[b.k]) || ((b.c || 0) - (a.c || 0));
+  return starts.sort(by).concat(inside.sort(by)).slice(0, FIND_MAX);
+}
+
+function findGo(row) {
+  if (!map) return;
+  map.setView([row.lat, row.lon], FIND_ZOOM[row.k] || 12);
+  window.__find = { went: row.n, level: row.k };
+}
+
+function wireFind() {
+  const input = document.getElementById('find-q');
+  const list = document.getElementById('find-list');
+  if (!input || !list) return;
+  let hits = [];
+  let cur = -1;
+
+  const close = () => {
+    list.hidden = true;
+    input.setAttribute('aria-expanded', 'false');
+    cur = -1;
+  };
+  const paint = () => {
+    if (!hits.length) {
+      list.innerHTML = '<li class="find-none">찾는 이름이 없습니다'
+        + ' <em>(읍·면·동까지 찾습니다 — 지번은 자료가 가려져 있어'
+        + ' 못 찾습니다)</em></li>';
+      list.hidden = false;
+      input.setAttribute('aria-expanded', 'true');
+      return;
+    }
+    const kind = { sido: '시·도', sigungu: '시·군·구', umd: '읍·면·동' };
+    list.innerHTML = hits.map((r, i) =>
+      `<li role="option" data-i="${i}"${i === cur ? ' class="is-on"' : ''}`
+      + ` aria-selected="${i === cur}">`
+      + `<b>${escapeHtml(r.n)}</b>`
+      + `<span>${escapeHtml(r.p || '')}</span>`
+      + `<em>${kind[r.k] || ''}</em></li>`).join('');
+    list.hidden = false;
+    input.setAttribute('aria-expanded', 'true');
+  };
+
+  const run = async () => {
+    const q = input.value;
+    if (!q.trim()) { close(); return; }
+    hits = findMatch(await findLoad(), q);
+    cur = -1;
+    paint();
+  };
+
+  input.addEventListener('input', run);
+  input.addEventListener('focus', () => { if (input.value.trim()) run(); });
+  input.addEventListener('keydown', (e) => {
+    if (list.hidden) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      cur = Math.max(0, Math.min(hits.length - 1,
+                                 cur + (e.key === 'ArrowDown' ? 1 : -1)));
+      paint();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const pick = hits[cur >= 0 ? cur : 0];
+      if (pick) { findGo(pick); input.blur(); close(); }
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  });
+  list.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('li[data-i]');
+    if (!li) return;
+    e.preventDefault();
+    findGo(hits[Number(li.dataset.i)]);
+    input.blur();
+    close();
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.map-find')) close();
+  });
+}
+
 /* 지도 위 스위치 — 이제 둘뿐이다 (IC·영업소 · 용도지역). */
 (function mapSwitches() {
   const zbox = document.getElementById('zoning-bg');
@@ -3789,5 +4009,7 @@ document.addEventListener('keydown', (e) => {
   }
 
 })();
+
+wireFind();
 
 boot();
