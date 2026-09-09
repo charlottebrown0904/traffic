@@ -100,85 +100,80 @@ def main() -> int:
         print(f"  {mark} {v['org']}/{v['tbl']}  {span}")
         print(f"      {v['name']}")
 
-    head("3. 표에 무엇을 물어야 하는가 — 분류축과 항목을 먼저 받는다")
-    print("  지난 탐침이 200 에 실려 온 오류를 성공으로 읽었다 —")
-    print("  '1행 · 코드 자릿수 [0]' 이 그것이었다. 이제는 err 를 잡는다.")
-    print()
-    print("  읍면동 표는 축이 둘 이상이다(지역 × 5세별). objL1 만 보내면")
-    print("  '필수요청변수값이 누락되었습니다 (objL)' 로 막힌다. 축 이름을")
-    print("  기억으로 적지 않고 **물어본다.**")
+    head("3. 무엇을 어디로 보내야 하는가 — 조합을 하나씩 두드린다")
+    print("  run 68 에서 메타 엔드포인트도 err 20 을 냈다. 이름을 한 번 더")
+    print("  추측하는 대신 **후보를 다 두드려 보고 답하는 것을 쓴다.**")
 
-    picked = None
-    for v in list(found.values())[:4]:
-        print(f"\n  · {v['org']}/{v['tbl']}  {v['name'][:40]}")
+    top = list(found.values())[:1]
+    if not top:
+        print("\n  ⛔ 볼 표가 없습니다.")
+        return 0
+    v = top[0]
+    print(f"\n  대상: {v['org']}/{v['tbl']}  {v['name'][:44]}")
+
+    print("\n  (가) 메타 엔드포인트 후보")
+    meta_ok = None
+    for url in kosis.META_URLS:
+        for kind in ("OBJ", "ITM"):
+            try:
+                rows = kosis.fetch_meta(v["org"], v["tbl"], kind, url=url)
+            except Exception as exc:                        # noqa: BLE001
+                print(f"      {url.rsplit('/', 1)[-1]:<28} {kind}  "
+                      f"{type(exc).__name__}: {str(exc)[:70]}")
+                continue
+            print(f"      {url.rsplit('/', 1)[-1]:<28} {kind}  ✓ {len(rows)}건")
+            if rows:
+                print(f"          칸: {sorted(rows[0])[:10]}")
+                print(f"          첫 줄: {dict(list(rows[0].items())[:6])}")
+            if kind == "OBJ" and rows and meta_ok is None:
+                meta_ok = (url, rows)
+
+    print("\n  (나) 자료 요청 — 축을 몇 개까지 채워야 통과하는가")
+    # err 20 은 '축이 모자라다', err 31 은 '너무 크다'. **둘은 다른 말이다** —
+    # 31 이 나오면 파라미터는 맞은 것이고 범위만 줄이면 된다.
+    combos = [
+        ({}, "objL1 만"),
+        ({"objL2": "ALL"}, "objL1+objL2"),
+        ({"objL2": "ALL", "objL3": "ALL"}, "objL1+2+3"),
+        ({"objL2": "ALL", "objL3": "ALL", "objL4": "ALL"}, "objL1+2+3+4"),
+    ]
+    passed = None
+    for obj, label in combos:
         try:
-            objs = kosis.fetch_meta(v["org"], v["tbl"], "OBJ")
+            rows = kosis.fetch_table(v["org"], v["tbl"], "2024", "2024",
+                                     obj=obj, quiet=True)
         except Exception as exc:                            # noqa: BLE001
-            print(f"      분류축 못 받음 — {type(exc).__name__}: {str(exc)[:120]}")
+            print(f"      {label:<14} {type(exc).__name__}: {str(exc)[:80]}")
             continue
-        # 축 이름(objL1/objL2…)과 그 축의 코드 몇 개.
-        axes: dict[str, list[tuple[str, str]]] = {}
-        for r in objs:
-            ax = str(r.get("OBJ_ID") or r.get("objId") or "")
-            code = str(r.get("ITM_ID") or r.get("OBJ_ITM_ID")
-                       or r.get("objItmId") or r.get("C1") or "")
-            name = str(r.get("OBJ_ITM_NM") or r.get("objItmNm")
-                       or r.get("ITM_NM") or "")
-            if ax:
-                axes.setdefault(ax, []).append((code, name))
-        for ax, vals in axes.items():
-            head3 = " · ".join(f"{c}={n}" for c, n in vals[:3])
-            print(f"      {ax}  {len(vals)}개  {head3}")
-        try:
-            itms = kosis.fetch_meta(v["org"], v["tbl"], "ITM")
-            names = [str(r.get("ITM_NM") or r.get("itmNm") or "") for r in itms]
-            ids = [str(r.get("ITM_ID") or r.get("itmId") or "") for r in itms]
-            print(f"      항목 {len(itms)}개: "
-                  + " · ".join(f"{i2}={n}" for i2, n in list(zip(ids, names))[:5]))
-            # 총인구를 고른다. 없으면 첫 항목.
-            tot = next((i2 for i2, n in zip(ids, names) if "총인구" in n), None)
-            if picked is None and axes:
-                picked = {"v": v, "axes": axes, "itm": tot or (ids[0] if ids else "ALL")}
-        except Exception as exc:                            # noqa: BLE001
-            print(f"      항목 못 받음 — {type(exc).__name__}: {str(exc)[:120]}")
+        print(f"      {label:<14} ✓ {len(rows):,}행")
+        passed = (obj, rows)
+        break
 
-    head("4. 축을 채워 한 조각만 받아 본다 — 코드가 무엇으로 오는가")
+    head("4. 코드가 무엇으로 오는가")
     print("  **자릿수가 급소다.** 우리 거래에는 법정동 '이름' 만 있다.")
     print("  KOSIS 가 행정동 코드로 주면 짝이 안 맞는다 — 행정동 '중앙동'")
     print("  하나가 법정동 여럿을 덮는 일이 흔하다.")
-    if not picked:
-        print("\n  ⛔ 분류축을 못 받아 여기서 멈춥니다.")
+    if not passed:
+        print("\n  ⛔ 아직 통과한 조합이 없습니다.")
+        print("     (가)에서 답한 엔드포인트가 있으면 그 코드 목록으로")
+        print("     objL1 을 하나씩 넣어 다시 돌립니다.")
+        if meta_ok:
+            url, rows = meta_ok
+            print(f"\n     답한 메타: {url}  {len(rows)}건")
         return 0
 
-    v = picked["v"]
-    axes = picked["axes"]
-    ax_names = sorted(axes)
-    print(f"\n  고른 표: {v['org']}/{v['tbl']}")
-    print(f"  축 {ax_names} · 항목 {picked['itm']}")
-
-    # 첫 축은 지역이다. **전국을 한 번에 부르면 4만 셀을 넘긴다** —
-    # 지난 탐침의 err 31 이 그것이었다. 지역 코드 하나만 넣어 본다.
-    first_ax = ax_names[0]
-    region_codes = [c for c, _ in axes[first_ax] if c]
-    tries = region_codes[:2] or ["ALL"]
-    for rc in tries:
-        obj = {ax: "ALL" for ax in ax_names[1:]}
-        print(f"\n  · {first_ax}={rc} · " + " · ".join(f"{k}={x}" for k, x in obj.items()))
-        try:
-            rows = kosis.fetch_table(v["org"], v["tbl"], "2024", "2024",
-                                     obj_l1=rc, itm_id=picked["itm"],
-                                     obj=obj, quiet=True)
-        except Exception as exc:                            # noqa: BLE001
-            print(f"      막힘 — {type(exc).__name__}: {str(exc)[:200]}")
-            continue
-        print(f"      {len(rows):,}행")
-        for r in rows[:5]:
-            print("      " + " | ".join(
-                f"{k}={r.get(k)}" for k in ("C1", "C1_NM", "C2", "C2_NM",
-                                            "ITM_NM", "DT") if r.get(k)))
-        lens = sorted({len(str(r.get("C1") or "")) for r in rows})
-        lens2 = sorted({len(str(r.get("C2") or "")) for r in rows})
-        print(f"      C1 자릿수 {lens} · C2 자릿수 {lens2}")
+    obj, rows = passed
+    print(f"\n  통과한 조합: objL1=ALL · {obj}")
+    print(f"  {len(rows):,}행")
+    for r in rows[:6]:
+        print("      " + " | ".join(
+            f"{k}={r.get(k)}" for k in ("C1", "C1_NM", "C2", "C2_NM",
+                                        "ITM_NM", "PRD_DE", "DT")
+            if r.get(k) is not None))
+    for col in ("C1", "C2", "C3"):
+        lens = sorted({len(str(r.get(col) or "")) for r in rows}) or [0]
+        if lens != [0]:
+            print(f"      {col} 자릿수 {lens}")
 
     print()
     print("=" * 68)
@@ -186,11 +181,13 @@ def main() -> int:
     print("=" * 68)
     print("  1절이 비면        → 검색어를 바꾼다. 없는 것이 아니라 못 찾은 것이다.")
     print("  2절이 △ 면        → 최근 몇 해만 쓴다. 옛 해는 시군구로 남긴다.")
-    print("  3절이 막히면      → 그 표는 못 쓴다. 다음 후보로 간다.")
-    print("  4절 C1 이 10자리  → 법정동코드다. 그대로 붙는다.")
-    print("  4절 C1 이 7~8자리 → 행정동코드다. 법정동과 1:1 이 아니다 —")
-    print("                      이름으로 붙이되 못 붙는 것을 세어 밝힌다.")
-    print("  4절이 err 31 이면 → 아직 크다. 축을 더 잘게 쪼갠다.")
+    print("  3-가 가 다 막히면 → 메타 엔드포인트 이름을 더 찾는다.")
+    print("  3-나 가 err 31 이면 → **파라미터는 맞았다.** 범위만 줄이면 된다")
+    print("                       (시도별로 나눠 부른다).")
+    print("  3-나 가 err 20 이면 → 축이 아직 모자라다.")
+    print("  4절 C1 이 10자리   → 법정동코드다. 그대로 붙는다.")
+    print("  4절 C1 이 7~8자리  → 행정동코드다. 법정동과 1:1 이 아니다 —")
+    print("                       이름으로 붙이되 못 붙는 것을 세어 밝힌다.")
     return 0
 
 

@@ -347,7 +347,20 @@ def _err(body) -> str | None:
     return None
 
 
-def fetch_meta(org_id: str, tbl_id: str, kind: str = "OBJ") -> list[dict]:
+# 메타(분류축·항목) 엔드포인트 후보.
+#
+# **어느 것인지 모른다.** statisticsParameterData.do 에 method=getMeta 를
+# 붙여 봤더니 err 20 이 왔다(run 68). 이름을 한 번 더 추측하는 대신
+# 후보를 다 두드려 보고, 답하는 것을 쓴다.
+META_URLS = [
+    "https://kosis.kr/openapi/statisticsData.do",
+    "https://kosis.kr/openapi/Param/statisticsParameterData.do",
+    "https://kosis.kr/openapi/statisticsExplData.do",
+]
+
+
+def fetch_meta(org_id: str, tbl_id: str, kind: str = "OBJ",
+               url: str | None = None) -> list[dict]:
     """통계표의 **분류축·항목 목록**을 받는다.
 
     읍면동 표는 분류축이 둘 이상이라(지역 × 5세별) objL1 만 보내면
@@ -358,7 +371,7 @@ def fetch_meta(org_id: str, tbl_id: str, kind: str = "OBJ") -> list[dict]:
       kind="ITM"  항목 (총인구수·남자·여자 …)
       kind="TBL"  표 자체 (기간 등)
     """
-    code, text = raw(DATA_URL, {
+    code, text = raw(url or META_URLS[0], {
         "method": "getMeta", "apiKey": "", "format": "json", "jsonVD": "Y",
         "orgId": org_id, "tblId": tbl_id, "type": kind,
     })
