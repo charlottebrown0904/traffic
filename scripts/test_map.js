@@ -389,6 +389,10 @@ const FAKE_LEAFLET = () => {
           // 추이도 한 해뿐이라 꺾은선을 그릴 수 없다.
           47940: { y3: [3, 30000, 30000, 2023], c20: [20, 28000, 28000, 2009],
                    s: [[2023, 3, 30000]] },
+          // **거래가 있었지만 다섯 건이 안 돼 값을 안 쓴 곳.**
+          // '거래 0건' 과 다르다 — 여기에 0 을 적으면 세 건 있던 곳을
+          // 없던 곳이라고 말하는 것이 된다 (webexport few 칸).
+          41220: { few: { y3: 3, y1: 1 } },
         },
         // **도시는 계획관리가 없고 자연녹지만 있다** (사장님 지적,
         // 2026-09-08). 그 상황을 그대로 만들어 둔다 — 자연녹지는 세
@@ -1450,23 +1454,50 @@ const FAKE_LEAFLET = () => {
     await lpFire();
     await lpRail(['계획관리']);
     const lp1 = await lpPick('y3', 'p50');
-    check('용도지역을 켜면 지역이 칠해진다', lp1.n === 3 && lp1.peek.on,
-          `${lp1.n}곳 · on=${lp1.peek.on}`);
+    // **거래가 없어도 지자체는 다 나온다** (사장님 지시 2026-09-09).
+    // 계획관리 거래가 있는 곳은 셋뿐이지만 fixture 의 지자체는 일곱이다.
+    // 예전에는 셋만 그렸고, 그래서 대전에서 유성구·대덕구만 남고
+    // 동구·중구·서구가 통째로 사라졌다.
+    check('용도지역을 켜면 지역이 칠해진다',
+          lp1.n === 7 && lp1.peek.withValue === 3 && lp1.peek.on,
+          `${lp1.n}곳 중 값이 있는 곳 ${lp1.peek.withValue}곳 · on=${lp1.peek.on}`);
+    check('거래가 없는 지자체도 이름이 남는다',
+          ['종로구', '강남구', '용인시', '평택시']
+            .every((nm) => lp1.html.some((h) => h.indexOf(nm) >= 0)),
+          lp1.html.filter((h) => /0만/.test(h)).length + '개가 0만');
+    // 사장님 지시: "거래 0만/평으로 표기". 값 자리를 비우면 그 태그가
+    // 무엇을 뜻하는지 알 수 없다.
+    check('거래가 없으면 0만/평이라고 적는다',
+          lp1.html.filter((h) => /<i>0만<u>\/평<\/u><\/i>/.test(h)).length === 3,
+          lp1.html.find((h) => /0만/.test(h)) || '없음');
+    // 0 과 '적다' 는 다르다. 평택시는 세 건 있었지만 다섯 건이 안 돼
+    // 값을 안 썼다 — 여기에 0 을 적으면 거짓이 된다.
+    check('다섯 건이 안 되는 곳은 0이 아니라 건수를 적는다',
+          lp1.html.some((h) => /평택시/.test(h) && /거래 3건/.test(h)),
+          lp1.html.find((h) => /평택시/.test(h)) || '없음');
     // **사각형 표찰: 이름 위, 값 아래.** 알약에 나란히 쓰면 이름이 길수록
     // 옆으로 늘어나 서로 겹친다.
     check('사각형 표찰에 이름이 위, 값이 아래다',
           // 이름 뒤에 <em>인구</em> 가 붙을 수 있다 (사장님 지시 2026-09-08).
-          lp1.html.every((h) => /class="lp-card"/.test(h)
+          // 거래가 없는 칸은 class 가 'lp-card is-none' 이다.
+          lp1.html.every((h) => /class="lp-card( is-none)?"/.test(h)
                                && /<b>[^<]+(<em>[^<]*<\/em>)?<\/b><i>/.test(h)),
-          (lp1.html[0] || '없음').slice(0, 100));
+          (lp1.html.find((h) => !/<b>[^<]+(<em>[^<]*<\/em>)?<\/b><i>/.test(h))
+           || lp1.html[0] || '없음').slice(0, 160));
     const lp1Fills = fillsOf(lp1.html);
+    // 값이 있는 칸만 파랗다. 거래가 없는 칸을 '가장 싼 20%' 색으로 칠하면
+    // 그 지역이 싸다고 말하는 것이 된다 — 회색은 '모른다' 다.
+    const lp1Blue = lp1Fills.filter((c) => c !== '#E4E8ED');
     check('색이 파란 계열이다 (빨강·노랑이 없다)',
-          lp1Fills.length === 3 && lp1Fills.every((c) => {
+          lp1Blue.length === 3 && lp1Blue.every((c) => {
             const r = parseInt(c.slice(1, 3), 16);
             const bl = parseInt(c.slice(5, 7), 16);
             return bl > r;
           }), lp1Fills.join(' '));
-    check('지역이 적어도 값이 다르면 색이 갈린다', new Set(lp1Fills).size === 3,
+    check('지역이 적어도 값이 다르면 색이 갈린다', new Set(lp1Blue).size === 3,
+          lp1Blue.join(' '));
+    check('거래가 없는 칸은 파란 칸에 안 들어간다 (회색)',
+          lp1Fills.filter((c) => c === '#E4E8ED').length === 4,
           lp1Fills.join(' '));
     check('순위로 편 것을 분위수인 척하지 않는다',
           /순위로 색을 폄/.test(lp1.note), lp1.note);
@@ -1474,9 +1505,12 @@ const FAKE_LEAFLET = () => {
           /^계획관리 ·/.test(lp1.note), lp1.note);
     // 사장님 지시(2026-09-08): "xx원/평, xx원/㎡ 으로 수정".
     // 값만 있으면 평인지 ㎡인지 알 수 없다.
+    // 값이 있는 칸에만 붙는다. '거래 3건/평' 은 말이 안 된다.
     check('표찰에 단위를 붙인다 (평인지 ㎡인지 알 수 있게)',
-          lp1.html.every((h) => /<u>\/평<\/u>/.test(h)),
-          lp1.html.find((h) => /장안구/.test(h)) || '없음');
+          lp1.html.filter((h) => !/거래 \d+건/.test(h))
+            .every((h) => /<u>\/평<\/u>/.test(h))
+          && !/<u>\/평<\/u>/.test(lp1.html.find((h) => /거래 3건/.test(h)) || 'x'),
+          lp1.html.find((h) => /거래 3건/.test(h)) || '없음');
     check('글자는 평당으로 접어 쓴다',
           lp1.html.some((h) => /33\.1만|33만/.test(h)),
           lp1.html.find((h) => /장안구/.test(h)) || '없음');
@@ -1525,9 +1559,16 @@ const FAKE_LEAFLET = () => {
 
     // ── 축척 ──
     const lpY1 = await lpPick('y1', null);
-    check('기준을 최근 1년으로 좁히면 거래 없는 곳이 빠진다',
-          lpY1.n === 2 && !lpY1.tips.some((t) => /울릉군/.test(t)),
-          `${lpY1.n}곳`);
+    // 울릉군은 최근 1년 거래가 없다. **빠지지 않고** 값 자리에 그렇게
+    // 적힌다 — 지도에서 지자체가 사라지면 사람은 고장으로 읽는다.
+    check('기준을 좁혀 거래가 없어져도 지자체는 남는다',
+          lpY1.n === 7 && lpY1.peek.withValue === 2
+          && lpY1.tips.some((t) => /울릉군/.test(t)),
+          `${lpY1.n}곳 중 값 ${lpY1.peek.withValue}곳`);
+    check('값이 없는 말풍선이 왜 없는지 말한다',
+          /거래가 없습니다|거래가 적습니다/
+            .test(lpY1.tips.find((t) => /울릉군/.test(t)) || ''),
+          (lpY1.tips.find((t) => /울릉군/.test(t)) || '없음').slice(0, 120));
     const lpC = await lpPick('c20', null);
     check('건수 기준은 몇 년치를 긁어온 값인지 밝힌다',
           /2009년부터/.test(lpC.tips.find((t) => /울릉군/.test(t)) || ''),
@@ -1545,9 +1586,12 @@ const FAKE_LEAFLET = () => {
     await page.evaluate(() => { window.__zoom = 7; });
     await lpFire();
     const lpWide = await lpRead();
+    // 시·도 셋 — 경기도·서울특별시·경상북도. 서울은 계획관리 거래가
+    // 없지만 시·도로서는 존재한다.
     check('멀리서는 시·도로 묶인다',
-          lpWide.peek.level === 'sido' && lpWide.n === 2,
-          `${lpWide.peek.level} · ${lpWide.n}곳`);
+          lpWide.peek.level === 'sido' && lpWide.n === 3
+          && lpWide.peek.withValue === 2,
+          `${lpWide.peek.level} · ${lpWide.n}곳 중 값 ${lpWide.peek.withValue}곳`);
     // 경기도 = 장안구(10만, 10건) + 권선구(20만, 20건) → 가중 16.7만.
     check('묶을 때 거래 건수로 가중한다 (합치지 않는다)',
           lpWide.tips.some((t) => /^<div class="lp-tip-h">경기도/.test(t)

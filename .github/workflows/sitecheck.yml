@@ -79,11 +79,14 @@ jobs:
           echo "  --- 응답 ---"
           cat /tmp/env.json 2>/dev/null | sed 's/^/  /'; echo
           echo "  판정:"
-          if   grep -q '"missing": \[\]' /tmp/env.json 2>/dev/null; then
+          # **공백을 넣어 찾으면 안 된다.** JSON.stringify 는 '"missing":[]'
+          # 로 붙여 쓴다 — 방금 이 검사가 전부 초록인 응답을 보고도
+          # ✗ 를 찍었다. -E 로 공백을 있어도 되고 없어도 되게 둔다.
+          if   grep -Eq '"missing": *\[\]' /tmp/env.json 2>/dev/null; then
             echo "    ✓ 변수 여섯 개가 전부 닿았습니다"
-          elif grep -q '"missing"' /tmp/env.json 2>/dev/null; then
+          elif grep -Eq '"missing"' /tmp/env.json 2>/dev/null; then
             echo "    ✗ 빠진 변수가 있습니다 — 위 missing 목록을 보세요"
-          elif grep -q '"context_has": \[\]' /tmp/env.json 2>/dev/null; then
+          elif grep -Eq '"context_has": *\[\]' /tmp/env.json 2>/dev/null; then
             echo "    ✗ Cloudflare 가 변수를 안 붙였습니다"
           elif grep -q 'context_has' /tmp/env.json 2>/dev/null; then
             echo "    ✓ 변수가 코드까지 닿았습니다 (Cloudflare)"
@@ -196,5 +199,8 @@ jobs:
           }
           probe "실거래(data.go.kr)" "https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade?LAWD_CD=41220&DEAL_YMD=202401&numOfRows=1"
           probe "브이월드 지오코더"  "https://api.vworld.kr/req/address?service=address&request=getcoord&version=2.0&crs=epsg:4326&type=ROAD&address=경기도"
-          probe "도로공사"          "https://data.ex.co.kr/openapi/trafficapi/trafficIC?type=json&numOfRows=1&pageNo=1"
+          # **우리가 실제로 부르는 길로 두드린다.** trafficapi/trafficIC 는
+          # 404 를 준다 — 서버에는 닿았는데 그런 길이 없다는 뜻이라
+          # '막혔다' 로 읽히기 쉽다. 영업소 좌표를 받는 길이 진짜다.
+          probe "도로공사"          "https://data.ex.co.kr/openapi/locationinfo/locationinfoUnit?type=json&numOfRows=1&pageNo=1"
           probe "KOSIS"            "https://kosis.kr/openapi/statisticsList.do?method=getList&vwCd=MT_ZTITLE&parentListId=A_7"

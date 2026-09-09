@@ -2345,6 +2345,13 @@ function popCenter(group, levelKey, year) {
 /* 파란 계열 다섯 칸 (사장님 지시). 밝을수록 싸고 짙을수록 비싸다. */
 const LP_COLORS = ['#7FB3E0', '#5B93D6', '#3B73C4', '#2454A6', '#123B7A'];
 const LP_LABELS = ['가장 싼 20%', '', '가운데', '', '가장 비싼 20%'];
+/* 거래가 없는 지자체. **파란 칸에 안 넣는다** — 값이 없는 것을 '가장 싼
+ * 20%' 로 칠하면 그 지역이 싸다고 말하는 것이 된다. 회색은 '모른다' 다.
+ *
+ * 옅게 두는 것도 뜻이 있다. 값이 있는 칸과 같은 무게로 칠하면 빈 칸이
+ * 지도를 덮어, 정작 읽을 숫자가 그 사이에 묻힌다. 없는 것은 물러나야
+ * 한다. 대신 바탕이 옅으므로 글자는 어둡게 쓴다(.lp-card.is-none). */
+const LP_NONE_COLOR = '#E4E8ED';
 
 /*   11 이하   시·도 / 시·군 / 구
  *   12        읍·면·동  — 리를 면으로 묶는다 ('백곡면')
@@ -2581,14 +2588,29 @@ function lpItemsRegion(levelKey) {
     const cells = groups.map((g) => ({ group: g, cell: (src[g] || {})[cd] }))
       .filter((x) => x.cell);
     const got = lpMix(cells);
-    if (!got) return;
     const key = popGroupKey(r, levelKey);
     if (!bag.has(key)) {
-      bag.set(key, { name: key, members: [], wsum: 0, vsum: 0, n: 0,
-                     from: got.from, years: new Map(), parts: new Map() });
+      bag.set(key, { name: key, members: [], wsum: 0, vsum: 0, n: 0, few: 0,
+                     from: Infinity, years: new Map(), parts: new Map() });
     }
     const g = bag.get(key);
+    // **값이 없어도 지자체는 담는다** (사장님 지시 2026-09-09).
+    //
+    // 예전에는 여기서 그냥 돌아섰다. 그러면 그 용도지역 거래가 없는
+    // 지자체는 지도에서 **통째로 사라졌다** — 대전에서 유성구와 대덕구만
+    // 남고 동구·중구·서구가 안 보인 것이 그것이었다. 지도에 지자체가
+    // 없으면 사람은 '자료가 없다' 가 아니라 '이 지도가 고장났다' 로
+    // 읽는다. 이름은 늘 있고, 값이 없다는 사실을 값 자리에 적는다.
     g.members.push(r);
+    if (!got) {
+      // 왜 값이 없는지는 둘로 갈린다. 거래가 0건인 곳과, 있었지만
+      // 다섯 건이 안 돼 값으로 안 쓴 곳. 뒤엣것에 '0' 을 적으면 거짓이
+      // 되므로 건수를 세어 둔다.
+      cells.forEach(({ cell }) => {
+        g.few += ((cell && cell.few) || {})[state.lpWindow] || 0;
+      });
+      return;
+    }
     g.wsum += got.n; g.vsum += got.v * got.n; g.n += got.n;
     g.from = Math.min(g.from, got.from);
     got.parts.forEach((pt) => {
@@ -2620,12 +2642,18 @@ function lpItemsRegion(levelKey) {
   });
   return [...bag.values()].map((g) => ({
     name: g.name,
+    // 거래가 없으면 값도 없다. 0 을 넣으면 '평당 0원' 이라는 뜻이 되고
+    // 분위 눈금까지 그쪽으로 끌린다. **없는 것은 null 이다.**
+    few: g.few,
     // 조회수를 셀 열쇠. **이름만으로는 안 된다** — '고성군' 은 강원과
     // 경남에 둘이고, '중구' 는 여섯이다. 시·도 자리를 함께 적는다.
     pk: placeKey(levelKey, g.members[0], g.name),
     sg: String((g.members[0] || {}).sigungu_cd || ''),
     pop: popByKey.get(g.name) || 0,
-    v: g.vsum / g.wsum, n: g.n, from: g.from, parts: g.members.length,
+    v: g.wsum ? g.vsum / g.wsum : null,
+    n: g.n,
+    from: Number.isFinite(g.from) ? g.from : null,
+    parts: g.members.length,
     at: popCenter(g, levelKey, year).at,
     byGroup: [...g.parts.entries()].map(([k, o]) => ({ group: k, v: o.v / o.w, n: o.w })),
     trend: [...g.years.entries()].sort((a, b2) => a[0] - b2[0])
@@ -2728,6 +2756,7 @@ function lpScale(values) {
 }
 
 function lpColor(val, scale) {
+  if (val == null) return LP_NONE_COLOR;
   if (scale.kind === 'quantile') {
     let i = 0;
     while (i < scale.breaks.length && val >= scale.breaks[i]) i += 1;
@@ -2795,7 +2824,31 @@ function lpSpark(trend) {
     + `</svg><em>${first[0]}→${last[0]} ${chg >= 0 ? '+' : ''}${(chg * 100).toFixed(0)}%</em></span>`;
 }
 
+/* 값이 없는 칸의 값 자리. 사장님 지시(2026-09-09):
+ * "거래가 없어서 안보이는 것이라면 거래 0만/평으로 표기하고 지자체는
+ *  보이도록 해주세요.(모든 지역 해당)"
+ *
+ * 다만 **0 과 '적다' 는 다르다.** 다섯 건이 안 돼 값을 안 쓴 곳에 0 을
+ * 적으면 거래가 아예 없었다고 말하는 것이 된다. 그럴 때는 몇 건이었는지
+ * 그대로 적는다. */
+function lpNoneText(it) {
+  return it.few ? `거래 ${it.few}건` : '0만';
+}
+
 function lpTip(it, level, w) {
+  if (it.v == null) {
+    return `<div class="lp-tip-h">${escapeHtml(it.full || it.name)}`
+      + `${it.sub ? ` <em>${escapeHtml(it.sub)}</em>` : ''}</div>`
+      + `<div class="lp-tip-v"><b>${it.few ? '값을 쓰기엔 거래가 적습니다'
+        : '이 용도지역 거래가 없습니다'}</b></div>`
+      + `<div class="lp-tip-m">${escapeHtml(w ? w.label : '')}`
+      + ` · ${lpGroups().join('·')}`
+      + (it.few ? ` · 거래 ${it.few.toLocaleString('ko-KR')}건`
+        + ` (한 곳에 ${LP_MIN_LABEL}건은 있어야 값으로 씁니다)`
+        : ' · 거래 0건')
+      + (it.parts > 1 ? ` · ${it.parts}개 시군구 합침` : '')
+      + '</div>';
+  }
   const per = perM2Str(it.v);
   const py = perPy(it.v);
   const stat = state.lpStat === 'avg' ? '평균' : '중앙값';
@@ -2853,7 +2906,10 @@ function drawLandPrice() {
   // **색은 화면에 보이는 것끼리 끊는다.** 전국 분위로 칠하면 경기도만
   // 봐도 전부 짙은 파랑이 되어 그 안에서 어디가 비싼지 안 보인다.
   const shown = lpVisible(all);
-  const scale = lpScale(shown.map((it) => it.v));
+  // **값이 없는 칸은 눈금에서 뺀다.** 넣으면 '가장 싼 20%' 칸이 거래
+  // 없는 곳으로 채워져, 실제로 싼 곳이 가운데 칸으로 밀린다.
+  const withValue = shown.filter((it) => it.v != null);
+  const scale = lpScale(withValue.map((it) => it.v));
   const w = lpWindow();
 
   shown.forEach((it) => {
@@ -2868,7 +2924,8 @@ function drawLandPrice() {
       keyboard: false,
       icon: L.divIcon({
         className: 'lp-card-wrap',
-        html: `<span class="lp-card" style="background:${fill}">`
+        html: `<span class="lp-card${it.v == null ? ' is-none' : ''}"`
+          + ` style="background:${fill}">`
           // 주간 1등 별표는 **시·군 안에서** 뽑는다 (사장님 지시:
           // 전국 제외). 이름 앞에 붙는다.
           + `<b>${viewerStar(it, level.key)}${escapeHtml(short)}`
@@ -2877,7 +2934,10 @@ function drawLandPrice() {
           // 20만인 것처럼 읽히므로, 없으면 아무것도 안 적는다.
           + (it.pop ? `<em>${popMan(it.pop)}</em>` : '')
           + `</b>`
-          + `<i>${escapeHtml(lpMoney(it.v))}<u>/평</u></i>`
+          + `<i>${escapeHtml(it.v == null ? lpNoneText(it) : lpMoney(it.v))}`
+          // '거래 3건/평' 은 말이 안 된다. 단위는 **값일 때만** 붙인다
+          // (0만/평 은 사장님이 그 꼴로 지시하신 것이라 그대로 둔다).
+          + `${it.v != null || !it.few ? '<u>/평</u>' : ''}</i>`
           // 셋째 줄 — 지금 보는 사람 / 오늘 본 사람 (사장님 지시
           // 2026-09-09 2차). 둘 다 0이면 줄 자체가 없다.
           + viewerLine(it.pk)
@@ -2891,7 +2951,7 @@ function drawLandPrice() {
   });
 
   window.__lp = {
-    on: true, n: shown.length, total: all.length,
+    on: true, n: shown.length, withValue: withValue.length, total: all.length,
     groups, level: level.key, window: state.lpWindow, scale: scale.kind,
     // 검사용 — 지금 화면이 어느 조각을 원하고 무엇을 들고 있는지.
     // 이것이 없으면 '안 받았다' 와 '받을 것이 없다' 를 밖에서 못 가른다.
@@ -2901,7 +2961,8 @@ function drawLandPrice() {
     // 뽑혔는가' 를 밖에서 셀 수가 없다.
     items: shown.map((it) => ({ pk: it.pk, sg: it.sg, name: it.name })),
   };
-  updateLpNote({ n: shown.length, total: all.length, level: level.label, scale, w });
+  updateLpNote({ n: shown.length, withValue: withValue.length,
+                 total: all.length, level: level.label, scale, w });
   // 조회수는 **그린 뒤에** 챙긴다. 무엇이 화면에 있는지는 여기서만 안다.
   viewersOnMove(shown);
 }
@@ -2928,6 +2989,9 @@ function drawLpScale(info) {
     window.__lpScale = null;
     return;
   }
+  // 값이 있는 칸이 하나도 없으면 끊을 것이 없다. 그때 '0곳뿐이라
+  // 5분위를 못 냅니다' 를 띄우면 눈금 자리가 오류처럼 보인다.
+  if (info.withValue === 0) { el.hidden = true; window.__lpScale = null; return; }
   const sc = info.scale;
   if (sc.kind !== 'quantile') {
     el.hidden = false;
@@ -2968,9 +3032,13 @@ function updateLpNote(info) {
     lpSuggest(null);
     return;
   }
-  if (!info.n) {
+  // 값이 있는 칸을 센다. 태그 수가 아니다 — 이제 거래가 없는 지자체도
+  // 태그를 갖기 때문에, 태그 수로 세면 '거래가 있다' 고 말하게 된다.
+  const got = info.withValue == null ? info.n : info.withValue;
+  if (!got) {
     el.textContent = `이 화면에는 ${groups.join('·')} 거래가 없습니다`
-      + ` (한 곳에 ${LP_MIN_LABEL}건은 있어야 값으로 씁니다).`;
+      + ` (한 곳에 ${LP_MIN_LABEL}건은 있어야 값으로 씁니다).`
+      + (info.n ? ` 지자체 ${info.n}곳은 이름만 적었습니다.` : '');
     lpSuggest(info);
     return;
   }
@@ -2980,8 +3048,10 @@ function updateLpNote(info) {
     : `비교 대상이 ${info.scale.sorted.length}곳뿐이라 순위로 색을 폄`;
   const cut = info.total > info.n
     ? ` · 화면 안 ${info.total}곳 중 거래 많은 ${info.n}곳만 표시` : '';
-  el.textContent = `${groups.join('·')} · ${info.level} 단위 · ${info.n}곳`
-    + ` · 평당 ${stat} · ${how}${cut}`;
+  const none = info.n - got;
+  el.textContent = `${groups.join('·')} · ${info.level} 단위 · ${got}곳`
+    + ` · 평당 ${stat} · ${how}${cut}`
+    + (none > 0 ? ` · 거래 없는 곳 ${none}곳은 회색` : '');
   lpSuggest(info);
 }
 

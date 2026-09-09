@@ -920,6 +920,14 @@ body.picking .leaflet-container{cursor:crosshair}
 /* 단위. 값만 있으면 평인지 ㎡인지 알 수 없다 — 두 글자로 그 오독을 막는다.
    <u> 기본 밑줄은 지운다. */
 .lp-card u { text-decoration: none; font-size: 9.5px; font-weight: 600; opacity: .85; }
+/* 거래가 없는 지자체 (사장님 지시 2026-09-09 — 안 보이던 것을 보이게).
+   바탕이 옅어서 흰 글자로는 안 읽힌다. 그리고 **물러나 보여야 한다** —
+   값이 있는 칸과 같은 무게면 빈 칸이 지도를 덮는다. */
+.lp-card.is-none {
+  color: #47525E;
+  border-color: rgba(255, 255, 255, .75);
+  box-shadow: 0 1px 2px rgba(16, 32, 64, .18);
+}
 
 /* 말풍선 — 값 하나가 아니라 **읽을 거리**를 담는다.
    같은 평당 80만원이라도 3년째 오르는 80만과 꺾여 내려온 80만은

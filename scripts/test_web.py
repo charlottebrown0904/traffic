@@ -148,6 +148,47 @@ check('"land_use_filter"' in _src,
 check(bool(_settings().get("land_use_filter")),
       f"설정에 분석 용도지역이 있다 — {_settings().get('land_use_filter')}")
 
+# ── 거래가 없는 지자체도 지도에 남는가 ────────────────────────────
+#
+# 사장님 지적(2026-09-09): 대전에서 유성구·대덕구만 보이고 동구·중구·
+# 서구가 통째로 사라졌다. 화면 쪽은 이제 값이 없어도 태그를 그리는데,
+# 그러려면 내보내기가 **'거래 0건' 과 '다섯 건이 안 됨' 을 갈라** 줘야
+# 한다. 둘에 똑같이 0 을 적으면 세 건 있던 곳을 없던 곳이라 말하게 된다.
+class _Row:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+_few = _wx._landprice_cell(
+    _Row(n_y3=3, p50_y3=100.0, avg_y3=100.0, from_y3=2023), with_few=True)
+check(_few.get("few", {}).get("y3") == 3,
+      f"다섯 건이 안 되는 창의 건수를 싣는다 — {_few}")
+check("y3" not in _few,
+      "그래도 값(중앙값)은 안 싣는다 — 다섯 건으로는 못 쓴다")
+
+_none = _wx._landprice_cell(
+    _Row(n_y3=0, p50_y3=None, avg_y3=None, from_y3=None), with_few=True)
+check("few" not in _none and not _none,
+      f"거래가 0건이면 few 도 없다 (없는 것은 없는 것이다) — {_none}")
+
+_plain = _wx._landprice_cell(
+    _Row(n_y3=3, p50_y3=100.0, avg_y3=100.0, from_y3=2023))
+check(not _plain,
+      "읍·면·동 조각은 예전 그대로다 (수만 칸에 한 칸을 더하지 않는다)")
+
+# ── 이름이 안 오는 시군구 ─────────────────────────────────────────
+#
+# 세종특별자치시는 시도 아래에 시군구가 없어 실거래 응답의 시군구명이
+# 빈 채로 온다. 그래서 지도에 '36110' 이 찍혔다.
+_fill = _wx._region_name_fill()
+check(_fill.get("36110", {}).get("name"),
+      f"이름이 안 오는 코드의 대체 이름이 있다 — {_fill.get('36110')}")
+check(_fill.get("36110", {}).get("sido") == "세종특별자치시",
+      "시·도 축척에서 묶을 이름도 있다")
+_ps = _inspect.getsource(_wx._regions)
+check("got_name = _text(c.name)" in _ps and 'spare.get("name")' in _ps,
+      "자료에 이름이 있으면 그것이 이긴다 (덮어쓰지 않는다)")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

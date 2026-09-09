@@ -478,6 +478,24 @@ def _region_offices() -> dict[str, dict[str, list[float]]]:
     return out
 
 
+def _region_name_fill() -> dict[str, dict[str, str]]:
+    """실거래에 이름이 안 오는 시군구의 **빈 자리를 채울** 이름.
+
+    config/region_names.yaml 이 왜 있는지는 그 파일 머리에 적어 두었다.
+    한 줄로 줄이면: 세종특별자치시는 시도 아래에 시군구가 없어서 실거래
+    응답의 시군구명 칸이 비어 온다.
+
+    **덮어쓰지 않는다.** 자료에 이름이 있으면 그것이 이긴다.
+    """
+    path = ROOT / "config" / "region_names.yaml"
+    if not path.exists():
+        return {}
+    import yaml
+    with open(path, encoding="utf-8") as fh:
+        got = yaml.safe_load(fh) or {}
+    return {str(k): dict(v or {}) for k, v in got.items()}
+
+
 def _parent_si(name: str) -> str:
     """'수원시 장안구' → '수원시'. 아니면 빈 문자열.
 
@@ -739,21 +757,35 @@ def _landprice_windows_sql(latest_year: int) -> str:
     return ",".join(parts)
 
 
-def _landprice_cell(row) -> dict:
+def _landprice_cell(row, with_few: bool = False) -> dict:
     """한 칸의 창별 값. **비어 있는 창은 싣지 않는다.**
 
     거래가 없는 창에 0 이나 null 을 실으면 파일만 무거워지고, 화면은
     어차피 그리지 못한다. 없으면 없는 것이다.
+
+    with_few 를 켜면 **다섯 건이 안 돼 버린 창의 건수**를 따로 싣는다.
+    화면이 '거래가 0건이라 값이 없다' 와 '거래는 있었는데 셋뿐이라
+    값으로 안 썼다' 를 구별해야 하기 때문이다(사장님 지시 2026-09-09
+    — 거래가 없는 지자체도 이름은 보이게 한다). 둘에 똑같이 '0' 을
+    적으면 세 건 있던 곳을 없던 곳이라고 말하는 것이 된다.
+
+    시군구 칸에서만 켠다. 읍·면·동 조각은 수만 칸이라 여기에 한 칸을
+    더하면 내려받는 무게가 그만큼 는다.
     """
     out = {}
+    few = {}
     for key, _label, _kind, _span in LANDPRICE_WINDOWS:
-        n = getattr(row, f"n_{key}", 0)
+        n = int(getattr(row, f"n_{key}", 0) or 0)
         p50 = getattr(row, f"p50_{key}", None)
         if n < LANDPRICE_MIN_N or p50 is None or pd.isna(p50):
+            if with_few and n:
+                few[key] = n
             continue
-        out[key] = [int(n), int(round(float(p50))),
+        out[key] = [n, int(round(float(p50))),
                     int(round(float(getattr(row, f"avg_{key}")))),
                     int(getattr(row, f"from_{key}"))]
+    if few:
+        out["few"] = few
     return out
 
 
@@ -804,7 +836,7 @@ def _land_price_by_region(latest_year: int) -> dict:
     out: dict[str, dict] = {}
     dropped = 0
     for r in df.itertuples(index=False):
-        cell = _landprice_cell(r)
+        cell = _landprice_cell(r, with_few=True)
         if cell:
             # 말풍선에 그릴 최근 추이. 없으면 안 싣는다.
             ser = trend.get((str(r.sigungu_cd), str(r.grp)))
@@ -906,6 +938,7 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
     # KOSIS 는 행정동이고 우리는 법정동이라 안 맞는 것이 있고, 안 맞으면
     # 비운다. 억지로 시군구 인구를 넣으면 리 하나가 20만이 된다.
     umd_pop = _umd_pop_latest()
+    fill = _region_name_fill()
     thin = 0
     for r in df.itertuples(index=False):
         if int(r.n_all) < UMD_MIN_TRADES:
@@ -924,7 +957,8 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
         item = {
             "nm": _text(r.umd),
             "sg": code,
-            "sgnm": _text(r.sigungu),
+            "sgnm": _text(r.sigungu)
+                    or str(fill.get(str(r.sigungu_cd), {}).get("name") or ""),
             "lat": round(float(r.lat), 5),
             "lon": round(float(r.lon), 5),
             "w": cell,
@@ -1161,6 +1195,8 @@ def _regions() -> list[dict]:
     prefix_sido = {p: max(v, key=v.get) for p, v in vote.items()}
 
     pop_by_code = {str(code): group for code, group in pop.groupby("sigungu_cd")}
+    fill = _region_name_fill()
+    used_fill: list[str] = []
 
     # **인구가 없다고 시군구를 통째로 빼면 안 된다.**
     #
@@ -1184,9 +1220,18 @@ def _regions() -> list[dict]:
         if c is None:
             continue          # 좌표가 없으면 지도에 못 찍는다. 조용히 빼되 수는 센다.
         group = pop_by_code.get(code)
+        # 이름이 안 온 코드의 빈 자리만 채운다 (config/region_names.yaml).
+        got_name = _text(c.name)
+        got_sido = _text(c.sido)
+        spare = fill.get(str(code), {})
+        if not got_name and spare.get("name"):
+            got_name = str(spare["name"])
+            used_fill.append(str(code))
+        if not got_sido and spare.get("sido"):
+            got_sido = str(spare["sido"])
         out.append({
             "sigungu_cd": str(code),
-            "name": _text(c.name) or str(code),
+            "name": got_name or str(code),
             "lat": round(float(c.lat), 6),
             "lon": round(float(c.lon), 6),
             "n_umd": int(c.n_umd),
@@ -1195,7 +1240,7 @@ def _regions() -> list[dict]:
             # 전라남도가 '12' 라는 한 접두사에 함께 들어 있다
             # (12210 동구 … 12870 신안군). 코드로 갈랐으면 광주 다섯 구가
             # 전남 아래로 들어갔을 것이다.
-            "sido": _text(c.sido) or prefix_sido.get(str(code)[:2], ""),
+            "sido": got_sido or prefix_sido.get(str(code)[:2], ""),
             # 관청 좌표. 있으면 원의 중심이 여기가 된다 (사장님 지시
             # 2026-09-07). 아직 못 받은 시군구는 빈 값이고, 그때는
             # 화면이 대표점으로 물러난다.
@@ -1204,11 +1249,21 @@ def _regions() -> list[dict]:
                if pd.notna(c.office_lat) and pd.notna(c.office_lon) else {}),
             # 시 아래 구는 그 시로 묶을 수 있어야 한다 ('수원시 장안구'
             # → '수원시'). 이름이 두 마디로 오는 것이 유일한 단서다.
-            "parent": _parent_si(_text(c.name)),
+            "parent": _parent_si(got_name),
             "pop": ({str(int(r.year)): int(r.value)
                      for r in group.itertuples(index=False)}
                     if group is not None else {}),
         })
+    if used_fill:
+        print(f"    이름이 안 온 시군구 {len(used_fill)}곳을 "
+              f"config/region_names.yaml 로 채웠습니다 — {', '.join(used_fill)}")
+    stray = [r["sigungu_cd"] for r in out if r["name"] == r["sigungu_cd"]]
+    if stray:
+        # 지도에 코드가 그대로 찍힌다. 사장님이 화면에서 보시기 전에
+        # 로그가 먼저 말해야 한다.
+        print(f"    ⚠ 이름이 없어 코드가 그대로 나가는 시군구 {len(stray)}곳"
+              f" — {', '.join(stray[:12])}")
+        print("      (config/region_names.yaml 에 한 줄 더하면 채워집니다)")
     n_office = sum(1 for r in out if "office_lat" in r)
     n_sido = sum(1 for r in out if r["sido"])
     no_pop = [r for r in out if not r["pop"]]
@@ -1274,14 +1329,20 @@ def _places() -> list[dict]:
     # 붙이게 된다 — 통합 시군구 보정을 한쪽만 받으면 같은 동네가 화면
     # 두 곳에서 다른 인구로 보인다.
     umd_pop = _umd_pop_latest()
+    # 검색 목록의 '어느 시군구인가' 도 같은 규칙을 따른다. 지도에서는
+    # 세종시라고 읽히는데 검색 결과에서는 그 칸이 비어 있으면, 같은
+    # 동네가 화면 두 곳에서 다르게 보인다.
+    fill = _region_name_fill()
     out = []
     hit = 0
     for r in df.itertuples(index=False):
+        parent = str(r.sigungu or "") \
+            or str(fill.get(str(r.sigungu_cd), {}).get("name") or "")
         row = {
             "k": "umd",
             "n": str(r.umd),
             # 어느 시군구의 '중앙동' 인지 안 적으면 같은 이름이 수십 개다.
-            "p": str(r.sigungu or ""),
+            "p": parent,
             "sg": str(r.sigungu_cd),
             "c": int(r.n),
             "lat": round(float(r.lat), 5),
