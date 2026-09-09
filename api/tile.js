@@ -93,9 +93,21 @@ const LAYERS = {
 // 못 보내고 따로 만듭니다. 확장자도 레이어마다 다릅니다 — 위성은
 // 사진이라 jpeg 이고 나머지는 투명이 필요한 png 입니다. 여기서 틀리면
 // 그림이 아예 안 옵니다.
+//
+// 다섯을 두드려 넷이 왔습니다 (점검 6-C, 2026-09-09 · z12/3495/1594):
+//
+//   base       200  20,792B  0.98s  ✓
+//   midnight   200  14,414B  0.55s  ✓
+//   satellite  200  22,161B  0.53s  ✓
+//   hybrid     200  13,821B  0.38s  ✓
+//   gray       ✗    브이월드가 그림 대신 XML 을 줬습니다
+//
+// **gray 는 뺐습니다.** 이름을 더 맞혀 볼 수는 있지만, 회색 배경은
+// 지금도 OSM 을 CSS 로 채도를 낮춰 쓰고 있어 이미 있는 것이고
+// (style.css .leaflet-tile-pane), 야간이 그 자리를 대신합니다. 목록에
+// 올려 두고 눌렀을 때 안 나오면 그것은 고장으로 읽힙니다.
 const BASEMAPS = {
   base: { name: "Base", ext: "png", label: "브이월드 일반" },
-  gray: { name: "gray", ext: "png", label: "브이월드 회색" },
   midnight: { name: "midnight", ext: "png", label: "브이월드 야간" },
   satellite: { name: "Satellite", ext: "jpeg", label: "위성" },
   hybrid: { name: "Hybrid", ext: "png", label: "위성 위 지명" },

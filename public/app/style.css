@@ -285,6 +285,16 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
  * drawTrades). 색으로 이기려 들면 배경을 계속 죽여야 하고, 그러면
  * 지도가 지도 노릇을 못 합니다. */
 .leaflet-tile-pane{filter:saturate(.62) brightness(1.03) contrast(.97)}
+/* **위성에는 이 손질을 걸지 않는다.** OSM 은 색이 요란해 채도를 낮춰야
+   그 위의 점이 사는데, 위성 사진은 원래 그런 색이 아니다. 똑같이 죽이면
+   흙과 논밭이 한 덩이가 되어 위성을 켠 뜻이 사라진다. 오히려 조금
+   또렷하게 한다 (사장님 지시 2026-09-09, 배경 지도 고르기). */
+body[data-basemap="satellite"] .leaflet-tile-pane,
+body[data-basemap="hybrid"] .leaflet-tile-pane{
+  filter:saturate(1) brightness(1) contrast(1.04)
+}
+/* 야간 배경은 이미 어둡다. 밝기를 올리면 그 어두움이 사라진다. */
+body[data-basemap="midnight"] .leaflet-tile-pane{filter:none}
 .map-tools{
   position:absolute; top:.6rem; right:.6rem; z-index:500;
   display:flex; gap:.4rem;
@@ -981,7 +991,11 @@ body.picking .leaflet-container{cursor:crosshair}
   padding: 8px 10px; border-radius: 9px; border: 1px solid var(--border);
   background: var(--surface); color: var(--ink);
   box-shadow: var(--shadow); font-size: 12px; line-height: 1.45;
-  max-width: 15rem; white-space: normal;
+  /* **width:max-content 가 없으면 세로로 무너진다.** max-width 만 두면
+     말풍선이 '줄어들 수 있는 만큼' 줄어들어, 글자 하나씩 세로로 쌓인
+     기둥이 된다 (사장님 화면 2026-09-09 — 여주시 말풍선). 먼저 글이
+     필요한 만큼 넓히고, 그 다음에 상한을 건다. */
+  width: max-content; max-width: min(15rem, 60vw); white-space: normal;
 }
 .lp-tip-h { font-weight: 800; }
 .lp-tip-h em { font-style: normal; font-weight: 500; color: var(--muted); }
@@ -1313,6 +1327,19 @@ body.picking .leaflet-container{cursor:crosshair}
 
 /* 상세 패널은 고를 때만. 안 고른 화면에서는 지도가 전부를 쓴다. */
 .detail[hidden] { display: none; }
+
+/* ─── 배경 지도 고르기 (사장님 지시 2026-09-09) ─────────────────────
+   지도 위 도구막대 안. 스위치들과 나란히 두되, 켜고 끄는 것이 아니라
+   **하나를 고르는** 것이라 생김새를 다르게 한다. */
+.basemap-pick { display: inline-flex; gap: 1px; border-radius: 6px;
+                overflow: hidden; border: 1px solid var(--line); }
+.basemap-pick button {
+  border: 0; background: var(--card); color: var(--muted);
+  font: inherit; font-size: 11px; padding: .18rem .45rem; cursor: pointer;
+}
+.basemap-pick button:hover { color: var(--ink); }
+.basemap-pick button.is-on { background: var(--accent);
+                             color: var(--on-accent); font-weight: 700; }
 
 /* ─── 5분위 눈금 (사장님 지시 2026-09-09, 2번) ───────────────────────
    왼쪽 아래. 오른쪽 아래는 Leaflet 출처 표시 자리다. */

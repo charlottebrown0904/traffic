@@ -52,6 +52,11 @@ const state = {
   // 거래 핀에 무엇을 적을 것인가. 총액이 기본이다 — 땅을 보는
   // 사람이 가장 먼저 묻는 것이 '얼마에 팔렸나' 다.
   pinKind: 'price', tradeLabelled: false,
+  // 배경 지도. 기본은 지금 것(OSM) — 브이월드는 고른 사람만 씁니다.
+  baseMap: (() => {
+    try { return localStorage.getItem('toji.basemap') || 'osm'; }
+    catch (e) { return 'osm'; }
+  })(),
   // 땅값 글자의 용도지역. 거래 점 필터(activeLandUse)와 **따로 논다**.
   lpGroupSet: new Set(),
 };
@@ -197,6 +202,7 @@ async function boot() {
   buildRank();
   buildTrend();
   buildMap();
+  wireBaseMap();
   wireLandPrice();
   drawLandPrice();
   buildLegend();
@@ -1439,10 +1445,8 @@ function buildMap() {
   // 하나 더 늘리는 대신 **CSS 로 채도를 낮춘다**(style.css 의
   // .leaflet-tile-pane). 키도 계정도 없이 같은 결과를 얻고, 남의 서비스
   // 정책이 바뀌어도 지도가 안 깨진다.
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19, attribution: '© OpenStreetMap',
-  }).addTo(map);
-
+  // 배경 지도는 **wireBaseMap() 이 깐다.** 여기서도 깔면 층이 둘이
+  // 되는데, 겹쳐 놓으면 눈에는 안 보이고 타일만 두 번 받는다.
   addZoningLayer();
 
   // 땅값 분위지도. 배경 타일(200)보다 위, 거래(380)보다 아래.
@@ -1772,6 +1776,90 @@ const ZONING_MIN_ZOOM = 12;
 // 필지 경계선은 더 깊이 들어가야 뜻이 있다. 12배율에서 필지선을 깔면
 // 실선 뭉치가 되어 용도지역 색을 오히려 가린다.
 const CADASTRAL_MIN_ZOOM = 15;
+
+/* ── 배경 지도 (사장님 지시 2026-09-09) ────────────────────────────
+ *
+ * "배경 지도를 시인성 좋은 카카오맵이나 네이버맵을 받아올 수 있나요?"
+ * → "현재 것, 브이월드, 위성, 일반 등 선택할 수 있도록 해두면 좋을 것
+ *    같으나, 캐쉬 여유가 되는 지 확인하고 진행해 주세요."
+ *
+ * 카카오·네이버는 **타일이 아니라 자바스크립트 지도 SDK** 라 Leaflet 에
+ * 못 꽂힙니다. 타일 주소를 뜯어 쓰는 것은 양쪽 약관이 금지하고, 상업적
+ * 이용이 전제인 서비스에서 갈 길이 아닙니다.
+ *
+ * 브이월드는 래스터 타일이라 그대로 꽂힙니다. 재보고 넷을 남겼습니다
+ * (점검 6-C: gray 만 그림 대신 XML 이 왔습니다).
+ *
+ * **기본은 지금 것(OSM)** 입니다. 이유가 둘입니다.
+ *
+ *   · OSM 은 브라우저가 직접 받아 우리 함수를 안 거칩니다. 브이월드는
+ *     거칩니다 — 배경은 화면마다 스무 장씩이라 그 차이가 큽니다.
+ *   · 고른 사람만 그 값을 쓰면 됩니다. 다들 쓰게 만들 이유가 없습니다.
+ *
+ * 같은 타일은 CDN 이 이레(s-maxage=604800) 붙들어 둡니다 — 점검에서
+ * 두 번째 호출이 x-vercel-cache: HIT 로 왔습니다. 그래서 실제 함수 호출은
+ * 그 동네를 **처음 여는 사람** 몫뿐입니다.
+ */
+const BASEMAPS = [
+  { key: 'osm', label: '기본',
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© OpenStreetMap' },
+  { key: 'base', label: '브이월드',
+    url: '/api/tile?layer=base&z={z}&y={y}&x={x}',
+    attribution: '배경지도 © 국토교통부 브이월드' },
+  { key: 'satellite', label: '위성',
+    url: '/api/tile?layer=satellite&z={z}&y={y}&x={x}',
+    attribution: '위성영상 © 국토교통부 브이월드' },
+  { key: 'hybrid', label: '위성+지명',
+    url: '/api/tile?layer=hybrid&z={z}&y={y}&x={x}',
+    attribution: '배경지도 © 국토교통부 브이월드' },
+  { key: 'midnight', label: '야간',
+    url: '/api/tile?layer=midnight&z={z}&y={y}&x={x}',
+    attribution: '배경지도 © 국토교통부 브이월드' },
+];
+
+let baseLayer = null;
+
+function setBaseMap(key, first) {
+  const spec = BASEMAPS.find((b) => b.key === key) || BASEMAPS[0];
+  state.baseMap = spec.key;
+  if (map) {
+    if (baseLayer) map.removeLayer(baseLayer);
+    baseLayer = L.tileLayer(spec.url, {
+      maxZoom: 19, attribution: spec.attribution,
+    }).addTo(map);
+    // **맨 아래로 내린다.** 갈아 끼운 층은 나중에 붙은 것이라 위에
+    // 얹히는데, 그러면 용도지역 색면과 거래 점을 덮는다.
+    if (baseLayer.bringToBack) baseLayer.bringToBack();
+  }
+  // 위성 위에서는 흰 글자가, 일반 지도 위에서는 검은 글자가 읽힌다.
+  // 그 판단을 CSS 에 맡기려고 몸통에 표를 남긴다.
+  document.body.dataset.basemap = spec.key;
+  document.querySelectorAll('#basemap-pick button').forEach((b) => {
+    b.classList.toggle('is-on', b.dataset.key === spec.key);
+    b.setAttribute('aria-pressed', String(b.dataset.key === spec.key));
+  });
+  // 고른 것은 그 사람 브라우저에만 남긴다. 다음에 열 때 다시 고르게
+  // 하면 매번 같은 수고를 시킨다. 못 써도(사생활 보호 창 등) 그만이다.
+  if (!first) { try { localStorage.setItem('toji.basemap', spec.key); } catch (e) { /* 무시 */ } }
+  window.__basemap = spec.key;
+}
+
+function wireBaseMap() {
+  const box = document.getElementById('basemap-pick');
+  if (!box) return;
+  box.innerHTML = '';
+  BASEMAPS.forEach((b) => {
+    const el2 = document.createElement('button');
+    el2.type = 'button';
+    el2.dataset.key = b.key;
+    el2.textContent = b.label;
+    el2.setAttribute('aria-pressed', 'false');
+    el2.addEventListener('click', () => setBaseMap(b.key));
+    box.appendChild(el2);
+  });
+  setBaseMap(state.baseMap, true);
+}
 
 function addZoningLayer() {
   zoningLayer = L.layerGroup();
@@ -2899,7 +2987,59 @@ function lpItemsUmd(levelKey) {
     trend: [...g.years.entries()].sort((a, b2) => a[0] - b2[0])
       .map(([y, o]) => [y, o.w, o.v / o.w]),
   }));
-  return out;
+  return out.concat(lpEmptyUmd(levelKey, out));
+}
+
+/* 거래가 없는 읍·면·동도 이름은 남긴다 (사장님 지시 2026-09-09).
+ *
+ * "거래가 없는 동 이름이 다 안나오네요. 모두 나오도록 해주세요."
+ *
+ * 왜 안 나왔나. 읍·면·동 태그는 **땅값 조각(landprice-umd-*.json)에서만**
+ * 만들어집니다. 그 조각에는 거래가 다섯 건 넘는 칸만 실려 있습니다
+ * (webexport.UMD_MIN_TRADES). 그러니 고른 용도지역에 거래가 없는 동은
+ * 애초에 재료가 없어 그려질 수가 없었습니다 — 서울에서 여덟 개만 뜬
+ * 것이 그것입니다.
+ *
+ * **우리에게 이미 명부가 있습니다.** 검색 색인(places.json)이 거래가
+ * 세 건 넘게 있었던 읍·면·동 17,430곳을 이름과 좌표로 들고 있습니다.
+ * 서울만 113곳입니다. 그것으로 메웁니다.
+ *
+ * 아직 못 메우는 곳: **거래가 한 번도(또는 두 건 이하) 없던 법정동.**
+ * 그 목록은 우리 자료에 없습니다 — 행정표준코드 명부를 받아야 하고
+ * (작업 #45), 지금 data.go.kr 승인을 기다리는 중입니다. 시골 쪽 리가
+ * 여기에 해당합니다. 도시의 동은 대부분 이 명부로 채워집니다. */
+function lpEmptyUmd(levelKey, have) {
+  if (!findIndex || !map) return [];
+  const seen = new Set(have.map((it) => it.pk));
+  const b = map.getBounds();
+  const bag = new Map();
+  findIndex.forEach((x) => {
+    if (x.k !== 'umd' || !x.sg) return;
+    if (!b.contains([x.lat, x.lon])) return;
+    const nm = String(x.n);
+    const name = levelKey === 'ri' ? nm : nm.split(' ')[0];
+    const pk = `u:${x.sg}:${name}`;
+    if (seen.has(pk)) return;
+    if (!bag.has(pk)) {
+      bag.set(pk, { name, sg: String(x.sg), sub: x.p || '',
+                    lat: 0, lon: 0, n: 0, pop: 0 });
+    }
+    const g = bag.get(pk);
+    g.lat += x.lat; g.lon += x.lon; g.n += 1;
+    // 리 줄에 실린 인구는 그 리가 아니라 **면 인구**다(webexport._places
+    // 가 면 이름으로도 맞춰 붙인다). 그래서 더하지 않고 하나를 쓴다.
+    if (!g.pop && x.pop) g.pop = x.pop;
+  });
+  return [...bag.values()].map((g) => ({
+    name: g.name, sub: g.sub, full: g.name,
+    pk: `u:${g.sg}:${g.name}`, sg: g.sg,
+    pop: g.pop || 0,
+    // 값이 없다. few 도 모른다 — 조각에 없는 칸이라 건수를 셀 자료가
+    // 없다. 말풍선은 '거래 5건 미만' 이라고만 말한다.
+    v: null, few: 0, n: 0, from: null, parts: g.n,
+    at: [g.lat / g.n, g.lon / g.n],
+    byGroup: [], trend: [],
+  }));
 }
 
 /* 값 → 색. **지역이 적을 때가 함정이다.** 분위수로 끊으면 다섯 곳
@@ -3004,17 +3144,18 @@ function lpNoneText() {
 
 function lpTip(it, level, w) {
   if (it.v == null) {
-    return `<div class="lp-tip-h">${escapeHtml(it.full || it.name)}`
-      + `${it.sub ? ` <em>${escapeHtml(it.sub)}</em>` : ''}</div>`
-      + `<div class="lp-tip-v"><b>${it.few ? '값을 쓰기엔 거래가 적습니다'
-        : '이 용도지역 거래가 없습니다'}</b></div>`
+    // 사장님 지시(2026-09-09): "그냥 간단하게 표시합니다. - 거래 5건 미만-"
+    //
+    // 앞서 '이 용도지역 거래가 없습니다' 라는 문장을 넣었는데, 말풍선이
+    // 세로로 길게 늘어졌습니다(사장님 화면). 값이 없는 칸에 설명을 길게
+    // 붙일 이유가 없습니다 — 왜 비었는지는 **한 마디면 됩니다.**
+    //
+    // 0건과 1~4건을 굳이 가르지 않습니다. 둘 다 '다섯 건이 안 된다' 가
+    // 참이고, 그것이 값을 안 쓰는 이유 전부입니다.
+    return `<div class="lp-tip-h">${escapeHtml(it.full || it.name)}</div>`
       + `<div class="lp-tip-m">${escapeHtml(w ? w.label : '')}`
-      + ` · ${lpGroups().join('·')}`
-      + (it.few ? ` · 거래 ${it.few.toLocaleString('ko-KR')}건`
-        + ` (한 곳에 ${LP_MIN_LABEL}건은 있어야 값으로 씁니다)`
-        : ' · 거래 0건')
-      + (it.parts > 1 ? ` · ${it.parts}개 시군구 합침` : '')
-      + '</div>';
+      + ` · ${escapeHtml(lpGroups().join('·'))}`
+      + ` · 거래 ${LP_MIN_LABEL}건 미만</div>`;
   }
   const per = perM2Str(it.v);
   const py = perPy(it.v);
@@ -3064,7 +3205,12 @@ function drawLandPrice() {
   if (!have || !groups.length) { updateLpNote(null); return; }
 
   const zoom = map.getZoom();
-  if (zoom >= LP_UMD_ZOOM) lpLoadUmd();
+  if (zoom >= LP_UMD_ZOOM) {
+    lpLoadUmd();
+    // 거래가 없는 동의 이름은 검색 색인에서 온다. **여기서 처음 받는다** —
+    // 2MB 라 첫 화면에 얹으면 지도가 그만큼 늦게 뜬다.
+    if (!findIndex && !findLoading) findLoad().then(() => drawLandPrice());
+  }
   const level = lpLevel(zoom);
   const all = (level.key === 'umd' || level.key === 'ri')
     ? lpItemsUmd(level.key) : lpItemsRegion(level.key);

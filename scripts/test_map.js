@@ -89,6 +89,10 @@ const FAKE_LEAFLET = () => {
     map: () => chain({
       setView() { return this; }, fitBounds() { return this; },
       panTo() { return this; }, invalidateSize() { return this; },
+      // **진짜 Leaflet 에는 removeLayer 가 있다.** 없으면 배경 지도를
+      // 갈아 끼우는 자리에서 통째로 터지는데, 그것은 우리 코드의 잘못이
+      // 아니라 이 뼈대가 현실과 다른 것이다 (2026-09-09).
+      removeLayer(x) { window.__removed = (window.__removed || 0) + 1; return this; },
       // **배율을 바꿀 수 있어야 한다.** 인구를 묶는 단위가 배율에 따라
       // 달라지는데(시도 → 시군 → 구), 7 로 고정해 두면 그 셋 중 하나만
       // 보고 통과라고 말하게 된다. window.__setZoom 으로 흔든다.
@@ -1050,6 +1054,45 @@ const FAKE_LEAFLET = () => {
           `.why 문단 → 폭 ${clash.w} 반지름 ${clash.radius}`);
 
     console.log();
+    // ── 배경 지도 고르기 (사장님 지시 2026-09-09) ────────────────
+    //
+    // "현재 것, 브이월드, 위성, 일반 등 선택할 수 있도록"
+    //
+    // 카카오·네이버는 타일이 아니라 SDK 라 못 씁니다. 브이월드는 래스터
+    // 타일이라 꽂힙니다 — 점검 6-C 에서 넷이 그림으로 왔습니다.
+    {
+      const bm = await page.evaluate(() => ({
+        keys: [...document.querySelectorAll('#basemap-pick button')]
+          .map((b) => b.dataset.key),
+        on: (document.querySelector('#basemap-pick button.is-on') || {}).dataset,
+        now: window.__basemap,
+        body: document.body.dataset.basemap,
+      }));
+      check('배경 지도를 고를 수 있다', bm.keys.length === 5,
+            bm.keys.join(','));
+      // **기본은 지금 것(OSM)** 이다. 브이월드 타일은 우리 함수를 거치므로
+      // 고른 사람만 그 값을 쓰게 둔다.
+      check('기본은 지금 쓰던 배경이다 (OSM)',
+            bm.now === 'osm' && bm.on && bm.on.key === 'osm',
+            `${bm.now} · 눌린 것 ${(bm.on || {}).key}`);
+      const sat = await page.evaluate(() => {
+        document.querySelector('#basemap-pick button[data-key="satellite"]').click();
+        return { now: window.__basemap, body: document.body.dataset.basemap,
+                 srcs: (window.__map.tiles || []).slice() };
+      });
+      check('위성으로 바꾸면 타일 원천이 바뀐다',
+            sat.now === 'satellite'
+            && sat.srcs.some((u) => /layer=satellite/.test(u)),
+            (sat.srcs.slice(-1)[0] || '없음'));
+      // 위성 사진에 OSM 용 채도 손질을 걸면 흙과 논밭이 한 덩이가 된다.
+      // 그 판단을 CSS 가 하도록 몸통에 표를 남긴다.
+      check('무엇을 깔았는지 몸통에 적는다 (색 손질을 가르려고)',
+            sat.body === 'satellite', sat.body);
+      await page.evaluate(() => {
+        document.querySelector('#basemap-pick button[data-key="osm"]').click();
+      });
+    }
+
     console.log('4-B. 지도 위 범례를 걷어냈다');
     // 사장님 지시(2026-09-08): "좌측 범례 삭제".
     //
@@ -1661,9 +1704,12 @@ const FAKE_LEAFLET = () => {
           lpY1.n === 7 && lpY1.peek.withValue === 2
           && lpY1.tips.some((t) => /울릉군/.test(t)),
           `${lpY1.n}곳 중 값 ${lpY1.peek.withValue}곳`);
-    check('값이 없는 말풍선이 왜 없는지 말한다',
-          /거래가 없습니다|거래가 적습니다/
-            .test(lpY1.tips.find((t) => /울릉군/.test(t)) || ''),
+    // 사장님 지시(2026-09-09): "그냥 간단하게 표시합니다. - 거래 5건 미만-"
+    // 값이 없는 칸에 설명을 길게 붙일 이유가 없다 — 실제로 말풍선이
+    // 세로로 늘어졌다.
+    check('값이 없는 말풍선은 한 마디로 끝난다',
+          /거래 5건 미만/.test(lpY1.tips.find((t) => /울릉군/.test(t)) || '')
+          && !/없습니다|적습니다/.test(lpY1.tips.find((t) => /울릉군/.test(t)) || ''),
           (lpY1.tips.find((t) => /울릉군/.test(t)) || '없음').slice(0, 120));
     const lpC = await lpPick('c20', null);
     check('건수 기준은 몇 년치를 긁어온 값인지 밝힌다',
@@ -1702,9 +1748,24 @@ const FAKE_LEAFLET = () => {
     await page.waitForTimeout(300);
     await lpFire();
     const lpMyeon = await lpRead();
+    // **값이 있는 칸으로 센다.** 이제 거래가 없는 동도 이름만으로
+    // 그려지므로(검색 색인에서 메운다) 태그 수로 세면 그것까지 들어온다.
     check('배율 12 에서 읍·면·동이 뜬다 (군 이름 하나로 안 끝난다)',
-          lpMyeon.peek.level === 'umd' && lpMyeon.n === 2,
-          `${lpMyeon.peek.level} · ${lpMyeon.n}곳`);
+          lpMyeon.peek.level === 'umd' && lpMyeon.peek.withValue === 2,
+          `${lpMyeon.peek.level} · 값 ${lpMyeon.peek.withValue}곳 / 태그 ${lpMyeon.n}곳`);
+    // 사장님 지적(2026-09-09): "거래가 없는 동 이름이 다 안나오네요."
+    //
+    // 읍·면·동 태그는 땅값 조각에서만 만들어졌는데, 그 조각에는 거래가
+    // 다섯 건 넘는 칸만 실립니다. 그래서 고른 용도지역에 거래가 없는
+    // 동은 재료가 없어 아예 안 그려졌습니다 — 서울에서 여덟 개만 뜬
+    // 것이 그것입니다. 검색 색인(places.json)으로 메웁니다.
+    check('거래가 없는 읍·면·동도 이름은 나온다',
+          lpMyeon.n > lpMyeon.peek.withValue,
+          `태그 ${lpMyeon.n}곳 · 그중 값 있는 곳 ${lpMyeon.peek.withValue}곳`);
+    check('메운 태그에는 값 줄이 없다 (이름만)',
+          lpMyeon.html.filter((h) => !/<i>/.test(h)).length
+            === lpMyeon.n - lpMyeon.peek.withValue,
+          `값 줄 없는 카드 ${lpMyeon.html.filter((h) => !/<i>/.test(h)).length}개`);
     check('면 단계는 리를 면으로 묶는다',
           lpMyeon.html.some((h) => /<b>백곡면(<em>|<\/b>)/.test(h))
           && !lpMyeon.html.some((h) => /사송리/.test(h)),
@@ -1724,8 +1785,8 @@ const FAKE_LEAFLET = () => {
     await lpFire();
     const lpRi = await lpRead();
     check('더 당기면 리·동까지 내려간다',
-          lpRi.peek.level === 'ri' && lpRi.n === 3,
-          `${lpRi.peek.level} · ${lpRi.n}곳`);
+          lpRi.peek.level === 'ri' && lpRi.peek.withValue === 3,
+          `${lpRi.peek.level} · 값 ${lpRi.peek.withValue}곳 / 태그 ${lpRi.n}곳`);
     // **표찰에는 리 이름만.** 어느 읍인지는 지도 바탕에 이미 적혀 있다.
     check('표찰에는 리 이름만 쓴다 (앞의 면 이름을 뗀다)',
           lpRi.html.some((h) => /<b>사송리(<em>|<\/b>)/.test(h))

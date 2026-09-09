@@ -276,6 +276,17 @@
         <input type="checkbox" id="zoning-bg">
         <span>용도지역</span>
       </label>
+
+      <!-- 배경 지도 (사장님 지시 2026-09-09).
+
+           카카오·네이버는 못 씁니다 — 타일이 아니라 자바스크립트 지도
+           SDK 라 Leaflet 에 못 꽂히고, 타일을 뜯어 쓰는 것은 양쪽 약관이
+           금지합니다. 브이월드는 래스터 타일이라 그대로 꽂힙니다.
+
+           **기본은 지금 것(OSM)** 입니다. 브이월드 타일은 우리 함수를
+           거치므로, 고르는 사람만 그 값을 씁니다. -->
+      <div class="basemap-pick" id="basemap-pick" role="group"
+           aria-label="배경 지도"></div>
     </div>
 
     <div id="map"></div>
