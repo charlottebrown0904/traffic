@@ -149,6 +149,29 @@ async function blockAuthScripts(page) {
       check('홈에 /app 직행 링크가 남아 있지 않다', leftovers === 0, `${leftovers}개 남음`);
       await page.close();
     }
+    // 4) 캐시 깨는 꼬리표가 서로 맞물려 있는가.
+    //
+    // **이것을 놓치면 새 화면이 안 나간다.** index.html 은 gate.js 를
+    // 부르고, gate.js 가 app.js 를 부른다. app.js 의 꼬리표만 올리고
+    // gate.js 의 꼬리표를 그대로 두면, 브라우저가 캐시에 있는 옛
+    // gate.js 를 쓰고 그 gate.js 는 **옛 app.js** 를 부른다. 배포는
+    // 성공했는데 사용자 화면만 예전 것으로 남는다 — 이 저장소에서
+    // 낡은 자료가 새것인 얼굴로 남는 사고가 이미 두 번 있었다.
+    {
+      const fs2 = require('fs');
+      const html = fs2.readFileSync(
+        path.join(ROOT, 'public', 'app', 'index.html'), 'utf8');
+      const gate = fs2.readFileSync(
+        path.join(ROOT, 'public', 'app', 'gate.js'), 'utf8');
+      const gv = (html.match(/gate\.js\?v=([\w-]+)/) || [])[1];
+      const av = (gate.match(/app\.js\?v=([\w-]+)/) || [])[1];
+      check('gate.js 와 app.js 의 꼬리표가 같다',
+            !!gv && gv === av,
+            `index.html→gate.js=${gv} · gate.js→app.js=${av}`);
+      const cv = (html.match(/style\.css\?v=([\w-]+)/) || [])[1];
+      check('style.css 꼬리표도 같이 올라갔다', cv === av,
+            `style.css=${cv} · app.js=${av}`);
+    }
   } finally {
     await browser.close();
     srv.kill();
