@@ -296,6 +296,27 @@ for _buy in ("필지 특성", "관청 좌표 (", "지오코딩"):
     check(_i is not None and _save_i is not None and _i < _save_i,
           f"'{_buy}' 로 산 것이 캐시에 들어간다 ({_i} < {_save_i})")
 
+# 캐시는 조인 결과를 **일부러 비운 채** 저장된다(위 '캐시 앞 정리').
+# 그러니 캐시에서 시작하는 모든 워크플로는 패널 앞에서 link 를 다시
+# 돌려야 한다. analyze run 10 이 이것을 빠뜨려 '거래 0행' 으로 죽었다 —
+# 조건(fill_tollgates)이 걸려 있었고, 그 전까지는 캐시에 연결이 남아
+# 있어서 우연히 가려져 있었다.
+_an = _yamllib.safe_load(
+    (ROOT / ".github/workflows/analyze.yml").read_text(encoding="utf-8"))
+_an_steps = _an["jobs"]["analyze"]["steps"]
+_an_named = {str(st.get("name", "")): st for st in _an_steps}
+_link = next((st for n, st in _an_named.items() if "재연결" in n), None)
+check(_link is not None, "분석에도 거래↔영업소 재연결 단계가 있다")
+if _link is not None:
+    check("if" not in _link,
+          "재연결에는 조건이 없다 (캐시의 연결은 언제나 0행이다)"
+          f" — 지금 조건 {_link.get('if')!r}")
+_an_names = [str(st.get("name", "")) for st in _an_steps]
+_li = next((i for i, n in enumerate(_an_names) if "재연결" in n), None)
+_pi = next((i for i, n in enumerate(_an_names) if "분석 패널" in n), None)
+if None not in (_li, _pi):
+    check(_li < _pi, f"재연결이 패널보다 먼저다 ({_li} < {_pi})")
+
 print()
 print("7. 라이브 반영 — 브랜치에만 쌓이고 사이트는 그대로이던 것")
 
