@@ -41,7 +41,20 @@ export async function onRequest(context) {
     error = String((e && e.message) || e);
   }
 
+  // **어디서 돌았는가.** 이것이 이사의 급소다.
+  //
+  // Vercel 함수는 regions:["icn1"] 로 서울에 고정돼 있었다. 한국 공공
+  // API 가 해외 IP 를 막기 때문에(docs/finding-geoblock.md) 중계기가
+  // 서울에서 돌아야만 했다.
+  //
+  // Cloudflare Workers 는 **요청자에게 가까운 곳**에서 돈다. 한국
+  // 사용자가 열면 서울에서 돌지만, 미국 러너가 부르면 미국에서 돈다.
+  // 그러면 수집 파이프라인의 중계기 노릇을 못 한다.
+  const cf = context.request.cf || {};
+
   return new Response(JSON.stringify({
+    ran_at: { colo: cf.colo || null, country: cf.country || null,
+              city: cf.city || null, tz: cf.timezone || null },
     // Cloudflare 가 이 배포에 붙여 준 이름들
     context_has: inContext,
     // 우리 핸들러가 실제로 읽는 자리에 있는 이름들
