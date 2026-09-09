@@ -56,7 +56,10 @@ def head(text: str) -> None:
 
 def show(resp, n: int = 400) -> None:
     ctype = resp.headers.get("content-type", "")
-    body = resp.text[:n].replace("\n", " ")
+    # **줄바꿈을 다 뭉갠다.** \n 만 지웠더니 \r 과 들여쓰기가 남아,
+    # HTML 한 덩이가 Actions 로그를 수백 줄로 밀어냈다. 그 바람에 정작
+    # 봐야 할 절이 로그 꼬리에서 밀려났다(2026-09-09).
+    body = " ".join(resp.text[:n].split())
     print(f"    http={resp.status_code} type={ctype} len={len(resp.content):,}")
     print(f"    {body}")
 
@@ -186,9 +189,12 @@ def probe_code_go_kr() -> None:
 
 def main() -> int:
     print("중계기:", "켜짐" if relay().enabled else "꺼짐 (직접 부릅니다)")
+    # **가장 중요한 것을 마지막에 찍는다.** 로그 꼬리부터 읽게 되므로,
+    # 지금 답을 기다리는 절(행정표준코드 활용신청이 먹었는가)이 맨 뒤에
+    # 있어야 한다.
     probe_data_api()
-    probe_stan_regin()
     probe_code_go_kr()
+    probe_stan_regin()
     head("읽는 법")
     print("""
   (가)가 서면 그것 하나로 끝납니다 — 이름과 좌표가 같이 오고
