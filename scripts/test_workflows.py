@@ -416,6 +416,56 @@ if None not in (_prune_i, _report_i):
           f"정리한 뒤에 용량을 찍는다 ({_prune_i} < {_report_i})")
 
 print()
+print("N. vercel.json — 배포를 통째로 막을 수 있는 파일")
+# 2026-09-09 에 여기서 라이브가 두 시간 멈췄다.
+#
+# regions:["icn1"] 이 왜 있는지를 파일 안에 적어 두려고 "_regions_주석"
+# 이라는 키를 넣었다. JSON 에 주석이 없으니 키로 대신한 것인데,
+# **Vercel 은 모르는 최상위 키를 보면 배포 자체를 거부한다.**
+#
+#   The `vercel.json` schema validation failed with the following
+#   message: should NOT have additional property `_regions_주석`
+#
+# 빌드 로그도 안 남는다 — 빌드가 시작되기 전에 잘리기 때문이다. 그래서
+# 겉으로는 사이트가 멀쩡해 보인다. 예전 배포가 계속 서빙되기 때문이다.
+# 커밋 다섯 개와 수집 세 번이 라이브에 안 올라간 채로 흘렀다.
+#
+# 교훈은 둘이다. **JSON 설정 파일에 설명을 키로 넣지 않는다.** 그리고
+# **설명은 검사에 적는다** — 검사는 지우면 빨개지지만 주석은 조용히
+# 지워진다.
+_VERCEL_KEYS = {
+    "$schema", "build", "buildCommand", "cleanUrls", "crons", "devCommand",
+    "env", "framework", "functions", "git", "github", "headers", "images",
+    "ignoreCommand", "installCommand", "outputDirectory", "public",
+    "redirects", "regions", "rewrites", "routes", "trailingSlash",
+    "functionFailoverRegions", "deploymentEnabled",
+}
+_vj = ROOT / "vercel.json"
+check(_vj.exists(), "vercel.json 이 있다")
+if _vj.exists():
+    import json as _json
+    try:
+        _cfg = _json.loads(_vj.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        check(False, f"올바른 JSON 이다 ({exc})")
+        _cfg = {}
+    _unknown = sorted(set(_cfg) - _VERCEL_KEYS)
+    check(not _unknown,
+          "Vercel 이 아는 최상위 키만 있다"
+          + (f" — 모르는 키 {_unknown} 가 배포를 거부시킨다" if _unknown else ""))
+
+    # **icn1(서울)은 장식이 아니라 이 제품이 도는 이유다.**
+    # 한국 공공 API 가 해외 IP 를 막는다(docs/finding-geoblock.md).
+    # 2026-09-09 에 Cloudflare Pages 로 옮겨 실측했더니 브이월드
+    # (api.vworld.kr)가 502 로 거부했다 — 한국에서 열어도 마찬가지였다.
+    # Cloudflare Workers 에는 리전 고정이 없다. 브이월드는 지오코딩·
+    # 지적편집도·필지조회 셋에 다 쓰이므로 이 한 줄이 빠지면 제품의
+    # 절반이 죽는다. (실측표: docs/cloudflare-migration.md)
+    check(_cfg.get("regions") == ["icn1"],
+          f"함수가 서울(icn1)에 고정돼 있다 (지금 {_cfg.get('regions')!r}) — "
+          "한국 공공 API 가 해외 IP 를 막는다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
