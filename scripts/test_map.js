@@ -866,7 +866,12 @@ const FAKE_LEAFLET = () => {
       ic: ['tg-year', 'tg-vehicle', 'tier-filters', 'band-legend']
         .filter((id) => !document.getElementById(id)),
       price: ['lp-note', 'lp-swap'].filter((id) => !document.getElementById(id)),
-      pills: document.querySelectorAll('.sheet .lp-filter').length,
+      // **묶음 안에서 센다.** 시트 전체를 세면 다른 묶음의 칩까지 들어와,
+      // 핀 칩을 더한 날 이 검사가 엉뚱한 이유로 빨개진다 (2026-09-09).
+      pills: document.querySelectorAll(
+        '.sheet-pane[data-cat="price"] .lp-filter').length,
+      pinPill: document.querySelectorAll(
+        '.sheet-pane[data-cat="trade"] .lp-filter[data-filter="pin"]').length,
     }));
     check('실거래 표시 묶음에 그 조작부가 다 있다',
           moved.trade.length === 0, moved.trade.join(','));
@@ -874,6 +879,10 @@ const FAKE_LEAFLET = () => {
     check('실거래 가격 묶음에 땅값 칩이 있다',
           moved.price.length === 0 && moved.pills === 2,
           `빠진 것 ${moved.price.join(',')} · 칩 ${moved.pills}개`);
+    // 핀 유형은 **거래 쪽** 조작이다. 땅값 칩 옆에 두면 지도의 바탕색을
+    // 바꾸는 줄 안다.
+    check('실거래 표시 묶음에 핀 유형 칩이 있다', moved.pinPill === 1,
+          `${moved.pinPill}개`);
 
     const oIc = await openCat('ic');
     check('다른 분류를 누르면 그쪽으로 바뀐다',
@@ -1220,6 +1229,85 @@ const FAKE_LEAFLET = () => {
           satHit && Number(satHit[1]) >= .5, sat || '(필터 없음)');
 
     console.log();
+    // ── 거래 핀 (사장님 지시 2026-09-09) ─────────────────────────
+    //
+    // "우리는 매물을 클릭했을 때 나와서 무슨 물건인지 모릅니다."
+    //
+    // 눌러야만 알 수 있으면 스무 건을 견주는 데 스무 번을 눌러야 한다.
+    // 부동산플래닛처럼 핀에 값을 적되, **당겨 봤을 때만** 적는다.
+    {
+      const pinRead = async () => page.evaluate(() => {
+        const on = window.__mapOn || {};
+        (on.zoomend || []).forEach((f) => f());
+        (on.moveend || []).forEach((f) => f());
+        return { peek: window.__pins || {},
+                 html: (window.__tradeStyles || []).map((o) => o.html) };
+      });
+      // 켜 놓고 본다 (앞 절이 종류 필터를 다 켜 두었다).
+      await page.evaluate(() => { window.__zoom = 11; });
+      const far = await pinRead();
+      check('멀리서는 점 그대로다 (글자를 안 단다)',
+            far.peek.labelled === false
+            && far.html.every((h) => /trade-mark/.test(h)),
+            `labelled=${far.peek.labelled} · ${(far.html[0] || '').slice(0, 50)}`);
+
+      await page.evaluate(() => { window.__zoom = 16; });
+      const near = await pinRead();
+      check('당겨 보면 핀에 값이 적힌다',
+            near.peek.labelled === true
+            && near.html.some((h) => /class="trade-pin/.test(h)),
+            `labelled=${near.peek.labelled} · ${(near.html[0] || '').slice(0, 70)}`);
+      // 종류 · 값 · 보조 세 줄. 값만 있으면 무슨 물건인지 여전히 모른다 —
+      // 그것이 사장님 지적의 핵심이었다.
+      check('핀이 무슨 물건인지 말한다 (종류가 적힌다)',
+            near.html.some((h) => /<b>(토지|공장|창고|공장·창고)<\/b>/.test(h)),
+            (near.html.find((h) => /trade-pin/.test(h)) || '없음').slice(0, 90));
+      // 꼬리가 **좌표를 가리켜야** 한다. 카드만 있으면 어느 필지인지 모른다.
+      check('핀에 꼬리가 있다 (어느 자리인지 가리킨다)',
+            near.html.every((h) => !/trade-pin[ "]/.test(h)
+                                   || /trade-pin-tail/.test(h)),
+            (near.html.find((h) => /trade-pin/.test(h)) || '없음').slice(-60));
+
+      const pinPick = async (v) => {
+        await page.evaluate((val) => {
+          const box = document.querySelector('.lp-filter[data-filter="pin"]');
+          box.querySelector('.lp-pill').click();
+          box.querySelector(`.lp-opt[data-value="${val}"]`).click();
+        }, v);
+        return pinRead();
+      };
+      const byYear = await pinPick('year');
+      check('핀 유형을 바꾸면 적히는 값이 바뀐다',
+            byYear.peek.kind === 'year'
+            && byYear.html.some((h) => /<i>\d{4}년<\/i>/.test(h)),
+            (byYear.html.find((h) => /trade-pin/.test(h)) || '없음').slice(0, 90));
+      // **같은 값을 두 줄에 적지 않는다.** 연도를 골랐는데 보조 줄에도
+      // 연도가 있으면 그 줄이 아무 말도 안 하게 된다.
+      check('보조 줄이 고른 유형과 겹치지 않는다',
+            byYear.html.filter((h) => /trade-pin/.test(h))
+              .every((h) => {
+                const sub = (h.match(/<s>([^<]*)<\/s>/) || [])[1] || '';
+                return !/\d{4}(?!평)/.test(sub.replace(/[\d,]+평/g, ''));
+              }),
+            (byYear.html.find((h) => /<s>/.test(h)) || '(보조 줄 없음)').slice(0, 90));
+      const byArea = await pinPick('area');
+      check('면적으로도 바꿀 수 있다',
+            byArea.peek.kind === 'area'
+            && byArea.html.some((h) => /<i>[\d,]+평<\/i>/.test(h)),
+            (byArea.html.find((h) => /trade-pin/.test(h)) || '없음').slice(0, 90));
+      // 우리에게 없는 칸은 고르게 두지 않는다. 눌렀을 때 비면 그것은
+      // '자료가 없다' 가 아니라 고장으로 읽힌다.
+      const opts = await page.evaluate(() => [...document.querySelectorAll(
+        '.lp-filter[data-filter="pin"] .lp-opt')].map((b) => b.dataset.value));
+      check('없는 칸은 고르게 두지 않는다 (건물단가·세대수 없음)',
+            opts.length === 6 && !opts.includes('households')
+            && !opts.includes('buildUnit'),
+            opts.join(','));
+      await pinPick('price');
+      await page.evaluate(() => { window.__zoom = 11; });
+      await pinRead();
+    }
+
     console.log('9. 인구는 원이 아니라 땅값 글자 옆의 (XX만)');
     /* 사장님 지시(2026-09-08):
      *   "도, 광역시, 시, 군, 읍, 동, 리 사각에서 상단에 이름 옆에 인구를
@@ -1465,17 +1553,22 @@ const FAKE_LEAFLET = () => {
           ['종로구', '강남구', '용인시', '평택시']
             .every((nm) => lp1.html.some((h) => h.indexOf(nm) >= 0)),
           lp1.html.filter((h) => /0만/.test(h)).length + '개가 0만');
-    // 사장님 지시: "거래 0만/평으로 표기". 값 자리를 비우면 그 태그가
-    // 무엇을 뜻하는지 알 수 없다.
-    check('거래가 없으면 0만/평이라고 적는다',
-          lp1.html.filter((h) => /<i>0만<u>\/평<\/u><\/i>/.test(h)).length === 3,
-          lp1.html.find((h) => /0만/.test(h)) || '없음');
-    // 0 과 '적다' 는 다르다. 평택시는 세 건 있었지만 다섯 건이 안 돼
-    // 값을 안 썼다 — 여기에 0 을 적으면 거짓이 된다. 사장님 지시대로
-    // 줄표를 쓴다: "5건 미만이라 표시가 안되는 곳은 -만/평".
-    check('다섯 건이 안 되는 곳은 0이 아니라 -만/평이다',
-          lp1.html.some((h) => /평택시/.test(h)
-                               && /<i>-만<u>\/평<\/u><\/i>/.test(h)),
+    // 사장님 지시(2026-09-09 3차): "없는 곳은 지명만 나오고 거래 있는
+    // 곳은 색상으로 구분". 0 이든 줄표든 값 자리를 채우면 값처럼 읽힌다.
+    // **값 줄 안만 본다.** 카드에는 인구가 <em>34만</em> 처럼 붙어 있어,
+    // 카드 전체에서 '0만' 을 찾으면 인구가 걸린다.
+    check('거래가 없으면 지명만 남는다 (값 줄이 아예 없다)',
+          lp1.html.filter((h) => !/<i>/.test(h)).length === 4
+          && lp1.html.every((h) => {
+            const v = (h.match(/<i>(.*?)<\/i>/) || [])[1] || '';
+            return !/^0만|^-만/.test(v);
+          }),
+          `값 줄 없는 카드 ${lp1.html.filter((h) => !/<i>/.test(h)).length}개 · `
+          + (lp1.html.find((h) => !/<i>/.test(h)) || '없음'));
+    // 다섯 건이 안 되는 곳도 마찬가지다. 0건과의 구별은 없앤 것이 아니라
+    // 말풍선으로 옮겼다 — 태그는 훑는 자리, 말풍선은 짚는 자리다.
+    check('다섯 건이 안 되는 곳도 지명만이다',
+          lp1.html.some((h) => /평택시/.test(h) && !/<i>/.test(h)),
           lp1.html.find((h) => /평택시/.test(h)) || '없음');
     // **사각형 표찰: 이름 위, 값 아래.** 알약에 나란히 쓰면 이름이 길수록
     // 옆으로 늘어나 서로 겹친다.
@@ -1483,7 +1576,9 @@ const FAKE_LEAFLET = () => {
           // 이름 뒤에 <em>인구</em> 가 붙을 수 있다 (사장님 지시 2026-09-08).
           // 거래가 없는 칸은 class 가 'lp-card is-none' 이다.
           lp1.html.every((h) => /class="lp-card( is-none)?"/.test(h)
-                               && /<b>[^<]+(<em>[^<]*<\/em>)?<\/b><i>/.test(h)),
+                               && /<b>[^<]+(<em>[^<]*<\/em>)?<\/b>/.test(h))
+          && lp1.html.filter((h) => /<i>/.test(h))
+            .every((h) => /<\/b><i>/.test(h)),
           (lp1.html.find((h) => !/<b>[^<]+(<em>[^<]*<\/em>)?<\/b><i>/.test(h))
            || lp1.html[0] || '없음').slice(0, 160));
     const lp1Fills = fillsOf(lp1.html);
@@ -1507,8 +1602,10 @@ const FAKE_LEAFLET = () => {
           /^계획관리 ·/.test(lp1.note), lp1.note);
     // 사장님 지시(2026-09-08): "xx원/평, xx원/㎡ 으로 수정".
     // 값만 있으면 평인지 ㎡인지 알 수 없다.
+    // 값이 있는 칸에만 붙는다 — 값이 없는 칸에는 그 줄 자체가 없다.
     check('표찰에 단위를 붙인다 (평인지 ㎡인지 알 수 있게)',
-          lp1.html.every((h) => /<u>\/평<\/u>/.test(h)),
+          lp1.html.filter((h) => /<i>/.test(h))
+            .every((h) => /<u>\/평<\/u>/.test(h)),
           lp1.html.find((h) => /장안구/.test(h)) || '없음');
     check('글자는 평당으로 접어 쓴다',
           lp1.html.some((h) => /33\.1만|33만/.test(h)),
@@ -2051,11 +2148,14 @@ const FAKE_LEAFLET = () => {
       await new Promise((r) => setTimeout(r, 200));
       // **내가 표시를 심은 태그**를 찾아야 한다. 첫 번째 <s> 태그를
       // 집으면 남의 카드를 보고 통과·실패를 말하게 된다.
-      const card = window.__cards().find((h) => /지금 3 \//.test(h));
+      const card = window.__cards().find((h) => /3명 조회중/.test(h));
       return { mine, text: card || window.__cards().join(' | ') };
     });
-    check('셋째 줄에 지금·오늘을 적는다',
-          /지금 3 \/ 오늘 \d+명/.test(vw2.text), vw2.text);
+    // 사장님 지시(2026-09-09 3차): "그냥 XX 명 조회중 으로 간단하게".
+    // 셋째 줄에 숫자가 둘이면 그 줄부터 읽기를 포기한다.
+    check('셋째 줄에 몇 명이 보고 있는지만 적는다',
+          /<s>3명 조회중<\/s>/.test(vw2.text)
+          && !/오늘|지금/.test(vw2.text), vw2.text);
 
     // 아무 숫자도 없는 태그에는 **줄을 안 만든다.** 새로 생긴 동네마다
     // '지금 0 / 오늘 0명' 이 붙으면 그것만 눈에 띈다.

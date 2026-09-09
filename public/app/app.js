@@ -49,6 +49,9 @@ const state = {
   yearFrom: null, yearTo: null, yearWide: false,
   // 땅값 분위지도 (2026-09-08 지시)
   landPrice: null, lpStat: 'p50', lpWindow: '',
+  // 거래 핀에 무엇을 적을 것인가. 총액이 기본이다 — 땅을 보는
+  // 사람이 가장 먼저 묻는 것이 '얼마에 팔렸나' 다.
+  pinKind: 'price', tradeLabelled: false,
   // 땅값 글자의 용도지역. 거래 점 필터(activeLandUse)와 **따로 논다**.
   lpGroupSet: new Set(),
 };
@@ -1599,7 +1602,16 @@ function updateYearNote() {
   if (typeof state.tradeInView === 'number') {
     text += ` · 지금 보이는 영역 ${n(state.tradeInView)}건`;
     if (state.tradeDrawn < state.tradeInView) {
-      text += ` <em>(그중 ${n(state.tradeDrawn)}건만 표시 — 확대하면 다 보입니다)</em>`;
+      // **핀일 때는 '확대하면 다 보인다' 가 거짓이다.** 핀은 더 당겨도
+      // 60개에서 끊긴다. 왜 끊었고 무엇을 남겼는지를 그대로 적는다 —
+      // 안 적으면 '이 동네 거래는 이것뿐' 으로 읽힌다.
+      text += state.tradeLabelled
+        ? ` <em>(핀은 겹치지 않게 ${n(state.tradeDrawn)}건만 —`
+          + ' 최근 거래부터입니다)</em>'
+        : ` <em>(그중 ${n(state.tradeDrawn)}건만 표시 — 확대하면 다 보입니다)</em>`;
+    }
+    if (!state.tradeLabelled) {
+      text += ' <em>(더 당기면 핀에 값이 적힙니다)</em>';
     }
   }
   node.innerHTML = text + '.';
@@ -1667,10 +1679,50 @@ function drawTrades() {
   // 한 화면에 1,500개가 넘으면 앞에서 자른다. 자를 때는 반드시 말한다 —
   // 말 안 하면 '이 동네 거래는 이것뿐' 으로 읽힌다.
   state.tradeInView = inView.length;
-  state.tradeDrawn = Math.min(inView.length, TRADE_DRAW_CAP);
-  for (let i = 0; i < state.tradeDrawn; i++) {
-    tradeLayer.addLayer(tradeMarker(inView[i]));
+  // **당겨 보면 글자를 단다** (사장님 지시 2026-09-09 — 눌러야만 알 수
+  // 있는 것을 고친다). 멀리서는 점 그대로다: 전국에 1,500개 글자를 달면
+  // 서로 덮여 하나도 못 읽는다.
+  const labelled = map.getZoom() >= TRADE_LABEL_ZOOM;
+  let rowsToDraw = inView;
+  if (labelled && inView.length > TRADE_LABEL_CAP) {
+    // 자를 때는 **최근 거래부터** 남긴다. 앞에서 그냥 자르면 파일에
+    // 실린 순서가 곧 '보여줄 거래' 가 되는데, 그것은 아무 뜻도 없다.
+    rowsToDraw = inView.slice().sort(
+      (a, b) => (b.deal_year - a.deal_year)
+                || ((b.deal_month || 0) - (a.deal_month || 0)));
   }
+  state.tradeLabelled = labelled;
+  state.tradeDrawn = Math.min(
+    rowsToDraw.length, labelled ? TRADE_LABEL_CAP : TRADE_DRAW_CAP);
+  for (let i = 0; i < state.tradeDrawn; i++) {
+    tradeLayer.addLayer(tradeMarker(rowsToDraw[i], labelled));
+  }
+  // **여기서 내놓는다.** 예전에는 refreshMap() 이 내놓았는데, 핀 유형만
+  // 바꿀 때는 refreshMap 을 안 거치므로 들여다보기 창이 옛 그림을
+  // 가리켰다 — 검사가 초록인데 화면은 바뀌어 있는 상태가 된다.
+  // 검사용 들여다보기 창. window.__bands 와 같은 취지다 — 지도는 CDN
+  // 의 Leaflet 이 있어야 그려져서, 그리는 값 자체를 밖에서 볼 길이
+  // 없으면 '색이 안 보인다' 같은 지적을 검사로 못 옮긴다.
+  window.__tradeStyles = tradeLayer.getLayers
+    ? tradeLayer.getLayers().map((l) => ({
+        kind: l.options.kind,
+        geocodeLevel: l.options.geocodeLevel,
+        // 어느 판에 그렸는가. 판이 곧 위아래 순서다 — 영업소를 덮는지
+        // 아닌지가 여기서 갈린다.
+        pane: l.options.pane,
+        // 모양과 색은 CSS 클래스가 정한다. 무엇이 붙었는지를 그대로
+        // 내보내야 검사가 '네모인가 마름모인가' 를 볼 수 있다.
+        html: (l.options.icon && l.options.icon.options
+               && l.options.icon.options.html) || '',
+        // 누를 수 있는지와, 눌렀을 때 무엇이 뜨는지. 이 둘이 없으면
+        // '눌러도 아무것도 안 나온다' 를 검사로 옮길 수 없다.
+        interactive: l.options.interactive === true,
+        popup: (l.getPopup && l.getPopup() && l.getPopup().getContent
+                && l.getPopup().getContent()) || l.__popupHtml || '',
+      }))
+    : undefined;
+  window.__pins = { kind: state.pinKind, labelled, drawn: state.tradeDrawn,
+                    inView: state.tradeInView };
   updateYearNote();
 }
 
@@ -1700,27 +1752,6 @@ function refreshMap() {
   // **땅값 글자는 여기서 다시 그리지 않는다.** 거래 점 필터와 따로 놀기로
   // 했다(사장님 지시 2026-09-08) — 점을 걸러 볼 때마다 바탕의 중앙값이
   // 함께 흔들리면 견줄 수가 없다. 배율·이동과 자기 칸에서만 다시 그린다.
-  // 검사용 들여다보기 창. window.__bands 와 같은 취지다 — 지도는 CDN
-  // 의 Leaflet 이 있어야 그려져서, 그리는 값 자체를 밖에서 볼 길이
-  // 없으면 '색이 안 보인다' 같은 지적을 검사로 못 옮긴다.
-  window.__tradeStyles = tradeLayer.getLayers
-    ? tradeLayer.getLayers().map((l) => ({
-        kind: l.options.kind,
-        geocodeLevel: l.options.geocodeLevel,
-        // 어느 판에 그렸는가. 판이 곧 위아래 순서다 — 영업소를 덮는지
-        // 아닌지가 여기서 갈린다.
-        pane: l.options.pane,
-        // 모양과 색은 CSS 클래스가 정한다. 무엇이 붙었는지를 그대로
-        // 내보내야 검사가 '네모인가 마름모인가' 를 볼 수 있다.
-        html: (l.options.icon && l.options.icon.options
-               && l.options.icon.options.html) || '',
-        // 누를 수 있는지와, 눌렀을 때 무엇이 뜨는지. 이 둘이 없으면
-        // '눌러도 아무것도 안 나온다' 를 검사로 옮길 수 없다.
-        interactive: l.options.interactive === true,
-        popup: (l.getPopup && l.getPopup() && l.getPopup().getContent
-                && l.getPopup().getContent()) || l.__popupHtml || '',
-      }))
-    : undefined;
 }
 
 /* 용도지역 폴리곤 배경 — 네이버 지적편집도의 그 화면.
@@ -1968,6 +1999,100 @@ function tradePopup(t) {
  *
  * 필터는 7종을 다 갈라 놓지만 색까지 7가지로 나누면 지도에서 서로
  * 구별이 안 된다. 사람 눈이 점 색을 대여섯 개까지밖에 못 가른다. */
+/* ── 거래 핀에 글자를 얹는다 (사장님 지시 2026-09-09) ────────────
+ *
+ * "우리는 매물을 클릭했을 때 나와서 무슨 물건인지 모릅니다."
+ *
+ * 맞습니다. 지금 거래는 **9px 짜리 점**입니다. 색으로 종류만 겨우 갈리고,
+ * 얼마에 팔렸는지·언제인지·얼마나 큰지는 하나하나 눌러 봐야 압니다.
+ * 스무 건을 견주려면 스무 번 눌러야 하는데, 그러면 지도를 쓰는 뜻이
+ * 없습니다 — 지도는 **한눈에 견주라고** 있는 것입니다.
+ *
+ * 부동산플래닛(map.bdsplanet.com)을 보고 그 방식을 가져옵니다.
+ *
+ *     ┌─────────┐
+ *     │ 토지    │   종류
+ *     │ 2.2억   │   고른 유형의 값
+ *     │ 2020·202평│ 보조
+ *     └────┬────┘
+ *          ▼        꼬리가 **실제 좌표**를 가리킨다
+ *
+ * 그리고 그 값을 무엇으로 볼지 고르게 합니다. 사는 사람마다 먼저 보는
+ * 것이 다릅니다 — 총액을 보는 사람, 평단가를 보는 사람, 언제 거래인지를
+ * 보는 사람.
+ *
+ * **없는 칸은 고르게 두지 않습니다.** 부동산플래닛에는 건물단가·준공연도·
+ * 세대수도 있지만 우리 토지 자료에는 그 칸이 없습니다. 목록에 올려 두고
+ * 눌렀을 때 비면, 그것은 자료가 없다는 말이 아니라 고장으로 읽힙니다. */
+const PIN_KINDS = [
+  { key: 'price', label: '거래금액', of: (t) => pinMoney(t.price_krw) },
+  { key: 'unit', label: '평단가',
+    of: (t) => pinMoney(t.price_per_m2 * PYEONG_M2) },
+  { key: 'year', label: '거래연도',
+    of: (t) => (t.deal_year ? `${t.deal_year}년` : null) },
+  { key: 'area', label: '토지면적', of: (t) => pinPyeong(t.area_m2) },
+  { key: 'jimok', label: '지목', of: (t) => t.jimok || null },
+  { key: 'zone', label: '용도지역', of: (t) => pinZone(t.land_use) },
+];
+
+/* 핀에 글자를 붙이는 배율.
+ *
+ * **낮은 배율에서 붙이면 안 됩니다.** 전국을 보면서 1,500개에 글자를
+ * 달면 서로 덮여 하나도 못 읽고, 그리는 데도 한참 걸립니다. 지금 점을
+ * 그대로 두는 배율과 글자를 다는 배율을 가릅니다 — 부동산플래닛도
+ * 필지가 보일 만큼 당겨야 핀이 뜹니다. */
+const TRADE_LABEL_ZOOM = 15;
+/* 그 배율에서도 한 화면에 몇 개까지. 넘으면 최근 거래부터 남깁니다. */
+const TRADE_LABEL_CAP = 60;
+
+/* won() 은 '2.2억원' 을 줍니다. 핀은 좁아서 '원' 을 뗍니다 — 억/만이
+ * 이미 돈이라고 말하고 있습니다. */
+function pinMoney(v) {
+  const got = won(v);
+  return got ? got.replace(/원$/, '') : null;
+}
+
+function pinPyeong(m2) {
+  if (!(typeof m2 === 'number' && isFinite(m2) && m2 > 0)) return null;
+  return `${Math.round(m2 / PYEONG_M2).toLocaleString('ko-KR')}평`;
+}
+
+/* '제1종일반주거지역' → '제1종일반주거'. 핀 너비가 이름 길이를 못 견딥니다.
+ * **자르지 않고 꼬리말만 뗍니다** — 가운데를 자르면 다른 용도지역과
+ * 구별이 안 됩니다. */
+function pinZone(name) {
+  const v = String(name || '').trim();
+  if (!v) return null;
+  return v.replace(/지역$/, '');
+}
+
+function pinKind() {
+  return PIN_KINDS.find((k) => k.key === state.pinKind) || PIN_KINDS[0];
+}
+
+/* 핀 머리의 '무엇인가'. 색만으로는 공장과 창고가 안 갈립니다. */
+function pinTitle(t) {
+  if (t.kind !== 'factory') return '토지';
+  const u = t.usage || '';
+  if (u.includes('창고')) return '창고';
+  if (u.includes('공장')) return '공장';
+  return '공장·창고';
+}
+
+/* 셋째 줄. **고른 유형과 겹치는 것은 뺍니다** — 같은 값을 두 번 적으면
+ * 그 줄이 아무 말도 안 하게 됩니다. */
+function pinSub(t) {
+  const now = state.pinKind;
+  const bits = [];
+  if (now !== 'year' && t.deal_year) bits.push(`${t.deal_year}`);
+  if (now !== 'area') { const py = pinPyeong(t.area_m2); if (py) bits.push(py); }
+  if (now === 'year' || now === 'area') {
+    const per = pinMoney(t.price_per_m2 * PYEONG_M2);
+    if (per) bits.push(`${per}/평`);
+  }
+  return bits.join(' · ');
+}
+
 function tradeShape(t) {
   if (t.kind !== 'factory') return 'trade-land';
   const u = t.usage || '';
@@ -1976,9 +2101,10 @@ function tradeShape(t) {
   return 'trade-etc';
 }
 
-function tradeMarker(t) {
+function tradeMarker(t, labelled) {
   const factory = t.kind === 'factory';
   const coarse = t.geocode_level !== 'parcel';
+  if (labelled) return tradePin(t, coarse);
   return L.marker([t.lat, t.lon], {
     // divIcon 을 쓰는 이유는 하나다 — Leaflet 의 circleMarker 는 원밖에
     // 못 그린다. 모양으로 가르려면 이 길뿐이다.
@@ -1997,6 +2123,39 @@ function tradeMarker(t) {
     interactive: true,
     keyboard: false,
     // 검사와 화면 양쪽이 같은 값을 본다.
+    kind: t.kind,
+    geocodeLevel: t.geocode_level || '',
+  }).bindPopup(tradePopup(t), { className: 'trade-popup', maxWidth: 320 });
+}
+
+/* 글자를 단 핀. 점과 **같은 자리**를 가리켜야 한다 — 꼬리 끝이 좌표다.
+ *
+ * iconAnchor 를 카드 아래 꼭짓점에 둔다. 가운데에 두면 카드가 점 위에
+ * 얹혀, 정작 어느 필지인지 가린다. */
+function tradePin(t, coarse) {
+  const k = pinKind();
+  const val = k.of(t);
+  const sub = pinSub(t);
+  return L.marker([t.lat, t.lon], {
+    icon: L.divIcon({
+      className: 'trade-pin-wrap',
+      html: `<span class="trade-pin ${tradeShape(t)}`
+        // 좌표가 필지가 아니라 법정동 중심점인 거래. 점일 때는 테두리를
+        // 흐리게 해서 말했는데, 핀에서도 같은 말을 해야 한다 — 값은
+        // 정확한데 **자리가 ±1~2km** 라는 것은 큰 차이다.
+        + (coarse ? ' is-coarse' : '') + '">'
+        + `<b>${escapeHtml(pinTitle(t))}</b>`
+        + `<i>${escapeHtml(val || '—')}</i>`
+        + (sub ? `<s>${escapeHtml(sub)}</s>` : '')
+        // 꼬리는 **카드 안**에 둔다. 밖에 두면 카드의 색을 못 물려받아
+        // (currentColor) 검은 세모가 된다.
+        + '<u class="trade-pin-tail"></u></span>',
+      iconSize: null,
+      iconAnchor: [0, 0],
+    }),
+    pane: 'tradePane',
+    interactive: true,
+    keyboard: false,
     kind: t.kind,
     geocodeLevel: t.geocode_level || '',
   }).bindPopup(tradePopup(t), { className: 'trade-popup', maxWidth: 320 });
@@ -2824,23 +2983,23 @@ function lpSpark(trend) {
     + `</svg><em>${first[0]}→${last[0]} ${chg >= 0 ? '+' : ''}${(chg * 100).toFixed(0)}%</em></span>`;
 }
 
-/* 값이 없는 칸의 값 자리. 사장님 지시(2026-09-09):
- * "거래가 없어서 안보이는 것이라면 거래 0만/평으로 표기하고 지자체는
- *  보이도록 해주세요.(모든 지역 해당)"
- * 그리고 곧이어: "거래가 5건 미만이라 표시가 안되는 곳은 표시를 하면서
- *  -만/평 으로 변경해 주세요."
+/* 값이 없는 칸은 **이름만 남긴다.**
  *
- * **0 과 '적다' 는 다르다.** 다섯 건이 안 돼 값을 안 쓴 곳에 0 을 적으면
- * 거래가 아예 없었다고 말하는 것이 된다. 그래서 자리를 비운 표시로
- * 줄표를 쓴다 — 값이 있어야 할 자리인데 아직 못 쓴다는 뜻이다.
+ * 사장님 지시가 세 번에 걸쳐 여기로 왔다.
  *
- *   거래 0건        0만/평
- *   1~4건           -만/평      ← 몇 건인지는 말풍선이 말한다
+ *   1차  "거래 0만/평으로 표기하고 지자체는 보이도록"
+ *   2차  "5건 미만이라 표시가 안되는 곳은 -만/평으로"
+ *   3차  "없는 곳은 지명만 나오고 거래 있는 곳은 색상으로 구분"
  *
- * 처음에는 '거래 3건' 이라고 적었는데, 사장님이 오해를 지적하셨다 —
- * 값 자리에 건수가 들어가면 그것을 값으로 읽게 된다. */
-function lpNoneText(it) {
-  return it.few ? '-만' : '0만';
+ * 3차가 맞다. 0 이든 줄표든 **값 자리를 채우면 값처럼 읽힌다.** 값이
+ * 없다는 것은 값 자리를 비워서 말하는 편이 정확하고, 그 자리에 아무것도
+ * 없으면 태그가 짧아져 거래가 있는 곳이 눈에 먼저 든다 — 그것이 지도를
+ * 훑는 목적이다.
+ *
+ * 0건과 '적다' 의 구별은 없앤 것이 아니라 **말풍선으로 옮겼다.** 태그는
+ * 훑는 자리고 말풍선은 짚는 자리다. */
+function lpNoneText() {
+  return '';
 }
 
 function lpTip(it, level, w) {
@@ -2942,8 +3101,9 @@ function drawLandPrice() {
           // 20만인 것처럼 읽히므로, 없으면 아무것도 안 적는다.
           + (it.pop ? `<em>${popMan(it.pop)}</em>` : '')
           + `</b>`
-          + `<i>${escapeHtml(it.v == null ? lpNoneText(it) : lpMoney(it.v))}`
-          + '<u>/평</u></i>'
+          // 값이 없으면 이 줄 자체가 없다 (사장님 지시 2026-09-09 3차).
+          + (it.v == null ? ''
+            : `<i>${escapeHtml(lpMoney(it.v))}<u>/평</u></i>`)
           // 셋째 줄 — 지금 보는 사람 / 오늘 본 사람 (사장님 지시
           // 2026-09-09 2차). 둘 다 0이면 줄 자체가 없다.
           + viewerLine(it.pk)
@@ -3110,22 +3270,32 @@ function lpSuggest(info) {
   btn.dataset.group = best.group;
 }
 
+/* 칩 세 개가 같은 뼈대를 쓴다. 앞의 둘은 땅값 글자용이고 'pin' 은
+ * 거래 핀용이다 — 생김새와 조작이 같아야 사용자가 두 번 배우지 않는다. */
 const LP_FILTER_STATE = {
   window: () => state.lpWindow,
   stat: () => state.lpStat,
+  pin: () => state.pinKind,
 };
 
 function lpMenuItems(kind) {
   if (kind === 'window') {
     return lpWindows().map((w) => ({ value: w.key, label: w.label }));
   }
+  if (kind === 'pin') {
+    return PIN_KINDS.map((k) => ({ value: k.key, label: k.label }));
+  }
   return [{ value: 'p50', label: '중앙값' }, { value: 'avg', label: '평균' }];
 }
 
 function lpPickFilter(kind, value) {
   if (kind === 'window') state.lpWindow = value;
+  else if (kind === 'pin') state.pinKind = value;
   else state.lpStat = value;
   lpSyncChips();
+  // 핀은 거래 층이다. 땅값 글자를 다시 그릴 이유가 없다 — 그 둘은
+  // 일부러 따로 논다(2026-09-08 지시).
+  if (kind === 'pin') { drawTrades(); return; }
   drawLandPrice();
 }
 
@@ -4293,11 +4463,18 @@ function viewerCenterTag(items) {
 /* 태그 셋째 줄. 아무 숫자도 없으면 **줄 자체를 안 만든다** — 새로
    생긴 동네마다 '지금 0 / 오늘 0명' 이 붙으면 그것만 눈에 띈다. */
 function viewerLine(pk) {
+  // 사장님 지시(2026-09-09 3차): "누적 XX 명 / 오늘 XX명 말고 그냥
+  // XX 명 조회중 으로 간단하게".
+  //
+  // 맞는 지적이다. 태그는 이미 이름·값·조회 세 줄인데 셋째 줄에 숫자가
+  // 둘이면 그 줄부터 읽기를 포기하게 된다. **지금 몇 명이 보고 있는가**
+  // 하나면 족하다 — 그것이 이 줄을 단 이유였다.
+  //
+  // 오늘·이번 주 숫자는 그대로 받아 둔다. 주간 1등 별표가 그 값으로
+  // 뽑히고(viewersRankStars), 화면에서 뺐다고 세는 것까지 뺄 일은 아니다.
   const live = viewers.live.get(pk) || 0;
-  const st = viewers.stat.get(pk);
-  const today = st ? st.today : 0;
-  if (!live && !today) return '';
-  return `<s>지금 ${live} / 오늘 ${today}명</s>`;
+  if (!live) return '';
+  return `<s>${live}명 조회중</s>`;
 }
 
 /* 주간 1등인가. **시·군 안에서만 뽑는다** (사장님 지시: 전국 제외).
