@@ -110,6 +110,18 @@ Workers 쪽이니 뒤로 나오세요:**
    **인증키 다섯은 절대 wrangler.toml 에 적지 않습니다** — 공개
    저장소입니다. `scripts/test_cloudflare.js` 가 그것을 감시합니다.
 
+   #### `RELAY_TOKEN` 과 `REDT_RELAY_TOKEN` — 이름이 둘, 값은 하나
+
+   발급받는 키가 아니라 **우리가 정한 암호**입니다. 문 이쪽과 저쪽이라
+   이름만 다릅니다.
+
+       GitHub Actions (부르는 쪽)        Cloudflare (중계기)
+       REDT_RELAY_TOKEN  ──── 실어 보냄 ────▶  RELAY_TOKEN
+                                               같으면 통과, 다르면 401
+
+   **두 값이 같기만 하면 됩니다.** 바꿀 때는 반드시 함께 바꿉니다 —
+   한쪽만 바꾸면 수집이 401 로 통째로 멈춥니다.
+
 ## 3. 먼저 pages.dev 로 확인
 
 주소를 알려 주시면 제가 헤더로 확인합니다.

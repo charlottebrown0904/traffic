@@ -81,6 +81,13 @@ function scrub(text, secret) {
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") return deny(res, 405, "GET 만 허용합니다");
 
+  // **이름이 둘인데 값은 하나다.** 여기(중계기)는 RELAY_TOKEN 으로,
+  // 부르는 쪽(GitHub Actions)은 REDT_RELAY_TOKEN 으로 읽는다. 문 이쪽과
+  // 저쪽이라 이름을 갈라 두었는데, 둘 다 가진 사람 눈에는 발급처가
+  // 다른 두 개처럼 보인다 (2026-09-09 에 실제로 그렇게 읽혔다).
+  //
+  // 발급받는 키가 아니다. **우리가 정한 암호**이고, 두 값이 같기만
+  // 하면 된다. 바꿀 때는 반드시 양쪽을 함께 바꾼다.
   const expected = process.env.RELAY_TOKEN;
   if (!expected) return deny(res, 500, "RELAY_TOKEN 이 설정되지 않았습니다");
   const given = req.headers["x-relay-token"];
