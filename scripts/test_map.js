@@ -321,6 +321,19 @@ const FAKE_LEAFLET = () => {
     const FAKE_LANDPRICE = {
       latest_year: 2025,
       default_group: '계획관리',
+      // 법령 구조 그대로의 나무 (국토계획법 §36① · 시행령 §30① · §38).
+      zone_tree: [
+        { major: '도시지역', middle: '주거지역', names: ['제2종일반주거'] },
+        { major: '도시지역', middle: '녹지지역', names: ['자연녹지'] },
+        { major: '관리지역', middle: '', names: ['생산관리', '계획관리'] },
+        { major: '농림지역', middle: '', names: ['농림'] },
+        { major: '용도구역 (법 §38)', middle: '', names: ['개발제한구역'] },
+        { major: '기타', middle: '', names: ['용도 미지정'] },
+      ],
+      zone_notes: {
+        '개발제한구역': '용도지역이 아니라 용도구역(법 §38)이다.',
+        '용도 미지정': '신고서에 용도지역 칸이 비어 있다.',
+      },
       default_window: 'y3',
       windows: [
         { key: 'y1', label: '최근 1년', kind: 'year', span: 1 },
@@ -376,6 +389,18 @@ const FAKE_LEAFLET = () => {
         // 시군구에 다 있고 계획관리는 최근 1년에 두 곳뿐이다.
         농림: {
           41111: { y3: [5, 50000, 50000, 2023] },
+        },
+        // 법령 나무의 나머지 칸도 하나씩 둔다 — 도시지역>주거지역,
+        // 용도구역, 기타. 자료에 없으면 화면이 그 칸을 안 그리므로,
+        // 없으면 '법령 구조를 그린다' 는 검사가 헛돈다.
+        제2종일반주거: {
+          41111: { y3: [7, 700000, 700000, 2023] },
+        },
+        개발제한구역: {
+          41113: { y3: [6, 60000, 60000, 2023] },
+        },
+        '용도 미지정': {
+          41113: { y3: [5, 40000, 40000, 2023] },
         },
         자연녹지: {
           // 계획관리 10만(10건) 과 섞으면 (10만×10 + 29만×60) / 70 = 26.3만.
@@ -1203,7 +1228,7 @@ const FAKE_LEAFLET = () => {
     const zoneUI = await page.evaluate(async () => {
       const lp = await (await fetch('/app/data/landprice.json')).json();
       const btns = [...document.querySelectorAll('#lp-groups .zone-opt')];
-      const heads = [...document.querySelectorAll('#lp-groups .lp-menu-head')]
+      const heads = [...document.querySelectorAll('#lp-groups .zone-major')]
         .map((h) => h.textContent);
       return {
         dataGroups: Object.keys(lp.groups || {}),
@@ -1257,7 +1282,7 @@ const FAKE_LEAFLET = () => {
     check('무늬(사선·점)로도 가른다', pal.patterned >= 5, `${pal.patterned}개`);
     check('모르는 용도지역도 색이 있다 (빈 칸으로 두지 않는다)',
           !!pal.fallback, pal.fallback);
-    check('도시지역·비도시지역으로 갈라 놓는다', zoneUI.heads.length >= 2,
+    check('법령의 대분류로 갈라 놓는다 (§36①)', zoneUI.heads.length >= 2,
           zoneUI.heads.join(' / '));
     check('처음 켜지는 것은 계획관리·생산관리·자연녹지',
           ['계획관리', '생산관리', '자연녹지']
@@ -1762,21 +1787,63 @@ const FAKE_LEAFLET = () => {
     });
     check('영업소를 끄면 다시 닫힌다', d2);
 
-    // D — 도시/비도시로 큰 블록. 머리글이 되풀이되면 안 된다.
-    const blocks = await page.evaluate(() => {
+    // D — **법령 구조 그대로** (사장님 지시 2026-09-09: "분류는 법령
+    // 기준으로 정확히 합니다"). 머리글이 되풀이되면 안 되고, 도시지역이
+    // 먼저여야 하며, '비도시지역' 이라는 법에 없는 말이 없어야 한다.
+    const blocks = await page.evaluate(async () => {
+      const lp = await (await fetch('/app/data/landprice.json')).json();
       const box = document.getElementById('lp-groups');
-      const seq = [...box.children].map((el) =>
-        el.classList.contains('lp-menu-head') ? `#${el.textContent}` : '.');
-      const heads = seq.filter((x) => x.startsWith('#'));
-      return { heads, order: heads.map((h) => h.slice(1)) };
+      const seq = [...box.children].map((el) => {
+        if (el.classList.contains('zone-major')) return `#${el.textContent}`;
+        if (el.classList.contains('zone-middle')) return `>${el.textContent}`;
+        return '.';
+      });
+      return {
+        majors: seq.filter((x) => x.startsWith('#')).map((x) => x.slice(1)),
+        middles: seq.filter((x) => x.startsWith('>')).map((x) => x.slice(1)),
+        // 옆으로 흐르지 않는가 — 사장님 화면에서 칸이 다섯 줄로 흘러
+        // 머리글이 세로로 누웠다. 실제 계산된 값을 본다.
+        flow: [...box.querySelectorAll('.zone-row')].map(
+          (r) => getComputedStyle(r).gridAutoFlow),
+        cols: [...box.querySelectorAll('.zone-row')].map(
+          (r) => getComputedStyle(r).gridTemplateColumns.split(' ').length),
+        why: [...box.querySelectorAll('.zone-opt')].filter(
+          (b) => b.querySelector('.zone-why')).map((b) => b.dataset.group),
+        tree: (lp.zone_tree || []).map((n) => n.major),
+      };
     });
     check('갈래 머리글이 되풀이되지 않는다',
-          new Set(blocks.order).size === blocks.order.length,
-          blocks.order.join(' / '));
-    check('비도시지역이 위다 (기본으로 켠 둘이 거기 있다)',
-          !blocks.order.includes('도시지역')
-          || blocks.order.indexOf('비도시지역') < blocks.order.indexOf('도시지역'),
-          blocks.order.join(' → '));
+          new Set(blocks.majors).size === blocks.majors.length,
+          blocks.majors.join(' / '));
+    check('법에 없는 비도시지역을 안 쓴다',
+          !blocks.majors.includes('비도시지역'), blocks.majors.join(' / '));
+    check('도시지역이 먼저다 (법 §36①1)',
+          blocks.majors[0] === '도시지역', blocks.majors.join(' → '));
+    check('도시지역은 시행령 §30 의 세분으로 나뉜다',
+          blocks.middles.some((m) => m === '주거지역'),
+          blocks.middles.join(' / '));
+    // **옆으로 흐르면 안 된다.** class="checks" 가 걸어 두던
+    // grid-auto-flow:column 이 살아 있으면 이 검사가 잡는다.
+    check('칸이 옆으로 안 흐른다 (두 줄 격자)',
+          blocks.flow.length > 0 && blocks.flow.every((f) => f === 'row')
+          && blocks.cols.every((c) => c === 2),
+          `flow=${[...new Set(blocks.flow)]} · cols=${[...new Set(blocks.cols)]}`);
+    // '기타' 와 용도구역은 **사유를 밝혀야 한다** (사장님 지시).
+    check('기타·용도구역에는 사유 표시가 붙는다',
+          blocks.why.includes('개발제한구역')
+          && blocks.why.includes('용도 미지정'),
+          blocks.why.join(', '));
+    const note = await page.evaluate(async () => {
+      const b = [...document.querySelectorAll('.zone-opt')]
+        .find((x) => x.dataset.group === '용도 미지정');
+      b.querySelector('.zone-why').click();
+      await new Promise((r) => setTimeout(r, 100));
+      const n = document.getElementById('zone-note');
+      return { hidden: n.hidden, text: n.textContent };
+    });
+    check('사유를 눌러 읽을 수 있다',
+          !note.hidden && /용도지역 칸이 비어/.test(note.text),
+          note.text.slice(0, 60));
 
     console.log();
     console.log('9-C. 필지 진단 — 다섯 축을 또래 안 백분위로');

@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260910a">
+<link rel="stylesheet" href="/app/style.css?v=20260910b">
 </head>
 <body>
 
@@ -201,7 +201,15 @@
           <p>여러 개를 켜면 거래 건수로 가중해 섞습니다. 중앙값끼리 섞은
             것은 근사입니다 — 말풍선에 그렇게 적습니다.</p>
         </div>
-        <div class="checks" id="lp-groups"></div>
+        <!-- 분류는 **내보내기가 준 나무를 그대로** 그린다 (zone_tree).
+             국토계획법 §36① · 시행령 §30① · 같은 법 §38 순서다.
+
+             class="checks" 를 뺐다 — 그 클래스가 좁은 화면에서
+             grid-auto-flow:column 을 걸어, 칸들이 옆으로 흐르면서
+             머리글이 첫 칸에 세로로 눕고 상업지역이 관리지역 줄에
+             붙어 보였다 (사장님 화면, 2026-09-09). -->
+        <div id="lp-groups"></div>
+        <p class="zone-note" id="zone-note" hidden></p>
         <div class="lp-chips">
           <div class="lp-filter" data-filter="window">
             <button type="button" class="lp-pill" aria-expanded="false">

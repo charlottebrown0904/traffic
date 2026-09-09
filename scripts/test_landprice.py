@@ -268,18 +268,52 @@ check(all(_hit.values()),
       f"실제 용도지역이 하나도 안 빠진다 (빠진 것 "
       f"{[k for k, v in _hit.items() if not v]})")
 # 미세분이 세분을 삼키면 안 된다.
-check(_hit["계획관리지역"] == "계획관리" and _hit["관리지역"] == "관리(미세분)",
+check(_hit["계획관리지역"] == "계획관리" and _hit["관리지역"] == "관리(세분 없음)",
       f"'관리지역' 이 계획관리를 안 삼킨다 ({_hit['관리지역']})")
 check(_hit["제2종일반주거지역"] == "제2종일반주거"
-      and _hit["일반주거지역"] == "일반주거(미세분)",
+      and _hit["일반주거지역"] == "일반주거(세분 없음)",
       f"'일반주거지역' 이 제2종을 안 삼킨다 ({_hit['일반주거지역']})")
 check(_hit["제1종전용주거지역"] == "제1종전용주거"
-      and _hit["전용주거지역"] == "전용주거(미세분)",
+      and _hit["전용주거지역"] == "전용주거(세분 없음)",
       f"'전용주거지역' 이 제1종을 안 삼킨다 ({_hit['전용주거지역']})")
-# 화면이 갈래로 묶어 보여주므로 갈래가 빠지면 그 칸이 어디에도 안 붙는다.
-_nokind = [n for n, _, _ in wx.LANDPRICE_GROUPS
-           if n not in wx.LANDPRICE_ZONE_KIND]
-check(not _nokind, f"갈래(도시/비도시/용도구역)가 빠진 것이 없다 ({_nokind})")
+
+# ── 법령 구조와 맞는가 (사장님 지시 2026-09-09) ─────────────────────
+#
+# 국토계획법 §36① 은 네 칸이다: 도시지역·관리지역·농림지역·자연환경
+# 보전지역. 시행령 §30① 은 도시지역을 주거·상업·공업·녹지로 세분한다.
+# 같은 법 §38 의 개발제한구역은 **용도지역이 아니라 용도구역**이다.
+#
+# '비도시지역' 은 법에 없는 말이다. 편해서 쓰다가 법의 칸을 흐렸다.
+_majors = [m for m, _mid, _ns in wx.LANDPRICE_ZONE_TREE]
+check(_majors[:4] == ["도시지역", "도시지역", "도시지역", "도시지역"],
+      f"도시지역이 먼저다 (법 §36①1) — {_majors[:4]}")
+check("비도시지역" not in _majors,
+      f"법에 없는 '비도시지역' 을 안 쓴다 — {sorted(set(_majors))}")
+for _need in ("도시지역", "관리지역", "농림지역", "자연환경보전지역"):
+    check(_need in _majors, f"법 §36① 의 '{_need}' 칸이 있다")
+_mid = [m for maj, m, _ns in wx.LANDPRICE_ZONE_TREE if maj == "도시지역"]
+check(_mid == ["주거지역", "상업지역", "공업지역", "녹지지역"],
+      f"시행령 §30① 의 세분 순서 그대로 — {_mid}")
+check(wx.LANDPRICE_ZONE_KIND["개발제한구역"].startswith("용도구역"),
+      "개발제한구역은 용도지역이 아니라 용도구역이다 "
+      f"({wx.LANDPRICE_ZONE_KIND['개발제한구역']})")
+
+# **못 넣는 것은 기타로 하되 사유를 적는다** (사장님 지시).
+_etc = [n for maj, _m, ns in wx.LANDPRICE_ZONE_TREE if maj == "기타"
+        for n in ns]
+check(set(_etc) == {"용도 미지정", "용도 미상", "기타"},
+      f"기타 칸 — {_etc}")
+check(all(wx.LANDPRICE_ZONE_NOTE.get(n) for n in _etc),
+      "기타에 든 것마다 사유가 적혀 있다")
+check(all(wx.LANDPRICE_ZONE_NOTE.get(n) for n in
+          ("개발제한구역", "관리(세분 없음)", "일반주거(세분 없음)")),
+      "용도구역과 '세분 없음' 에도 사유가 적혀 있다")
+
+# 나무와 묶음이 어긋나면 어느 칸에도 안 붙는 용도지역이 생긴다.
+_tree_names = [n for _maj, _m, ns in wx.LANDPRICE_ZONE_TREE for n in ns]
+_names = [n for n, _, _ in wx.LANDPRICE_GROUPS]
+check(sorted(_tree_names) == sorted(_names),
+      f"나무와 묶음이 정확히 같다 ({len(_tree_names)} vs {len(_names)})")
 # 파일 이름이 겹치면 나중 것이 앞의 것을 덮어쓴다 — 조용히 자료가 사라진다.
 _keys = [k for _, _, k in wx.LANDPRICE_GROUPS]
 check(len(set(_keys)) == len(_keys), "파일 이름 열쇠가 서로 안 겹친다")

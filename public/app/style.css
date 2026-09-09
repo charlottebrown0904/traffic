@@ -1137,17 +1137,35 @@ body.picking .leaflet-container{cursor:crosshair}
   .map-wrap { flex: 1 1 auto; min-height: 24rem; }
 }
 
-/* 땅값 글자의 용도지역 칸. 거래 점 필터와 따로 논다 — 바탕이 손을 따라
-   움직이면 견줄 수가 없다.
+/* 땅값 글자의 용도지역 칸 — **법령 구조 그대로** (사장님 지시 2026-09-09).
 
-   스물다섯 칸이라 세로로 늘어놓으면 시트가 통째로 목록이 된다. 두 줄
-   격자로 접고, 칸마다 색·무늬를 칠해 **목록이 곧 범례**가 되게 한다
-   (사장님 지시 2026-09-08). */
-#lp-groups {
-  display: grid; grid-template-columns: 1fr 1fr;
-  gap: .2rem; margin-bottom: .6rem;
+     국토계획법 §36①  도시지역 / 관리지역 / 농림지역 / 자연환경보전지역
+     시행령 §30①      주거·상업·공업·녹지
+     같은 법 §38       개발제한구역은 용도구역
+
+   class="checks" 를 뺐다. 그 클래스가 좁은 화면에서
+   grid-auto-flow:column 을 걸어 두는데, 여기 grid-template-columns 와
+   만나면 칸이 **옆으로** 흐른다 — 머리글이 첫 칸에 세로로 눕고
+   상업지역이 관리지역 줄에 붙어 보였다. id 로 이겨도 auto-flow 는
+   그대로 상속되므로, 클래스를 떼는 것이 맞는 고침이다. */
+#lp-groups { display: block; margin-bottom: .5rem; }
+
+/* 대분류는 줄을 긋는다 — 법의 네 칸이 눈에 먼저 들어와야 한다. */
+.zone-major {
+  margin: .55rem 0 .15rem; padding-bottom: .12rem;
+  border-bottom: 1px solid var(--border-strong, var(--border));
+  font-size: 11.5px; font-weight: 800; letter-spacing: .02em;
 }
-#lp-groups .lp-menu-head { grid-column: 1 / -1; padding: .35rem 0 .1rem; }
+.zone-major:first-child { margin-top: 0; }
+/* 중분류(주거·상업·공업·녹지)는 한 단 들여쓴다. */
+.zone-middle {
+  margin: .3rem 0 .12rem .1rem;
+  font-size: 10.5px; font-weight: 600; color: var(--muted);
+}
+.zone-row {
+  display: grid; grid-template-columns: 1fr 1fr;
+  grid-auto-flow: row; gap: .2rem;
+}
 
 .zone-opt {
   display: flex; align-items: center; gap: .35rem;
@@ -1173,6 +1191,21 @@ body.picking .leaflet-container{cursor:crosshair}
 .zone-sw {
   flex: 0 0 auto; width: 13px; height: 13px; border-radius: 3px;
   border: 1px solid rgba(0,0,0,.28);
+}
+
+/* '왜 이 칸인가'. 사유가 있는 것에만 붙는다 — 기타·용도구역·세분 없음. */
+.zone-why {
+  margin-left: auto; flex: 0 0 auto;
+  width: 13px; height: 13px; border-radius: 50%;
+  border: 1px solid var(--border-strong, var(--border));
+  font-size: 9px; font-weight: 700; line-height: 11px; text-align: center;
+  color: var(--muted);
+}
+.zone-note {
+  margin: .1rem 0 .5rem; padding: .35rem .45rem;
+  border-left: 2px solid var(--accent); border-radius: 0 4px 4px 0;
+  background: var(--accent-soft);
+  font-size: 11px; line-height: 1.45;
 }
 
 /* 이름 옆 인구. **아주 작게** (사장님 지시) — 값이 주인공이고 인구는

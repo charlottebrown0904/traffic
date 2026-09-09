@@ -3075,64 +3075,81 @@ function wireLandPrice() {
   });
 
   // 땅값 글자의 용도지역 칸. **거래 점 필터와 따로 놓는다.**
+  //
+  // 분류는 **내보내기가 준 나무를 그대로 그린다** (zone_tree). 사장님
+  // 지시(2026-09-09): "분류는 법령기준으로 정확히 합니다."
+  //
+  //   국토계획법 §36①  도시지역 / 관리지역 / 농림지역 / 자연환경보전지역
+  //   시행령 §30①      주거·상업·공업·녹지의 세분
+  //   같은 법 §38       개발제한구역은 용도구역 (용도지역이 아니다)
+  //
+  // 여기서 다시 분류하지 않는다. 두 곳에 적어 두면 언젠가 어긋나고,
+  // 그때 어느 쪽이 맞는지 아무도 모른다.
   const gbox = document.getElementById('lp-groups');
   if (gbox) {
-    const kinds = (lp && lp.zone_kinds) || {};
     const have = Object.keys((lp && lp.groups) || {});
-    const first = (lp && lp.default_group) || '계획관리';
-    // **갈래로 먼저 묶고 그 안에서 이름순** (사장님 지시 2026-09-09:
-    // "도시지역과 비도시지역 크게 2개로 블럭을 잡고 아래로 나머지 용도
-    //  지역들 배치. 지금은 혼재되어 있음").
-    //
-    // 이름순으로만 정렬해 놓고 '갈래가 바뀌면 머리글' 을 붙였더니,
-    // 갈래가 계속 번갈아 나와 머리글이 아홉 번 반복됐다. 정렬 기준과
-    // 묶는 기준이 다르면 늘 이렇게 된다.
-    //
-    // 비도시지역이 위다 — 이 제품의 주인공인 계획관리·생산관리가 거기
-    // 있고, 처음 켜져 있는 셋 중 둘이 그것이다. 스물다섯 칸을 스크롤해
-    // 내려가야 기본값이 보이면 안 된다.
-    const KIND_ORDER = ['비도시지역', '도시지역', '용도구역'];
-    const kindRank = (g) => {
-      const i = KIND_ORDER.indexOf(kinds[g] || '');
-      return i < 0 ? KIND_ORDER.length : i;
-    };
-    have.sort((a, b) => (kindRank(a) - kindRank(b))
-      || (a === first ? -1 : b === first ? 1 : a.localeCompare(b, 'ko')));
+    const notes = (lp && lp.zone_notes) || {};
+    const tree = (lp && lp.zone_tree) || [];
     // 처음에는 분석이 쓰는 셋. 사장님이 처음부터 그 셋을 말씀하셨다.
     ['계획관리', '생산관리', '자연녹지'].forEach((g) => {
       if (have.includes(g)) state.lpGroupSet.add(g);
     });
-    let lastKind = '';
-    have.forEach((g) => {
-      const kind = kinds[g] || '';
-      // 도시지역과 비도시지역을 갈라 놓는다. 한 목록에 평평하게 늘어놓으면
-      // 부천의 자연녹지와 안성의 계획관리를 같은 종류로 나란히 놓게 된다.
-      if (kind && kind !== lastKind) {
+
+    let lastMajor = '';
+    tree.forEach((node) => {
+      const names = (node.names || []).filter((n) => have.includes(n));
+      if (!names.length) return;
+      if (node.major !== lastMajor) {
         const h = document.createElement('div');
-        h.className = 'lp-menu-head';
-        h.textContent = kind;
+        h.className = 'zone-major';
+        h.textContent = node.major;
         gbox.appendChild(h);
-        lastKind = kind;
+        lastMajor = node.major;
       }
-      // 체크상자가 아니라 **범례 칸**이다 (사장님 지시 2026-09-08).
-      // aria-pressed 로 눌림을 알린다 — 색만으로는 화면낭독기가 못 읽고,
-      // 색약인 사람에게는 켠 것과 끈 것이 같아 보인다. 켠 칸에는 테두리와
-      // 체크 표시도 함께 준다.
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'zone-opt';
-      btn.dataset.group = g;
-      const on = state.lpGroupSet.has(g);
-      btn.setAttribute('aria-pressed', String(on));
-      btn.innerHTML = `<i class="zone-sw" style="background:${zoneSwatch(g)}"></i>`
-        + `<span>${escapeHtml(g)}</span>`;
-      btn.addEventListener('click', () => {
-        const now = !(btn.getAttribute('aria-pressed') === 'true');
-        btn.setAttribute('aria-pressed', String(now));
-        now ? state.lpGroupSet.add(g) : state.lpGroupSet.delete(g);
-        drawLandPrice();
+      if (node.middle) {
+        const h2 = document.createElement('div');
+        h2.className = 'zone-middle';
+        h2.textContent = node.middle;
+        gbox.appendChild(h2);
+      }
+      const row = document.createElement('div');
+      row.className = 'zone-row';
+      names.forEach((g) => {
+        // 체크상자가 아니라 **범례 칸**이다 (사장님 지시 2026-09-08).
+        // aria-pressed 로 눌림을 알린다 — 색만으로는 화면낭독기가 못
+        // 읽고, 색약인 사람에게는 켠 것과 끈 것이 같아 보인다.
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'zone-opt';
+        btn.dataset.group = g;
+        const on = state.lpGroupSet.has(g);
+        btn.setAttribute('aria-pressed', String(on));
+        // 왜 이 칸에 있는지. '기타' 는 사유를 밝혀야 한다 —
+        // 사장님 지시: "정말 분류 못하는 것은 기타로하고 사유 표기".
+        if (notes[g]) btn.title = notes[g];
+        btn.innerHTML = `<i class="zone-sw" style="background:${zoneSwatch(g)}"></i>`
+          + `<span>${escapeHtml(g)}</span>`
+          + (notes[g] ? '<b class="zone-why" aria-hidden="true">?</b>' : '');
+        btn.addEventListener('click', () => {
+          const now = !(btn.getAttribute('aria-pressed') === 'true');
+          btn.setAttribute('aria-pressed', String(now));
+          now ? state.lpGroupSet.add(g) : state.lpGroupSet.delete(g);
+          drawLandPrice();
+        });
+        row.appendChild(btn);
       });
-      gbox.appendChild(btn);
+      gbox.appendChild(row);
+    });
+    // 사유를 눌러 읽을 수 있게. title 은 휴대폰에서 안 뜬다.
+    gbox.addEventListener('click', (e) => {
+      const why = e.target.closest('.zone-why');
+      if (!why) return;
+      e.stopPropagation();
+      const g = why.closest('.zone-opt').dataset.group;
+      const box = document.getElementById('zone-note');
+      if (!box) return;
+      box.textContent = `${g} — ${notes[g] || ''}`;
+      box.hidden = false;
     });
   }
 
