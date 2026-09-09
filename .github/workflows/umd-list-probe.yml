@@ -1,0 +1,42 @@
+# 거래가 없는 읍·면·동까지 그리려면 무엇이 필요한가 — 탐침.
+#
+# 사장님 지시(2026-09-09): "전국구로 확대해 주시고 제가 파일을 받는 것이
+# 빠르면 그렇게 해주세요."
+#
+# 그 판단을 하려고 잽니다. 브이월드 WFS 로 이름과 도형이 한 번에 오면
+# 우리가 다 하고, 안 오면 사장님께 파일을 부탁드립니다.
+#
+# 러너는 미국이라 한국 공공 API 가 막힙니다. 서울 중계기를 거치고,
+# 키는 중계기 쪽에만 있습니다 (api/relay.js 가 넣어 줍니다).
+name: 읍·면·동 전국 명부 탐침
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 탐침
+        run: python scripts/umd_list_probe.py 2>&1 | tee /tmp/probe.log
+      - name: 실행 요약
+        if: always()
+        run: |
+          {
+            echo "## 읍·면·동 전국 명부 탐침"
+            echo
+            echo '```'
+            cat /tmp/probe.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
