@@ -1867,6 +1867,52 @@ def cmd_region_names(args):
             print(f"    {r.sigungu_cd}  {r.name}")
 
 
+def cmd_umd_list(args):
+    """전국 법정동 명부를 받아 파일로 남긴다 (사장님 지시 2026-09-09).
+
+    거래가 없는 읍·면·동은 우리 자료에 이름조차 없다. 그래서 지도에서
+    통째로 빠진다 — 시·군·구에서 대전 세 구가 사라졌던 것과 같은 일이
+    한 단계 아래에서 벌어지고 있다.
+
+    **이 명령은 이름만 가져온다.** 표준코드 표에는 좌표가 없다. 좌표는
+    뒤이어 지오코딩으로 붙인다.
+    """
+    from .collect import umdlist
+
+    rows = umdlist.fetch_all()
+    places = umdlist.to_places(rows)
+    if not places:
+        sys.exit("명부가 비었습니다. 위 로그의 응답을 보세요.")
+    out = ROOT / "data" / "raw" / args.out
+    out.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(places).to_csv(out, index=False, encoding="utf-8-sig")
+    n_umd = sum(1 for r in places if r["level"] == "umd")
+    print(f"\n{out}  {len(places):,}줄 "
+          f"(읍·면·동 {n_umd:,} · 리 {len(places) - n_umd:,})")
+
+    # **우리가 이미 아는 것과 맞대어 본다.** 숫자만 찍고 끝내면 '받았다' 와
+    # '쓸 수 있다' 를 구별하지 못한다. 겹치는 것이 거의 없으면 시군구
+    # 코드가 어긋났다는 뜻이고, 그러면 이 표는 그대로는 못 쓴다.
+    try:
+        with db.connect(read_only=True) as con:
+            ours = {(str(r[0]), str(r[1])) for r in con.execute(
+                "SELECT DISTINCT sigungu_cd, umd FROM trade "
+                "WHERE umd IS NOT NULL AND umd <> ''").fetchall()}
+    except Exception as exc:                                # noqa: BLE001
+        print(f"  (우리 자료와 못 맞대어 봤습니다: {exc})")
+        return
+    theirs = {(r["sigungu_cd"], r["umd"]) for r in places}
+    hit = len(ours & theirs)
+    print(f"  우리가 아는 {len(ours):,}곳 중 명부에도 있는 것 {hit:,}곳 "
+          f"({hit / max(1, len(ours)):.1%})")
+    print(f"  명부에만 있는 곳 {len(theirs - ours):,}곳 "
+          "← 이만큼이 지도에 새로 생깁니다")
+    if hit / max(1, len(ours)) < 0.8:
+        print("  ⚠ 겹치는 비율이 낮습니다. 시군구 코드가 어긋났을 수"
+              " 있습니다 (전남광주통합특별시처럼). 이름으로 잇는 손질이"
+              " 필요합니다 — 그대로 쓰면 안 됩니다.")
+
+
 def cmd_kosis_find(args):
     """통계표를 이름으로 찾고, 현재 시도 코드를 확인한다."""
     from .collect import kosis
@@ -2383,6 +2429,11 @@ def main(argv=None):
                        help="거래 자료에서 시군구 코드→이름 표 뽑기")
     p.add_argument("--out", default="region_names.csv")
     p.set_defaults(func=cmd_region_names)
+
+    p = sub.add_parser("umd-list",
+                       help="전국 법정동 명부 받기 (행정표준코드)")
+    p.add_argument("--out", default="region_umd.csv")
+    p.set_defaults(func=cmd_umd_list)
 
     p = sub.add_parser("kosis-find",
                        help="이름으로 통계표 찾기 + 현재 시도 코드 확인")
