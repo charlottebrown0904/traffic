@@ -29,7 +29,7 @@ Cloudflare Pages 는 무료 요금제에서 **상업적 이용을 허용**하고
     functions/api/{relay,tile}  api/*.js 를 **복사하지 않고** 감싼다
     public/_headers             vercel.json 의 헤더
     public/_routes.json         /api/* 만 Function 으로 (아래 참고)
-    wrangler.toml               프로젝트 이름 toji · nodejs_compat
+    wrangler.toml               프로젝트 이름 toji-gogo · nodejs_compat
     기본 주소                   toji-gogo.vercel.app → toji.fyi (14곳)
 
 ### _routes.json — 이게 없으면 이사가 무의미해집니다
@@ -84,7 +84,8 @@ Workers 쪽이니 뒤로 나오세요:**
 
 1. **Workers & Pages → Create → Pages → Connect to Git**
 2. 저장소 `charlottebrown0904/traffic`, 프로덕션 브랜치 **`main`**
-3. **프로젝트 이름은 `toji`** — `wrangler.toml` 의 이름과 같아야 합니다
+3. **프로젝트 이름은 `toji-gogo`** — `wrangler.toml` 의 `name` 과
+   **글자까지 같아야** 합니다. 다르면 빌드가 이름 불일치로 죽습니다.
 4. **빌드 명령 비움 · 빌드 출력 디렉터리 `public`**
 5. **'비프로덕션 브랜치도 빌드' 는 꺼 주세요** — 우리는 작업 브랜치에
    하루 몇 번씩 밀어 넣습니다. 켜 두면 그때마다 빌드가 돌아 무료

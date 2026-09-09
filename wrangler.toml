@@ -2,7 +2,10 @@
 #
 # 이 파일은 **Vercel 과 무관하다.** Vercel 은 vercel.json 을 보고,
 # 이것을 무시한다. 둘을 나란히 띄워 두는 동안 서로 건드리지 않는다.
-name = "toji"
+# **Pages 프로젝트 이름과 글자까지 같아야 한다.** 다르면 빌드가
+# "name in wrangler.toml does not match the Pages project" 로 죽는다.
+# 대시보드에서 이름을 바꾸면 여기도 바꿔야 한다.
+name = "toji-gogo"
 pages_build_output_dir = "public"
 
 # nodejs_compat 이 있어야 process.env 와 Buffer 가 산다. 우리 함수 둘이
