@@ -3015,7 +3015,7 @@ function lpItemsRegion(levelKey) {
     const key = popGroupKey(r, levelKey);
     if (!bag.has(key)) {
       // **열쇠와 이름은 다르다.** 열쇠에는 시·도가 붙어 있다.
-      bag.set(key, { name: popGroupName(r, levelKey),
+      bag.set(key, { name: popGroupName(r, levelKey), key,
                      members: [], wsum: 0, vsum: 0, n: 0, few: 0,
                      from: Infinity, years: new Map(), parts: new Map() });
     }
@@ -3075,7 +3075,11 @@ function lpItemsRegion(levelKey) {
     // 경남에 둘이고, '중구' 는 여섯이다. 시·도 자리를 함께 적는다.
     pk: placeKey(levelKey, g.members[0], g.name),
     sg: String((g.members[0] || {}).sigungu_cd || ''),
-    pop: popByKey.get(g.name) || 0,
+    // **열쇠로 찾는다.** 이름으로 찾으면 안 된다 — 열쇠에는 시·도가
+    // 붙어 있어서('경기도|용인시') 이름과 다르다. 강서구를 가르면서
+    // 열쇠를 바꿔 놓고 이 줄을 안 고쳐, 시·군·구 태그의 인구가 통째로
+    // 사라졌다 (사장님 지적 2026-09-09 — "인구 표시가 안됩니다").
+    pop: popByKey.get(g.key) || 0,
     v: g.wsum ? g.vsum / g.wsum : null,
     n: g.n,
     from: Number.isFinite(g.from) ? g.from : null,

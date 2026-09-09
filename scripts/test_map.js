@@ -1512,6 +1512,30 @@ const FAKE_LEAFLET = () => {
           !small.length || small.every((v) => /\./.test(v)),
           small.slice(0, 3).join(' · ') || '(해당 없음)');
 
+    // **시·군·구 단계에서도 붙는가.** 여기까지 안 보면 놓친다 —
+    // 시·도 단계는 묶는 열쇠와 이름이 같아서, 열쇠를 바꿔도 통과한다.
+    // 실제로 강서구를 가르며 열쇠에 시·도를 붙였을 때 시·군·구 태그의
+    // 인구가 통째로 사라졌는데 검사는 초록이었다 (사장님이 화면에서
+    // 잡으셨다 — "인구 표시가 안됩니다", 2026-09-09).
+    const mid = await popPeek(11);
+    const midLvl = await page.evaluate(() => (window.__lp || {}).level);
+    const midPop = mid.cards.filter((h) => /<em>[\d.]+만<\/em>/.test(h));
+    check('시·군·구 단계에도 인구가 붙는다',
+          midLvl !== 'sido' && midPop.length > 0,
+          `${midLvl} · ${mid.cards.length}칸 중 인구 ${midPop.length}칸`);
+    // 값이 맞는지도 본다. 붙기만 하고 엉뚱한 숫자면 없느니만 못하다.
+    {
+      const yv = '2025';
+      const want = FAKE_REGIONS.find((r) => r.name === '평택시');
+      const man = (want.pop[yv] / 10000);
+      const label = man >= 10 ? String(Math.round(man)) : man.toFixed(1);
+      const card = mid.cards.find((h) => /평택시/.test(h)) || '';
+      check('그 인구가 그 시군구의 값이다',
+            new RegExp(`<em>${label}만</em>`).test(card),
+            `${(/<em>([\d.]+)만<\/em>/.exec(card) || [])[1] || '(없음)'}만`
+            + ` · 기대 ${label}만`);
+    }
+
     // 읍·면·동과 리는 **9-B 가 본다** — 2026-09-09 부터 KOSIS 행정동
     // 인구가 거기 붙는다. 여기서는 조각이 아직 안 와 시군구로 물러났을
     // 때에도 인구가 붙는지만 본다. 단계를 안 보고 '14배율이면 이래야

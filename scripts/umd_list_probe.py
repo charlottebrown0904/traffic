@@ -152,7 +152,13 @@ def probe_stan_regin() -> None:
     data.go.kr 은 서비스마다 따로 신청합니다. 신청은 대개 자동승인입니다.
     """
     head("(나) 행정표준코드 API — 이름만 (좌표는 따로 구해야 한다)")
+    # **표가 여럿이다.** 사장님이 2026-09-09 에 등록하신 것은
+    # StanOrgCd2(기관코드)인데, 그것은 **정부기관** 코드표입니다 —
+    # 시청·군청·교육청 같은. 우리가 필요한 것은 행정구역(법정동)
+    # 코드표(StanReginCd)입니다. 둘은 다른 서비스라 활용신청도 따로
+    # 받습니다. 그래서 **둘 다 두드려** 무엇이 열렸는지 눈으로 봅니다.
     for path in ("1741000/StanReginCd/getStanReginCdList",
+                 "1741000/StanOrgCd2/getStanOrgCdList",
                  "1741000/StanReginCd5/getStanReginCdList"):
         print(f"  {path}")
         try:
