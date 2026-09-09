@@ -962,6 +962,71 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
     return out
 
 
+# ── 행정구역이 통합돼 코드가 바뀐 시군구 ──────────────────────────
+#
+# run 72 실측: 읍·면 매칭률이 82.4% 였는데, **못 맞춘 것이 한 시도에
+# 통째로 몰려 있었다.**
+#
+#     12130 여수시 · 12150 순천시 … 전남광주통합특별시  27곳 전부 0
+#
+# 전남과 광주가 합쳐지면서 시군구 코드가 새로 매겨졌다. 우리 실거래는
+# 새 코드(12xxx)로 오는데 KOSIS 주민등록인구는 아직 옛 코드(46xxx ·
+# 29xxx)다. 이름은 그대로인데 코드만 달라서 조인이 통째로 빗나간다.
+#
+# **대조표를 외워 적지 않는다.** 마지막 세 자리가 그대로 넘어온 것도
+# 아니고(광양시 46230 → 12190), 옛 코드를 기억으로 스물일곱 줄 적으면
+# 그중 몇 줄은 틀린다. 대신 **읍·면·동 이름이 몇 개나 겹치는지**로
+# 찾는다. 담양군의 면 이름 열둘이 그대로 겹치는 옛 코드는 하나뿐이다.
+# 다음에 또 어디가 통합돼도 고칠 것이 없다.
+ALIAS_MIN_SHARED = 3        # 이름이 셋은 겹쳐야 같은 곳으로 본다
+ALIAS_MIN_RATIO = 0.6       # 작은 쪽 기준 60% 이상
+
+
+def _umd_pop_alias(theirs: dict[str, set[str]]) -> dict[str, str]:
+    """{KOSIS 쪽 시군구코드: 우리 시군구코드}. 못 찾으면 안 넣는다.
+
+    억지로 잇지 않는다 — 엉뚱한 시군구에 이으면 화면에 남의 동네
+    인구가 '이 동네 인구' 로 뜬다. 없는 것보다 나쁘다.
+    """
+    try:
+        with db.connect(read_only=True) as con:
+            df = con.execute("""
+                SELECT DISTINCT sigungu_cd, umd FROM trade
+                WHERE sigungu_cd IS NOT NULL AND umd IS NOT NULL AND umd <> ''
+            """).fetchdf()
+    except Exception as exc:                                # noqa: BLE001
+        print(f"  ⚠ 통합 시군구를 못 살폈습니다: {type(exc).__name__}: {exc}")
+        return {}
+    ours: dict[str, set[str]] = {}
+    for r in df.itertuples(index=False):
+        ours.setdefault(str(r.sigungu_cd), set()).add(_umd_head(str(r.umd)))
+    # 코드가 이미 맞는 곳은 건드리지 않는다. 그리고 그 옛 코드는
+    # 다른 시군구가 가져가지 못하게 잠근다.
+    taken = {cd for cd in ours if cd in theirs}
+    alias: dict[str, str] = {}
+    for cd in sorted(ours):
+        if cd in theirs:
+            continue
+        names = ours[cd]
+        best, score = "", 0.0
+        for other in sorted(theirs):
+            if other in taken:
+                continue
+            shared = len(names & theirs[other])
+            if shared < ALIAS_MIN_SHARED:
+                continue
+            ratio = shared / min(len(names), len(theirs[other]))
+            if ratio > score:
+                best, score = other, ratio
+        if best and score >= ALIAS_MIN_RATIO:
+            taken.add(best)
+            alias[best] = cd
+    if alias:
+        print(f"    통합돼 코드가 바뀐 시군구 {len(alias)}곳을 이름으로 "
+              f"다시 이었습니다 (예: {sorted(alias)[0]} → {alias[sorted(alias)[0]]})")
+    return alias
+
+
 def _umd_pop_latest() -> dict[tuple[str, str], int]:
     """(시군구코드, 읍면동이름) → 가장 최근 해 인구.
 
@@ -979,8 +1044,18 @@ def _umd_pop_latest() -> dict[tuple[str, str], int]:
     except Exception as exc:                                # noqa: BLE001
         print(f"  ⚠ 읍면동 인구를 못 읽었습니다: {type(exc).__name__}: {exc}")
         return {}
-    return {(str(r.sigungu_cd), str(r.umd)): int(r.pop)
-            for r in df.itertuples(index=False)}
+    pop = {(str(r.sigungu_cd), str(r.umd)): int(r.pop)
+           for r in df.itertuples(index=False)}
+    # 통합으로 코드가 바뀐 시군구는 **옮겨 담는다** — 옛 코드로 남겨
+    # 두면 아무도 못 찾는다. 옛 칸은 지우지 않는다(다른 표가 옛 코드로
+    # 물어볼 수 있다).
+    theirs: dict[str, set[str]] = {}
+    for cd, nm in pop:
+        theirs.setdefault(cd, set()).add(nm)
+    for old_cd, our_cd in _umd_pop_alias(theirs).items():
+        for nm in theirs[old_cd]:
+            pop.setdefault((our_cd, nm), pop[(old_cd, nm)])
+    return pop
 
 
 def _umd_head(name: str) -> str:
@@ -1183,34 +1258,22 @@ def _places() -> list[dict]:
         # 안 맞는 이름이 있다. 안 맞으면 **비운다** — 억지로 채우면
         # 그 거짓이 화면에 '이 동네 인구' 로 뜬다.
         df = con.execute(f"""
-            WITH latest AS (
-                SELECT max(year) AS y FROM umd_pop
-            ), pop AS (
-                SELECT sigungu_cd, umd, sum(pop) AS pop
-                FROM umd_pop WHERE year = (SELECT y FROM latest)
-                GROUP BY sigungu_cd, umd
-            ), t AS (
-                -- **면 이름으로 맞춘다.** 우리 umd 는 '미양면 계륵리'
-                -- 두 마디인데 KOSIS 는 '미양면' 이다 (run 71 에서
-                -- 리 이름으로 물어 2.6% 밖에 못 맞췄다).
-                SELECT sigungu_cd, any_value(sigungu) AS sigungu, umd,
-                       count(*) AS n,
-                       median(lat) AS lat, median(lon) AS lon
-                FROM trade
-                WHERE lat IS NOT NULL AND lon IS NOT NULL
-                  AND sigungu_cd IS NOT NULL AND umd IS NOT NULL AND umd <> ''
-                  AND coalesce(is_cancelled, FALSE) = FALSE
-                GROUP BY sigungu_cd, umd
-                HAVING count(*) >= {PLACE_MIN_TRADES}
-            )
-            SELECT t.*, coalesce(p.pop, ph.pop) AS pop
-            FROM t
-            LEFT JOIN pop p  ON p.sigungu_cd = t.sigungu_cd
-                            AND p.umd = t.umd
-            LEFT JOIN pop ph ON ph.sigungu_cd = t.sigungu_cd
-                            AND ph.umd = split_part(t.umd, ' ', 1)
-            ORDER BY t.sigungu_cd, t.umd
+            SELECT sigungu_cd, any_value(sigungu) AS sigungu, umd,
+                   count(*) AS n,
+                   median(lat) AS lat, median(lon) AS lon
+            FROM trade
+            WHERE lat IS NOT NULL AND lon IS NOT NULL
+              AND sigungu_cd IS NOT NULL AND umd IS NOT NULL AND umd <> ''
+              AND coalesce(is_cancelled, FALSE) = FALSE
+            GROUP BY sigungu_cd, umd
+            HAVING count(*) >= {PLACE_MIN_TRADES}
+            ORDER BY sigungu_cd, umd
         """).fetchdf()
+    # 인구는 **한 곳에서만** 읽는다. 전에는 이 함수가 따로 SQL 조인을
+    # 했는데, 그러면 땅값 칸과 검색 목록이 서로 다른 규칙으로 인구를
+    # 붙이게 된다 — 통합 시군구 보정을 한쪽만 받으면 같은 동네가 화면
+    # 두 곳에서 다른 인구로 보인다.
+    umd_pop = _umd_pop_latest()
     out = []
     hit = 0
     for r in df.itertuples(index=False):
@@ -1224,8 +1287,13 @@ def _places() -> list[dict]:
             "lat": round(float(r.lat), 5),
             "lon": round(float(r.lon), 5),
         }
-        pop = getattr(r, "pop", None)
-        if pop is not None and pd.notna(pop) and float(pop) > 0:
+        # **면 이름으로도 맞춰 본다.** 우리 umd 는 '미양면 계륵리'
+        # 두 마디인데 KOSIS 는 '미양면' 이다 (run 71 에서 리 이름으로
+        # 물어 2.6% 밖에 못 맞췄다). 검색 목록은 '이 이름을 누르면
+        # 어디쯤' 을 보여 주는 자리라, 면 인구를 적어도 거짓이 아니다.
+        cd, nm = str(r.sigungu_cd), str(r.umd)
+        pop = umd_pop.get((cd, nm)) or umd_pop.get((cd, _umd_head(nm)))
+        if pop:
             row["pop"] = int(pop)
             hit += 1
         out.append(row)

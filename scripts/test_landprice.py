@@ -330,4 +330,61 @@ check(sorted(_tree_names) == sorted(_names),
 _keys = [k for _, _, k in wx.LANDPRICE_GROUPS]
 check(len(set(_keys)) == len(_keys), "파일 이름 열쇠가 서로 안 겹친다")
 
+print()
+print("행정구역이 통합돼 코드가 바뀐 시군구 — 이름으로 다시 잇는가")
+# run 72 실측: 읍·면 매칭률 82.4% 인데 못 맞춘 것이 **한 시도에 통째로**
+# 몰려 있었다. 전남과 광주가 합쳐지면서 시군구 코드가 새로 매겨져,
+# 우리 거래는 12130(여수시)인데 KOSIS 인구는 아직 46130 이었다.
+#
+# 대조표를 외워 적지 않는다 — 읍·면 이름이 몇 개나 겹치는지로 찾는다.
+_merged = []
+for i, nm in enumerate(["돌산읍", "소라면", "율촌면", "화양면"]):
+    for j in range(5):                       # 칸이 서려면 다섯 건이 필요하다
+        _merged.append(dict(
+            trade_id=f"M{i}{j}", kind="land", sigungu_cd="12130",
+            sigungu="여수시", umd=f"{nm} 어딘가리", jibun=str(j),
+            land_use="계획관리지역", deal_year=2025,
+            lat=34.76, lon=127.66, price_per_m2=300.0,
+            area_m2=1000.0, is_cancelled=False))
+with db.connect() as con:
+    db.upsert(con, "trade", pd.DataFrame(_merged))
+    db.upsert(con, "umd_pop", pd.DataFrame([
+        # KOSIS 쪽은 아직 **옛 코드**다.
+        # adm_cd 가 열쇠다 — 넷을 같은 값으로 두면 한 줄로 뭉개진다.
+        dict(adm_cd=f"461302{i}000", sigungu_cd="46130", umd=nm,
+             year=2025, pop=pop)
+        for i, (nm, pop) in enumerate([("돌산읍", 20000), ("소라면", 12000),
+                                       ("율촌면", 9000), ("화양면", 7000)])
+    ]))
+
+_pop2 = wx._umd_pop_latest()
+check(_pop2.get(("12130", "돌산읍")) == 20000,
+      f"옛 코드의 인구를 새 코드로 옮겨 담는다 — {_pop2.get(('12130', '돌산읍'))}")
+check(_pop2.get(("46130", "돌산읍")) == 20000,
+      "옛 코드 칸은 지우지 않는다 (다른 표가 옛 코드로 물어볼 수 있다)")
+# **이미 코드가 맞는 시군구는 건드리지 않는다.** 41550(안성시)의 공도읍이
+# 엉뚱한 곳으로 끌려가면 화면에 남의 동네 인구가 뜬다.
+check(_pop2.get(("41550", "공도읍")) == 64000,
+      f"코드가 이미 맞는 곳은 그대로다 — {_pop2.get(('41550', '공도읍'))}")
+
+# 이름이 하나도 안 겹치면 **잇지 않는다.** 억지로 이으면 없는 것보다
+# 나쁜 값이 화면에 뜬다.
+_alias = wx._umd_pop_alias({"99999": {"전혀", "다른", "이름들"}})
+check(_alias == {}, f"이름이 안 겹치면 잇지 않는다 — {_alias}")
+
+# 그리고 실제로 면 인구가 칸까지 온다.
+_umd3 = wx._land_price_by_umd(2025)
+_hp3 = _umd3["계획관리"].get("12", {}).get("head_pop", {})
+check(_hp3.get("12130|돌산읍") == 20000,
+      f"통합 시군구의 면 인구가 화면 조각까지 온다 — {_hp3}")
+
+# **끝에서 한 번 더 센다.** 중간에 sys.exit 이 한 번 있을 뿐이라,
+# 그 뒤에 실패한 것은 여태 '모두 통과' 로 찍히고 종료 코드도 0이었다 —
+# 이 파일의 뒷부분은 사실상 검사가 아니었다.
+if fail:
+    print()
+    print(f"실패 {len(fail)}건")
+    for f in fail:
+        print(f"  · {f}")
+    sys.exit(1)
 print("모두 통과")

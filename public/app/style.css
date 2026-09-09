@@ -1296,3 +1296,21 @@ body.picking .leaflet-container{cursor:crosshair}
   #find-q { width: 100%; }
   .find-list { right: auto; left: 0; width: 100%; }
 }
+
+/* ── 태그 셋째 줄: 지금 N / 오늘 M명 ──────────────────────────
+   사장님 지시(2026-09-09 2차). 값보다 **작고 흐리게** 둔다 — 이
+   화면의 주인공은 땅값이고, 조회수는 곁들이는 숫자다. 값과 같은
+   무게로 적으면 눈이 어디를 봐야 할지 모른다. */
+.lp-card s {
+  text-decoration: none;
+  font-size: 8.5px; font-weight: 500; opacity: .8;
+  margin-top: 1px; letter-spacing: -.01em;
+}
+
+/* 주간 1등 별표. 시·군 안에서 하나뿐이라 눈에 띄어야 하지만,
+   이름을 밀어내면 안 된다. */
+.lp-card b mark {
+  background: none; color: #FFD874;
+  font-size: 10px; margin-right: .12em;
+  text-shadow: 0 0 2px rgba(0, 0, 0, .45);
+}

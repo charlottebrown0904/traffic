@@ -1409,6 +1409,7 @@ function buildMap() {
     drawTrades();
     // 땅값 글자는 **보이는 곳만** 그린다. 움직이면 다시 그려야 하고,
     // 색도 다시 끊어야 한다 — 화면 안에서의 5분위이기 때문이다.
+    // 조회수는 drawLandPrice 가 '지금 화면에 있는 태그' 를 넘겨 준다.
     drawLandPrice();
   });
   // 배율이 바뀌면 인구를 묶는 단위가 바뀐다 (시도 → 시군 → 구).
@@ -2619,6 +2620,10 @@ function lpItemsRegion(levelKey) {
   });
   return [...bag.values()].map((g) => ({
     name: g.name,
+    // 조회수를 셀 열쇠. **이름만으로는 안 된다** — '고성군' 은 강원과
+    // 경남에 둘이고, '중구' 는 여섯이다. 시·도 자리를 함께 적는다.
+    pk: placeKey(levelKey, g.members[0], g.name),
+    sg: String((g.members[0] || {}).sigungu_cd || ''),
     pop: popByKey.get(g.name) || 0,
     v: g.vsum / g.wsum, n: g.n, from: g.from, parts: g.members.length,
     at: popCenter(g, levelKey, year).at,
@@ -2658,6 +2663,7 @@ function lpItemsUmd(levelKey) {
     if (levelKey === 'ri') {
       out.push({
         name: info.nm, sub: info.sgnm, full: info.nm,
+        pk: `u:${info.sg}:${info.nm}`, sg: String(info.sg),
         // 읍·면·동 인구 (사장님 지시 2026-09-09). **없으면 안 적는다** —
         // KOSIS 는 행정동이고 우리는 법정동이라 이름이 안 맞는 곳이
         // 있다. 그 자리에 시군구 인구를 넣으면 리 하나가 20만이 된다.
@@ -2695,8 +2701,10 @@ function lpItemsUmd(levelKey) {
       g.years.set(y, cur);
     });
   });
-  bag.forEach((g) => out.push({
+  bag.forEach((g, key) => out.push({
     name: g.name, sub: g.sub, full: g.name,
+    // byCell 의 열쇠는 '41220|안중읍' 이다. 조회수 열쇠는 콜론으로 쓴다.
+    pk: `u:${key.replace('|', ':')}`, sg: key.split('|')[0],
     pop: g.pop || 0,
     v: g.vsum / g.wsum, n: g.n, from: g.from, parts: g.parts,
     at: [g.lat / g.parts, g.lon / g.parts],
@@ -2861,13 +2869,19 @@ function drawLandPrice() {
       icon: L.divIcon({
         className: 'lp-card-wrap',
         html: `<span class="lp-card" style="background:${fill}">`
-          + `<b>${escapeHtml(short)}`
+          // 주간 1등 별표는 **시·군 안에서** 뽑는다 (사장님 지시:
+          // 전국 제외). 이름 앞에 붙는다.
+          + `<b>${viewerStar(it, level.key)}${escapeHtml(short)}`
           // 읍·면·동과 리에는 인구가 **없다**. 우리가 가진 인구는 KOSIS
           // 시군구 단위가 전부다. 그 자리에 시군구 인구를 적으면 리 하나가
           // 20만인 것처럼 읽히므로, 없으면 아무것도 안 적는다.
           + (it.pop ? `<em>${popMan(it.pop)}</em>` : '')
           + `</b>`
-          + `<i>${escapeHtml(lpMoney(it.v))}<u>/평</u></i></span>`,
+          + `<i>${escapeHtml(lpMoney(it.v))}<u>/평</u></i>`
+          // 셋째 줄 — 지금 보는 사람 / 오늘 본 사람 (사장님 지시
+          // 2026-09-09 2차). 둘 다 0이면 줄 자체가 없다.
+          + viewerLine(it.pk)
+          + '</span>',
         iconSize: null,
       }),
     });
@@ -2883,8 +2897,13 @@ function drawLandPrice() {
     // 이것이 없으면 '안 받았다' 와 '받을 것이 없다' 를 밖에서 못 가른다.
     chunks: groups.flatMap((g) => lpUmdChunks(g).map((c) => `${g}|${c.p}`)),
     cached: Object.keys(lpUmdCache),
+    // 조회수 열쇠도 내놓는다. 이것이 없으면 '별표가 시·군 안에서
+    // 뽑혔는가' 를 밖에서 셀 수가 없다.
+    items: shown.map((it) => ({ pk: it.pk, sg: it.sg, name: it.name })),
   };
   updateLpNote({ n: shown.length, total: all.length, level: level.label, scale, w });
+  // 조회수는 **그린 뒤에** 챙긴다. 무엇이 화면에 있는지는 여기서만 안다.
+  viewersOnMove(shown);
 }
 
 /* 5분위 눈금 (사장님 지시 2026-09-09, 2번).
@@ -4105,3 +4124,255 @@ function wireFind() {
 wireFind();
 
 boot();
+
+// 지도와 regions.json 이 다 준비된 뒤에 처음 한 번 붙는다. boot 안에서
+// 부르면 state.regions 가 아직 비어 있어 아무 지역도 못 고른다.
+setTimeout(viewersOnMove, 3000);
+
+
+/* ══════════════════════════════════════════════════════════════════
+   지역 태그 셋째 줄 — 지금 N / 오늘 M명, 그리고 주간 1등 별표
+
+   사장님 지시(2026-09-09, 2차):
+     "지역 테그 하단에 (세번째 줄에) 지금 xx / 오늘 yy명 추가"
+     "일주일 누적 1등에게 지역앞에 별표 (시, 군 단위 전국 제외)"
+
+   그래서 **세는 단위가 태그 하나**다. 두계리와 두계리가 속한 계룡시는
+   서로 다른 열쇠를 갖는다.
+
+     u:41220:안중읍 청북리   읍·면·동 / 리
+     g:41220                 시·군·구
+     s:경기도                시·도
+
+   ── 두 숫자는 성격이 다르다 ──────────────────────────────────
+
+     지금 N   Realtime Presence. 창을 닫으면 곧 사라진다.
+     오늘 M   place_view 표에 쌓인 값. 한국 날짜로 자정에 0으로 돌아간다
+              (RPC 안에서 Asia/Seoul 로 끊는다).
+
+   ── 채널은 태그마다 파지 않는다 ──────────────────────────────
+
+   화면에 태그가 쉰 개인데 태그마다 채널을 열면 무료 요금제(동시접속
+   200 · 메시지 월 200만)를 하루에 태운다. 그래서 **시·군·구 하나당
+   채널 하나**를 열고, 거기에 '나는 지금 이 태그를 가운데 두고 있다' 는
+   열쇠 하나만 싣는다. 같은 시·군·구를 보는 사람끼리는 서로의 열쇠가
+   보이므로, 그것을 세면 태그별 '지금 N' 이 나온다.
+
+   그래서 '보고 있다' 의 뜻은 **화면 한가운데 두었다** 이다. 눈에
+   들어온 태그 전부가 아니다 — 그렇게 세면 한 사람이 한 번에 쉰 곳을
+   보고 있는 것이 된다.
+
+   ── 내보내는 것 ──────────────────────────────────────────────
+
+   신원은 안 보낸다. 로그인해도 이름·아이디를 싣지 않고, 새로고침하면
+   없어지는 임의의 글자를 열쇠로 쓴다. 지도 좌표도 안 보낸다 — 나가는
+   것은 태그 열쇠와 시·군·구 코드뿐이다.                              */
+
+const VIEW_MIN_ZOOM = 9;      // 전국을 보고 있으면 '이 지역' 이랄 것이 없다
+const VIEW_DEBOUNCE = 1200;   // 지도를 끄는 동안 채널을 갈아치우지 않는다
+const VIEW_MAX_KEYS = 200;    // RPC 가 받는 만큼만 (SQL 에서도 잘라 둔다)
+
+const viewers = {
+  sg: '',            // 지금 붙어 있는 시군구 채널
+  pk: '',            // 내가 가운데 둔 태그
+  ch: null,
+  timer: 0,
+  live: new Map(),   // 태그 열쇠 → 지금 보는 사람 수
+  stat: new Map(),   // 태그 열쇠 → { today, week }
+  star: new Map(),   // 시군구 코드 → 주간 1등 태그 열쇠
+  asked: '',         // 마지막으로 통계를 물어본 열쇠 묶음
+  seen: new Set(),   // 이번 방문에 이미 센 태그 (새로고침해야 다시 센다)
+  // 새로고침하면 바뀐다. 저장하지 않는다 — 저장하는 순간 그것이 신원이 된다.
+  me: Math.random().toString(36).slice(2, 10),
+};
+
+/* 지역 단계 태그의 조회수 열쇠. 이름만으로는 안 된다 — '고성군' 은
+   강원과 경남에 둘이고 '중구' 는 여섯이다. */
+function placeKey(levelKey, member, name) {
+  const cd = String((member || {}).sigungu_cd || '');
+  if (levelKey === 'sido') return `s:${name}`;
+  if (levelKey === 'si') return `g:${cd.slice(0, 2)}:${name}`;
+  return `g:${cd}`;
+}
+
+/* 화면 한가운데가 어느 태그인가. 지금 그려져 있는 것 중에서 고른다 —
+   태그가 없는 자리(바다·산)를 가운데 두면 아무 태그도 아니다. */
+function viewerCenterTag(items) {
+  if (!map || map.getZoom() < VIEW_MIN_ZOOM || !items.length) return null;
+  const c = map.getCenter();
+  let best = null;
+  let bestD = Infinity;
+  items.forEach((it) => {
+    if (!it.pk || !it.at) return;
+    // 위도 1도와 경도 1도의 길이가 달라서 경도를 cos 로 줄인다.
+    const dy = it.at[0] - c.lat;
+    const dx = (it.at[1] - c.lng) * Math.cos((c.lat * Math.PI) / 180);
+    const d = dy * dy + dx * dx;
+    if (d < bestD) { bestD = d; best = it; }
+  });
+  return best;
+}
+
+/* 태그 셋째 줄. 아무 숫자도 없으면 **줄 자체를 안 만든다** — 새로
+   생긴 동네마다 '지금 0 / 오늘 0명' 이 붙으면 그것만 눈에 띈다. */
+function viewerLine(pk) {
+  const live = viewers.live.get(pk) || 0;
+  const st = viewers.stat.get(pk);
+  const today = st ? st.today : 0;
+  if (!live && !today) return '';
+  return `<s>지금 ${live} / 오늘 ${today}명</s>`;
+}
+
+/* 주간 1등인가. **시·군 안에서만 뽑는다** (사장님 지시: 전국 제외).
+   그리고 읍·면·동/리 태그에만 붙인다 — 시·도 태그에 별을 달면
+   '전국 1등' 이 되어 버린다. */
+function viewerStar(it, levelKey) {
+  if (levelKey !== 'umd' && levelKey !== 'ri') return '';
+  return viewers.star.get(it.sg) === it.pk ? '<mark>★</mark>' : '';
+}
+
+/* 지도가 멎으면 그때. 끄는 동안 채널을 갈아치우면 지나온 시군구마다
+   접속을 한 번씩 열게 된다. */
+function viewersOnMove(items) {
+  if (!window.SB) return;
+  if (items) viewers.items = items;
+  const list = viewers.items || [];
+  const tag = viewerCenterTag(list);
+  // **같은 화면이면 다시 부르지 않는다.** 이 함수를 부르는 것이
+  // drawLandPrice 인데 viewersSync 가 끝나면 다시 drawLandPrice 를
+  // 부른다 — 지문으로 끊지 않으면 1.2초마다 영원히 돈다.
+  const sig = (tag ? tag.pk : '') + '\u0000'
+    + list.map((x) => x.pk).filter(Boolean)
+        .slice(0, VIEW_MAX_KEYS).sort().join('\n');
+  if (sig === viewers.sig) return;
+  viewers.sig = sig;
+  clearTimeout(viewers.timer);
+  viewers.timer = setTimeout(viewersSync, VIEW_DEBOUNCE);
+}
+
+async function viewersSync() {
+  const items = viewers.items || [];
+  const tag = viewerCenterTag(items);
+  const sg = tag ? String(tag.sg || '') : '';
+  const pk = tag ? String(tag.pk || '') : '';
+
+  // 보이는 태그의 오늘·이번 주를 **한 번에** 묻는다. 태그마다 물으면
+  // 지도를 한 번 끌 때마다 쉰 번을 부른다.
+  const keys = items.map((x) => x.pk).filter(Boolean).slice(0, VIEW_MAX_KEYS);
+  await viewersStats(keys);
+
+  if (pk && pk !== viewers.pk) {
+    viewers.pk = pk;
+    viewersBump(pk);
+  }
+  if (sg !== viewers.sg) await viewersChannel(sg);
+  else if (viewers.ch) viewersTrack();
+  drawLandPrice();
+}
+
+/* 채널을 옮긴다. 전에 보던 곳에서 손을 떼지 않으면 그 지역의 '지금 N'
+   에 내가 계속 남아, 아무도 안 보는 곳이 붐비는 곳으로 보인다. */
+async function viewersChannel(sg) {
+  // **먼저 자리를 차지하고 나서 기다린다.** 아래를 기다리는 동안 다시
+  // 불리면 같은 지역에 채널을 두 번 붙인다.
+  viewers.sg = sg;
+  viewers.live = new Map();
+  if (viewers.ch) {
+    const gone = viewers.ch;
+    viewers.ch = null;
+    try { await window.SB.removeChannel(gone); } catch { /* 이미 끊김 */ }
+  }
+  if (!sg || viewers.sg !== sg) return;
+
+  const ch = window.SB.channel(`view:${sg}`, {
+    config: { presence: { key: viewers.me } },
+  });
+  ch.on('presence', { event: 'sync' }, () => {
+    if (viewers.ch !== ch) return;             // 이미 다른 지역으로 옮겼다
+    const live = new Map();
+    Object.values(ch.presenceState() || {}).forEach((metas) => {
+      const m = (metas || [])[0] || {};
+      if (m.p) live.set(m.p, (live.get(m.p) || 0) + 1);
+    });
+    viewers.live = live;
+    drawLandPrice();
+  });
+  // **subscribe 보다 먼저 세워 둔다.** 붙었다는 신호가 곧바로 오면
+  // (검사의 가짜 클라이언트가 그렇다) 아래 대입이 아직 안 돼 있어
+  // viewersTrack 이 조용히 아무것도 안 한다.
+  viewers.ch = ch;
+  ch.subscribe((status) => {
+    if (status === 'SUBSCRIBED' && viewers.ch === ch) viewersTrack();
+  });
+}
+
+/* 내가 가운데 둔 태그 하나만 싣는다. 신원도 좌표도 안 보낸다. */
+function viewersTrack() {
+  if (!viewers.ch || !viewers.pk) return;
+  try { viewers.ch.track({ p: viewers.pk }); } catch { /* 아직 안 붙었다 */ }
+}
+
+/* 오늘 조회수를 올린다. 이번 방문에 처음 가운데 둔 태그만 — 지도를
+   앞뒤로 흔들 때마다 세면 혼자서 백 명이 된다. */
+async function viewersBump(pk) {
+  if (viewers.seen.has(pk)) return;
+  viewers.seen.add(pk);
+  try {
+    const { data, error } = await window.SB.rpc('bump_place_view', { k: pk });
+    if (error) throw error;
+    const st = viewers.stat.get(pk) || { today: 0, week: 0 };
+    // 되돌아온 값이 **오늘** 수다. 주간 수가 아니다.
+    //
+    // 처음에 week 를 'st.week + (data - st.today)' 로 올렸는데, 통계가
+    // 아직 안 왔으면 st.today 가 0이라 week 가 오늘 수만큼 통째로
+    // 뛰었다. 그러면 그 태그가 주간 1등이 되어 **별표가 엉뚱한 곳에
+    // 붙는다** (검사에서 명암리 대신 사송리에 붙었다).
+    //
+    // 주간은 오늘을 품으므로 한 번 본 만큼만 올리되, 오늘보다 작을
+    // 수는 없다.
+    const today = Number(data) || st.today + 1;
+    viewers.stat.set(pk, { today, week: Math.max(st.week + 1, today) });
+    viewersRankStars();
+    drawLandPrice();
+  } catch (err) {
+    // 조회수를 못 세는 것으로 지도를 세우지 않는다. 숫자만 안 나온다.
+  }
+}
+
+async function viewersStats(keys) {
+  if (!keys.length) return;
+  const sig = keys.slice().sort().join('\n');
+  if (sig === viewers.asked) return;           // 같은 화면을 또 묻지 않는다
+  viewers.asked = sig;
+  try {
+    const { data, error } = await window.SB
+      .rpc('place_view_stats', { keys });
+    if (error) throw error;
+    // **화면에 있는 열쇠만 지우고 다시 채운다.** 통째로 비우면 방금
+    // 올린 내 숫자가 사라졌다 되살아나 깜빡인다.
+    (data || []).forEach((r) => viewers.stat.set(String(r.place_key),
+      { today: Number(r.today) || 0, week: Number(r.week) || 0 }));
+    keys.forEach((k) => {
+      if (!(data || []).some((r) => String(r.place_key) === k)
+          && !viewers.seen.has(k)) viewers.stat.delete(k);
+    });
+    viewersRankStars();
+  } catch (err) {
+    /* 못 읽으면 숫자만 안 나온다 */
+  }
+}
+
+/* 시·군 안에서 주간 1등을 뽑는다. **0 은 1등이 아니다** — 아무도 안
+   본 시골 면에 별이 붙으면 별의 뜻이 사라진다. */
+function viewersRankStars() {
+  const best = new Map();
+  const items = viewers.items || [];
+  items.forEach((it) => {
+    if (!it.pk || !it.sg || !it.pk.startsWith('u:')) return;
+    const w = (viewers.stat.get(it.pk) || {}).week || 0;
+    if (w <= 0) return;
+    const cur = best.get(it.sg);
+    if (!cur || w > cur.w) best.set(it.sg, { w, pk: it.pk });
+  });
+  viewers.star = new Map([...best].map(([sg, o]) => [sg, o.pk]));
+}
