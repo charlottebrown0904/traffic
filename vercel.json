@@ -4,6 +4,16 @@
   "buildCommand": null,
   "installCommand": null,
   "outputDirectory": "public",
+  "_regions_주석": [
+    "**icn1(서울)은 장식이 아니라 이 제품이 도는 이유다.**",
+    "한국 공공 API 가 해외 IP 를 막는다(docs/finding-geoblock.md).",
+    "2026-09-09 에 Cloudflare Pages 로 옮겨 보고 실측했는데,",
+    "브이월드(api.vworld.kr)가 502 로 거부했다 — 한국에서 열어도",
+    "마찬가지였다. Cloudflare Workers 에는 리전 고정이 없다.",
+    "브이월드는 지오코딩·지적편집도·필지조회 셋에 다 쓰이므로",
+    "이 한 줄이 빠지면 제품의 절반이 죽는다. 지우지 말 것.",
+    "(실측표: docs/cloudflare-migration.md)"
+  ],
   "regions": [
     "icn1"
   ],

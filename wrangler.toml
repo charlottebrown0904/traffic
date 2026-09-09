@@ -1,3 +1,13 @@
+# ⚠️ 지금은 **쓰이지 않습니다.** (2026-09-09)
+#
+# Cloudflare Pages 로 옮겨 실측했더니 브이월드(api.vworld.kr)가
+# 502 로 거부했습니다 — 한국에서 열어도 마찬가지였습니다. Cloudflare
+# Workers 에는 리전 고정이 없고, 브이월드는 지오코딩·타일·필지조회
+# 셋에 다 쓰입니다. 그래서 Vercel(regions: icn1) 에 남았습니다.
+#
+# 지우지 않고 둡니다 — 다른 길이 생기면 하루 안에 다시 갑니다.
+# 실측표와 사정: docs/cloudflare-migration.md
+
 # Cloudflare Pages 설정.
 #
 # 이 파일은 **Vercel 과 무관하다.** Vercel 은 vercel.json 을 보고,

@@ -1,178 +1,136 @@
-# Cloudflare 로 완전 이사 — toji.fyi
+# 도메인 이사 — toji.fyi 를 Vercel 로
 
-## 왜
+## 결론 (2026-09-09)
+
+**Cloudflare 로의 완전 이사는 접었습니다.** 도메인만 옮깁니다.
+
+    도메인 등록·DNS   Cloudflare  (그대로)
+    호스팅·함수       Vercel      (regions: icn1 = 서울)
+    주소              toji.fyi
+
+## 왜 접었나 — 실측
+
+Cloudflare Pages 로 다 옮겨 붙여서 **실제로 재 봤습니다.** 거의 다
+됐는데 하나가 막혔습니다.
+
+| 한국 API (Cloudflare 중계기 경유) | 결과 |
+| --------------------------------- | ---- |
+| 실거래 `data.go.kr`               | 200 정상 |
+| KOSIS                             | 200 정상 |
+| 도로공사 `data.ex.co.kr`          | 서버 응답함 |
+| **브이월드 `api.vworld.kr`**      | **502 거부** |
+
+한국에서 휴대폰으로 열어도 502 였습니다. 즉 **Cloudflare 는 어디서
+돌든 브이월드에 못 닿습니다.**
+
+브이월드는 세 곳에 쓰입니다 — 실거래 **지오코딩**, 지적편집도
+**타일**, **필지 조회**(레이더의 재료). 이 셋이 죽으면 제품의 절반이
+죽습니다.
+
+Vercel 은 `regions: ["icn1"]` 로 서울에 못박을 수 있고, Cloudflare
+Workers 에는 그 못이 없습니다. **그 한 줄이 이 제품이 도는 이유입니다.**
+
+## 요금제 — 사장님 결정 (2026-09-09)
 
 Vercel **Hobby 는 상업적 이용을 금지**합니다
-([vercel.com/docs/plans/hobby](https://vercel.com/docs/plans/hobby) ·
-[Fair Use Guidelines](https://vercel.com/docs/limits/fair-use-guidelines)).
-정의가 넓어 결제뿐 아니라 **제품·서비스 광고**까지 포함합니다.
+([plans/hobby](https://vercel.com/docs/plans/hobby) ·
+[fair-use](https://vercel.com/docs/limits/fair-use-guidelines)).
+정의가 넓어 결제뿐 아니라 제품·서비스 광고까지 포함합니다.
 
-Cloudflare Pages 는 무료 요금제에서 **상업적 이용을 허용**하고 대역폭이
-무제한입니다. 도메인도 같은 곳에 있으니 관리할 곳이 하나 줍니다.
+사장님 지시: **"유료는 나중에 서비스 확장 시 결정한다."**
+지금 라이브는 광고도 결제도 없는 무료 분석 도구라 당장은 Hobby 로
+둡니다. **경계선은 매물 기능을 켜거나 돈을 받기 시작하는 날**입니다.
+그날 Pro($20/월)로 올립니다.
 
-## 이사 순서 — **옛 사이트를 먼저 끄지 않습니다**
+---
 
-    1. 코드          끝났습니다 (아래 '무엇이 바뀌었나')
-    2. Pages 프로젝트 만들기 + 환경변수         ← 사장님
-    3. *.pages.dev 로 먼저 확인                 ← 사장님 + 저
-    4. toji.fyi 붙이기                          ← 사장님
-    5. 바깥 서비스 세 곳에 새 주소 등록          ← 사장님
-    6. 수집 파이프라인 전환 (REDT_RELAY_URL)     ← 사장님
-    7. 다 되면 Vercel 내리기                     ← 마지막
+## 사장님이 하실 일 — 대시보드 두 곳
 
-**3번이 끝나기 전에는 아무것도 안 끕니다.** toji-gogo.vercel.app 은
-6번까지 그대로 돕니다. 되돌리려면 Pages 프로젝트만 지우면 됩니다.
+제 컨테이너는 조직 망 정책이 `vercel.com` · `dash.cloudflare.com` ·
+`api.vercel.com` 을 막습니다(403). 브라우저를 띄워도 못 갑니다. Vercel
+MCP 에도 '기존 도메인을 프로젝트에 붙이는' 도구가 없습니다(구매만).
+**아래 둘은 사장님만 하실 수 있습니다.**
 
-## 무엇이 바뀌었나 (코드)
+### 1. Cloudflare Pages 에서 도메인을 뗀다 (붙이셨다면)
 
-    functions/_adapter.js       Vercel 핸들러를 Cloudflare 에서 그대로 돌린다
-    functions/api/{relay,tile}  api/*.js 를 **복사하지 않고** 감싼다
-    public/_headers             vercel.json 의 헤더
-    public/_routes.json         /api/* 만 Function 으로 (아래 참고)
-    wrangler.toml               프로젝트 이름 toji-gogo · nodejs_compat
-    기본 주소                   toji-gogo.vercel.app → toji.fyi (14곳)
+`toji-gogo` 프로젝트 → Custom domains → `toji.fyi` 제거.
+한 도메인이 두 곳에 동시에 붙을 수 없습니다.
 
-### _routes.json — 이게 없으면 이사가 무의미해집니다
+**프로젝트 자체는 아직 지우지 마세요.** 되돌릴 자리로 남겨 둡니다.
 
-Pages 는 `functions/` 가 있으면 **기본적으로 모든 요청**을 Function
-으로 보냅니다. 그러면 정적 파일 447개와 화면 자료 JSON 까지 전부
-Worker 호출로 세어 **무료 10만/일을 하루도 못 가 태웁니다.**
+### 2. Vercel 에 도메인을 붙인다
 
-`_routes.json` 으로 `/api/*` 만 남기면 나머지는 정적 요청이 되어
-**무제한·무료**입니다. 문서에는 자동 생성해 준다고 되어 있지만,
-재려는 숫자가 걸린 파일을 자동 생성에 맡기지 않습니다.
+프로젝트 → **Settings → Domains → Add** → `toji.fyi`
+그리고 `www.toji.fyi` 도 함께.
 
-함수는 한 벌뿐입니다. `api/relay.js` 와 `api/tile.js` 가 알맹이고,
-`functions/` 는 모양만 맞추는 껍데기입니다. 키를 쥔 파일을 둘로 갈라
-두면 한쪽만 고치는 날이 반드시 오고, 그날 새는 것은 키입니다.
+Vercel 이 **필요한 DNS 레코드를 화면에 띄웁니다.**
 
-### 잡아 둔 함정 하나
+### 3. Cloudflare DNS 에 그 레코드를 넣는다
 
-Vercel 은 `process.env` 를 채운 **뒤에** 파일을 읽습니다. Cloudflare 는
-반대로 파일을 먼저 읽고 환경변수는 요청이 와야 들어옵니다. 그래서
-모듈 맨 위에서
+Cloudflare → `toji.fyi` → **DNS → Records → Add record**
 
-    referer: process.env.VWORLD_REFERER || "https://…/"
+일반적으로 이렇습니다 (**화면에 뜬 값이 우선입니다**):
 
-처럼 **상수로 받아 두면 Cloudflare 에서는 영원히 undefined** 이고 옆에
-적어 둔 기본값이 이깁니다. 브이월드가 Referer 를 보고 거절해 지도가
-통째로 빕니다. **Vercel 에서는 멀쩡히 도니 눈으로는 못 잡습니다.**
+| Type  | Name  | Content                | Proxy status        |
+| ----- | ----- | ---------------------- | ------------------- |
+| A     | `@`   | `76.76.21.21`          | **DNS only (회색)** |
+| CNAME | `www` | Vercel 이 알려주는 값  | **DNS only (회색)** |
 
-함수로 바꿔 요청 시점에 읽게 했고, `scripts/test_cloudflare.js` 가
-값을 바꿔 가며 실제로 실리는지 봅니다.
+Vercel 문서가 "카드에 뜬 값이 진짜다(the card is the source of truth)"
+라고 못박고 있습니다. 제가 적은 값은 참고용입니다.
 
-## 2. 사장님 — Pages 프로젝트
+### ⚠️ 주황 구름이면 안 됩니다
 
-### ⚠️ Workers 흐름이 아니라 **Pages** 흐름입니다
+Cloudflare 프록시(주황 구름)를 켜면 **인증서 발급이 실패**합니다 —
+`Failed to Generate Cert` · `Invalid Configuration` ·
+`ERR_SSL_VERSION_OR_CIPHER_MISMATCH` · Error 526 · 리다이렉트 루프.
+Vercel 자신도 앞단 리버스 프록시를 권하지 않습니다.
 
-대시보드에는 길이 둘 있고 화면이 아주 비슷합니다. **다음이 보이면
-Workers 쪽이니 뒤로 나오세요:**
+**반드시 `DNS only`(회색 구름).**
 
-    "Configure your Worker project"
-    Deploy command:  npx wrangler deploy
-    API token 만들기
+### 4. 붙은 뒤 — 바깥 서비스 세 곳
 
-**Pages 흐름에는 이런 칸이 있습니다:**
+| 어디 | 무엇 | 안 하면 |
+| ---- | ---- | ------- |
+| 브이월드 | 서비스URL `https://toji.fyi/` | 이미 하셨습니다 ✅ |
+| Supabase | Redirect URLs 에 `https://toji.fyi/**` **추가** | 로그인 불가 |
+| 카카오·구글 | OAuth 리디렉션에 새 주소 **추가** | 로그인 불가 |
 
-    Framework preset
-    Build command          (비움)
-    Build output directory (public)     ← 이 칸이 있으면 맞습니다
+**추가**입니다. 옛 주소(`toji-gogo.vercel.app`)는 당분간 남겨 둡니다.
 
-우리 코드는 **Pages 전용 기능 둘**에 기대고 있습니다 —
-`functions/` 파일 기반 라우팅과 `_routes.json`. Workers 에는 둘 다
-없어서, Workers 로 만들면 `/api/*` 가 통째로 404 가 됩니다.
+### 5. 마지막 — 수집 파이프라인
 
-1. **Workers & Pages → Create → Pages → Connect to Git**
-2. 저장소 `charlottebrown0904/traffic`, 프로덕션 브랜치 **`main`**
-3. **프로젝트 이름은 `toji-gogo`** — `wrangler.toml` 의 `name` 과
-   **글자까지 같아야** 합니다. 다르면 빌드가 이름 불일치로 죽습니다.
-4. **빌드 명령 비움 · 빌드 출력 디렉터리 `public`**
-5. **'비프로덕션 브랜치도 빌드' 는 꺼 주세요** — 우리는 작업 브랜치에
-   하루 몇 번씩 밀어 넣습니다. 켜 두면 그때마다 빌드가 돌아 무료
-   500회/월을 금방 씁니다. 우리에게 필요한 것은 `main` 뿐입니다.
-5. **Settings → Variables and Secrets → Production** 에 **다섯 개**.
-   Type 은 전부 **Secret** 입니다. Vercel 에 넣으신 것과 같은 값입니다.
-   **값을 채팅에 붙여넣지 마세요.**
-
-   | 이름              | Type   |
-   | ----------------- | ------ |
-   | `DATA_GO_KR_KEY`  | Secret |
-   | `VWORLD_KEY`      | Secret |
-   | `RELAY_TOKEN`     | Secret |
-   | `KOSIS_KEY`       | Secret |
-   | `EX_API_KEY`      | Secret |
-
-   `VWORLD_REFERER` 는 **넣지 않습니다** — 비밀이 아니라 `wrangler.toml`
-   의 `[vars]` 에 있습니다. wrangler.toml 이 있으면 대시보드는 Secret 만
-   받고 나머지는 파일이 맡습니다. 그래서 비밀 아닌 값은 파일에 두어
-   코드와 함께 버전이 남게 했습니다.
-
-   **인증키 다섯은 절대 wrangler.toml 에 적지 않습니다** — 공개
-   저장소입니다. `scripts/test_cloudflare.js` 가 그것을 감시합니다.
-
-   #### `RELAY_TOKEN` 과 `REDT_RELAY_TOKEN` — 이름이 둘, 값은 하나
-
-   발급받는 키가 아니라 **우리가 정한 암호**입니다. 문 이쪽과 저쪽이라
-   이름만 다릅니다.
-
-       GitHub Actions (부르는 쪽)        Cloudflare (중계기)
-       REDT_RELAY_TOKEN  ──── 실어 보냄 ────▶  RELAY_TOKEN
-                                               같으면 통과, 다르면 401
-
-   **두 값이 같기만 하면 됩니다.** 바꿀 때는 반드시 함께 바꿉니다 —
-   한쪽만 바꾸면 수집이 401 로 통째로 멈춥니다.
-
-## 3. 먼저 pages.dev 로 확인
-
-주소를 알려 주시면 제가 헤더로 확인합니다.
-
-| 보는 것          | 어떻게                                       |
-| ---------------- | -------------------------------------------- |
-| 어느 쪽이 응답했나 | 헤더 `x-served-by: cloudflare-pages`         |
-| 타일 캐시        | 헤더 `x-tile-cache: hit` / `miss`            |
-| **함수 호출 수** | 대시보드 → 프로젝트 → Metrics                |
-| 깨끗한 주소      | `/app` 이 `.html` 없이 열리는가              |
-
-## 4. toji.fyi 붙이기
-
-프로젝트 → **Custom domains → Set up a domain → `toji.fyi`**.
-도메인이 같은 Cloudflare 계정에 있어 DNS 는 자동으로 잡힙니다.
-`www.toji.fyi` 도 함께 붙이시면 좋습니다.
-
-## 5. 바깥 서비스 세 곳 — **여기를 빠뜨리면 조용히 고장납니다**
-
-| 어디            | 무엇                                                              |
-| --------------- | ----------------------------------------------------------------- |
-| **브이월드**    | 서비스URL 에 `https://toji.fyi/` **추가**. 안 하면 지도 배경이 통째로 안 나옵니다 |
-| **Supabase**    | Authentication → URL Configuration → Redirect URLs 에 `https://toji.fyi/**` **추가**. 안 하면 로그인이 안 됩니다 |
-| **카카오·구글** | OAuth 리디렉션 주소에 새 도메인 **추가**                          |
-
-셋 다 **추가**입니다. 옛 주소를 지우는 것은 7번에서 합니다.
-
-## 6. 수집 파이프라인 전환
-
-GitHub → Settings → Secrets and variables → Actions
+GitHub → Settings → Secrets → Actions
 
     REDT_RELAY_URL = https://toji.fyi/api/relay
 
-이걸 바꾸면 수집이 새 중계기를 씁니다. **바꾸기 전에 3번이 끝나
-있어야 합니다** — 안 그러면 수집이 통째로 섭니다(2026-09-08 에 한 번
-겪었습니다).
+**4번까지 확인된 뒤에** 바꿉니다. 토큰(`REDT_RELAY_TOKEN`)은 값이
+그대로라 안 건드립니다.
 
-바꾸신 뒤 `점검 (키·네트워크)` 로 워크플로를 한 번 돌리면 중계기가
-살아 있는지 확인됩니다.
+---
 
-## 7. 마지막 — Vercel 내리기
+## 확인은 제가 합니다
 
-**3~6번이 다 확인된 뒤에** 합니다.
+`.github/workflows/sitecheck.yml` 을 `base=https://toji.fyi` 로 돌리면
+정적 화면·헤더·환경변수·중계기·타일·한국 API 넷을 한 번에 훑고 판정을
+냅니다. **사장님이 화면을 캡쳐하실 필요 없습니다.**
 
-1. Vercel 프로젝트를 **Pause** (삭제 말고) — 며칠 두고 봅니다
-2. 브이월드·Supabase·OAuth 에서 옛 주소를 지웁니다
-3. 조용하면 Vercel 프로젝트 삭제, 저장소에서 `vercel.json` 제거
+## 남겨 둔 것 — Cloudflare 자산
 
-`api/` 는 **지우지 않습니다.** 알맹이가 거기 있습니다.
+지우지 않았습니다. Vercel 은 이것들을 보지 않습니다.
 
-## 되돌리기
+    functions/_adapter.js · functions/api/*   Vercel 핸들러를 그대로 돌리는 껍데기
+    public/_headers · public/_routes.json     Pages 설정
+    wrangler.toml                             Pages 설정
+    scripts/test_cloudflare.js                양쪽이 같은 것을 내놓는지 검사
 
-3번 전이면 Pages 프로젝트 삭제로 끝입니다. 저장소에 남는
-`functions/`·`wrangler.toml`·`public/_headers` 는 Vercel 이 보지 않습니다.
+브이월드 말고 다른 길이 생기거나(예: 한국 VPS 중계, 브이월드가
+Cloudflare 를 허용) 요금 사정이 바뀌면 **하루 안에 다시 갈 수 있습니다.**
+그 값어치가 유지비보다 큽니다.
+
+## 이번에 얻은 것 (버려지지 않음)
+
+  sitecheck 워크플로   배포 확인이 러너에서 자동으로 — 캡쳐 왕복이 사라짐
+  envcheck             변수가 어디까지 닿았는지 이름만으로 진단
+  relay.js 지연 평가   환경변수를 요청 시점에 읽는다 (Vercel 에서도 더 안전)
+  실측표               브이월드가 어디서 되고 어디서 안 되는지
