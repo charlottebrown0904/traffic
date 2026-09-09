@@ -22,7 +22,7 @@
 이 저장소는 레이어 이름을 세 번 틀렸고 공시지가 원천도 추측으로
 시작했다가 헛돌았습니다. **받아 보기 전에는 모릅니다.**
 
-  (가) 브이월드 WFS 읍면동 경계 — 이름과 도형이 한 번에 온다.
+  (가) 브이월드 데이터 API 의 읍면동 — 이름과 도형이 한 번에 온다.
        이것이 서면 1·2 를 한 길로 끝냅니다. 도형이 오면 중심점을
        계산하면 되고, 지오코딩 할당량을 한 건도 안 씁니다.
   (나) 행정표준코드 API (data.go.kr) — 이름만. 좌표는 따로 구해야 합니다.
@@ -61,23 +61,35 @@ def show(resp, n: int = 400) -> None:
     print(f"    {body}")
 
 
-def probe_wfs() -> None:
-    """(가) 브이월드 WFS 읍면동 경계.
+def probe_data_api() -> None:
+    """(가) 브이월드 **데이터 API** 로 읍면동을 읽는다.
 
-    레이어 이름을 맞히지 않고 후보를 다 두드린다. 404 는 '그 이름이
-    아니다' 이지 '읍면동 경계가 없다' 가 아니다.
+    1차(2026-09-09)에는 WFS GetFeature 를 BBOX 로 불렀는데 중계기가
+    연결을 끊었습니다(RemoteDisconnected · 502). 그것은 '그런 자료가
+    없다' 가 아니라 **우리 중계기가 못 견뎠다** 는 뜻입니다 — 경계
+    도형은 한 번에 수 MB 이고, Vercel 함수에는 시간 제한이 있습니다.
+    무거운 요청으로 재고 '자료가 없다' 고 적으면 그것이 거짓 기록으로
+    남습니다.
+
+    그래서 두 가지를 바꿉니다.
+
+      · WFS 대신 **데이터 API(/req/data)** — 쪽 단위로 끊어 줍니다.
+      · 먼저 geometry=false 로 **이름만** 받아 봅니다. 가볍고, 이것만
+        돼도 '이 길이 산다' 는 것은 확인됩니다.
+
+    그 다음에 geometry=true 를 딱 한 쪽만 받아 좌표가 실제로 오는지
+    봅니다.
     """
-    head("(가) 브이월드 WFS — 읍면동 경계 (이름 + 도형을 한 번에)")
-    for layer in ("lt_c_ademd", "LT_C_ADEMD_INFO", "lt_c_ademd_info",
-                  "LT_C_ADEMD", "lt_c_adsigg"):
-        print(f"  {layer}")
+    head("(가) 브이월드 데이터 API — 읍면동 (쪽 단위로 끊어 받는다)")
+    ok_layer = None
+    for layer in ("LT_C_ADEMD_INFO", "LT_C_ADSIGG_INFO", "LT_C_ADSIDO_INFO"):
+        print(f"  {layer} · geometry=false (이름만, 가볍게)")
         try:
-            resp = get_once("https://api.vworld.kr/req/wfs", {
-                "SERVICE": "WFS", "REQUEST": "GetFeature", "VERSION": "2.0.0",
-                "TYPENAME": layer, "OUTPUT": "application/json",
-                "SRSNAME": "EPSG:4326", "BBOX": SAMPLE_BBOX,
-                "MAXFEATURES": "3", "key": "PROBE",
-            }, timeout=40)
+            resp = get_once("https://api.vworld.kr/req/data", {
+                "service": "data", "version": "2.0", "request": "GetFeature",
+                "data": layer, "format": "json", "geometry": "false",
+                "size": "5", "page": "1", "key": "PROBE",
+            }, timeout=45)
         except Exception as exc:                            # noqa: BLE001
             print(f"    못 불렀습니다: {exc}")
             continue
@@ -87,15 +99,55 @@ def probe_wfs() -> None:
                 got = resp.json()
             except ValueError:
                 continue
-            feats = got.get("features") or []
+            res = (got.get("response") or {})
+            print(f"    상태={res.get('status')}"
+                  f" 전체건수={((res.get('record') or {}).get('total'))}")
+            feats = (((res.get("result") or {}).get("featureCollection")
+                      or {}).get("features")) or []
             if feats:
-                print(f"    ▶ 도형 {len(feats)}개. 첫 칸의 속성:")
+                ok_layer = ok_layer or layer
+                print(f"    ▶ {len(feats)}칸. 첫 칸의 속성:")
                 print("      " + json.dumps(feats[0].get("properties", {}),
                                             ensure_ascii=False)[:300])
 
+    if not ok_layer:
+        print("\n  이름만 받는 것도 안 됐습니다. 좌표는 볼 것도 없습니다.")
+        return
+
+    print(f"\n  {ok_layer} · geometry=true 를 한 쪽만 (좌표가 오는가)")
+    try:
+        resp = get_once("https://api.vworld.kr/req/data", {
+            "service": "data", "version": "2.0", "request": "GetFeature",
+            "data": ok_layer, "format": "json", "geometry": "true",
+            "size": "2", "page": "1", "key": "PROBE",
+        }, timeout=60)
+    except Exception as exc:                                # noqa: BLE001
+        print(f"    못 불렀습니다: {exc}")
+        print("    → 이름은 오는데 도형이 무겁습니다. 그때는 도형 없이"
+              " 이름만 받고 좌표는 따로 구합니다.")
+        return
+    show(resp, 240)
+    if resp.status_code == 200 and resp.text.lstrip().startswith("{"):
+        try:
+            feats = ((((resp.json().get("response") or {}).get("result") or {})
+                      .get("featureCollection") or {}).get("features")) or []
+        except ValueError:
+            feats = []
+        if feats:
+            geo = feats[0].get("geometry") or {}
+            print(f"    ▶ 도형 형식={geo.get('type')}"
+                  f" · 한 칸 크기≈{len(json.dumps(geo)):,}자")
+            print("      이름표를 놓을 좌표는 이 도형의 가운데로 계산합니다"
+                  " — 지오코딩 할당량을 한 건도 안 씁니다.")
+
 
 def probe_stan_regin() -> None:
-    """(나) 행정표준코드관리시스템 API (data.go.kr). 이름만 온다."""
+    """(나) 행정표준코드관리시스템 API (data.go.kr). 이름만 온다.
+
+    1차 결과: **403 SERVICE_KEY_IS_NOT_REGISTERED_ERROR.**
+    막힌 것이 아니라 우리 키가 이 서비스에 **활용신청이 안 된 것**입니다.
+    data.go.kr 은 서비스마다 따로 신청합니다. 신청은 대개 자동승인입니다.
+    """
     head("(나) 행정표준코드 API — 이름만 (좌표는 따로 구해야 한다)")
     for path in ("1741000/StanReginCd/getStanReginCdList",
                  "1741000/StanReginCd5/getStanReginCdList"):
@@ -112,7 +164,14 @@ def probe_stan_regin() -> None:
 
 
 def probe_code_go_kr() -> None:
-    """(다) code.go.kr 파일. 러너에서 곧장 받아지는가."""
+    """(다) code.go.kr 파일. 러너에서 곧장 받아지는가.
+
+    1차 결과: **연결 시간 초과.** 중계기 허용 목록에 없는 주소라 러너가
+    직접 불렀고, 미국에서는 안 열립니다. 여기를 뚫자고 중계기에 주소를
+    더하지는 않습니다 — 허용 목록은 아무 데나 대신 불러 주지 않으려고
+    있는 것이고, 이 한 파일 때문에 그 문을 넓힐 값어치가 없습니다.
+    사장님이 받아 주시는 편이 낫습니다.
+    """
     head("(다) code.go.kr — 법정동코드 전체자료 내려받기")
     for url in ("https://www.code.go.kr/stdcode/regCodeL.do",
                 "https://www.code.go.kr/etc/codeList.do"):
@@ -127,7 +186,7 @@ def probe_code_go_kr() -> None:
 
 def main() -> int:
     print("중계기:", "켜짐" if relay().enabled else "꺼짐 (직접 부릅니다)")
-    probe_wfs()
+    probe_data_api()
     probe_stan_regin()
     probe_code_go_kr()
     head("읽는 법")

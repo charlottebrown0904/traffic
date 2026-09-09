@@ -151,8 +151,12 @@ jobs:
           echo "  담는 것:$WANT"
           # zstd -19 는 2GB 에 십 분씩 걸립니다. -10 이면 몇 분에 끝나고
           # 크기 차이는 몇 %뿐입니다.
-          tar --zstd -cf /tmp/vault.tar.zst \
-              --options 'zstd:compression-level=10' $WANT
+          #
+          # **--options 는 GNU tar 에 없습니다** (bsdtar 것입니다). 러너의
+          # tar 는 GNU 라 그대로 죽었습니다. 압축은 zstd 에 직접 넘깁니다.
+          echo "  담기 전 크기:"
+          du -ch $WANT | sed 's/^/    /'
+          tar -cf - $WANT | zstd -10 -T0 -o /tmp/vault.tar.zst
           ls -l /tmp/vault.tar.zst | sed 's/^/  /'
           # 릴리스 첨부는 한 개 2GB 가 한도입니다. 1.5GB 씩 나눠 올리고
           # 되살릴 때 cat 으로 이어 붙입니다.
