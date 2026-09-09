@@ -296,6 +296,13 @@ const FAKE_LEAFLET = () => {
     {
       const metaPath = path.join(ROOT, 'public', 'app', 'data', 'meta.json');
       const realMeta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+      // 분석이 쓰는 세 용도지역. **아직 안 실린 자료로 돌 수도 있어**
+      // (내보내기를 다시 돌리기 전) 없으면 채워 넣는다 — 화면이 그것을
+      // 밝히는지가 여기서 볼 것이고, 내보내기가 이 칸을 싣는지는
+      // test_web.py 가 따로 본다.
+      if (!realMeta.land_use_filter) {
+        realMeta.land_use_filter = ['계획관리', '생산관리', '자연녹지'];
+      }
       realMeta.region_offices = {
         sido: { '경기도': [37.274975, 127.009235],
                 '서울특별시': [37.566610, 126.978388] },
@@ -1650,6 +1657,85 @@ const FAKE_LEAFLET = () => {
     // 검색 뒤 배율이 바뀌었으므로 되돌린다.
     await page.evaluate(() => { window.__zoom = 11; });
     await lpFire();
+
+    console.log();
+    console.log('9-E. 화면 자리 정리 (2026-09-09 지시 A~E)');
+
+    // A·C — 가이드는 아래로, 검색은 그 자리로.
+    const chrome = await page.evaluate(() => ({
+      guideInHeader: !!document.querySelector('.topbar .guide-link'),
+      guideAtFoot: !!document.querySelector('.page-foot .guide-link'),
+      findInHeader: !!document.querySelector('.topbar .map-find #find-q'),
+      findOverMap: !!document.querySelector('.map-wrap .map-find'),
+    }));
+    check('가이드가 머리띠에서 빠졌다', !chrome.guideInHeader);
+    check('가이드는 화면 제일 아래에 있다', chrome.guideAtFoot);
+    check('검색이 그 자리로 올라왔다', chrome.findInHeader);
+    check('검색이 지도 위를 안 덮는다', !chrome.findOverMap);
+
+    // B — 고르기 전에는 상세 패널이 없다.
+    //
+    // **여기서 window 를 보면 안 된다.** 이 절에 오기까지 앞 절들이
+    // 영업소를 고르고 지도를 눌렀으므로 패널이 열려 있는 것이 정상이다.
+    // '기본 세팅' 은 내려받은 문서가 무엇인가의 문제다.
+    const shipped = await (await fetch(`${BASE}/app/index.html`)).text();
+    check('내려받은 문서에서 상세 패널이 닫혀 있다',
+          /<aside class="detail" id="detail" hidden>/.test(shipped)
+          && !/지도에서 <strong>영업소<\/strong>를 선택하세요/.test(shipped),
+          (/<aside class="detail"[^>]*>/.exec(shipped) || ['(없음)'])[0]);
+
+    // 영업소를 고르면 열린다.
+    const d1 = await page.evaluate(async () => {
+      const g = document.getElementById('gate-bg');
+      if (g && !g.checked) { g.checked = true; g.dispatchEvent(new Event('change')); }
+      await new Promise((r) => setTimeout(r, 300));
+      const m = (window.__map.groups || []).flatMap((x) => x._items)
+        .find((x) => x.__on && x.__on.click);
+      if (m) m.__on.click({});
+      await new Promise((r) => setTimeout(r, 300));
+      const b = document.getElementById('detail');
+      return { hidden: b.hidden, html: b.innerHTML };
+    });
+    check('영업소를 고르면 열린다', !d1.hidden);
+
+    // E — 사분면 배지와 통계 카드 넷은 없다.
+    if (!d1.hidden) {
+      check('사분면 배지가 없다', !/class="badge"/.test(d1.html));
+      check('통계 카드 넷이 없다',
+            !/교통량 증가율/.test(d1.html) && !/신뢰도/.test(d1.html));
+      // 그런데 추이는 남는다 — 지운 것은 요약이지 자료가 아니다.
+      check('가격·교통량 추이는 남는다',
+            /가격 추이/.test(d1.html) && /교통량 추이/.test(d1.html));
+      // 그리고 그 가격이 지도 필터와 다르다는 것을 밝힌다.
+      check('반경 가격이 세 용도지역 기준임을 밝힌다',
+            /계획관리/.test(d1.html) && /지도에서 켠 용도지역과 무관/.test(d1.html),
+            (/(계획관리[^<]*)/.exec(d1.html) || ['(없음)'])[0].slice(0, 60));
+    }
+
+    // 영업소를 끄면 다시 닫힌다 — 안 보이는 영업소의 상세만 남으면 안 된다.
+    const d2 = await page.evaluate(async () => {
+      const g = document.getElementById('gate-bg');
+      if (g && g.checked) { g.checked = false; g.dispatchEvent(new Event('change')); }
+      await new Promise((r) => setTimeout(r, 300));
+      return document.getElementById('detail').hidden;
+    });
+    check('영업소를 끄면 다시 닫힌다', d2);
+
+    // D — 도시/비도시로 큰 블록. 머리글이 되풀이되면 안 된다.
+    const blocks = await page.evaluate(() => {
+      const box = document.getElementById('lp-groups');
+      const seq = [...box.children].map((el) =>
+        el.classList.contains('lp-menu-head') ? `#${el.textContent}` : '.');
+      const heads = seq.filter((x) => x.startsWith('#'));
+      return { heads, order: heads.map((h) => h.slice(1)) };
+    });
+    check('갈래 머리글이 되풀이되지 않는다',
+          new Set(blocks.order).size === blocks.order.length,
+          blocks.order.join(' / '));
+    check('비도시지역이 위다 (기본으로 켠 둘이 거기 있다)',
+          !blocks.order.includes('도시지역')
+          || blocks.order.indexOf('비도시지역') < blocks.order.indexOf('도시지역'),
+          blocks.order.join(' → '));
 
     console.log();
     console.log('9-C. 필지 진단 — 다섯 축을 또래 안 백분위로');

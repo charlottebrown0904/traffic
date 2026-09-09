@@ -129,6 +129,25 @@ check(_clean == {"a": None, "b": [1.0, None], "c": {"d": None}},
 check(_wx._text(_math.nan) == "" and _wx._text("경기도") == "경기도",
       "NaN 은 참이라 `or` 를 통과한다 — 문자열인지 직접 본다")
 
+# ── 화면이 '이 값의 기준' 을 말할 수 있어야 한다 ────────────────────
+#
+# 사장님 지시(2026-09-09): "IC 선택 시 나오는 반경 내 토지 가격은 현재
+# 지도에서 보이는 필터 내용이 아니라 3종 토지 가격임을 명기".
+#
+# 지도의 땅값 글자는 사장님이 켠 용도지역을 따르고, IC 반경 추이는
+# settings.yaml 의 land_use_filter 로 고정돼 있다. 같은 화면에 기준이
+# 다른 두 값이 있으니 화면이 그것을 말해야 하는데, 말하려면 그 목록이
+# 내보내기에 실려 있어야 한다. **화면에 손으로 적어 두면 설정을 고친
+# 날 조용히 거짓말이 된다.**
+from redt.config import settings as _settings               # noqa: E402
+import inspect as _inspect                                  # noqa: E402
+
+_src = _inspect.getsource(_wx.export)
+check('"land_use_filter"' in _src,
+      "내보내기가 meta 에 land_use_filter 를 싣는다")
+check(bool(_settings().get("land_use_filter")),
+      f"설정에 분석 용도지역이 있다 — {_settings().get('land_use_filter')}")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

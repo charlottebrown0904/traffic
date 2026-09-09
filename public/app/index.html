@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260909f">
+<link rel="stylesheet" href="/app/style.css?v=20260910a">
 </head>
 <body>
 
@@ -41,7 +41,18 @@
     <button class="tab" role="tab" data-view="verdict" aria-selected="false">가설 판정</button>
     <button class="tab" role="tab" data-view="listings" aria-selected="false">매물</button>
   </nav>
-  <a class="guide-link" href="/guide">토지·건축 가이드</a>
+  <!-- 검색이 가이드 자리를 넘겨받았다 (사장님 지시 2026-09-09:
+       "검색해서 찾는 것을 A(토지·건축 가이드) 삭제 후 이동").
+
+       지도 위에 얹었더니 지도의 윗줄을 먹었다. 머리띠로 올리면 지도가
+       그만큼 넓어지고, 탭을 옮겨도 자리가 안 바뀐다. -->
+  <div class="map-find">
+    <input type="search" id="find-q" autocomplete="off" spellcheck="false"
+           placeholder="지역 이름으로 찾기 (예: 안성시, 공도읍)"
+           aria-label="지역 이름으로 찾기"
+           role="combobox" aria-expanded="false" aria-controls="find-list">
+    <ul class="find-list" id="find-list" role="listbox" hidden></ul>
+  </div>
   <div class="meta-stamp" id="meta-stamp"></div>
 </header>
 
@@ -240,20 +251,6 @@
       </label>
     </div>
 
-    <!-- 지역 검색. 사장님 지시(2026-09-09): "첫 화면이 전국인데, 정작 쓸
-         사람은 자기 지역부터 봅니다. 3번 진행합니다."
-
-         **필지 단위로는 못 간다.** 실거래 지번이 마스킹돼 있어(1**)
-         어느 필지인지 특정할 수가 없다. 갈 수 있는 가장 아래가
-         읍·면·동이고, 안내문이 그 사실을 말한다. -->
-    <div class="map-find">
-      <input type="search" id="find-q" autocomplete="off" spellcheck="false"
-             placeholder="지역 이름으로 찾기 (예: 안성시, 공도읍)"
-             aria-label="지역 이름으로 찾기"
-             role="combobox" aria-expanded="false" aria-controls="find-list">
-      <ul class="find-list" id="find-list" role="listbox" hidden></ul>
-    </div>
-
     <div id="map"></div>
 
     <!-- 5분위 눈금. 사장님 지시(2026-09-09) 2번.
@@ -265,12 +262,14 @@
     <div class="lp-scale" id="lp-scale" hidden aria-hidden="true"></div>
   </div>
 
-  <aside class="detail" id="detail">
-    <div class="detail-empty">
-      <p>지도에서 <strong>영업소</strong>를 선택하세요.</p>
-      <p class="hint">반경별 실거래와 연도별 추이가 여기 표시됩니다.</p>
-    </div>
-  </aside>
+  <!-- **고르기 전에는 아예 없다** (사장님 지시 2026-09-09:
+       "IC 주변 분석내용은 IC를 선택 시 활성화. 기본 세팅은 나타나 있지
+       않음 (지도 영역 최대화)").
+
+       '지도에서 영업소를 선택하세요' 라는 빈 칸이 휴대폰 화면의 4분의
+       1을 먹고 있었다. 아무것도 안 알려주면서 자리만 차지하는 칸이다.
+       고르면 그때 열린다 (app.js 의 showDetail). -->
+  <aside class="detail" id="detail" hidden></aside>
 </main>
 
 <!-- ══ 교통량 순위 (지시4) ══ -->
@@ -582,6 +581,11 @@
 </main>
 
 <footer class="disclaimer" id="disclaimer"></footer>
+<!-- 가이드는 화면 제일 아래로 (사장님 지시 2026-09-09). 늘 필요한 것이
+     아니라 한 번 읽어 두는 것이라, 머리띠에서 자리를 차지할 이유가 없다. -->
+<div class="page-foot">
+  <a class="guide-link" href="/guide">토지·건축 가이드</a>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="/app/config.js?v=20260905a"></script>

@@ -1183,43 +1183,50 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 
 
-/* ─── 지역 검색 (사장님 지시 2026-09-09, 3번) ─────────────────────────
-   지도 **위**에 띄운다. 지도 밖으로 빼면 그만큼 지도가 좁아지는데,
-   검색은 한 번 쓰고 마는 조작이다. 오른쪽 위 — 왼쪽 위는 Leaflet 의
-   +/- 자리이고 오른쪽 위 스위치 아래로 내려 붙인다. */
-.map-find {
-  position: absolute; z-index: 620;
-  top: 2.9rem; right: .6rem; width: min(17rem, calc(100% - 1.2rem));
-}
+/* ─── 지역 검색 ──────────────────────────────────────────────────────
+   **머리띠로 올라왔다** (사장님 지시 2026-09-09: "검색해서 찾는 것을
+   A(토지·건축 가이드) 삭제 후 이동"). 지도 위에 얹었더니 지도의 윗줄을
+   먹었고, 탭을 옮기면 사라졌다. 여기 있으면 지도가 그만큼 넓어진다. */
+.map-find { position: relative; min-width: 0; }
 #find-q {
-  width: 100%; box-sizing: border-box;
-  padding: .38rem .6rem; border-radius: 999px;
-  border: 1px solid var(--line); background: var(--card); color: var(--fg);
-  font: inherit; font-size: 12.5px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.14);
+  width: min(20rem, 42vw); box-sizing: border-box;
+  padding: .32rem .7rem; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+  font: inherit; font-size: .8rem;
 }
 #find-q:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 목록은 머리띠 밖으로 흘러야 한다. 안에 가두면 잘린다. */
 .find-list {
-  margin: .25rem 0 0; padding: .2rem; list-style: none;
+  position: absolute; z-index: 900; top: calc(100% + .25rem); right: 0;
+  width: min(22rem, 80vw);
+  margin: 0; padding: .2rem; list-style: none;
   max-height: 15rem; overflow-y: auto;
-  border: 1px solid var(--line); border-radius: 8px;
-  background: var(--card); box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--surface); box-shadow: 0 6px 18px rgba(0,0,0,.2);
 }
 .find-list li {
   display: flex; align-items: baseline; gap: .35rem;
   padding: .28rem .4rem; border-radius: 5px; cursor: pointer;
-  font-size: 12.5px;
+  font-size: .8rem;
 }
 .find-list li.is-on, .find-list li:hover { background: var(--accent-soft); }
 .find-list li b { font-weight: 700; }
-.find-list li span { color: var(--muted); font-size: 11px; }
-/* 종류는 맨 오른쪽으로 밀어 둔다 — 이름을 읽는 데 방해가 안 되게. */
+.find-list li span { color: var(--muted); font-size: .7rem; }
 .find-list li em {
-  margin-left: auto; font-style: normal; font-size: 10px;
+  margin-left: auto; font-style: normal; font-size: .65rem;
   color: var(--faint); white-space: nowrap;
 }
 .find-none { color: var(--muted); cursor: default; display: block; }
-.find-none em { font-style: normal; font-size: 10.5px; color: var(--faint); }
+.find-none em { font-style: normal; font-size: .68rem; color: var(--faint); }
+
+/* 가이드는 화면 제일 아래 (사장님 지시 2026-09-09). */
+.page-foot {
+  padding: 0 1rem 2rem; text-align: center;
+}
+.page-foot .guide-link { font-size: .8rem; }
+
+/* 상세 패널은 고를 때만. 안 고른 화면에서는 지도가 전부를 쓴다. */
+.detail[hidden] { display: none; }
 
 /* ─── 5분위 눈금 (사장님 지시 2026-09-09, 2번) ───────────────────────
    왼쪽 아래. 오른쪽 아래는 Leaflet 출처 표시 자리다. */
@@ -1251,7 +1258,8 @@ body.picking .leaflet-container{cursor:crosshair}
   /* 좁은 화면에서는 눈금이 지도의 절반을 먹는다. 글자만 남긴다. */
   .lp-scale { width: 10.5rem; }
   .lps-ticks { font-size: 8px; }
-  /* 왼쪽 위는 Leaflet 의 +/- 자리다 (약 4rem 폭). 지난번에 칩을 거기
-     겹쳐 놓았다가 사장님께 지적받았다 — 같은 실수를 반복하지 않는다. */
-  .map-find { top: 2.9rem; left: 4.4rem; right: .6rem; width: auto; }
+  /* 머리띠가 좁으므로 검색칸이 한 줄을 통째로 쓴다. */
+  .map-find { flex: 1 1 100%; order: 9; }
+  #find-q { width: 100%; }
+  .find-list { right: auto; left: 0; width: 100%; }
 }

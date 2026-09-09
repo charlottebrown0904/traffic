@@ -2037,23 +2037,31 @@ function renderDetail(t) {
   }));
 
   const box = $('#detail');
+  showDetail(true);
   box.innerHTML = '';
   box.append(el('h2', null, t.name || t.tollgate_id));
   box.append(el('div', 'sub',
     [t.sido, t.sigungu, t.route_no ? `노선 ${t.route_no}` : null].filter(Boolean).join(' · ')));
 
-  const badge = el('span', 'badge', info.label);
-  badge.style.setProperty('--c', info.color);
-  box.append(badge);
-  if (t.quadrant_note) box.append(el('p', 'hint', t.quadrant_note));
+  // **사분면 배지와 통계 카드 넷은 뺐다** (사장님 지시 2026-09-09:
+  // "IC 근처 분석내용은 이제 필지 선택 시 스파이더 차트 형태로 제공될
+  //  예정이라 내용 삭제").
+  //
+  // '동반 상승 · 교통량 증가율 0.0% · 신뢰도 보통' 은 IC 하나를 통째로
+  // 한 낱말로 요약한 것이다. 그 자리를 필지 레이더가 대신한다 — 요약은
+  // 필지마다 달라야 쓸모가 있다.
 
-  const stats = el('div', 'stats');
-  stats.append(
-    statCard('교통량 증가율', pct(t.traffic_cagr), t.traffic_cagr),
-    statCard('가격 증가율', pct(t.price_cagr), t.price_cagr),
-    statCard('반경 내 거래', num(t.n_trades)),
-    statCard('신뢰도', t.confidence || '—'));
-  box.append(stats);
+  // **여기 가격이 지도 필터와 다르다는 것을 밝힌다** (사장님 지시).
+  // 지도의 땅값 글자는 사장님이 켠 용도지역을 따르지만, 이 추이는
+  // 분석용 세 지역으로 고정돼 있다(config/settings.yaml 의
+  // land_use_filter). 같은 화면에 두 값이 있는데 기준이 다르면,
+  // 안 밝히는 순간 둘 중 하나는 틀린 값으로 읽힌다.
+  const coreUses = ((state.meta || {}).land_use_filter || []);
+  if (coreUses.length) {
+    box.append(el('p', 'hint',
+      `아래 가격은 ${coreUses.join('·')} 거래만 모은 값입니다`
+      + ' — 지도에서 켠 용도지역과 무관합니다.'));
+  }
 
   box.append(sparkline('가격 추이 (㎡당 원)', seq.map((d) => [d.year, d.price])));
   box.append(sparkline('교통량 추이 (일평균)', seq.map((d) => [d.year, d.volume])));
@@ -2068,6 +2076,25 @@ function renderDetail(t) {
       '</tbody>';
     box.append(table);
   }
+}
+
+/* 상세 패널은 **고를 때만** 연다 (사장님 지시 2026-09-09).
+ *
+ * "IC 주변 분석내용은 IC를 선택 시 활성화. 기본 세팅은 나타나 있지 않음
+ *  (지도 영역 최대화)"
+ *
+ * 빈 칸이 휴대폰 화면의 4분의 1을 먹고 있었다. 아무것도 안 알려주면서
+ * 자리만 차지하는 칸이다. 여닫는 자리를 한 곳으로 모아 둔다 — 여는 곳과
+ * 닫는 곳이 흩어지면 한쪽만 고쳐 놓고 '왜 안 닫히지' 를 하게 된다. */
+function showDetail(on) {
+  const box = document.getElementById('detail');
+  if (!box) return;
+  box.hidden = !on;
+  if (!on) box.innerHTML = '';
+  // 지도가 넓어졌다 좁아졌다 하므로 Leaflet 에 알려야 한다. 안 알리면
+  // 타일이 회색으로 남고 클릭 좌표가 어긋난다.
+  if (map) setTimeout(() => map.invalidateSize(), 0);
+  window.__detail = { on: !!on };
 }
 
 function statCard(key, value, signed) {
@@ -3045,7 +3072,24 @@ function wireLandPrice() {
     const kinds = (lp && lp.zone_kinds) || {};
     const have = Object.keys((lp && lp.groups) || {});
     const first = (lp && lp.default_group) || '계획관리';
-    have.sort((a, b) => (a === first ? -1 : b === first ? 1 : a.localeCompare(b, 'ko')));
+    // **갈래로 먼저 묶고 그 안에서 이름순** (사장님 지시 2026-09-09:
+    // "도시지역과 비도시지역 크게 2개로 블럭을 잡고 아래로 나머지 용도
+    //  지역들 배치. 지금은 혼재되어 있음").
+    //
+    // 이름순으로만 정렬해 놓고 '갈래가 바뀌면 머리글' 을 붙였더니,
+    // 갈래가 계속 번갈아 나와 머리글이 아홉 번 반복됐다. 정렬 기준과
+    // 묶는 기준이 다르면 늘 이렇게 된다.
+    //
+    // 비도시지역이 위다 — 이 제품의 주인공인 계획관리·생산관리가 거기
+    // 있고, 처음 켜져 있는 셋 중 둘이 그것이다. 스물다섯 칸을 스크롤해
+    // 내려가야 기본값이 보이면 안 된다.
+    const KIND_ORDER = ['비도시지역', '도시지역', '용도구역'];
+    const kindRank = (g) => {
+      const i = KIND_ORDER.indexOf(kinds[g] || '');
+      return i < 0 ? KIND_ORDER.length : i;
+    };
+    have.sort((a, b) => (kindRank(a) - kindRank(b))
+      || (a === first ? -1 : b === first ? 1 : a.localeCompare(b, 'ko')));
     // 처음에는 분석이 쓰는 셋. 사장님이 처음부터 그 셋을 말씀하셨다.
     ['계획관리', '생산관리', '자연녹지'].forEach((g) => {
       if (have.includes(g)) state.lpGroupSet.add(g);
@@ -3367,6 +3411,7 @@ async function askParcel(latlng) {
   if (!box) return;
   const lat = latlng.lat.toFixed(6);
   const lon = latlng.lng.toFixed(6);
+  showDetail(true);
   box.innerHTML = '<div class="detail-empty"><p>필지를 확인하는 중…</p></div>';
   const [stats, res] = await Promise.all([
     loadParcelStats(),
@@ -3909,8 +3954,14 @@ function findMatch(rows, q) {
 }
 
 function findGo(row) {
+  // 검색칸이 머리띠로 올라가면서(2026-09-09) 다른 탭에서도 보인다.
+  // 거기서 고르면 지도가 안 보이는 채로 움직인다 — 탭부터 옮긴다.
+  const tab = document.querySelector('.tab[data-view="explore"]');
+  if (tab && !tab.classList.contains('is-active')) tab.click();
   if (!map) return;
   map.setView([row.lat, row.lon], FIND_ZOOM[row.k] || 12);
+  // 탭을 막 옮겼으면 지도가 방금 보이기 시작한 것이라 크기를 모른다.
+  setTimeout(() => map.invalidateSize(), 0);
   window.__find = { went: row.n, level: row.k };
 }
 
@@ -4002,6 +4053,7 @@ function wireFind() {
       // 반경만 지도에 남아 '이게 뭔가' 가 된다.
       if (!state.showGates && state.selected) {
         state.selected = null;
+        showDetail(false);
         if (bandLayer) bandLayer.clearLayers();
       }
       refreshMap();

@@ -1250,6 +1250,13 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         # 토지 쪽. land_use_mix 는 용도지역별, stage_mix 는 개발단계별
         # 전체 건수다.
         "land_use_mix": land_use_mix,
+        # **분석이 쓰는 세 용도지역.** IC 반경 가격 추이는 이 셋만 모은
+        # 값인데, 지도의 땅값 글자는 사장님이 켠 용도지역을 따른다.
+        # 같은 화면에 기준이 다른 두 값이 있으므로 화면이 그것을 밝혀야
+        # 한다 (사장님 지시 2026-09-09). 설정에서 읽어 내보내므로
+        # settings.yaml 을 고치면 화면 문구도 따라간다 — 손으로 적어 두면
+        # 조용히 어긋난다.
+        "land_use_filter": list(settings().get("land_use_filter") or []),
         "stage_mix": stage_mix,
         # 도로 접함. road_mix 는 필터가 쓰는 세 칸,
         # road_side_mix 는 원래 등급별 건수(말풍선·설명용)다.
