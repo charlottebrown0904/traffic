@@ -929,13 +929,33 @@ def _land_price_by_umd(latest_year: int) -> dict[str, dict]:
             "lon": round(float(r.lon), 5),
             "w": cell,
         }
+        # **칸 자기 이름으로 맞은 것만** 칸에 붙인다. '미양면 계륵리' 는
+        # 리라서 인구가 없다 — 그 자리에 미양면 인구를 넣으면 리 하나가
+        # 면 전체 인구가 된다.
         pop = umd_pop.get((code, _text(r.umd)))
         if pop:
             item["pop"] = int(pop)
         chunk["cells"].append(item)
+        # 면 단계에서 쓸 값은 따로 싣는다. 리를 합치는 것이 아니라
+        # **면 하나의 값**이다 (리 인구를 우리는 갖고 있지 않다).
+        head = _umd_head(_text(r.umd))
+        hp = umd_pop.get((code, head))
+        if hp:
+            chunk.setdefault("head_pop", {})[f"{code}|{head}"] = int(hp)
     got = sum(len(c["cells"]) for g in out.values() for c in g.values())
     print(f"  읍면동 땅값 {got:,}칸"
           f" (거래 {UMD_MIN_TRADES}건 미만이라 뺀 칸 {thin:,}개)")
+    if umd_pop:
+        cells = [c for g in out.values() for ch in g.values()
+                 for c in ch["cells"]]
+        self_hit = sum(1 for c in cells if "pop" in c)
+        heads = {f'{c["sg"]}|{_umd_head(c["nm"])}' for c in cells}
+        head_hit = sum(1 for h in heads
+                       if tuple(h.split("|")) in umd_pop)
+        print(f"    인구: 칸 이름 그대로 맞은 것 {self_hit:,}/{len(cells):,}"
+              f" ({self_hit / max(len(cells), 1):.1%})"
+              f" · 면·동 이름으로 맞은 것 {head_hit:,}/{len(heads):,}"
+              f" ({head_hit / max(len(heads), 1):.1%})")
     for name, _like, _key in LANDPRICE_GROUPS:
         n = sum(len(c["cells"]) for c in out[name].values())
         print(f"    {name} {n:,}칸 · 시도 {len(out[name])}조각")
@@ -961,6 +981,23 @@ def _umd_pop_latest() -> dict[tuple[str, str], int]:
         return {}
     return {(str(r.sigungu_cd), str(r.umd)): int(r.pop)
             for r in df.itertuples(index=False)}
+
+
+def _umd_head(name: str) -> str:
+    """'미양면 계륵리' → '미양면'. 한 마디짜리는 그대로.
+
+    **처음에 이것을 안 해서 매칭률이 2.6% 였다** (run 71 실측:
+    461/17,430). 원인을 '행정동이라 법정동과 안 맞는다' 로 짚었는데
+    그것은 둘째 원인이었다. 첫째는 우리 umd 칸에 **'면 + 리' 두 마디**가
+    들어 있다는 것이다 —
+
+        우리       미양면 계륵리 · 원곡면 칠곡리 · 발화동
+        KOSIS      미양면 · 원곡면 · 발화동
+
+    리 이름으로 물으니 당연히 안 맞았다. 자료를 안 보고 원인을 정하면
+    이렇게 된다.
+    """
+    return str(name).split(" ")[0]
 
 
 def _umd_bbox(cells: list[dict]) -> list[float]:
@@ -1153,6 +1190,9 @@ def _places() -> list[dict]:
                 FROM umd_pop WHERE year = (SELECT y FROM latest)
                 GROUP BY sigungu_cd, umd
             ), t AS (
+                -- **면 이름으로 맞춘다.** 우리 umd 는 '미양면 계륵리'
+                -- 두 마디인데 KOSIS 는 '미양면' 이다 (run 71 에서
+                -- 리 이름으로 물어 2.6% 밖에 못 맞췄다).
                 SELECT sigungu_cd, any_value(sigungu) AS sigungu, umd,
                        count(*) AS n,
                        median(lat) AS lat, median(lon) AS lon
@@ -1163,9 +1203,12 @@ def _places() -> list[dict]:
                 GROUP BY sigungu_cd, umd
                 HAVING count(*) >= {PLACE_MIN_TRADES}
             )
-            SELECT t.*, p.pop
-            FROM t LEFT JOIN pop p
-              ON p.sigungu_cd = t.sigungu_cd AND p.umd = t.umd
+            SELECT t.*, coalesce(p.pop, ph.pop) AS pop
+            FROM t
+            LEFT JOIN pop p  ON p.sigungu_cd = t.sigungu_cd
+                            AND p.umd = t.umd
+            LEFT JOIN pop ph ON ph.sigungu_cd = t.sigungu_cd
+                            AND ph.umd = split_part(t.umd, ' ', 1)
             ORDER BY t.sigungu_cd, t.umd
         """).fetchdf()
     out = []

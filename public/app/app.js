@@ -2635,9 +2635,17 @@ function lpItemsUmd(levelKey) {
   const byCell = new Map();
   groups.forEach((g) => {
     lpUmdChunks(g).forEach((c) => {
-      (lpUmdCache[`${g}|${c.p}`] || []).forEach((x) => {
+      const chunk = lpUmdCache[`${g}|${c.p}`];
+      if (!chunk) return;
+      const heads = chunk.headPop || {};
+      chunk.forEach((x) => {
         const key = `${x.sg}|${x.nm}`;
-        if (!byCell.has(key)) byCell.set(key, { info: x, cells: [] });
+        if (!byCell.has(key)) {
+          // 면 인구는 조각이 따로 실어 준다 — 리 값을 합친 것이 아니다.
+          const head = String(x.nm).split(' ')[0];
+          byCell.set(key, { info: { ...x, headPop: heads[`${x.sg}|${head}`] || 0 },
+                            cells: [] });
+        }
         byCell.get(key).cells.push({ group: g, cell: x.w });
       });
     });
@@ -2671,9 +2679,11 @@ function lpItemsUmd(levelKey) {
     g.wsum += got.n; g.vsum += got.v * got.n; g.n += got.n;
     g.from = Math.min(g.from, got.from);
     g.lat += info.lat; g.lon += info.lon; g.parts += 1;
-    // 면 하나에 리가 여럿이다. 인구는 **합친다** — 그중 하나만 적으면
-    // 그 면 전체 인구인 줄로 읽힌다 (시·도에서 이미 한 번 틀렸던 곳).
-    g.pop += info.pop || 0;
+    // **리 인구를 합치는 것이 아니다.** 우리는 리 인구를 갖고 있지
+    // 않다 — KOSIS 가 주는 것은 면·동 단위다. 그래서 면 하나의 값을
+    // 그대로 쓴다 (조각이 head_pop 에 실어 준다). 리 값을 합치면
+    // 인구가 붙은 리만 더해져 면 인구가 실제보다 작아진다.
+    if (!g.pop) g.pop = info.headPop || 0;
     got.parts.forEach((pt) => {
       const cur = g.byGroup.get(pt.group) || { w: 0, v: 0 };
       cur.w += pt.n; cur.v += pt.v * pt.n;
@@ -2739,7 +2749,12 @@ async function lpLoadUmd() {
       const r = await fetch(`/app/data/${w.f}`, { cache: 'no-cache' });
       if (r.ok) {
         const payload = await r.json();
-        lpUmdCache[w.key] = payload.cells || [];
+        // **면 인구는 칸 목록과 따로 온다** (head_pop). 리 값을 합친
+        // 것이 아니라 면 하나의 값이다 — 우리는 리 인구를 갖고 있지
+        // 않다. 배열만 저장하던 것을 통째로 담게 바꾼다.
+        const cells = payload.cells || [];
+        cells.headPop = payload.head_pop || {};
+        lpUmdCache[w.key] = cells;
       }
     } catch (e) {
       // 못 받아도 지도는 시군구로 계속 돈다.
