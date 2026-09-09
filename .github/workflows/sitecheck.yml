@@ -26,6 +26,26 @@ jobs:
     env:
       BASE: ${{ inputs.base }}
     steps:
+      - name: 0. 먼저 열리는가 (TLS·DNS)
+        run: |
+          # **사이트가 안 열릴 때 점검이 깨지면 안 된다.** 예전에는 curl 이
+          # 파일을 못 만들고 뒤이은 head/grep 이 죽어 워크플로가 통째로
+          # 중단됐다 — '사이트가 죽었다' 가 '점검이 고장났다' 로 보였다.
+          # 여기서 먼저 확인하고, 아래 절들이 볼 파일을 미리 만들어 둔다.
+          for f in b h env.json r.txt r2.txt t0.txt t1.bin t1.h t2.h p.txt vw.txt; do
+            : > "/tmp/$f"
+          done
+          HOST=${BASE#https://}
+          echo "  DNS"
+          getent ahostsv4 "$HOST" | awk '{print "    " $1}' | sort -u || echo "    해석 실패"
+          echo "  TLS"
+          if curl -sS -o /dev/null --max-time 20 -w '    http=%{http_code}\n' "$BASE/"; then
+            echo "    ✓ 열립니다"
+          else
+            echo "    ✗ 아직 안 열립니다 — 도메인을 막 붙이셨다면 인증서 발급 대기입니다"
+            echo "      (몇 분 뒤 다시 돌리세요. 아래 절은 전부 실패로 나옵니다.)"
+          fi
+
       - name: 1. 정적 화면
         run: |
           echo "대상: $BASE"
@@ -69,7 +89,7 @@ jobs:
         run: |
           curl -sS -o /tmp/r.txt --max-time 30 -w '  http=%{http_code}\n' \
             "$BASE/api/relay?target=https%3A%2F%2Fkosis.kr%2Fa" || true
-          head -c 300 /tmp/r.txt | sed 's/^/  /'; echo
+          head -c 300 /tmp/r.txt 2>/dev/null | sed 's/^/  /'; echo
           echo "  판정:"
           if   grep -q '토큰이 일치하지 않습니다' /tmp/r.txt; then
             echo "    ✓ RELAY_TOKEN 이 붙었습니다"
@@ -88,7 +108,7 @@ jobs:
             -H "x-relay-token: $TOKEN" \
             "$BASE/api/relay?target=https%3A%2F%2Fapis.data.go.kr%2F1613000%2FRTMSDataSvcLandTrade%2FgetRTMSDataSvcLandTrade%3FLAWD_CD%3D41220%26DEAL_YMD%3D202401%26numOfRows%3D1" || true
           echo "  --- 응답 앞부분 ---"
-          head -c 300 /tmp/r2.txt | sed 's/^/  /'; echo
+          head -c 300 /tmp/r2.txt 2>/dev/null | sed 's/^/  /'; echo
           echo "  판정:"
           if   grep -qi 'resultCode\|<items>\|totalCount' /tmp/r2.txt; then
             echo "    ✓ 공공데이터까지 통했습니다 (DATA_GO_KR_KEY 정상)"
@@ -105,7 +125,7 @@ jobs:
           echo "  (가) 키 없이도 되는 확인"
           curl -sS -o /tmp/t0.txt --max-time 30 -w '    http=%{http_code} ' \
             "$BASE/api/tile?layer=nope" || true
-          head -c 120 /tmp/t0.txt; echo
+          head -c 120 /tmp/t0.txt 2>/dev/null; echo
           echo "  (나) 실제 타일"
           curl -sS -o /tmp/t1.bin -D /tmp/t1.h --max-time 60 \
             -w '    http=%{http_code} %{size_download}B type=%{content_type}\n' \
@@ -140,7 +160,7 @@ jobs:
             -H "x-relay-token: $TOKEN" \
             "$BASE/api/relay?target=$ENC" || true
           echo "  --- 브이월드가 한 말 (키는 중계기가 지웠습니다) ---"
-          head -c 500 /tmp/vw.txt | sed 's/^/    /'; echo
+          head -c 500 /tmp/vw.txt 2>/dev/null | sed 's/^/    /'; echo
 
       - name: 7. 두 번째 타일 호출 (캐시가 먹는가)
         run: |
@@ -166,7 +186,7 @@ jobs:
             ENC=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$2")
             curl -sS -o /tmp/p.txt --max-time 45 -w 'http=%{http_code} ' \
               -H "x-relay-token: $TOKEN" "$BASE/api/relay?target=$ENC" || true
-            head -c 90 /tmp/p.txt | tr -d '\n'; echo
+            head -c 90 /tmp/p.txt 2>/dev/null | tr -d '\n'; echo
           }
           probe "실거래(data.go.kr)" "https://apis.data.go.kr/1613000/RTMSDataSvcLandTrade/getRTMSDataSvcLandTrade?LAWD_CD=41220&DEAL_YMD=202401&numOfRows=1"
           probe "브이월드 지오코더"  "https://api.vworld.kr/req/address?service=address&request=getcoord&version=2.0&crs=epsg:4326&type=ROAD&address=경기도"
