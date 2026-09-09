@@ -112,16 +112,35 @@ jobs:
             "$BASE/api/tile?layer=zoning&z=12&x=3495&y=1594" || true
           tr -d '\r' < /tmp/t1.h | grep -iE '^(cache-control|x-tile-cache|x-served-by)' \
             | sed 's/^/    /' || true
+          echo "  --- 응답 본문 (그림이 아니면) ---"
+          if ! file /tmp/t1.bin 2>/dev/null | grep -qi 'PNG image'; then
+            head -c 400 /tmp/t1.bin | sed 's/^/    /'; echo
+          fi
           echo "  판정:"
           if   file /tmp/t1.bin 2>/dev/null | grep -qi 'PNG image'; then
             echo "    ✓ 그림이 옵니다 — 브이월드까지 전부 통했습니다"
           elif grep -q 'VWORLD_KEY 가 설정되지' /tmp/t1.bin 2>/dev/null; then
             echo "    ✗ VWORLD_KEY 미반영"
           elif grep -q '브이월드가 그림을 주지' /tmp/t1.bin 2>/dev/null; then
-            echo "    ✗ 브이월드가 거절 — 콘솔 서비스URL 에 https://toji.fyi/ 등록 확인"
-          else
-            head -c 200 /tmp/t1.bin | sed 's/^/    /'; echo
+            echo "    ✗ 브이월드가 거절 — 위 본문의 HTTP 코드를 보세요"
           fi
+
+      - name: 6-B. 브이월드가 **뭐라고** 거절하는가 (중계기를 통해 직접)
+        env:
+          TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+        run: |
+          # 우리 타일 함수는 브이월드의 오류 본문을 일부러 안 돌려준다
+          # (요청 URL 이 실려 오고 거기 인증키가 붙어 있다). 그래서
+          # 원인을 못 본다. 중계기는 키를 지운 뒤 본문을 그대로 주므로,
+          # 여기서 **브이월드 자신의 말**을 읽을 수 있다.
+          if [ -z "$TOKEN" ]; then echo "  건너뜀 — 토큰 없음"; exit 0; fi
+          T='https://api.vworld.kr/req/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=lt_c_upisuq151&STYLES=&CRS=EPSG:3857&BBOX=14149373,4383205,14159160,4392992&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=true'
+          ENC=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$T")
+          curl -sS -o /tmp/vw.txt --max-time 60 -w '  http=%{http_code} type=%{content_type}\n' \
+            -H "x-relay-token: $TOKEN" \
+            "$BASE/api/relay?target=$ENC" || true
+          echo "  --- 브이월드가 한 말 (키는 중계기가 지웠습니다) ---"
+          head -c 500 /tmp/vw.txt | sed 's/^/    /'; echo
 
       - name: 7. 두 번째 타일 호출 (캐시가 먹는가)
         run: |
