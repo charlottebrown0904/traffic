@@ -67,22 +67,28 @@ jobs:
             | sed 's/^/  /'
 
       - name: 3. 환경변수 (이름과 참·거짓만)
+        env:
+          TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
         run: |
+          # envcheck 는 중계기와 같은 토큰을 요구한다 — 배포의 속살을
+          # 세상에 열어 둘 이유가 없다. 값은 어차피 안 나온다.
           echo "  GET $BASE/api/envcheck"
           curl -sS -o /tmp/env.json --max-time 30 \
+            -H "x-relay-token: $TOKEN" \
             -w '  http=%{http_code}\n' "$BASE/api/envcheck" || true
           echo "  --- 응답 ---"
           cat /tmp/env.json 2>/dev/null | sed 's/^/  /'; echo
           echo "  판정:"
-          if   ! grep -q 'context_has' /tmp/env.json 2>/dev/null; then
-            echo "    envcheck 를 못 찾음 — 배포가 아직 옛 커밋이거나 함수 라우팅 문제"
-          elif grep -q '"context_has": \[\]' /tmp/env.json; then
+          if   grep -q '"missing": \[\]' /tmp/env.json 2>/dev/null; then
+            echo "    ✓ 변수 여섯 개가 전부 닿았습니다"
+          elif grep -q '"missing"' /tmp/env.json 2>/dev/null; then
+            echo "    ✗ 빠진 변수가 있습니다 — 위 missing 목록을 보세요"
+          elif grep -q '"context_has": \[\]' /tmp/env.json 2>/dev/null; then
             echo "    ✗ Cloudflare 가 변수를 안 붙였습니다"
-            echo "      → Production 에 넣었는지 · 넣은 뒤 재배포했는지 확인"
-          elif grep -q '"process_has": \[\]' /tmp/env.json; then
-            echo "    ✗ 어댑터가 못 옮겼습니다 (context 엔 있는데 process 에 없음)"
+          elif grep -q 'context_has' /tmp/env.json 2>/dev/null; then
+            echo "    ✓ 변수가 코드까지 닿았습니다 (Cloudflare)"
           else
-            echo "    ✓ 변수가 코드까지 닿았습니다"
+            echo "    envcheck 를 못 찾음 — 배포가 아직 옛 커밋이거나 경로 문제"
           fi
 
       - name: 4. 중계기 (토큰 없이)
