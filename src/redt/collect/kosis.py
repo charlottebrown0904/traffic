@@ -331,23 +331,71 @@ TABLES = {
 DATA_URL = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
 
 
-def fetch_table(org_id: str, tbl_id: str, start: str, end: str,
-                prd_se: str = "Y", obj_l1: str = "ALL",
-                itm_id: str = "ALL") -> list[dict]:
-    """통계표 하나를 연 단위로 받는다.
+class KosisError(RuntimeError):
+    """KOSIS 가 HTTP 200 에 오류 본문을 실어 보낸 것.
 
-    **이 엔드포인트는 아직 확인되지 않았습니다.** 목록·검색과 달리 실호출로
-    검증한 적이 없으므로, 응답을 그대로 찍어 무엇이 오는지 먼저 봅니다.
-    안 되면 오는 것을 보고 고칩니다 — 추측으로 파서를 먼저 쓰지 않습니다.
+    **200 을 성공으로 읽으면 안 된다.** KOSIS 는 필수 변수가 빠져도,
+    셀 한도를 넘겨도 200 으로 답하고 본문에 err 를 담는다. 그것을 그냥
+    파싱하면 '한 행이 왔다' 가 되어 '자료가 거의 없구나' 로 오해한다 —
+    탐침 3절이 실제로 그렇게 보였다 (1행 · 코드 자릿수 [0]).
+    """
+
+
+def _err(body) -> str | None:
+    if isinstance(body, dict) and body.get("err"):
+        return f"[{body['err']}] {body.get('errMsg', '')}".strip()
+    return None
+
+
+def fetch_meta(org_id: str, tbl_id: str, kind: str = "OBJ") -> list[dict]:
+    """통계표의 **분류축·항목 목록**을 받는다.
+
+    읍면동 표는 분류축이 둘 이상이라(지역 × 5세별) objL1 만 보내면
+    '필수요청변수값이 누락되었습니다 (objL)' 로 막힌다. 그렇다고 축
+    이름을 기억으로 적으면 안 된다 — 표마다 다르다. **물어본다.**
+
+      kind="OBJ"  분류축과 그 코드
+      kind="ITM"  항목 (총인구수·남자·여자 …)
+      kind="TBL"  표 자체 (기간 등)
     """
     code, text = raw(DATA_URL, {
+        "method": "getMeta", "apiKey": "", "format": "json", "jsonVD": "Y",
+        "orgId": org_id, "tblId": tbl_id, "type": kind,
+    })
+    if code != 200:
+        raise RuntimeError(f"메타 조회 실패 HTTP {code}: {text[:160]}")
+    body = loads_lenient(text)
+    msg = _err(body)
+    if msg:
+        raise KosisError(msg)
+    return _rows(body)
+
+
+def fetch_table(org_id: str, tbl_id: str, start: str, end: str,
+                prd_se: str = "Y", obj_l1: str = "ALL",
+                itm_id: str = "ALL", *, obj: dict | None = None,
+                quiet: bool = False) -> list[dict]:
+    """통계표 하나를 연 단위로 받는다.
+
+    obj 로 분류축을 더 준다 — {"objL2": "ALL"} 처럼. 축이 둘인 표는
+    이것을 안 주면 200 에 err 20 이 실려 온다.
+    """
+    params = {
         "method": "getList", "apiKey": "", "format": "json", "jsonVD": "Y",
         "orgId": org_id, "tblId": tbl_id,
         "prdSe": prd_se, "startPrdDe": start, "endPrdDe": end,
         "objL1": obj_l1, "itmId": itm_id,
-    })
-    print(f"  HTTP {code} · {len(text):,}자")
-    print(f"  앞부분: {text[:400]}")
+    }
+    params.update(obj or {})
+    code, text = raw(DATA_URL, params)
+    if not quiet:
+        print(f"  HTTP {code} · {len(text):,}자")
+        print(f"  앞부분: {text[:400]}")
     if code != 200:
         raise RuntimeError(f"자료 조회 실패 HTTP {code}")
-    return _rows(loads_lenient(text))
+    body = loads_lenient(text)
+    # **200 에 실려 온 오류를 성공으로 읽지 않는다.**
+    msg = _err(body)
+    if msg:
+        raise KosisError(msg)
+    return _rows(body)
