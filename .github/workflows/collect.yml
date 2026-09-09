@@ -440,9 +440,23 @@ jobs:
       - name: 결과 확인
         run: |
           if [ ! -f data/processed/panel.parquet ]; then
-            echo "::error::패널이 없습니다. stage=web 이면 캐시가 비었다는 뜻이니"
-            echo "::error::analyze 로 한 번 돌려 캐시를 채우세요."
-            echo "::error::analyze/all 이면 위 '분석 패널' 단계의 로그를 보세요."
+            # **원인을 두 가지로 가른다.** run 83 에서 '캐시가 비었으니
+            # analyze 로 채우세요' 라고 적어 놓고 실제 원인은 그것이
+            # 아니었다 — 2GB 짜리 캐시를 받다가 시간이 초과됐다
+            # (Failed to restore: The operation cannot be completed in
+            # timeout). 시키는 대로 analyze 를 돌리면 같은 자리에서 또
+            # 멈춘다. 틀린 안내는 없는 안내보다 나쁘다.
+            if [ ! -f data/processed/redt.duckdb ]; then
+              echo "::error::DB 가 없습니다 — 복원이 안 됐다는 뜻입니다."
+              echo "::error::위 '이전 수집분 복원' 단계의 로그를 먼저 보세요."
+              echo "::error::  · 'Cache not found' 면 정말 캐시가 비었습니다."
+              echo "::error::    (analyze 를 한 번 돌려 채우거나, vault 로 복원하세요)"
+              echo "::error::  · 'Failed to restore ... timeout' 이면 캐시가 커서"
+              echo "::error::    받다 끊긴 것입니다. 다시 돌리면 대개 붙습니다."
+            else
+              echo "::error::DB 는 있는데 패널이 없습니다 — 분석이 죽었습니다."
+              echo "::error::위 '분석 패널' 단계의 로그를 보세요."
+            fi
             python -m redt.cli status || true
             exit 1
           fi
