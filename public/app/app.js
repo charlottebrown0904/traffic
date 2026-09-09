@@ -2287,6 +2287,7 @@ function renderDetail(t) {
   const box = $('#detail');
   showDetail(true);
   box.innerHTML = '';
+  box.append(detailClose());
   box.append(el('h2', null, t.name || t.tollgate_id));
   box.append(el('div', 'sub',
     [t.sido, t.sigungu, t.route_no ? `노선 ${t.route_no}` : null].filter(Boolean).join(' · ')));
@@ -2334,6 +2335,36 @@ function renderDetail(t) {
  * 빈 칸이 휴대폰 화면의 4분의 1을 먹고 있었다. 아무것도 안 알려주면서
  * 자리만 차지하는 칸이다. 여닫는 자리를 한 곳으로 모아 둔다 — 여는 곳과
  * 닫는 곳이 흩어지면 한쪽만 고쳐 놓고 '왜 안 닫히지' 를 하게 된다. */
+/* 오른쪽 칸의 닫기 단추 (사장님 지시 2026-09-09).
+ *
+ * "필지 자료 창 닫기 버튼 추가해 주세요."
+ *
+ * 한 번 열면 닫을 길이 없었습니다. 휴대폰에서는 이 칸이 화면의 3분의
+ * 1을 먹는데, 지도로 돌아가려면 다른 필지를 눌러 내용을 바꾸는 수밖에
+ * 없었습니다.
+ *
+ * **내용을 넣을 때마다 다시 붙입니다.** 이 칸은 innerHTML 을 통째로
+ * 갈아 끼우는 자리라, 한 번 심어 두면 다음 내용에 지워집니다. */
+function detailClose() {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'detail-close';
+  b.setAttribute('aria-label', '닫기');
+  b.title = '닫기';
+  b.textContent = '×';
+  b.addEventListener('click', () => showDetail(false));
+  return b;
+}
+
+/* 오른쪽 칸에 내용을 넣는다. 닫기 단추가 늘 따라붙는다. */
+function detailBody(html) {
+  const box = document.getElementById('detail');
+  if (!box) return null;
+  box.innerHTML = html;
+  box.prepend(detailClose());
+  return box;
+}
+
 function showDetail(on) {
   const box = document.getElementById('detail');
   if (!box) return;
@@ -2509,7 +2540,8 @@ function popLevel(zoom) {
  * 놓으면 부산·대구와 나란히 못 본다. */
 const METRO = /(특별시|광역시|특별자치시)$/;
 
-function popGroupKey(r, levelKey) {
+/* 화면에 적을 이름. */
+function popGroupName(r, levelKey) {
   if (levelKey === 'sido') return r.sido || r.parent || r.name;
   if (levelKey === 'si') {
     if (METRO.test(r.sido || '')) return r.sido;
@@ -2517,6 +2549,35 @@ function popGroupKey(r, levelKey) {
     return r.parent || r.name;
   }
   return r.name;
+}
+
+/* 묶는 열쇠. **이름만으로는 안 된다.**
+ *
+ * 사장님 지적(2026-09-09): "서울 강서구가 안성에 있습니다."
+ *
+ * 그랬습니다. 열쇠가 이름뿐이라 서울 강서구(11500)와 부산 강서구(26440)가
+ * 한 칸으로 묶였고, 대표점이 둘의 인구가중 평균 —
+ *
+ *   서울 37.5647,126.8182 (55만) + 부산 35.1304,128.8863 (15만)
+ *   → 37.0420, 127.2622   ← 안성·평택 언저리
+ *
+ * 인구도 70만으로 합쳐졌습니다. 지도 한복판에 있지도 않은 구가 하나
+ * 생긴 셈입니다.
+ *
+ * 겹치는 이름이 일곱, 걸린 구·군이 스물다섯입니다.
+ *
+ *   동구 5 · 중구 4 · 서구 4 · 남구 4 · 북구 4 · 강서구 2 · 고성군 2
+ *
+ * 시·도를 앞에 붙여 가릅니다. 이미 조회수 열쇠(placeKey)는 그렇게 하고
+ * 있었는데 — "'고성군' 은 강원과 경남에 둘이고, '중구' 는 여섯이다" —
+ * 정작 **묶는 열쇠에는 그 규칙이 안 들어가 있었습니다.**
+ *
+ * 시·군 단계도 같습니다. 광역시의 구는 시·도로 묶이니 무사한데, 도
+ * 아래의 고성군 둘은 여기서도 겹칩니다. */
+function popGroupKey(r, levelKey) {
+  const name = popGroupName(r, levelKey);
+  if (levelKey === 'sido') return name;          // 시·도 이름은 안 겹친다
+  return `${r.sido || ''}|${name}`;
 }
 
 function popYear() {
@@ -2837,7 +2898,9 @@ function lpItemsRegion(levelKey) {
     const got = lpMix(cells);
     const key = popGroupKey(r, levelKey);
     if (!bag.has(key)) {
-      bag.set(key, { name: key, members: [], wsum: 0, vsum: 0, n: 0, few: 0,
+      // **열쇠와 이름은 다르다.** 열쇠에는 시·도가 붙어 있다.
+      bag.set(key, { name: popGroupName(r, levelKey),
+                     members: [], wsum: 0, vsum: 0, n: 0, few: 0,
                      from: Infinity, years: new Map(), parts: new Map() });
     }
     const g = bag.get(key);
@@ -3863,7 +3926,7 @@ async function askParcel(latlng) {
   const lat = latlng.lat.toFixed(6);
   const lon = latlng.lng.toFixed(6);
   showDetail(true);
-  box.innerHTML = '<div class="detail-empty"><p>필지를 확인하는 중…</p></div>';
+  detailBody('<div class="detail-empty"><p>필지를 확인하는 중…</p></div>');
   const [stats, res] = await Promise.all([
     loadParcelStats(),
     fetch(`/api/tile?mode=parcel&lat=${lat}&lon=${lon}`)
@@ -3871,14 +3934,14 @@ async function askParcel(latlng) {
   ]);
   const parcel = res && res.parcel;
   if (!parcel) {
-    box.innerHTML = '<div class="detail-empty"><p>여기서는 필지 자료를 '
+    detailBody('<div class="detail-empty"><p>여기서는 필지 자료를 '
       + '못 받았습니다.</p><p class="hint">바다·도로처럼 지적이 없는 곳이거나, '
-      + '브이월드가 잠시 응답하지 않은 것입니다.</p></div>';
+      + '브이월드가 잠시 응답하지 않은 것입니다.</p></div>');
     window.__parcel = null;
     return;
   }
   const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng]) : null;
-  box.innerHTML = parcelCard(parcel, diag, [latlng.lat, latlng.lng]);
+  detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng]));
   window.__parcel = { parcel, diag };
 }
 

@@ -292,6 +292,15 @@ const FAKE_LEAFLET = () => {
       { sigungu_cd: '11680', name: '강남구', sido: '서울특별시', parent: '',
         lat: 37.517, lon: 127.047,
         n_umd: 14, pop: { '2024': 560000, '2025': 550000 } },
+      // **이름이 겹치는 구 둘.** 사장님 지적(2026-09-09): "서울 강서구가
+      // 안성에 있습니다." 열쇠가 이름뿐이라 둘이 한 칸으로 묶였고,
+      // 대표점이 서울과 부산의 인구가중 평균 — 안성 언저리 — 이 됐다.
+      { sigungu_cd: '11500', name: '강서구', sido: '서울특별시', parent: '',
+        lat: 37.5647, lon: 126.8182,
+        n_umd: 9, pop: { '2024': 560000, '2025': 549711 } },
+      { sigungu_cd: '26440', name: '강서구', sido: '부산광역시', parent: '',
+        lat: 35.1304, lon: 128.8863,
+        n_umd: 7, pop: { '2024': 148000, '2025': 150299 } },
       // 관청 좌표를 아직 못 받은 곳. 그때도 원이 사라지면 안 되고,
       // 관청 위에 찍힌 것처럼 보여서도 안 된다.
       { sigungu_cd: '47940', name: '울릉군', sido: '경상북도', parent: '',
@@ -748,6 +757,29 @@ const FAKE_LEAFLET = () => {
     });
     check('영업소를 고를 수 있다', !!picked, String(picked));
     await page.waitForTimeout(800);
+
+    // ── 오른쪽 칸 닫기 (사장님 지시 2026-09-09) ──────────────────────
+    //
+    // "필지 자료 창 닫기 버튼 추가해 주세요."
+    //
+    // 한 번 열면 닫을 길이 없었다. 휴대폰에서는 이 칸이 화면의 3분의
+    // 1을 먹는데 지도로 돌아갈 방법이 없었다.
+    const shut = await page.evaluate(() => {
+      const box = document.getElementById('detail');
+      const btn = box.querySelector('.detail-close');
+      const opened = !box.hidden;
+      if (btn) btn.click();
+      return { opened, had: !!btn, closed: box.hidden };
+    });
+    check('오른쪽 칸에 닫기 단추가 있다', shut.opened && shut.had,
+          `열림=${shut.opened} · 단추=${shut.had}`);
+    check('누르면 실제로 닫힌다', shut.closed, `hidden=${shut.closed}`);
+    // 닫았으니 뒤 절들이 볼 수 있게 다시 연다.
+    await page.evaluate(() => {
+      const el2 = document.querySelector('tr[data-id], [data-id]');
+      if (el2) el2.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    await page.waitForTimeout(500);
     let circles = await page.evaluate(() => window.__map.circles);
     check('밴드가 그려진다', circles.length >= 3, `${circles.length}개`);
     if (circles.length) {
@@ -1526,6 +1558,9 @@ const FAKE_LEAFLET = () => {
       return {
         peek: window.__lp || {},
         n: marks.length,
+        // 태그가 **어디에 찍혔는지**. 이것이 없으면 '엉뚱한 자리에
+        // 뭉쳤다' 를 검사로 옮길 수 없다.
+        at: marks.map((m) => (m.__latlng || [])),
         html: marks.map((m) => (m.options.icon || {}).options.html || ''),
         tips: marks.map((m) => m.__tooltip || ''),
         note: document.getElementById('lp-note').textContent,
@@ -1590,8 +1625,28 @@ const FAKE_LEAFLET = () => {
     // 예전에는 셋만 그렸고, 그래서 대전에서 유성구·대덕구만 남고
     // 동구·중구·서구가 통째로 사라졌다.
     check('용도지역을 켜면 지역이 칠해진다',
-          lp1.n === 7 && lp1.peek.withValue === 3 && lp1.peek.on,
+          lp1.n === 9 && lp1.peek.withValue === 3 && lp1.peek.on,
           `${lp1.n}곳 중 값이 있는 곳 ${lp1.peek.withValue}곳 · on=${lp1.peek.on}`);
+    // 이름이 같은 구를 한 칸으로 묶으면 **지도에 없는 자리**에 태그가
+    // 생긴다. 서울 강서구와 부산 강서구를 묶으면 그 평균이 안성이다.
+    {
+      const gs = lp1.peek.items.filter((it) => it.name === '강서구');
+      check('이름이 같은 구를 하나로 묶지 않는다',
+            gs.length === 2 && new Set(gs.map((it) => it.sg)).size === 2,
+            gs.map((it) => `${it.name}(${it.sg})`).join(', ') || '없음');
+      // **제 자리에 있는지를 직접 본다.** '안성 상자 안에 없다' 로는
+      // 모자란다 — 평택 태그가 그 근처에 정당하게 있다.
+      // items 와 at 은 같은 순서(shown)로 나온다.
+      const want = { 11500: [37.5647, 126.8182], 26440: [35.1304, 128.8863] };
+      const off = (lp1.peek.items || []).map((it, i) => ({ it, a: lp1.at[i] }))
+        .filter(({ it }) => want[it.sg])
+        .filter(({ it, a }) => !a || Math.abs(a[0] - want[it.sg][0]) > 0.3
+                                  || Math.abs(a[1] - want[it.sg][1]) > 0.3);
+      check('각자 제 자리에 찍힌다 (섞인 평균으로 안 간다)',
+            off.length === 0,
+            off.map(({ it, a }) => `${it.name}(${it.sg}) → ${JSON.stringify(a)}`)
+              .join(', ') || '어긋난 것 없음');
+    }
     check('거래가 없는 지자체도 이름이 남는다',
           ['종로구', '강남구', '용인시', '평택시']
             .every((nm) => lp1.html.some((h) => h.indexOf(nm) >= 0)),
@@ -1601,7 +1656,7 @@ const FAKE_LEAFLET = () => {
     // **값 줄 안만 본다.** 카드에는 인구가 <em>34만</em> 처럼 붙어 있어,
     // 카드 전체에서 '0만' 을 찾으면 인구가 걸린다.
     check('거래가 없으면 지명만 남는다 (값 줄이 아예 없다)',
-          lp1.html.filter((h) => !/<i>/.test(h)).length === 4
+          lp1.html.filter((h) => !/<i>/.test(h)).length === 6
           && lp1.html.every((h) => {
             const v = (h.match(/<i>(.*?)<\/i>/) || [])[1] || '';
             return !/^0만|^-만/.test(v);
@@ -1637,7 +1692,7 @@ const FAKE_LEAFLET = () => {
     check('지역이 적어도 값이 다르면 색이 갈린다', new Set(lp1Blue).size === 3,
           lp1Blue.join(' '));
     check('거래가 없는 칸은 파란 칸에 안 들어간다 (회색)',
-          lp1Fills.filter((c) => c === '#E4E8ED').length === 4,
+          lp1Fills.filter((c) => c === '#E4E8ED').length === 6,
           lp1Fills.join(' '));
     check('순위로 편 것을 분위수인 척하지 않는다',
           /순위로 색을 폄/.test(lp1.note), lp1.note);
@@ -1701,7 +1756,7 @@ const FAKE_LEAFLET = () => {
     // 울릉군은 최근 1년 거래가 없다. **빠지지 않고** 값 자리에 그렇게
     // 적힌다 — 지도에서 지자체가 사라지면 사람은 고장으로 읽는다.
     check('기준을 좁혀 거래가 없어져도 지자체는 남는다',
-          lpY1.n === 7 && lpY1.peek.withValue === 2
+          lpY1.n === 9 && lpY1.peek.withValue === 2
           && lpY1.tips.some((t) => /울릉군/.test(t)),
           `${lpY1.n}곳 중 값 ${lpY1.peek.withValue}곳`);
     // 사장님 지시(2026-09-09): "그냥 간단하게 표시합니다. - 거래 5건 미만-"
@@ -1731,7 +1786,7 @@ const FAKE_LEAFLET = () => {
     // 시·도 셋 — 경기도·서울특별시·경상북도. 서울은 계획관리 거래가
     // 없지만 시·도로서는 존재한다.
     check('멀리서는 시·도로 묶인다',
-          lpWide.peek.level === 'sido' && lpWide.n === 3
+          lpWide.peek.level === 'sido' && lpWide.n === 4
           && lpWide.peek.withValue === 2,
           `${lpWide.peek.level} · ${lpWide.n}곳 중 값 ${lpWide.peek.withValue}곳`);
     // 경기도 = 장안구(10만, 10건) + 권선구(20만, 20건) → 가중 16.7만.

@@ -354,7 +354,20 @@ body[data-basemap="midnight"] .leaflet-tile-pane{filter:none}
 .detail{
   flex:0 0 var(--detail-w); overflow:auto; padding:1.1rem;
   background:var(--surface); border-left:1px solid var(--border);
+  /* 닫기 단추를 이 칸 안에 못 박으려면 자리 기준이 있어야 한다. */
+  position:relative;
 }
+/* 닫기 (사장님 지시 2026-09-09). 한 번 열면 닫을 길이 없었다 — 휴대폰
+   에서는 이 칸이 화면의 3분의 1을 먹는데 지도로 돌아갈 방법이 없었다. */
+.detail-close{
+  position:absolute; top:.5rem; right:.55rem; z-index:2;
+  width:1.7rem; height:1.7rem; line-height:1; padding:0;
+  display:flex; align-items:center; justify-content:center;
+  border:1px solid var(--border-strong); border-radius:50%;
+  background:var(--surface); color:var(--muted);
+  font-size:1rem; cursor:pointer;
+}
+.detail-close:hover{ color:var(--ink); background:var(--surface-2); }
 .detail-empty{color:var(--muted); padding-top:2rem}
 .detail h2{font-size:1.05rem}
 .detail .sub{font-size:.78rem; color:var(--faint); margin-bottom:.85rem}
@@ -1238,7 +1251,7 @@ body.picking .leaflet-container{cursor:crosshair}
   display: flex; align-items: center; gap: .35rem;
   padding: .22rem .3rem; min-width: 0;
   border: 1px solid var(--line); border-radius: 6px;
-  background: var(--card); color: var(--fg);
+  background: var(--surface); color: var(--fg);
   font: inherit; font-size: 11.5px; text-align: left; cursor: pointer;
 }
 .zone-opt span {
@@ -1331,11 +1344,19 @@ body.picking .leaflet-container{cursor:crosshair}
 /* ─── 배경 지도 고르기 (사장님 지시 2026-09-09) ─────────────────────
    지도 위 도구막대 안. 스위치들과 나란히 두되, 켜고 끄는 것이 아니라
    **하나를 고르는** 것이라 생김새를 다르게 한다. */
-.basemap-pick { display: inline-flex; gap: 1px; border-radius: 6px;
-                overflow: hidden; border: 1px solid var(--line); }
+/* **바탕이 있어야 글자가 보인다.** 위성 배경 위에서는 옅은 테두리만으로
+   안 됩니다 (사장님 화면 2026-09-09 — '글이 안보입니다'). 옆의
+   IC·영업소·용도지역 스위치와 **같은 무게**로 둡니다. 지도 위에 얹히는
+   조작부는 배경이 무엇이든 읽혀야 합니다. */
+.basemap-pick {
+  display: inline-flex; gap: 1px; border-radius: .4rem; overflow: hidden;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow);
+}
 .basemap-pick button {
-  border: 0; background: var(--card); color: var(--muted);
-  font: inherit; font-size: 11px; padding: .18rem .45rem; cursor: pointer;
+  border: 0; background: var(--surface); color: var(--muted);
+  font: inherit; font-size: .74rem; font-weight: 600;
+  padding: .35rem .5rem; cursor: pointer;
 }
 .basemap-pick button:hover { color: var(--ink); }
 .basemap-pick button.is-on { background: var(--accent);
@@ -1348,7 +1369,7 @@ body.picking .leaflet-container{cursor:crosshair}
   left: .6rem; bottom: .6rem; width: 12.5rem;
   padding: .35rem .45rem;
   border: 1px solid var(--line); border-radius: 7px;
-  background: color-mix(in srgb, var(--card) 92%, transparent);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
   box-shadow: 0 1px 5px rgba(0,0,0,.14);
   pointer-events: none;
 }
