@@ -357,7 +357,25 @@ async function parcelInfo(req, res) {
   }
   const h = PARCEL_HALF_DEG;
   const out = await callVworld({
-    SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "2.0.0",
+    // **1.1.0 이다.** 2.0.0 으로 부르면 HTTP 400 이 온다 — 필지 조회가
+    // 라이브에서 통째로 죽어 있었다 (2026-09-10 실측).
+    //
+    // 브이월드 WFS 는 GeoServer 이고 GetCapabilities 가 스스로
+    // version="1.1.0" 이라고 말한다. 우리는 2.0.0 이라고 말하면서
+    // 파라미터는 1.1.0 이름(TYPENAME·MAXFEATURES)으로 보내고 있었다.
+    // GeoServer 가 그 조합에서 내부 오류를 낸다:
+    //
+    //   400  ows:ExceptionReport exceptionCode="NoApplicableCode"
+    //        java.lang.Runti…
+    //
+    // 그렇다고 2.0.0 표준 철자(TYPENAMES·COUNT)로 바꿔도 안 된다.
+    // 브이월드는 그 이름을 모른다:
+    //
+    //   PARAM_REQUIRED  필수 파라미터인 TYPENAME가 없어서…
+    //
+    // 즉 이 서비스에는 1.1.0 한 길뿐이다. (scripts/parcel_probe.py 로
+    // 언제든 다시 잰다.)
+    SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
     TYPENAME: PARCEL_TYPENAME,
     BBOX: [lon - h, lat - h, lon + h, lat + h].join(","),
     SRSNAME: "EPSG:4326",

@@ -358,6 +358,18 @@ const call = async (query, method = 'GET', headers = {}) => {
   check('WFS 로 토지특성을 부른다',
         /\/req\/wfs\?/.test(wfsUrl) && /TYPENAME=dt_d194/.test(wfsUrl),
         wfsUrl.replace(KEY, '<KEY>').slice(0, 90) || '없음');
+  // **1.1.0 이어야 한다.** 2.0.0 으로 부르면 필지 조회가 통째로 죽는다.
+  // 2026-09-10 에 라이브에서 그랬고, 검사는 흉내낸 응답만 봐서 못 잡았다.
+  //
+  //   2.0.0 + TYPENAME   → 400 NoApplicableCode (GeoServer 내부 오류)
+  //   2.0.0 + TYPENAMES  → PARAM_REQUIRED 필수 파라미터인 TYPENAME가 없어서
+  //   1.1.0 + TYPENAME   → 200 GeoJSON ✓
+  //
+  // GetCapabilities 가 스스로 version="1.1.0" 이라고 말한다. 이 서비스에는
+  // 그 길 하나뿐이다 (scripts/parcel_probe.py 로 다시 잰다).
+  check('WFS 판을 1.1.0 으로 부른다 (2.0.0 은 400)',
+        /VERSION=1\.1\.0/.test(wfsUrl) && !/VERSION=2\./.test(wfsUrl),
+        (wfsUrl.match(/VERSION=[\d.]+/) || ['없음'])[0]);
   check('누른 점을 품는 필지를 고른다 (이웃을 안 준다)',
         pr.json_ && pr.json_.parcel && pr.json_.parcel.pnu.startsWith('41550'),
         JSON.stringify(pr.json_ && pr.json_.parcel));
@@ -370,8 +382,16 @@ const call = async (query, method = 'GET', headers = {}) => {
         pr.json_.parcel.official_price === 132000
         && pr.json_.parcel.area_m2 === 1653,
         `${typeof pr.json_.parcel.official_price} ${typeof pr.json_.parcel.area_m2}`);
-  // 도형은 수십 KB다. 화면이 안 쓰는 것을 휴대폰에 내려보내지 않는다.
-  check('도형은 안 싣는다', !/ag_geom|coordinates/.test(pr.body || ''));
+  // **도형도 싣는다** — 화면이 필지 윤곽을 그린다(요구사항 2026-09-10).
+  // 무겁던 이유는 도형이 아니라 좌표의 소수점이었다. 여섯 자리로 자른다
+  // (= 지상 약 11cm. 화면에서 한 픽셀 안이다).
+  check('윤곽을 그릴 도형을 싣는다',
+        !!(pr.json_ && pr.json_.geom && pr.json_.geom.coordinates),
+        (pr.json_ && pr.json_.geom && pr.json_.geom.type) || '없음');
+  const digits = (pr.body || '').match(/-?\d+\.(\d+)/g) || [];
+  check('좌표 소수점은 여섯 자리까지',
+        digits.every((d) => (d.split('.')[1] || '').length <= 6),
+        (digits.find((d) => (d.split('.')[1] || '').length > 6)) || '모두 6자리 이하');
   check('인증키가 응답에 안 섞인다', !(pr.body || '').includes(KEY));
 
   // 빈 땅을 누른 것은 오류가 아니다. 화면이 "여기는 필지 자료가 없습니다"
