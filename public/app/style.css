@@ -1189,6 +1189,26 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 .pc-note { margin: .35rem 0 0; font-size: 11px; color: var(--faint); line-height: 1.5; }
 
+/* 카드 머리의 주소 (요구사항 2026-09-10). 지번이 굵고, 도로명은
+   있을 때만 그 아래 옅게 — 대개 빈 땅에는 도로명이 없다. */
+.pc-addr { margin: .1rem 0 .35rem; line-height: 1.4; }
+.pc-addr b { font-size: 13px; font-weight: 600; display: block; }
+.pc-addr span { font-size: 11.5px; color: var(--muted); display: block; }
+
+/* 토지 정보 표. 축 표와 나란히 놓이므로 같은 결로 짠다. */
+.pc-sub {
+  margin: .7rem 0 .3rem; padding-top: .55rem;
+  border-top: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; color: var(--muted);
+}
+.pc-facts { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.pc-facts th {
+  text-align: left; font-weight: 500; color: var(--muted);
+  padding: 3px 10px 3px 0; white-space: nowrap; width: 5.6rem;
+}
+.pc-facts td { padding: 3px 0; color: var(--ink); }
+.pc-facts em { font-style: normal; color: var(--muted); }
+
 
 /* ── 큰 분류 셋 + 왼쪽 칸 (요구사항 2026-09-08) ──
    "왼쪽 필터를 큰 분류별로 묶어주세요 (호갱노노 참조).

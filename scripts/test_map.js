@@ -586,10 +586,17 @@ const FAKE_LEAFLET = () => {
         body: JSON.stringify({
           parcel: {
             pnu: '4111110300100010000', jimok: '전', land_use: '계획관리지역',
+            land_use2: '지정되지않음',
             use_situation: '전', area_m2: 1653, road_side: '중로한면',
             shape: '가로장방형', slope: '평지', official_price: 250000,
-            stdr_year: '2025',
+            stdr_year: '2025', stdr_month: '01', register: '1',
+            jibun_label: '1-1전',
           },
+          // 주소 (요구사항 2026-09-10). 도로명은 빈 땅에 대개 없다 —
+          // 실측한 두 곳 모두 NOT_FOUND 였다.
+          addr: { jibun: '경기도 광주시 초월읍 지월리 14-1', road: null,
+                  sido: '경기도', sigungu: '광주시', umd: '초월읍',
+                  ri: '지월리' },
           // 윤곽. 실제 응답과 같은 꼴이다 (좌표 여섯 자리).
           geom: { type: 'Polygon', coordinates: [[
             [127.0108, 37.3035], [127.0114, 37.3035],
@@ -2853,6 +2860,40 @@ const FAKE_LEAFLET = () => {
     check('오른쪽에 필지 카드가 열린다',
           /parcel-card/.test(pc.html) && /계획관리지역/.test(pc.html),
           pc.html.slice(0, 80));
+    // 주소 (요구사항 2026-09-10). 카드 머리에 지번이 서야 한다 —
+    // 화면에서 그 자리를 빨갛게 표시해 보내 주신 요구다.
+    check('카드에 지번 주소가 있다',
+          /pc-addr/.test(pc.html)
+          && /경기도 광주시 초월읍 지월리 14-1/.test(pc.html),
+          (pc.html.match(/<div class="pc-addr">.{0,90}/) || ['없음'])[0]);
+    check('도로명이 없으면 빈 줄을 안 세운다 (고장으로 안 읽히게)',
+          !/pc-addr[^>]*>[\s\S]{0,200}<span><\/span>/.test(pc.html));
+
+    // 토지 정보 표 (요구사항 2026-09-10 — 부동산플래닛 참조).
+    for (const [label, want] of [
+      ['지목', '전'], ['이용상황', '전'], ['지세(고저)', '평지'],
+      ['형상', '가로장방형'], ['도로조건', '중로한면'],
+    ]) {
+      const row = new RegExp(`<th>${label.replace(/[()]/g, '\\$&')}</th>`
+                             + `<td>[^<]*${want}`);
+      check(`토지 정보에 ${label} 이 있다`, row.test(pc.html),
+            (pc.html.match(row) || ['없음'])[0]);
+    }
+    check('면적을 ㎡ 와 평으로 같이 적는다',
+          /<th>면적<\/th><td>1,653㎡ <em>\(500평\)<\/em>/.test(pc.html),
+          (pc.html.match(/<th>면적<\/th><td>[^<]*<em>[^<]*<\/em>/) || ['없음'])[0]);
+    check('공시지가에 기준연도를 붙인다',
+          /<th>공시지가<\/th><td>250,000원\/㎡ <em>\(2025년 기준\)/.test(pc.html),
+          (pc.html.match(/<th>공시지가<\/th><td>[^<]*<em>[^<]*<\/em>/) || ['없음'])[0]);
+    check('대장 구분을 적는다', /<th>대장<\/th><td>토지대장/.test(pc.html));
+    // '지정되지않음' 은 값이 아니라 빈칸이다. 그대로 적으면 무슨 뜻인지
+    // 되묻게 된다.
+    check("'지정되지않음' 을 값처럼 적지 않는다",
+          !/지정되지않음/.test(pc.html));
+    check('용도지역은 겹치지 않으면 하나만 적는다',
+          /<th>용도지역<\/th><td>계획관리지역<\/td>/.test(pc.html),
+          (pc.html.match(/<th>용도지역<\/th><td>[^<]*/) || ['없음'])[0]);
+
     check('레이더를 그린다 (다섯 축)',
           /<svg class="radar"/.test(pc.html)
           && (pc.peek.diag.axes || []).length === 5,

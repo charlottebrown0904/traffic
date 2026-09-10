@@ -4474,7 +4474,67 @@ function radarSvg(axes) {
     role="img" aria-label="필지 다섯 축 진단">${rings}${spokes}${poly}${dots}${labels}</svg>`;
 }
 
-function parcelCard(parcel, diag, at) {
+/* 필지의 기본 정보를 표로 (요구사항 2026-09-10 — 부동산플래닛 참조).
+ *
+ * **없는 칸은 아예 안 세운다.** 빈 줄이 늘어서면 '조회가 반쯤
+ * 실패했다' 로 읽힌다. 값이 있는 것만 적고, 우리가 못 주는 것
+ * (소유·토지이동사유·지역지구 전체)은 아래 토지이음 단추로 넘긴다.
+ *
+ * '지정되지않음' 은 값이 아니라 빈칸이다. 브이월드가 그렇게 적어
+ * 보내는데, 그대로 두면 사람이 무슨 뜻인지 되묻게 된다.
+ */
+function parcelFacts(parcel) {
+  const won = (v) => Math.round(v).toLocaleString('ko-KR');
+  const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
+  const blank = (v) => !v || /^지정되지\s*않음$/.test(String(v).trim());
+  const zone = [parcel.land_use, parcel.land_use2]
+    .filter((v) => !blank(v)).join(' · ');
+  const price = parcel.official_price
+    ? `${won(parcel.official_price)}원/㎡`
+      + (parcel.stdr_year
+         ? ` <em>(${escapeHtml(parcel.stdr_year)}년 기준)</em>` : '')
+    : null;
+  const facts = [
+    ['지목', parcel.jimok],
+    ['면적', parcel.area_m2
+      ? `${won(parcel.area_m2)}㎡ <em>(${won(py)}평)</em>` : null],
+    ['이용상황', parcel.use_situation],
+    ['용도지역', zone],
+    ['지세(고저)', parcel.slope],
+    ['형상', parcel.shape],
+    ['도로조건', parcel.road_side],
+    ['공시지가', price],
+    // 임야대장은 지번 앞에 '산' 이 붙는 땅이다. 대장이 다르면 등본을
+    // 뗄 곳도 다르므로 적어 준다.
+    ['대장', parcel.register === '2' ? '임야대장'
+      : parcel.register === '1' ? '토지대장' : null],
+  ].filter(([, v]) => !blank(v));
+  if (!facts.length) return '';
+  return '<table class="pc-facts"><tbody>'
+    + facts.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')
+    + '</tbody></table>';
+}
+
+/* 카드 머리의 주소 (요구사항 2026-09-10).
+ *
+ * **지번이 주인공이다.** 도로명주소는 건물이 있는 곳에만 붙는데,
+ * 이 화면이 다루는 것은 대개 빈 땅이다 — 실측한 두 곳 모두
+ * 도로명이 없었다(광주 지월리 답, 안성 승두리 대). 없는 것을
+ * '조회 실패' 로 보여주면 고장으로 읽히므로, 있을 때만 덧붙인다.
+ */
+function parcelAddr(addr, parcel) {
+  const a = addr || {};
+  const jibun = a.jibun
+    || [a.sido, a.sigungu, a.umd, a.ri].filter(Boolean).join(' ')
+    || null;
+  if (!jibun && !a.road) return '';
+  return '<div class="pc-addr">'
+    + (jibun ? `<b>${escapeHtml(jibun)}</b>` : '')
+    + (a.road ? `<span>${escapeHtml(a.road)}</span>` : '')
+    + '</div>';
+}
+
+function parcelCard(parcel, diag, at, addr) {
   const won = (v) => Math.round(v).toLocaleString('ko-KR');
   const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
   const rows = (diag ? diag.axes : []).map((a) => {
@@ -4487,10 +4547,13 @@ function parcelCard(parcel, diag, at) {
   return '<div class="parcel-card">'
     + `<div class="pc-head"><b>${escapeHtml(parcel.land_use || '용도 미상')}</b>`
     + `<span>${escapeHtml(parcel.jimok || '')}</span></div>`
+    + parcelAddr(addr, parcel)
     + `<div class="pc-size">${parcel.area_m2 ? `${won(parcel.area_m2)}㎡` : '면적 미상'}`
     + (py ? ` <em>(${won(py)}평)</em>` : '') + '</div>'
     + (diag ? radarSvg(diag.axes) : '')
     + (rows ? `<table class="pc-axes"><tbody>${rows}</tbody></table>` : '')
+    + '<h4 class="pc-sub">토지 정보</h4>'
+    + parcelFacts(parcel)
     + (peer
        ? `<p class="pc-peer">${escapeHtml(peer.level)}의 `
          + `${escapeHtml(peer.group)} 거래 ${peer.n.toLocaleString('ko-KR')}건과 견줬습니다.</p>`
@@ -4591,8 +4654,9 @@ async function askParcel(latlng) {
   }
   drawParcelShape(res.geom);
   const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng]) : null;
-  detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng]));
-  window.__parcel = { parcel, diag, geom: res.geom || null };
+  detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng], res.addr));
+  window.__parcel = { parcel, diag, geom: res.geom || null,
+                      addr: res.addr || null };
 }
 
 /* ─────────── 세 가설 판정 ─────────── */

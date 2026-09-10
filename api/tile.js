@@ -46,9 +46,25 @@ const VWORLD_WMS = "https://api.vworld.kr/req/wms";
 // 미리 다 받아 둘 필요가 없다.
 const VWORLD_WFS = "https://api.vworld.kr/req/wfs";
 const PARCEL_TYPENAME = "dt_d194";
-// 누른 점 둘레 몇 도를 볼 것인가. 0.0006도 ≈ 60m — 필지 하나가 확실히
-// 들어오면서 이웃을 수십 개씩 끌고 오지는 않는 크기다.
-const PARCEL_HALF_DEG = 0.0006;
+// 누른 점 둘레 몇 도를 볼 것인가.
+//
+// **0.0006도(≈60m)에 열 개만 달라고 하고 있었다.** 그것이 "정보가
+// 확인 안 되는 토지가 있다" 의 원인이었다 (2026-09-10 실측,
+// scripts/parcel_fields_probe.py):
+//
+//   광주 초월읍 지월리 14-1   그 네모 안에 이웃 20개
+//   안성 공도읍 승두리 40      그 네모 안에 이웃 30개(상한에 걸림)
+//
+// 브이월드는 네모에 걸치는 필지를 주는데, 순서는 우리가 정하지
+// 못한다. 스무 개 중 열 개만 받으면 **누른 그 필지가 안 올 수
+// 있다.** 그러면 '필지를 못 찾았습니다' 가 뜨고, 사람은 그것을
+// '이 땅은 정보가 없다' 로 읽는다. 자료는 있었다.
+//
+// 네모를 13m 로 줄이고 상한을 백으로 올린다. 둘 다 고친다 — 좁은
+// 네모는 도심에서도 몇 개면 끝나고, 넉넉한 상한은 필지가 아주 잘게
+// 쪼개진 곳에서 다시 같은 일이 나지 않게 한다.
+const PARCEL_HALF_DEG = 0.00012;
+const PARCEL_MAXFEATURES = "100";
 
 // 필지 경계선을 **벡터로** 준다. 왜 그림이 아니라 도형인가:
 //
@@ -71,10 +87,15 @@ const PARCEL_VEC_MIN_ZOOM = 16;
 const PARCEL_VEC_MAX = 600;
 // 우리가 쓰는 칸 이름. collect/landchar.FIELDS 와 같은 것을 본다 —
 // 둘이 어긋나면 화면과 분석이 다른 땅을 말한다.
+// dt_d194 는 서른 칸을 준다. 열 칸만 쓰고 있었다 (2026-09-10 실측).
+// 요구사항: "토지의 기본 정보들 최대한 보여 줬으면 좋겠습니다."
 const PARCEL_FIELDS = {
   pnu: "pnu",
   jimok: "lndcgr_code_nm",
   land_use: "prpos_area_1_nm",
+  // 용도지역은 둘까지 지정된다. 하나만 보여주면 '자연녹지 + 개발제한'
+  // 같은 겹침이 통째로 사라진다. 값이 '지정되지않음' 이면 화면이 뺀다.
+  land_use2: "prpos_area_2_nm",
   use_situation: "lad_use_sittn_nm",
   area_m2: "lndpcl_ar",
   road_side: "road_side_code_nm",
@@ -82,7 +103,23 @@ const PARCEL_FIELDS = {
   slope: "tpgrph_hg_code_nm",
   official_price: "pblntf_pclnd",
   stdr_year: "stdr_year",
+  stdr_month: "stdr_mt",
+  // '14-1답' 처럼 지번과 지목이 붙어 온다. 카드 머리에 그대로 쓴다.
+  jibun_label: "lnm_lndcgr_smbol",
+  // 1 = 토지대장 · 2 = 임야대장. 임야는 지번 앞에 '산' 이 붙는다.
+  register: "regstr_se_code",
 };
+
+// 주소는 dt_d194 에 없다. 연속지적도가 addr 로 통째로 준다
+// (실측: "경기도 광주시 초월읍 지월리 14-1").
+const PARCEL_ADDR_FIELDS = {
+  addr: "addr", sido: "ctp_nm", sigungu: "sig_nm",
+  umd: "emd_nm", ri: "li_nm",
+  // 그 표의 공시지가와 고시 시점. dt_d194 것과 기준이 달라 같이 안 섞는다.
+  jiga: "jiga", gosi_year: "gosi_year", gosi_month: "gosi_month",
+};
+const PARCEL_ADDR_TYPENAME = "lp_pa_cbnd_bubun";
+const VWORLD_ADDRESS = "https://api.vworld.kr/req/address";
 
 // 화면에 깔 수 있는 것. 목적지를 받지 않고 이 표에서만 고른다.
 const LAYERS = {
@@ -480,7 +517,7 @@ async function parcelInfo(req, res) {
     SRSNAME: "EPSG:4326",
     // GML 로 요청하면 중계기가 죽는다 (docs/land-price-fallback.md).
     OUTPUT: "application/json",
-    MAXFEATURES: "10", RESULTTYPE: "results",
+    MAXFEATURES: PARCEL_MAXFEATURES, RESULTTYPE: "results",
     DOMAIN: process.env.VWORLD_REFERER
       || `https://${(req.headers || {}).host || "toji.fyi"}/`,
   }, VWORLD_WFS, (req.headers || {}).host);
@@ -529,7 +566,70 @@ async function parcelInfo(req, res) {
   //
   // 필지 하나가 꼭짓점 수십 개이므로 자리를 줄이면 절반 아래로 내려간다.
   // 11cm 보다 정밀한 윤곽은 화면에서 한 픽셀 안이라 뜻이 없다.
-  res.status(200).json({ parcel, geom: round6(hit.geometry) });
+  // 주소와 지번은 이 표에 없다. 연속지적도가 addr 로 준다. 두 번째
+  // 호출이지만 첫 호출이 성공한 뒤에만 하고, 실패해도 카드는 뜬다 —
+  // 주소가 없다고 필지 정보를 통째로 버릴 이유는 없다.
+  const addr = await parcelAddress(req, lon, lat);
+  res.status(200).json({ parcel, addr, geom: round6(hit.geometry) });
+}
+
+/** 누른 자리의 주소. 지번은 늘, 도로명은 있으면.
+ *
+ * 도로명주소는 **건물이 있는 곳에만** 붙는다. 실측에서 두 곳 모두
+ * type=ROAD 가 NOT_FOUND 였다 (광주 지월리 답, 안성 승두리 대).
+ * 그래서 지번을 주인공으로 두고 도로명은 있을 때만 덧붙인다 —
+ * 없는 것을 '조회 실패' 로 보여주면 고장으로 읽힌다.
+ */
+async function parcelAddress(req, lon, lat) {
+  const host = (req.headers || {}).host;
+  const domain = process.env.VWORLD_REFERER || `https://${host || "toji.fyi"}/`;
+  const out = { jibun: null, road: null, sido: null, sigungu: null,
+                umd: null, ri: null, jiga: null, gosi: null };
+
+  const h = PARCEL_HALF_DEG;
+  const [land, road] = await Promise.all([
+    callVworld({
+      SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
+      TYPENAME: PARCEL_ADDR_TYPENAME,
+      BBOX: [lon - h, lat - h, lon + h, lat + h].join(","),
+      SRSNAME: "EPSG:4326", OUTPUT: "application/json",
+      MAXFEATURES: PARCEL_MAXFEATURES, RESULTTYPE: "results", DOMAIN: domain,
+    }, VWORLD_WFS, host),
+    callVworld({
+      service: "address", request: "getAddress", version: "2.0",
+      crs: "epsg:4326", point: `${lon},${lat}`, type: "ROAD",
+      format: "json", simple: "false",
+    }, VWORLD_ADDRESS, host),
+  ]);
+
+  try {
+    if (land && land.upstream && land.upstream.ok) {
+      const body = JSON.parse(await land.upstream.text()) || {};
+      const hit = (body.features || [])
+        .find((f) => hitsPoint(f.geometry, lon, lat));
+      const p = (hit || {}).properties || {};
+      for (const [ours, theirs] of Object.entries(PARCEL_ADDR_FIELDS)) {
+        const v = p[theirs];
+        if (v !== undefined && v !== "") out[ours === "addr" ? "jibun" : ours] = v;
+      }
+      if (out.gosi_year) {
+        out.gosi = `${out.gosi_year}.${out.gosi_month || ""}`.replace(/\.$/, "");
+      }
+      delete out.gosi_year; delete out.gosi_month;
+    }
+  } catch (e) { /* 주소가 없어도 카드는 뜬다. */ }
+
+  try {
+    if (road && road.upstream && road.upstream.ok) {
+      const body = JSON.parse(await road.upstream.text()) || {};
+      const items = (((body.response || {}).result) || []);
+      const one = items.find((i) => i && i.text);
+      // NOT_FOUND 는 오류가 아니다 — 그 땅에 도로명이 안 붙었을 뿐이다.
+      if (one) out.road = one.text;
+    }
+  } catch (e) { /* 위와 같다. */ }
+
+  return out;
 }
 
 /** 좌표의 소수점을 여섯 자리로. 도형 구조는 그대로 둔다. */

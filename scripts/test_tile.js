@@ -461,6 +461,51 @@ const call = async (query, method = 'GET', headers = {}) => {
   const post = await call({ z: '12', y: '5', x: '5' }, 'POST');
   check('POST 는 405', post.code === 405 && calls.length === 0, String(post.code));
 
+  // ── 왜 어떤 필지는 안 나왔는가 (2026-09-10) ──
+  //
+  // 열 개만 달라고 하고 있었다. 브이월드는 네모에 걸치는 필지를 주는데
+  // 순서를 우리가 못 정하므로, 이웃이 스무 개인 자리에서는 **누른 그
+  // 필지가 안 올 수 있었다.** 그러면 '필지를 못 찾았습니다' 가 뜨고
+  // 사람은 '이 땅은 정보가 없다' 로 읽는다. 자료는 있었다.
+  const many = (n) => ({
+    type: 'FeatureCollection',
+    features: Array.from({ length: n }, (_, i) => ({
+      // 마지막 하나만 누른 점을 품는다. 상한이 작으면 잘려 나간다.
+      properties: { pnu: `p${i}`, lndcgr_code_nm: '답',
+                    prpos_area_1_nm: '개발제한구역', lndpcl_ar: '2945' },
+      geometry: { type: 'Polygon', coordinates: [
+        i === n - 1
+          ? [[127.0008, 37.0008], [127.0016, 37.0008],
+             [127.0016, 37.0016], [127.0008, 37.0016], [127.0008, 37.0008]]
+          : [[126.9, 36.9], [126.901, 36.9],
+             [126.901, 36.901], [126.9, 36.901], [126.9, 36.9]],
+      ] },
+    })),
+  });
+  stubFetch(parcelReply(many(20)));
+  const crowded = await call({ mode: 'parcel', lat: '37.0012', lon: '127.0012' });
+  const askedUrl = (calls[0] || {}).url || '';
+  check('이웃이 스무 개여도 누른 필지를 찾아낸다',
+        ((crowded.json_ || {}).parcel || {}).jimok === '답',
+        JSON.stringify((crowded.json_ || {}).parcel || null).slice(0, 60));
+  check('상한을 열보다 넉넉히 부른다',
+        Number((askedUrl.match(/MAXFEATURES=(\d+)/) || [0, 0])[1]) >= 50,
+        (askedUrl.match(/MAXFEATURES=\d+/) || ['없음'])[0]);
+  // 네모가 넓을수록 이웃이 딸려 온다. 좁히면 애초에 몇 개 안 온다.
+  const box = decodeURIComponent((askedUrl.match(/BBOX=([^&]*)/) || ['', ''])[1])
+    .split(',').map(Number);
+  check('누른 점 둘레를 좁게 묻는다 (30m 안쪽)',
+        box.length === 4 && (box[2] - box[0]) < 0.0006,
+        `가로 ${((box[2] - box[0]) * 89000).toFixed(0)}m`);
+
+  // 카드에 적을 칸을 넓혔다. 열 칸만 넘기고 있었다.
+  check('용도지역 둘째 칸도 넘긴다',
+        'land_use2' in ((crowded.json_ || {}).parcel || {}),
+        Object.keys((crowded.json_ || {}).parcel || {}).join(','));
+  for (const f of ['jibun_label', 'register', 'stdr_month']) {
+    check(`${f} 를 넘긴다`, f in ((crowded.json_ || {}).parcel || {}));
+  }
+
   console.log();
   console.log('15. 필지 경계선을 칸 단위 도형으로 준다 (mode=parcels)');
   // 왜 그림이 아닌가: 브이월드 WMS 의 연속지적도는 1:1,703(배율 18)
