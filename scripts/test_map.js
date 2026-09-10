@@ -156,7 +156,10 @@ const FAKE_LEAFLET = () => {
     tileLayer: (url, opts) => {
       rec.tiles.push(url);
       // 경계선은 색을 따로 잡으려고 판을 따로 쓴다. 검사가 그것을 본다.
-      if (/layer=cadastral/.test(url)) window.__cadPane = (opts || {}).pane;
+      if (/layer=cadastral/.test(url)) {
+        window.__cadPane = (opts || {}).pane;
+        window.__cadMinZoom = (opts || {}).minZoom;
+      }
       return chain();
     },
     // 필지 윤곽은 geoJSON 층으로 그린다. 진짜 Leaflet 에 있는 것이다.
@@ -2858,6 +2861,7 @@ const FAKE_LEAFLET = () => {
         laid: tiles.filter((u) => /layer=cadastral/.test(u)).length,
         // 용도지역과 같은 층에 섞이지 않았는가 — 판이 따로여야 한다.
         pane: window.__cadPane || null,
+        minZoom: window.__cadMinZoom,
       };
     });
     check('필지경계 스위치가 있다', cadLayer.hasBox);
@@ -2865,6 +2869,10 @@ const FAKE_LEAFLET = () => {
     check('경계선 타일을 깐다', cadLayer.laid >= 1, `${cadLayer.laid}장`);
     check('용도지역과 다른 판에 둔다 (색을 따로 잡으려고)',
           cadLayer.pane === 'cadastralPane', String(cadLayer.pane));
+    // 15 로 뒀더니 "너무 확대"라는 판단이었다 (2026-09-10). 한 단계
+    // 물러선 14 다. 눈에 안 보이는 상수라 여기서 못을 박는다.
+    check('배율 14 부터 보인다 (한 단계 덜 당겨도)',
+          cadLayer.minZoom === 14, String(cadLayer.minZoom));
 
     // 껐다 켜는 것이 실제로 먹는가. 그리고 그 선택을 기억하는가.
     const cadOff = await page.evaluate(() => {

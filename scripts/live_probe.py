@@ -22,7 +22,14 @@ TIMEOUT = 40
 LAT, LON = 37.0080, 127.2797
 
 # 그 자리를 덮는 타일. 배율마다 좌표가 다르다.
-TILES = [(15, 27969, 12753), (17, 111877, 51013)]
+# 14 가 이제 가장 얕은 배율이다 (2026-09-10 에 15 에서 한 단계 내렸다).
+# 브이월드가 그 배율에서도 선을 그려 주는지가 관건이라 여기서 잰다.
+TILES = [(14, 13984, 6376), (15, 27969, 12753), (17, 111877, 51013)]
+
+# PNG 이기만 하면 통과시키면, 아무것도 안 그린 투명 타일도 '✓ 그림'
+# 이 된다. 층이 켜져 있는데 빈 화면인 그 경우가 제일 잡기 어렵다.
+# 선이 실제로 들어 있으면 1KB 는 넘는다 (z15 실측 1,784B).
+MIN_INK = 500
 
 PNG = b"\x89PNG\r\n\x1a\n"
 
@@ -40,14 +47,20 @@ def get(url: str) -> tuple[int, bytes]:
 
 def tiles() -> int:
     bad = 0
-    print("  필지 경계선 타일 (배율 15 이상에서만 그린다)")
+    print(f"  필지 경계선 타일 (배율 {TILES[0][0]} 이상에서만 그린다)")
     for z, x, y in TILES:
         code, body = get(f"{BASE}/api/tile?layer=cadastral&z={z}&x={x}&y={y}")
-        ok = code == 200 and body.startswith(PNG)
-        print(f"    z={z:<3} http={code} {len(body):>6}B  {'✓ 그림' if ok else '✗'}")
+        png = code == 200 and body.startswith(PNG)
+        ok = png and len(body) >= MIN_INK
+        mark = "✓ 그림" if ok else ("✗ 빈 타일" if png else "✗")
+        print(f"    z={z:<3} http={code} {len(body):>6}B  {mark}")
         if not ok:
             bad += 1
-            print("      " + " ".join(body[:200].decode("utf-8", "replace").split()))
+            if not png:
+                print("      " + " ".join(body[:200].decode("utf-8", "replace").split()))
+            else:
+                print(f"      PNG 이긴 한데 {MIN_INK}B 도 안 됩니다 — 선이 없는 "
+                      "투명 타일로 보입니다.")
     return bad
 
 
