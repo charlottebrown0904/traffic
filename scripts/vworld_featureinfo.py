@@ -29,7 +29,7 @@ from redt.collect.http import get                      # noqa: E402
 WMS = "https://api.vworld.kr/req/wms"
 LAYERS = ["lt_c_uq111", "lt_c_uq112", "lt_c_uq113", "lt_c_uq114"]
 
-# 화면에서 확인할 지점 — 용인 원삼(사장님 스크린샷 근처)과 화성 향남.
+# 화면에서 확인할 지점 — 용인 원삼(실사용 화면 근처)과 화성 향남.
 POINTS = [("용인 원삼", 37.132, 127.353), ("화성 향남", 37.100, 126.930)]
 
 MERC_EDGE = 20037508.342789244

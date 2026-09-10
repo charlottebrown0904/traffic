@@ -13,7 +13,7 @@ OUT = ROOT / "internal" / "PROGRESS.md"
 
 MARK = {"done": "x", "doing": " ", "todo": " ", "blocked": " "}
 BADGE = {"done": "완료", "doing": "**진행중**", "todo": "대기", "blocked": "**막힘**"}
-OWNER = {"user": "대표님", "claude": "Claude", "both": "함께"}
+OWNER = {"user": "사람", "claude": "Claude", "both": "함께"}
 KST = timezone(timedelta(hours=9))
 
 
@@ -129,7 +129,7 @@ def main() -> None:
             L.append(f"- {BADGE[t['status']]} `{t['id']}` {t['title']} — {t.get('note', '')}")
     else:
         L.append("- 없음")
-    L += ["", "### 대표님이 하셔야 할 대기 항목", ""]
+    L += ["", "### 사람이 해야 할 대기 항목", ""]
     for t in mine[:8]:
         L.append(f"- `{t['id']}` {t['title']} — {t.get('note', '')}")
     if len(mine) > 8:

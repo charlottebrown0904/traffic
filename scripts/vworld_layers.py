@@ -38,7 +38,7 @@ BASE = {"SERVICE": "WFS", "REQUEST": "GetCapabilities"}
 CANDIDATES = [
     # 일반 WFS. 177개가 오지만 공시지가는 여기 없다.
     ("https://api.vworld.kr/req/wfs", {**BASE, "VERSION": "2.0.0"}),
-    # 국가중점데이터는 /ned 아래에 따로 있다. 대표님 키에 '국가중점 API' 가
+    # 국가중점데이터는 /ned 아래에 따로 있다. 우리 키에 '국가중점 API' 가
     # 켜져 있고, 공시지가가 바로 그 국가중점데이터다.
     ("https://api.vworld.kr/ned/wfs", {**BASE, "VERSION": "2.0.0"}),
     ("https://api.vworld.kr/ned/wfs", {**BASE, "VERSION": "1.1.0"}),

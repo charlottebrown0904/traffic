@@ -47,7 +47,7 @@ locationinfo/locationinfoRest    휴게소 203곳
 
 과거 교통량은 **파일**로 확보한다.
 
-1. 대표님이 이미 갖고 계신 전국 영업소 교통량 파일 → `redt traffic --path`
+1. 이미 확보한 전국 영업소 교통량 파일 → `redt traffic --path`
 2. 없거나 부족하면 도로공사 포털 / 교통량정보시스템의 연도별 통계 파일
 
 `redt traffic` 은 이미 만들어져 있다. 인코딩 자동판별(utf-8/cp949/euc-kr),

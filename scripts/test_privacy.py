@@ -85,6 +85,40 @@ check("25292d8" in _doc,
 check("재발급" in _doc, "재발급이 필요하다고 적혀 있다")
 
 print()
+print("4. 저장소가 공개다 — 사람을 가리키는 호칭이 남지 않게")
+# 2026-09-10 요청. F12 로 app.js 를 열면 주석이 그대로 보이고, 저장소는
+# 공개라 GitHub 에서는 검색까지 된다. 그때 코드에 사람을 부르는 호칭이
+# 붙은 지시문이 294곳 있었다.
+#
+# **주석을 지우자는 것이 아니다.** 주석의 값어치는 '왜 이렇게 했는가' 에
+# 있고, 그것이 있어야 같은 것을 두 번 안 깨뜨린다. 값어치가 없는 것은
+# **누가 시켰는가** 다. 호칭만 걷어내고 근거는 남긴다.
+# **호칭을 조각으로 만든다.** 여기에 통째로 적으면 이 검사 파일 자신이
+# 걸린다. 검사가 자기를 잡고 영원히 빨간 것은 검사가 아니다.
+_HONORIFICS = tuple(a + "님" for a in ("사장", "대표", "회장", "부장"))
+_SCAN_EXT = {".py", ".js", ".css", ".html", ".yml", ".yaml", ".md", ".json"}
+_SKIP_DIR = {".git", "node_modules", "public/app/data", "data/processed",
+             "data/interim"}
+_found = []
+for _p in sorted(ROOT.rglob("*")):
+    if not _p.is_file() or _p.suffix not in _SCAN_EXT:
+        continue
+    _rel = _p.relative_to(ROOT).as_posix()
+    if any(_rel == d or _rel.startswith(d + "/") for d in _SKIP_DIR):
+        continue
+    try:
+        _t = _p.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        continue
+    for _h in _HONORIFICS:
+        if _h in _t:
+            _found.append(f"{_rel} ({_t.count(_h)}회 '{_h}')")
+            break
+check(not _found, f"사람을 가리키는 호칭이 없다 ({len(_found)}개 파일)")
+for _f in _found[:15]:
+    print(f"          {_f}")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

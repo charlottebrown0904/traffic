@@ -30,26 +30,26 @@ Cloudflare Pages 로 다 옮겨 붙여서 **실제로 재 봤습니다.** 거의
 Vercel 은 `regions: ["icn1"]` 로 서울에 못박을 수 있고, Cloudflare
 Workers 에는 그 못이 없습니다. **그 한 줄이 이 제품이 도는 이유입니다.**
 
-## 요금제 — 사장님 결정 (2026-09-09)
+## 요금제 — 결정 (2026-09-09)
 
 Vercel **Hobby 는 상업적 이용을 금지**합니다
 ([plans/hobby](https://vercel.com/docs/plans/hobby) ·
 [fair-use](https://vercel.com/docs/limits/fair-use-guidelines)).
 정의가 넓어 결제뿐 아니라 제품·서비스 광고까지 포함합니다.
 
-사장님 지시: **"유료는 나중에 서비스 확장 시 결정한다."**
+요구사항: **"유료는 나중에 서비스 확장 시 결정한다."**
 지금 라이브는 광고도 결제도 없는 무료 분석 도구라 당장은 Hobby 로
 둡니다. **경계선은 매물 기능을 켜거나 돈을 받기 시작하는 날**입니다.
 그날 Pro($20/월)로 올립니다.
 
 ---
 
-## 사장님이 하실 일 — 대시보드 두 곳
+## 사람이 해야 할 일 — 대시보드 두 곳
 
 제 컨테이너는 조직 망 정책이 `vercel.com` · `dash.cloudflare.com` ·
 `api.vercel.com` 을 막습니다(403). 브라우저를 띄워도 못 갑니다. Vercel
 MCP 에도 '기존 도메인을 프로젝트에 붙이는' 도구가 없습니다(구매만).
-**아래 둘은 사장님만 하실 수 있습니다.**
+**아래 둘은 계정 소유자만 할 수 있습니다.**
 
 ### 1. Cloudflare Pages 에서 도메인을 뗀다 (붙이셨다면)
 
@@ -113,7 +113,7 @@ GitHub → Settings → Secrets → Actions
 
 `.github/workflows/sitecheck.yml` 을 `base=https://toji.fyi` 로 돌리면
 정적 화면·헤더·환경변수·중계기·타일·한국 API 넷을 한 번에 훑고 판정을
-냅니다. **사장님이 화면을 캡쳐하실 필요 없습니다.**
+냅니다. **화면을 캡쳐할 필요 없습니다.**
 
 ## 남겨 둔 것 — Cloudflare 자산
 

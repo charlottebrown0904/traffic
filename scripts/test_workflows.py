@@ -188,7 +188,7 @@ check("stage" in _inputs, "무엇까지 돌릴지 고를 수 있다 (stage)")
 if "stage" in _inputs:
     _opts = _inputs["stage"].get("options") or []
     check("analyze" in _opts, f"분석만 돌리는 선택지가 있다 ({_opts})")
-    # 화면 코드만 고쳤을 때를 위한 것 (사장님 지시 2026-09-08: "너무
+    # 화면 코드만 고쳤을 때를 위한 것 (요구사항 2026-09-08: "너무
     # 오래 걸리면 우선 테마부터 푸쉬하는 걸 추천합니다"). 라이브(main)는
     # 이 워크플로만 앞당기므로, CSS 한 줄에도 40분을 기다려야 했다.
     check("web" in _opts, f"화면만 돌리는 선택지가 있다 ({_opts})")

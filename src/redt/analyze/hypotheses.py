@@ -744,8 +744,8 @@ def payload(verdicts: pd.DataFrame, tables: dict[str, pd.DataFrame],
     """판정 결과를 파일로 남길 수 있는 모양으로.
 
     지금까지 이 숫자들은 러너 로그에만 있었다. 실행이 끝나고 로그가
-    지워지면 무엇이 나왔는지 아무도 모른다 — 사장님께 결과를 물어보실
-    때마다 내가 로그를 다시 뒤져야 했던 이유다. 파일로 남긴다."""
+    지워지면 무엇이 나왔는지 아무도 모른다 — 결과를 물어올
+    때마다 로그를 다시 뒤져야 했던 이유다. 파일로 남긴다."""
     from datetime import datetime, timezone
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
