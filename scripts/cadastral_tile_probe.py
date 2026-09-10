@@ -19,7 +19,9 @@
 """
 from __future__ import annotations
 
+import base64
 import hashlib
+import math
 import os
 import re
 import struct
@@ -153,46 +155,116 @@ def relay(target: str) -> tuple[int, bytes]:
 
 
 def capabilities() -> None:
-    print("  WMS GetCapabilities — 지적 관련 이름을 훑습니다")
+    print("  WMS GetCapabilities — 그 레이어를 어떤 조건으로 여는가")
     if not TOKEN:
         print("    건너뜀 — 중계기 토큰이 없습니다")
         return
-    code, body = relay("https://api.vworld.kr/req/wms?"
-                       "SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0")
+    code, body, _ = relay_bytes("https://api.vworld.kr/req/wms?"
+                                "SERVICE=WMS&REQUEST=GetCapabilities&VERSION=1.3.0")
     text = body.decode("utf-8", "replace")
     print(f"    http={code} {len(body):,}B")
     if code != 200:
         print("      " + show(text))
         return
-    # <Name>…</Name> 과 그 뒤의 <Title>…</Title> 을 짝지어 본다.
     pairs = re.findall(r"<Name>([^<]+)</Name>\s*<Title>([^<]*)</Title>", text)
     hits = [(n, t) for n, t in pairs
             if "cbnd" in n.lower() or "지적" in t or "필지" in t]
     print(f"    레이어 {len(pairs):,}개 중 지적 후보 {len(hits)}개")
     for n, t in hits[:25]:
         print(f"      {n}  —  {t}")
-    if not hits and pairs:
-        print("      후보가 없습니다. 앞쪽 열 개를 그대로 적습니다:")
-        for n, t in pairs[:10]:
-            print(f"      {n}  —  {t}")
+
+    # 그 레이어를 감싸는 <Layer> 블록을 통째로 꺼낸다. 축척 제한
+    # (MinScaleDenominator) 이나 좌표계 목록이 거기 적혀 있다.
+    m = re.search(r"<Layer[^>]*>(?:(?!</?Layer\b).)*?"
+                  r"<Name>lp_pa_cbnd_bubun</Name>.*?</Layer>", text, re.S)
+    if not m:
+        print("      그 이름을 감싸는 <Layer> 블록을 못 찾았습니다")
+        return
+    block = m.group(0)
+    print(f"    <Layer> 블록 {len(block):,}B — 요점만 적습니다")
+    for tag in ("CRS", "SRS", "MinScaleDenominator", "MaxScaleDenominator",
+                "Style", "BoundingBox", "EX_GeographicBoundingBox"):
+        found = re.findall(rf"<{tag}[^>]*>([^<]*)</{tag}>|<{tag}\b([^/>]*)/>",
+                           block)
+        vals = [(" ".join((a or b).split()))[:110] for a, b in found]
+        vals = [v for v in vals if v]
+        if vals:
+            print(f"      {tag}: {', '.join(vals[:8])}"
+                  + (" …" if len(vals) > 8 else ""))
 
 
-def direct_wms() -> None:
-    """우리 함수를 빼고 브이월드에 바로 같은 것을 묻는다."""
-    print("  브이월드 WMS 직접 (중계기 경유) — 배율 15 한 장")
+def relay_bytes(target: str) -> tuple[int, bytes, str]:
+    """중계기는 바이너리를 base64 로 감싸 준다 (api/relay.js). 벗겨 준다."""
+    url = f"{BASE}/api/relay?target={urllib.parse.quote(target, safe='')}"
+    code, body = get(url, {"x-relay-token": TOKEN})
+    if body[:8] == PNG:
+        return code, body, "png"
+    text = body.decode("utf-8", "replace")
+    if text[:20].startswith("iVBORw0KGgo"):
+        try:
+            return code, base64.b64decode(text), "png(base64)"
+        except Exception:                                    # noqa: BLE001
+            pass
+    return code, body, "text"
+
+
+def wms(layers: str, box: str, *, version: str = "1.3.0",
+        crs: str = "EPSG:3857", styles: str = "", size: int = 256) -> str:
+    """GetMap 한 장을 부르고, 칠해진 화소가 몇 개인지로 답한다."""
+    axis = "CRS" if version == "1.3.0" else "SRS"
+    q = (f"SERVICE=WMS&REQUEST=GetMap&VERSION={version}"
+         f"&LAYERS={layers}&STYLES={styles}&{axis}={crs}"
+         f"&BBOX={box}&WIDTH={size}&HEIGHT={size}"
+         "&FORMAT=image/png&TRANSPARENT=true&EXCEPTIONS=XML")
+    code, body, kind = relay_bytes("https://api.vworld.kr/req/wms?" + q)
+    if kind == "text":
+        return f"http={code} {len(body)}B  " + show(
+            body.decode("utf-8", "replace"), 160)
+    return f"http={code} {len(body)}B  {png_facts(body)}"
+
+
+# 배율 15·17·19 의 그 자리를 덮는 네모. 축척 제한이 걸려 있으면
+# 더 깊이 들어가야 선이 나온다 — 그것을 배제하려고 셋을 잰다.
+DEEPER = [(15, 27969, 12753), (17, 111877, 51013), (19, 447508, 204053)]
+
+
+def variants() -> None:
+    """무엇을 바꾸면 선이 나오는가. 한 번에 여러 꼴을 재 본다."""
+    print("  브이월드 WMS 직접 (중계기 경유) — 칠해진 화소로 판정합니다")
     if not TOKEN:
         print("    건너뜀 — 중계기 토큰이 없습니다")
         return
-    z, x, y = TILES[1]
-    for layers in ("lp_pa_cbnd_bubun", "LP_PA_CBND_BUBUN", "lp_pa_cbnd_bonbun"):
-        q = ("SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0"
-             f"&LAYERS={layers}&STYLES=&CRS=EPSG:3857"
-             f"&BBOX={bbox(z, x, y)}&WIDTH=256&HEIGHT=256"
-             "&FORMAT=image/png&TRANSPARENT=true&EXCEPTIONS=XML")
-        code, body = relay("https://api.vworld.kr/req/wms?" + q)
-        head = "PNG" if body.startswith(PNG) else \
-            show(body.decode("utf-8", "replace"), 220)
-        print(f"    {layers:<20} http={code} {len(body):>6}B  {head}")
+    z, x, y = DEEPER[0]
+    box3857 = bbox(z, x, y)
+
+    print("   · 레이어 이름을 바꿔 본다 (배율 15)")
+    for name in ("lp_pa_cbnd_bubun", "lp_pa_cbnd_bonbun", "dt_d002"):
+        print(f"     {name:<20} {wms(name, box3857)}")
+
+    print("   · 더 깊이 들어가 본다 (축척 제한이 있는가)")
+    for zz, xx, yy in DEEPER:
+        print(f"     z={zz:<3} {wms('lp_pa_cbnd_bubun', bbox(zz, xx, yy))}")
+
+    print("   · 좌표계와 판(version)을 바꿔 본다 (배율 15)")
+    # WMS 1.3.0 의 EPSG:4326 은 축 순서가 위도,경도다. 3857 네모를
+    # 위경도로 되돌려 그 순서로 넣는다.
+    lon1, lat1, lon2, lat2 = deg_box(z, x, y)
+    print(f"     1.1.1 SRS=3857     {wms('lp_pa_cbnd_bubun', box3857, version='1.1.1')}")
+    print(f"     1.3.0 CRS=4326     "
+          f"{wms('lp_pa_cbnd_bubun', f'{lat1},{lon1},{lat2},{lon2}', crs='EPSG:4326')}")
+    print(f"     1.1.1 SRS=4326     "
+          f"{wms('lp_pa_cbnd_bubun', f'{lon1},{lat1},{lon2},{lat2}', version='1.1.1', crs='EPSG:4326')}")
+    print(f"     1.3.0 CRS=5179     {wms('lp_pa_cbnd_bubun', box3857, crs='EPSG:5179')}")
+
+
+def deg_box(z: int, x: int, y: int) -> tuple[float, float, float, float]:
+    """타일 좌표를 위경도 네모로. (서, 남, 동, 북)"""
+    n = 2 ** z
+    lon1 = x / n * 360.0 - 180.0
+    lon2 = (x + 1) / n * 360.0 - 180.0
+    lat1 = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n))))
+    lat2 = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
+    return lon1, lat1, lon2, lat2
 
 
 def main() -> int:
@@ -202,7 +274,7 @@ def main() -> int:
     cad = our_tiles("cadastral")
     print()
     print("② 브이월드가 그림을 주긴 하는가")
-    direct_wms()
+    variants()
     print()
     print("③ 이름이 맞는가")
     capabilities()
