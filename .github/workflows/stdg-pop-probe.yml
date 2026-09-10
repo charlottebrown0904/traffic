@@ -50,3 +50,16 @@ jobs:
             cat /tmp/probe.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # **결론을 맨 끝에 한 번 더 찍는다.**
+      #
+      # 로그를 꼬리부터 읽으면 정리(cleanup) 줄이 스무 줄 넘게 깔려,
+      # 앞쪽 탐침 출력이 창 밖으로 밀려난다. 실제로 두 번 연달아
+      # 결과를 못 읽고 실행을 다시 돌렸다. 마지막 단계에서 요점만
+      # 다시 찍으면 어떤 창에서도 보인다.
+      - name: 결론
+        if: always()
+        run: |
+          echo "──────── 결론 ────────"
+          grep -E "http=|본문:|✔|있음|없음|전체 건수|안 됩니다" /tmp/probe.log \
+            | tail -n 20 || tail -n 20 /tmp/probe.log
