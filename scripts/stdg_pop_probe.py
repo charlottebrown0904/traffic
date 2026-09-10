@@ -35,9 +35,17 @@ import json
 import re
 import sys
 
-from redt.collect.http import get
+from redt.collect.http import get_once
 
-PAGE = "https://www.data.go.kr/data/15108071/openapi.do"
+# 목록 화면. 포털은 같은 자료를 여러 주소로 보여 주고, 어떤 꼴은
+# 사람이 아닌 요청에 404 를 준다. 그래서 한 주소에 걸지 않는다.
+PAGES = [
+    "https://www.data.go.kr/data/15108071/openapi.do",
+    "https://www.data.go.kr/tcs/dss/selectApiDataDetailView.do"
+    "?publicDataPk=15108071",
+    "https://www.data.go.kr/catalog/15108071/openapi.json",
+    "https://www.data.go.kr/data/15108071/openapi.do#/API%20목록",
+]
 
 # 목록 화면에서 뽑아 낼 주소의 모양. 포털은 서비스마다 기관번호와
 # 경로가 달라서, 호스트만 알고 나머지는 화면이 말하게 둔다.
@@ -52,15 +60,29 @@ WANT = ["시도명", "시군구명", "법정동명", "리명", "행정기관코�
 
 
 def read_page() -> str:
-    """목록 화면을 중계기로 읽는다."""
-    print(f"목록 화면을 읽습니다\n  {PAGE}")
-    try:
-        resp = get(PAGE, {}, timeout=60)
-    except Exception as exc:                     # noqa: BLE001 — 탐침이다
-        print(f"  실패: {type(exc).__name__} {str(exc)[:200]}")
-        return ""
-    print(f"  http={resp.status_code}  {len(resp.text or ''):,}B")
-    return resp.text or ""
+    """목록 화면을 중계기로 읽는다. 여러 꼴을 차례로 시도한다.
+
+    **재시도하지 않는다** (get_once). 틀린 주소는 다시 불러도 틀린
+    주소인데, get() 은 404 를 일시적 장애로 보고 네 번 더 부른다 —
+    후보가 여럿이면 그 헛기다림만으로 시간이 다 간다.
+    """
+    for url in PAGES:
+        print(f"\n  {url}")
+        try:
+            resp = get_once(url, {}, timeout=40)
+        except Exception as exc:                 # noqa: BLE001 — 탐침이다
+            print(f"    실패: {type(exc).__name__} {str(exc)[:180]}")
+            continue
+        body = resp.text or ""
+        print(f"    http={resp.status_code}  {len(body):,}B")
+        if resp.status_code == 200 and body.strip():
+            # 막는 화면인지 눈으로 확인할 수 있게 앞머리를 보여 준다.
+            head = " ".join(body[:200].split())
+            print(f"    앞머리: {head}")
+            return body
+        if body.strip():
+            print(f"    {' '.join(body[:200].split())}")
+    return ""
 
 
 def candidates(page: str) -> list[str]:
@@ -79,8 +101,8 @@ def peek(url: str) -> dict | None:
     """한 쪽만 받아 본다. 실패하면 왜 실패했는지 적고 넘어간다."""
     print(f"\n  {url}")
     try:
-        resp = get(url, {"type": "json", "numOfRows": "5", "pageNo": "1"},
-                   timeout=60)
+        resp = get_once(url, {"type": "json", "numOfRows": "5",
+                              "pageNo": "1"}, timeout=40)
     except Exception as exc:                     # noqa: BLE001 — 탐침이다
         print(f"    호출 실패: {type(exc).__name__} {str(exc)[:180]}")
         return None
