@@ -381,7 +381,7 @@ function buildFilters() {
   // 오해를 부르고, 지도 색과 뜻이 달라 혼란스러웠다. 지도 색과 필터가
   // 같은 것을 가리키는 편이 낫다.
   const tierBox = $('#tier-filters');
-  TRAFFIC_LABEL.forEach((label, i) => {
+  trafficLabels(TRAFFIC_CUTS).forEach((label, i) => {
     const btn = el('button', 'quad-btn');
     btn.type = 'button';
     btn.dataset.tier = String(i);
@@ -762,7 +762,7 @@ function buildRank() {
  *  1종, 2종 등 차종에 따른 이미지 및 간략 설명 넣어주세요."
  *
  * 드롭다운이라 **하나만** 고를 수 있었습니다. 그런데 이 제품이 보는
- * 것은 화물(3·4·5종)이라, 그것을 보려면 세 번 나눠 보고 머릿속에서
+ * 것은 화물(2·3·4·5종)이라, 그것을 보려면 네 번 나눠 보고 머릿속에서
  * 더해야 했습니다. 펼쳐 놓고 여럿 고르게 합니다.
  *
  * ## 그림은 장식이 아닙니다
@@ -1384,8 +1384,61 @@ function wireTrendHover(svg, prepared, years, sx, indexed) {
  *   2~3만    53곳      3만+    84곳
  */
 const TRAFFIC_CUTS = [10000, 20000, 30000];
-const TRAFFIC_LABEL = ['1만대 미만', '1만~2만대', '2만~3만대', '3만대 이상'];
 const TRAFFIC_TIERS = TRAFFIC_CUTS.length + 1;
+
+/* **차종을 골라 보면 경계가 따라 내려간다** (요구사항 2026-09-10).
+ *
+ * 보고: "차량 종류 선택 시 일평균 통행량이 줄어드는데 기준이 최소
+ * 1만대라서 분별이 안됩니다."
+ *
+ * 맞습니다. 5종만 켜면 대부분 영업소가 수백~수천 대라 1만대 경계
+ * 아래로 다 몰려 **지도가 한 색**이 됩니다. 고정 경계는 '전체' 를
+ * 볼 때만 뜻이 있습니다.
+ *
+ * 그래서 전체를 볼 때는 지금 경계를 그대로 두고, 일부만 골랐을 때는
+ * **그 선택에서 가장 많은 곳**을 기준으로 네 단계를 새로 끊습니다.
+ * 해마다·차종마다 경계가 달라지므로 범례에 숫자를 적어 둡니다 —
+ * 안 적으면 어제 본 색과 오늘 본 색이 다른 뜻이 됩니다.
+ */
+function niceStep(v) {
+  // 1·2·5 × 10^n 으로 올린다. 사람이 읽는 눈금이다.
+  // 백 단위 아래로는 안 내려간다 — 요구사항의 "최소 백단위".
+  if (!(v > 0)) return 100;
+  const pow = Math.pow(10, Math.floor(Math.log10(v)));
+  const head = v / pow;
+  const nice = head <= 1 ? 1 : head <= 2 ? 2 : head <= 5 ? 5 : 10;
+  return Math.max(100, nice * pow);
+}
+
+/** 몇 대인지 사람 말로. 만 단위가 넘으면 '만' 으로 적는다. */
+function volWord(v) {
+  if (v >= 10000) {
+    const man = v / 10000;
+    return `${Number.isInteger(man) ? man : man.toFixed(1)}만대`;
+  }
+  return `${v.toLocaleString('ko-KR')}대`;
+}
+
+function trafficLabels(cuts) {
+  return cuts.map((c, i) => (i === 0
+    ? `${volWord(c)} 미만`
+    : `${volWord(cuts[i - 1])}~${volWord(c)}`))
+    .concat(`${volWord(cuts[cuts.length - 1])} 이상`);
+}
+
+/** 지금 고른 차종에 맞는 경계. 전체면 고정, 일부면 최대값 기준. */
+function trafficCuts(vol) {
+  const all = ((state.traffic || {}).vehicle_types || []).map((v) => v.code);
+  const picked = vehicleCodes();
+  if (!all.length || picked.length >= all.length) return TRAFFIC_CUTS;
+  let max = 0;
+  vol.forEach((v) => { if (v > max) max = v; });
+  // 네 단계로 나누므로 한 칸은 최대값의 1/4 이다. 그것을 사람이 읽는
+  // 눈금으로 올린다. 최대값이 1만을 넘으면 고정 경계가 이미 맞는다.
+  const step = niceStep(max / 4);
+  if (step * 3 >= TRAFFIC_CUTS[2]) return TRAFFIC_CUTS;
+  return [step, step * 2, step * 3];
+}
 
 /* 선택한 연도·차종의 영업소별 교통량. 둘 다 사용자가 고른다 —
  * 2003년 화물만 보고 싶을 수도 있고, 올해 전체를 보고 싶을 수도 있다. */
@@ -1438,11 +1491,12 @@ function buildTiers() {
   const year = state.tgYear;
   const vol = tollgateVolumes(year, vehicleCodes());
   const fresh = newTollgates(year);
+  const cuts = trafficCuts(vol);
   const tier = new Map();
   vol.forEach((v, id) => {
     if (fresh.has(id)) { tier.set(id, 'new'); return; }
     let q = 0;
-    while (q < TRAFFIC_CUTS.length && v >= TRAFFIC_CUTS[q]) q++;
+    while (q < cuts.length && v >= cuts[q]) q++;
     tier.set(id, q);
   });
   // 통행량 미공개 — 도로공사 TCS 에 한 해도 값이 없는 영업소. 민자
@@ -1452,7 +1506,7 @@ function buildTiers() {
   (state.tollgates || []).forEach((t) => {
     if (t.no_traffic) tier.set(String(t.tollgate_id), 'none');
   });
-  return { rank: tier, vol, cut: TRAFFIC_CUTS, fresh };
+  return { rank: tier, vol, cut: cuts, fresh };
 }
 
 /* 연도·차종을 바꾸면 마커 색·크기를 다시 칠한다. 지도를 새로 만들지
@@ -1479,10 +1533,17 @@ function updateTierCounts() {
   (state.tiers ? state.tiers.rank : new Map()).forEach((q) => {
     counts[q] = (counts[q] || 0) + 1;
   });
+  // **글자도 같이 간다.** 차종을 고르면 경계가 내려가는데 범례가
+  // '1만대 미만' 인 채로 있으면 같은 색이 어제와 다른 뜻이 된다.
+  const labels = trafficLabels(((state.tiers || {}).cut) || TRAFFIC_CUTS);
   document.querySelectorAll('#tier-filters .quad-btn').forEach((btn) => {
     const t = btn.dataset.tier;
     const key = (t === 'new' || t === 'none') ? t : Number(t);
     btn.querySelector('.n').textContent = String(counts[key] || 0);
+    if (key !== 'new' && key !== 'none' && labels[key]) {
+      const span = btn.querySelectorAll('span')[1];
+      if (span) span.textContent = labels[key];
+    }
   });
 }
 
@@ -3831,6 +3892,10 @@ window.__drawLandPrice = () => drawLandPrice();
 // 경계선은 화면을 움직여야 도는데, 검사에서는 그것을 흉내내기가
 // 번거롭다. 부를 구멍을 하나 낸다.
 window.__drawCadastral = () => drawCadastral();
+// 차종을 바꾸면 경계가 따라 내려가는지 검사가 볼 수 있게. 화면에서는
+// 차종 칸을 눌러 도는 길과 같은 함수다.
+window.state = state;
+window.__rebuildTiers = () => { recolorTollgates(); updateTierCounts(); };
 
 function drawLandPriceInner(have) {
   lpLayer.clearLayers();
@@ -4583,6 +4648,32 @@ function parcelZones(zones) {
     + '없습니다. 실제 건축 전에는 토지이음에서 확인하세요.</p>';
 }
 
+/* 다섯 축이 각각 무엇을 재는지 (요구사항 2026-09-10).
+ *
+ * "5개 항목이 어떤 의미인지 간략하게 도표 아래에 주석으로 표기".
+ * 축 이름만으로는 '개발 여지' 가 무엇을 견준 것인지 알 수 없습니다.
+ * 무엇과 견줬고 무엇이 높은 쪽인지를 한 줄씩 적습니다.
+ *
+ * '가격 수준' 만 방향을 따로 적습니다 — 나머지 넷은 높을수록 좋지만
+ * 가격은 높다고 좋은 것도 낮다고 좋은 것도 아닙니다. 그것을 안 적으면
+ * 다섯 축을 같은 방향으로 읽게 됩니다.
+ */
+const AXIS_NOTES = [
+  ['도로', '차가 들어올 수 있는가. 맹지에서 광대로까지 사다리로 매겨 또래와 견줍니다.'],
+  ['교통', '10km 안 영업소의 화물(2·3·4·5종) 통행량을 거리로 나눠 더한 값입니다.'],
+  ['개발 여지', '용도지역의 건폐율·용적률 사다리입니다. 같은 시군구 안에서 견줍니다.'],
+  ['가격 수준', '공시지가의 또래 안 위치입니다. <strong>높다고 좋은 것도, 낮다고 좋은 것도 아닙니다.</strong>'],
+  ['모양·지세', '필지 형상과 경사입니다. 반듯하고 평평할수록 높습니다.'],
+];
+
+function axisNotes() {
+  return '<details class="pc-axis-help"><summary>다섯 축이 무엇을 재는가</summary>'
+    + '<dl>' + AXIS_NOTES.map(([k, v]) =>
+      `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>'
+    + '<p>모두 <strong>같은 또래</strong>(같은 시군구·같은 용도지역의 거래)와 '
+    + '견준 백분위입니다. 또래가 얇으면 시·도로 물러납니다.</p></details>';
+}
+
 function parcelCard(parcel, diag, at, addr, zones) {
   const won = (v) => Math.round(v).toLocaleString('ko-KR');
   const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
@@ -4601,6 +4692,7 @@ function parcelCard(parcel, diag, at, addr, zones) {
     + (py ? ` <em>(${won(py)}평)</em>` : '') + '</div>'
     + (diag ? radarSvg(diag.axes) : '')
     + (rows ? `<table class="pc-axes"><tbody>${rows}</tbody></table>` : '')
+    + (diag ? axisNotes() : '')
     + '<h4 class="pc-sub">토지 정보</h4>'
     + parcelFacts(parcel, zones)
     + parcelZones(zones)

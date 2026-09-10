@@ -2925,6 +2925,22 @@ const FAKE_LEAFLET = () => {
           (pc.html.match(/개발 여지/g) || []).length >= 1
           && !/규제 축/.test(pc.html));
 
+    // 축 설명 (요구사항 2026-09-10). 축 이름만으로는 '개발 여지' 가
+    // 무엇을 견준 것인지 알 수 없다.
+    check('다섯 축이 무엇을 재는지 적는다',
+          /다섯 축이 무엇을 재는가/.test(pc.html));
+    for (const k of ['도로', '교통', '개발 여지', '가격 수준', '모양·지세']) {
+      check(`  ${k} 축 설명이 있다`,
+            new RegExp(`<dt>${k.replace(/[·]/g, '·')}</dt><dd>`).test(pc.html));
+    }
+    // 가격만 방향이 다르다. 안 적으면 다섯을 같은 방향으로 읽는다.
+    check('가격은 높다고 좋은 게 아니라고 적는다',
+          /높다고 좋은 것도, 낮다고 좋은 것도 아닙니다/.test(pc.html));
+    // 교통 축은 2종까지 넣었다 (요구사항 2026-09-10).
+    check('교통 축이 2종까지 센다고 적는다',
+          /2·3·4·5종/.test(pc.html),
+          (pc.html.match(/<dt>교통<\/dt><dd>[^<]*/) || ['없음'])[0]);
+
     check('레이더를 그린다 (다섯 축)',
           /<svg class="radar"/.test(pc.html)
           && (pc.peek.diag.axes || []).length === 5,
@@ -3290,6 +3306,45 @@ const FAKE_LEAFLET = () => {
             !!label && /미공개/.test(label.text)
             && Number(label.n) === hollow.n,
             label ? `필터 ${label.n} vs 지도 ${hollow.n}` : '없음');
+
+      // ── 차종을 고르면 경계가 따라 내려간다 (요구사항 2026-09-10) ──
+      //
+      // 보고: "차량 종류 선택 시 일평균 통행량이 줄어드는데 기준이
+      // 최소 1만대라서 분별이 안됩니다." 고정 1만대 경계는 '전체' 를
+      // 볼 때만 뜻이 있다 — 5종만 켜면 다 아래로 몰려 한 색이 된다.
+      const cutsFor = async (codes) => page.evaluate((cs) => {
+        window.state.tgVehicles = new Set(cs);
+        window.__rebuildTiers();
+        const btns = [...document.querySelectorAll('#tier-filters .quad-btn')]
+          .filter((b) => !['new', 'none'].includes(b.dataset.tier));
+        return {
+          cut: (window.state.tiers || {}).cut,
+          labels: btns.map((b) => b.querySelectorAll('span')[1].textContent),
+          spread: new Set(btns.map((b) => b.querySelector('.n').textContent)).size,
+        };
+      }, codes);
+
+      const whole = await cutsFor([1, 2, 3, 4, 5, 6]);
+      check('전체를 보면 지금 경계를 그대로 쓴다 (1·2·3만대)',
+            String(whole.cut) === String([10000, 20000, 30000]),
+            String(whole.cut));
+      const five = await cutsFor([5]);
+      check('한 차종만 고르면 경계가 내려간다',
+            Number((five.cut || [])[0]) < 10000, String(five.cut));
+      // "최소 백단위".
+      check('경계가 백 단위 아래로는 안 내려간다',
+            (five.cut || []).every((c) => c >= 100 && c % 100 === 0),
+            String(five.cut));
+      check('범례 글자도 같이 바뀐다 (색 뜻이 안 어긋나게)',
+            !five.labels.some((t) => /1만대 미만/.test(t)),
+            five.labels.join(' | '));
+      // 한 색으로 몰리지 않는가 — 이것이 원래 불편의 핵심이다.
+      check('한 칸으로 안 몰린다 (구분이 된다)', five.spread > 1,
+            five.labels.join(' | '));
+      await page.evaluate(() => {
+        window.state.tgVehicles = new Set([1, 2, 3, 4, 5, 6]);
+        window.__rebuildTiers();
+      });
     } else {
       console.log('  건너뜀 — tollgates.json 이 없습니다.');
     }

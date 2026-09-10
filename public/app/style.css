@@ -1212,6 +1212,24 @@ body.picking .leaflet-container{cursor:crosshair}
 /* 건축 제한 (요구사항 2026-09-10). 무엇이 걸렸고 그것이 무엇을
    막는지를 한 덩이로 읽히게 둔다. 이름만 적으면 '개발행위허가제한
    지역' 이 무슨 뜻인지 되묻게 된다. */
+/* 다섯 축 설명. 접어 둔다 — 늘 읽는 글이 아니라 한 번 확인하는
+   글이고, 폰에서 카드가 길어지면 정작 값이 밀려난다. */
+.pc-axis-help { margin: .5rem 0 0; font-size: 11.5px; }
+.pc-axis-help summary {
+  cursor: pointer; color: var(--muted); padding: .2rem 0;
+}
+.pc-axis-help dl { margin: .3rem 0 0; }
+.pc-axis-help dt {
+  font-weight: 600; font-size: 11.5px; margin-top: .35rem;
+}
+.pc-axis-help dd {
+  margin: .05rem 0 0; color: var(--muted); line-height: 1.5;
+}
+.pc-axis-help p {
+  margin: .5rem 0 0; color: var(--faint); line-height: 1.5;
+}
+.pc-axis-help strong { color: var(--muted); font-weight: 600; }
+
 .pc-zones { margin: .1rem 0 0; padding: 0; list-style: none; }
 .pc-zones li {
   padding: .4rem 0 .45rem; border-bottom: 1px solid var(--border);

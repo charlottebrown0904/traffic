@@ -104,7 +104,8 @@ traffic_source_priority: [tcs, aadt]
 
 vehicle_groups:
   passenger: [1, 6]
-  freight: [3, 4, 5]
+  # 2종도 물류에 많이 쓰이는 화물차량이다 (요구사항 2026-09-10).
+  freight: [2, 3, 4, 5]
   mid: [2]
 
 # 파일럿 지역 (빈 리스트면 전국). 시도 2자리 코드.

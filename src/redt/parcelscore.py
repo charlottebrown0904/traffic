@@ -184,6 +184,7 @@ def build(groups: list[tuple[str, str]]) -> dict:
 
         # 교통 축. 조인 표에 거리(10km 까지)가 이미 들어 있어서 여기서
         # 다시 재지 않는다. 화물 통행량은 가장 최근 해의 일평균을 쓴다.
+        # 화물은 2·3·4·5종이다 — 2종도 물류에 많이 쓰인다.
         traffic = con.execute(f"""
             WITH vol AS (
                 SELECT tollgate_id, avg_daily
@@ -192,7 +193,8 @@ def build(groups: list[tuple[str, str]]) -> dict:
                            row_number() OVER (PARTITION BY tollgate_id
                                               ORDER BY year DESC) AS rn
                     FROM traffic
-                    WHERE vehicle_type IN (3, 4, 5) AND avg_daily IS NOT NULL
+                    -- 2종도 물류 차량이다 (요구사항 2026-09-10).
+                    WHERE vehicle_type IN (2, 3, 4, 5) AND avg_daily IS NOT NULL
                 ) WHERE rn = 1
             ),
             g AS (

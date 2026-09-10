@@ -129,12 +129,15 @@ VEHICLE_TYPES = [
      "desc": "배기량 1,000cc 미만 · 길이 3.6m, 너비 1.6m, 높이 2.0m 이하."},
 ]
 
-# 화물 수요를 보려면 3·4·5종을 함께 본다. settings.yaml 의 vehicle_groups 와
+# 화물 수요를 보려면 2·3·4·5종을 함께 본다. settings.yaml 의 vehicle_groups 와
 # 같은 값을 쓰되, 화면에서 뜻을 설명할 수 있도록 여기에도 이름을 둔다.
 VEHICLE_GROUPS = [
     {"key": "total", "label": "전체", "types": [1, 2, 3, 4, 5, 6],
      "desc": "모든 차종의 합."},
-    {"key": "freight", "label": "화물 (3·4·5종)", "types": [3, 4, 5],
+    # 2종을 넣었다 (요구사항 2026-09-10): "2종도 물류에 많이 쓰이는
+    # 화물차량 임". 2종은 '중형' 묶음으로도 따로 볼 수 있게 남겨 둔다 —
+    # 묶음은 나눠 담는 칸이 아니라 보는 방식이다.
+    {"key": "freight", "label": "화물 (2·3·4·5종)", "types": [2, 3, 4, 5],
      "desc": "공장·물류 수요를 가장 직접 반영합니다. 토지·공장 투자에서는 이쪽이 핵심입니다."},
     {"key": "passenger", "label": "승용 (1·6종)", "types": [1, 6],
      "desc": "생활 통행. 주거 수요와 관광 통행이 섞입니다."},
@@ -1481,7 +1484,7 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
                    t.sido, t.sigungu,
                    coalesce(t.operator_cd, '') AS operator_cd,
                    (v.tollgate_id IS NULL) AS no_traffic,
-                   -- 화물(3·4·5종) 가장 최근 해의 일평균. 화면이 필지
+                   -- 화물(2·3·4·5종) 가장 최근 해의 일평균. 화면이 필지
                    -- 진단의 교통 축을 **내보내기와 같은 식**으로 계산해야
                    -- 같은 값이 나온다 (parcelscore.build 참조).
                    coalesce(f.avg_daily, 0) AS freight
@@ -1494,7 +1497,7 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
                            row_number() OVER (PARTITION BY tollgate_id
                                               ORDER BY year DESC) AS rn
                     FROM traffic
-                    WHERE vehicle_type IN (3, 4, 5) AND avg_daily IS NOT NULL
+                    WHERE vehicle_type IN (2, 3, 4, 5) AND avg_daily IS NOT NULL
                 ) WHERE rn = 1
             ) f ON f.tollgate_id = t.tollgate_id
             WHERE t.lat IS NOT NULL
