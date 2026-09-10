@@ -1,0 +1,24 @@
+# 필지 경계선 타일이 배율마다 똑같다 — 왜인지 브이월드 입으로 듣는다.
+#
+# 2026-09-10 실측: /api/tile?layer=cadastral 이 z=14·15·17 에서 전부
+# 같은 1,784B PNG(md5 29e79cc2)를 줬다. 크기만 봐서는 '그림이 왔다'
+# 로 읽혀 점검을 그냥 통과했다.
+#
+# 러너에서 브이월드를 직접 부르면 해외 IP 라 502 다
+# (docs/finding-geoblock.md). 중계기를 거친다.
+name: 필지 경계선 탐침 (배율마다 같은 그림)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE: https://toji.fyi
+      TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 세 갈래로 나눠 재기
+        run: python3 scripts/cadastral_probe.py
