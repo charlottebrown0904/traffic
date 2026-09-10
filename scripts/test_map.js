@@ -2960,6 +2960,55 @@ const FAKE_LEAFLET = () => {
           /2·3·4·5종/.test(pc.html),
           (pc.html.match(/<dt>교통<\/dt><dd>[^<]*/) || ['없음'])[0]);
 
+    // 현재 가치 · 미래 가치 (요구사항 2026-09-10). 축 설명 바로 밑.
+    check('가치 단추가 둘 선다',
+          (pc.html.match(/class="pc-val"/g) || []).length === 2,
+          String((pc.html.match(/class="pc-val"/g) || []).length));
+    check('현재 가치 · 미래 가치 라는 이름이다',
+          /현재 가치/.test(pc.html) && /미래 가치/.test(pc.html));
+    // 눌러 보고 나서 유료라는 것을 알면 속은 느낌이 남는다.
+    check('누르기 전에 유료라고 적는다', /프리미엄/.test(pc.html));
+    check('축 설명 바로 아래에 있다',
+          pc.html.indexOf('pc-axis-help') < pc.html.indexOf('pc-val-row')
+          && pc.html.indexOf('pc-val-row') < pc.html.indexOf('토지 정보'));
+    // 누르면 무엇을 근거로 낼 것인지 나온다. **값은 아직 없다** —
+    // 없는 금액을 지어 적으면 그 한 줄이 계약 한 건을 만든다.
+    const vnow = await page.evaluate(async () => {
+      document.querySelector('.pc-val[data-val="now"]').click();
+      await new Promise((ok) => setTimeout(ok, 150));
+      const b = document.getElementById('pc-val-box');
+      return { html: b.innerHTML, open: !b.hidden };
+    });
+    check('현재 가치를 누르면 설명이 열린다', vnow.open && vnow.html.length > 50);
+    check('감정평가서를 배운다고 적는다', /감정평가서/.test(vnow.html));
+    check('무엇을 대입하는지 적는다 (용도지역·형상·도로접)',
+          /용도지역/.test(vnow.html) && /형상/.test(vnow.html)
+          && /도로접/.test(vnow.html));
+    check('아직 값이 없다는 것을 밝힌다',
+          /준비 중/.test(vnow.html) && /지어내지 않습니다/.test(vnow.html));
+    check('없는 금액을 적지 않는다',
+          !/[0-9,]+\s*원\/㎡/.test(vnow.html) && !/예상가/.test(vnow.html),
+          (vnow.html.match(/[0-9,]+\s*원[^<]*/) || ['없음'])[0]);
+    const vfut = await page.evaluate(async () => {
+      document.querySelector('.pc-val[data-val="future"]').click();
+      await new Promise((ok) => setTimeout(ok, 150));
+      return document.getElementById('pc-val-box').innerHTML;
+    });
+    check('미래 가치는 개발 사건 전후를 본다고 적는다',
+          /산업단지/.test(vfut) && /전/.test(vfut) && /후/.test(vfut));
+    // 사건을 안 겪은 옆 동네가 없으면 '전국이 다 오른 몫' 과 안 갈린다.
+    check('대조군이 필요하다는 것을 적는다',
+          /안 겪은/.test(vfut),
+          (vfut.match(/[^>]*안 겪은[^<]*/) || ['없음'])[0]);
+    check('미래는 현재 위에 선다고 적는다',
+          /현재 가치가 선 뒤에/.test(vfut));
+    const vclose = await page.evaluate(async () => {
+      document.querySelector('.pc-val[data-val="future"]').click();
+      await new Promise((ok) => setTimeout(ok, 100));
+      return document.getElementById('pc-val-box').hidden;
+    });
+    check('같은 단추를 다시 누르면 닫힌다', vclose === true, String(vclose));
+
     check('레이더를 그린다 (다섯 축)',
           /<svg class="radar"/.test(pc.html)
           && (pc.peek.diag.axes || []).length === 5,

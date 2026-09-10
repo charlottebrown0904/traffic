@@ -245,6 +245,99 @@ CREATE TABLE IF NOT EXISTS parcel_tile (
     -- 받지 않으면 맞출 방법이 없다.
     scope      VARCHAR                -- core ⊂ land ⊂ all
 );
+
+-- 감정평가서 (요구사항 2026-09-10 — '현재 가치' 프리미엄).
+--
+-- ## 왜 실거래가 아니라 감정평가서인가
+--
+-- 실거래는 **팔린 땅**만 말해 준다. 안 팔린 땅이 얼마인지는 말이 없다.
+-- 감정평가서는 팔리지 않은 땅에도 값을 매긴 기록이라 그 빈칸을 메운다.
+-- 게다가 값 하나만 있는 것이 아니라 **어떻게 그 값에 이르렀는지**가
+-- 적혀 있다 (감정평가에 관한 규칙 §14 공시지가기준법).
+--
+--   토지가액 = 비교표준지 공시지가
+--            × 시점수정 × 지역요인 × 개별요인 × 그 밖의 요인 보정
+--
+-- 우리가 배우려는 것은 마지막 두 개다.
+--
+--   개별요인       가로·접근·환경·획지(면적/형상/지세)·행정(용도지역/규제)
+--                  → 요구사항에 적힌 칸들이 여기 그대로 들어 있다
+--   그 밖의 요인   공시지가와 시장가치의 벌어진 폭 (보통 1.2~2.5배)
+--                  → 지역마다 크게 다르고, 어디에도 공표되지 않는다
+--
+-- ## ratio_official 이 학습 목표다
+--
+-- 우리는 이미 **모든 필지의 개별공시지가**를 갖고 있다 (브이월드
+-- 토지특성, parcel.official_price). 그래서
+--
+--   현재 가치 = 개별공시지가 × 예측배율
+--
+-- 로 낼 수 있고, 예측배율을 (지역 × 용도지역 × 지목 × 도로접 × 형상 ×
+-- 지세 × 면적) 로 회귀하는 것이 이 표의 쓰임이다. 평가액을 통째로
+-- 예측하려 들면 표본이 몇백 건일 때 지역 차이만 학습하고 끝난다.
+--
+-- ## 원본은 저장소에 두지 않는다
+--
+-- 감정평가서에는 소유자·채무자 이름이 적혀 있다. 이 저장소는 **공개**다.
+-- 원본 PDF 는 data/raw/appraisal/ (gitignore 됨) 에만 두고, 이 표에는
+-- 사람 이름이 들어가는 칸을 아예 만들지 않는다.
+CREATE TABLE IF NOT EXISTS appraisal (
+    appraisal_id  VARCHAR PRIMARY KEY,  -- 사건번호-물건번호-일련
+    source        VARCHAR,              -- court(법원경매) / onbid(공매) / manual
+    case_no       VARCHAR,              -- 2024타경12345
+    item_no       VARCHAR,              -- 물건번호
+    base_date     DATE,                 -- 기준시점 (가격시점)
+    report_date   DATE,                 -- 작성일
+
+    -- 대상 토지. parcel 표와 같은 이름·같은 값으로 둔다 — 다르게 적으면
+    -- 대입할 때 사전을 하나 더 만들어야 하고, 그 사전이 곧 어긋난다.
+    pnu           VARCHAR,
+    addr          VARCHAR,
+    sigungu_cd    VARCHAR,
+    jimok         VARCHAR,
+    land_use      VARCHAR,              -- 용도지역
+    land_use2     VARCHAR,              -- 둘째 용도지역 (겹칠 때)
+    zone_txt      VARCHAR,              -- 지구·구역 원문 (농업진흥구역, 개발제한구역 …)
+    use_situation VARCHAR,              -- 이용상황
+    road_side     VARCHAR,              -- 도로접면
+    shape         VARCHAR,              -- 형상
+    slope         VARCHAR,              -- 지세
+    area_m2       DOUBLE,
+
+    -- 산식의 각 마디. 하나라도 비면 검산이 안 되므로 다 받는다.
+    official_price     DOUBLE,          -- 대상 개별공시지가 원/㎡
+    std_pnu            VARCHAR,         -- 비교표준지
+    std_price          DOUBLE,          -- 비교표준지 공시지가 원/㎡
+    f_time             DOUBLE,          -- 시점수정
+    f_region           DOUBLE,          -- 지역요인
+    f_indiv            DOUBLE,          -- 개별요인 (곱한 값)
+    f_other            DOUBLE,          -- 그 밖의 요인 보정
+    appraised_per_m2   DOUBLE,          -- 감정평가액 원/㎡
+    appraised_krw      BIGINT,          -- 토지 평가액 (건물 제외)
+
+    -- 학습 목표. 평가액 ÷ 대상 개별공시지가.
+    ratio_official DOUBLE,
+
+    src_file   VARCHAR,                 -- 원본 파일명 (내용은 저장소 밖)
+    parsed_by  VARCHAR,                 -- 어느 판독기가 읽었는지
+    parsed_at  TIMESTAMP
+);
+
+-- 개별요인 격차율의 **속**. 평가사가 가로·접근·환경·획지·행정 항목마다
+-- 대상과 표준지를 견줘 몇 %로 봤는지가 여기 남는다.
+--
+-- 이것이 이 프로젝트에서 가장 값진 칸이다 — 우리 다섯 축(도로·모양·
+-- 지세·용도)이 값을 얼마나 가르는지를, 우리가 추정한 것이 아니라
+-- **평가사가 직접 매긴 숫자**로 알 수 있다.
+CREATE TABLE IF NOT EXISTS appraisal_factor (
+    appraisal_id VARCHAR,
+    group_nm     VARCHAR,   -- 가로조건 / 접근조건 / 환경조건 / 획지조건 / 행정적조건 / 기타조건
+    item_nm      VARCHAR,   -- 도로폭 / 형상 / 지세 / 면적 / 용도지역 …
+    subject      VARCHAR,   -- 대상 토지의 값
+    comp         VARCHAR,   -- 비교표준지의 값
+    ratio        DOUBLE,    -- 격차율 (1.00 = 같음)
+    PRIMARY KEY (appraisal_id, group_nm, item_nm)
+);
 """
 
 
