@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260910x">
+<link rel="stylesheet" href="/app/style.css?v=20260910y">
 </head>
 <body>
 
@@ -172,23 +172,20 @@
             <select id="road-filter"></select>
           </label>
 
-          <h3>토지 — 용도지역
-            <button type="button" class="info-dot" aria-expanded="false"
-                    aria-label="설명 보기">?</button></h3>
-          <div class="info-pop" hidden>
-            <p>여기서 켠 것은 <strong>지도의 거래 점</strong>만 정합니다.
-              지도에 적히는 중앙값은 '실거래 가격' 에서 따로 고릅니다.</p>
-            <p>처음에는 계획관리·생산관리·자연녹지 셋만 켭니다 — 분석이
-              쓰는 것도 이 셋입니다.</p>
-            <p><strong>관리지역</strong>은 2006~2010년 거래에만 있습니다.
-              세분화(계획·생산·보전)가 끝나기 전이라 그냥 '관리지역'으로
-              신고된 것입니다.</p>
-          </div>
-          <div class="field-row">
-            <button type="button" class="mini-btn" id="lu-all">전체</button>
-            <button type="button" class="mini-btn" id="lu-none">해제</button>
-          </div>
-          <div class="checks scroll-box" id="land-use-filters"></div>
+          <!-- **용도지역 칸은 뺐다** (요구사항 2026-09-10: "실거래
+               표시에서 용지역은 삭제합니다. 항상 전체 표기 함").
+
+               스물다섯 종이 세로로 늘어서 왼쪽 칸의 절반을 먹고 있었고,
+               처음에 셋만 켜져 있어서 나머지 스물둘이 지도에서 빠진 채로
+               시작했다. 땅을 찾는 사람은 대개 '어느 용도지역이냐' 보다
+               '여기 뭐가 거래됐냐' 를 먼저 본다.
+
+               지운 것이 아니라 **조건 자체를 안 건다.** app.js 가
+               state.hasLandUseFilter 를 false 로 두므로 visibleTrades 가
+               이 조건을 통째로 건너뛴다 — 전부 끈 것과는 다르다.
+
+               '실거래 가격' 의 용도지역 고르기는 그대로다. 그쪽은 지도에
+               적히는 중앙값을 정하는 것이라 성격이 다르다. -->
         </div>
         <label class="check">
           <input type="checkbox" id="parcel-only">
@@ -241,11 +238,18 @@
         <div class="info-pop" hidden>
           <p>배율에 따라 시·도 → 시·군 → 구 → 읍·면·동 → 리·동으로 잘게
             나뉩니다.</p>
-          <p><strong>여기서 고른 용도지역은 '실거래 표시' 와 따로 놉니다.</strong>
-            거래 점을 이리저리 걸러 봐도 지도의 중앙값은 그대로 남습니다 —
-            바탕이 흔들리면 견줄 수가 없습니다.</p>
+          <p><strong>여기서 고른 용도지역은 지도의 거래 점과 따로 놉니다.</strong>
+            거래 점은 용도지역으로 거르지 않습니다 — 언제나 전부 보입니다.
+            여기서 고르는 것은 지도에 <strong>적히는 중앙값</strong>이
+            어느 용도지역의 것이냐입니다.</p>
           <p>여러 개를 켜면 거래 건수로 가중해 섞습니다. 중앙값끼리 섞은
             것은 근사입니다 — 말풍선에 그렇게 적습니다.</p>
+          <!-- 이 안내는 거래 점 필터에 붙어 있었는데, 그 칸을 없애면서
+               (요구사항 2026-09-10) 여기로 옮겼다. 관리지역을 실제로
+               마주치는 곳이 이제 여기다. -->
+          <p><strong>관리지역</strong>은 2006~2010년 거래에만 있습니다.
+            지금의 계획관리·생산관리·보전관리로 나뉘기 전이라 그냥
+            '관리지역'으로 신고된 것입니다.</p>
         </div>
         <!-- 분류는 **내보내기가 준 나무를 그대로** 그린다 (zone_tree).
              국토계획법 §36① · 시행령 §30① · 같은 법 §38 순서다.
@@ -689,6 +693,6 @@
 <script src="/lib/supabase-init.js?v=20260905a"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
-<script src="/app/gate.js?v=20260910x"></script>
+<script src="/app/gate.js?v=20260910y"></script>
 </body>
 </html>

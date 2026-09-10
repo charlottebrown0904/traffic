@@ -11,11 +11,6 @@ const QUADRANTS = {
 };
 const KIND_LABEL = { land: '토지', factory: '공장·창고', house: '단독·다가구', commercial: '상업업무용' };
 
-/* 분석이 실제로 쓰는 용도지역. settings.yaml 의 land_use_filter 와 같다.
- * 요구사항(2026-09-07): "자연녹지, 계획관리, 생산관리 지역만 보면
- * 됩니다." 한 곳에 적어 두고 기본값과 '분석 대상만' 단추가 같이 쓴다 —
- * 두 군데 적으면 언젠가 하나만 고쳐 놓고 서로 다른 것을 가리킨다. */
-const CORE_LAND_USE = /계획관리|생산관리|자연녹지/;
 const TOKEN_KEY = 'redt.token.v1';
 const CONFIG = window.REDT_CONFIG || {};
 const API = CONFIG.apiBase || '';
@@ -509,7 +504,6 @@ function buildFilters() {
    * 유일한 단서가 지목이라, 지목으로 개발단계를 갈라 놓고 고르게 한다.
    *
    * 칸은 자료에서 만든다. 없는 것은 칸도 안 생긴다. */
-  const luBox = $('#land-use-filters');
   const landBox = document.getElementById('land-box');
   const stageMix = state.meta.stage_mix || {};
   const luMix = state.meta.land_use_mix || {};
@@ -524,28 +518,6 @@ function buildFilters() {
   }
 
   const nfmt = (v) => v.toLocaleString('ko-KR');
-  const checkRow = (box, key, text, n, set, title) => {
-    const label = el('label', 'check');
-    if (title) label.title = title;
-    const input = el('input');
-    input.type = 'checkbox';
-    input.checked = set.has(key);
-    input.dataset.key = key;
-    input.addEventListener('change', () => {
-      input.checked ? set.add(key) : set.delete(key);
-      // 토지 하위 조건을 켰는데 토지가 꺼져 있으면 아무것도 안 보인다.
-      if (input.checked && set === state.activeLandUse) {
-        ensureLandOn();
-      }
-      refreshMap();
-    });
-    const span = el('span');
-    span.innerHTML = text + (typeof n === 'number'
-      ? ` <span class="n">${nfmt(n)}건</span>` : '');
-    label.append(input, span);
-    box.append(label);
-    return input;
-  };
 
   // 개발단계 칸은 뺐다 (요구사항 2026-09-09: "토지-개발단계는 선택
   // 제외"). state.hasStageFilter 가 false 로 남으므로 visibleTrades 가
@@ -582,39 +554,20 @@ function buildFilters() {
     });
   }
 
-  // 용도지역 — 25종이라 많은 것부터 늘어놓는다.
+  // 용도지역 칸은 뺐다 (요구사항 2026-09-10: "실거래 표시에서 용지역은
+  // 삭제합니다. 항상 전체 표기 함").
   //
-  // **처음에는 세 지역만 켠다.** 요구사항(2026-09-07): "자연녹지,
-  // 계획관리, 생산관리 지역만 보면 됩니다." 분석이 쓰는 것도 이 셋이라
-  // (settings.yaml 의 land_use_filter) 화면과 판정표가 같은 표본을
-  // 보게 된다. 나머지 22종은 칸을 만들어 두되 꺼 둔다 — 지우지 않는
-  // 이유는 '농림지역은 왜 안 보이나' 를 스스로 확인하실 수 있어야
-  // 하기 때문이다.
-  const luNames = Object.keys(luMix).sort((a, b) => luMix[b] - luMix[a]);
-  luNames.forEach((name) => {
-    if (CORE_LAND_USE.test(name)) state.activeLandUse.add(name);
-    checkRow(luBox, name, name, luMix[name], state.activeLandUse);
-  });
-  state.hasLandUseFilter = luNames.length > 0;
-  const syncLuBoxes = () => {
-    luBox.querySelectorAll('input').forEach((i) => {
-      i.checked = state.activeLandUse.has(i.dataset.key);
-    });
-    refreshMap();
-  };
-  $('#lu-all').addEventListener('click', () => {
-    luNames.forEach((n) => state.activeLandUse.add(n));
-    ensureLandOn();
-    syncLuBoxes();
-  });
-  $('#lu-none').addEventListener('click', () => {
-    state.activeLandUse.clear();
-    syncLuBoxes();
-  });
-  // '분석 대상만' 단추는 뺐다 (요구사항 2026-09-09). 분석이 쓰는
-  // 세 가지를 한 번에 고르는 단추였는데, 화면에서 땅을 고르는 사람이
-  // 분석 표본을 맞출 일이 흔치 않다. 기준 자체는 CORE_LAND_USE 에
-  // 그대로 남아 있어 판정표 쪽은 달라지지 않는다.
+  // 스물다섯 종이 세로로 늘어서 왼쪽 칸의 절반을 먹었고, 처음에 셋만
+  // 켜져 있어서 나머지 스물둘이 지도에서 빠진 채로 시작했다.
+  //
+  // **개발단계 때와 같은 방식으로 뺀다** — hasLandUseFilter 를 false 로
+  // 두면 visibleTrades 가 이 조건을 통째로 건너뛴다. 집합을 비우는
+  // 것과는 다르다. 비우면 '전부 끈 것' 이 되어 토지가 하나도 안 보인다.
+  state.hasLandUseFilter = false;
+  state.activeLandUse.clear();
+  // 여전히 뒤에서 쓴다 — 땅값 글자의 용도지역 고르기(lp-groups)는
+  // 그대로다. 그쪽은 지도에 적히는 중앙값을 정하는 것이라 성격이
+  // 다르고, 분석 표본의 기준(CORE_LAND_USE)도 손대지 않는다.
 
   // ── 실거래 연도 — 좌/우 손잡이로 범위 ──
   //

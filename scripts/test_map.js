@@ -1058,9 +1058,13 @@ const FAKE_LEAFLET = () => {
       // stage-filters 는 뺐다 (요구사항 2026-09-09: "토지-개발단계는
       // 선택 제외"). 목록에 남겨 두면 없어진 것을 계속 찾는다.
       trade: ['kind-filters', 'year-from', 'year-to',
-              'road-filter', 'land-use-filters', 'parcel-only']
+              'road-filter', 'parcel-only']
         .filter((id) => !document.getElementById(id)),
-      gone: ['stage-filters', 'lu-core']
+      // 용도지역 칸도 뺐다 (요구사항 2026-09-10: "실거래 표시에서
+      // 용지역은 삭제합니다. 항상 전체 표기 함"). 되살아나면 잡는다 —
+      // 되살아나는 순간 처음 화면에서 스물두 종이 다시 빠진다.
+      gone: ['stage-filters', 'lu-core',
+             'land-use-filters', 'lu-all', 'lu-none']
         .filter((id) => document.getElementById(id)),
       ic: ['tg-year', 'tg-vehicle', 'tier-filters', 'band-legend']
         .filter((id) => !document.getElementById(id)),
@@ -1155,6 +1159,9 @@ const FAKE_LEAFLET = () => {
     // 고장이 아니라 덫이었다. 용도지역·개발단계·도로접은 **토지에만 거는
     // 조건**인데, 물건 종류에서 '토지' 가 꺼져 있으면(처음이 그렇다)
     // 아무리 켜도 걸러낼 토지가 없다. 화면은 아무 말도 안 하고 비어 있다.
+    //
+    // 용도지역 칸은 뺐다 (요구사항 2026-09-10). 덫이 사라진 것은
+    // 아니다 — 도로 접함이 같은 성격의 조건으로 남아 있다.
     await openCat('trade');
     const trap = await page.evaluate(() => {
       const kinds = document.getElementById('kind-filters');
@@ -1163,41 +1170,20 @@ const FAKE_LEAFLET = () => {
       // 일부러 토지를 끈 채로 시작한다 (처음 화면이 그렇다).
       if (land.checked) land.click();
       const before = land.checked;
-      const lu = [...document.querySelectorAll('#land-use-filters input')]
-        .find((i) => /제2종일반주거/.test(i.dataset.key || ''))
-        || document.querySelector('#land-use-filters input');
-      lu.click();
-      return { before, after: land.checked, picked: lu.dataset.key };
+      const rsel = document.getElementById('road-filter');
+      rsel.value = 'ok';
+      rsel.dispatchEvent(new Event('change'));
+      return { before, after: land.checked, picked: rsel.value };
     });
     check('토지가 꺼진 채로 시작한다 (그것이 덫이었다)', trap.before === false);
-    check('용도지역을 켜면 토지도 켜진다',
+    check('도로 접함을 고르면 토지도 켜진다',
           trap.after === true, `${trap.picked} → 토지 ${trap.after}`);
-    // '분석 대상만' 단추는 뺐다 (요구사항 2026-09-09). 대신 '전체'
-    // 단추가 같은 덫에 걸리지 않는지를 본다 — 용도지역을 한꺼번에
-    // 켰는데 토지가 꺼져 있으면 지도는 여전히 비어 있다.
-    const trap2 = await page.evaluate(() => {
-      const kinds = document.getElementById('kind-filters');
-      const land = [...kinds.querySelectorAll('input')]
-        .find((i) => i.dataset.key === 'land');
-      if (land.checked) land.click();
-      // **어질러 놓고 나가지 않는다.** 뒤 절이 '처음 화면' 의 용도지역
-      // 셋을 보므로, 켠 것을 그대로 두면 그 검사가 엉뚱하게 깨진다.
-      document.getElementById('lu-all').click();
-      const got = land.checked;
-      // **처음 상태로 되돌린다.** 앞 절이 제2종일반주거를 일부러 켰는데,
-      // 그대로 두면 '처음에 켜진 것이 셋' 을 보는 뒤 절이 넷을 본다.
-      // 예전에는 '분석 대상만' 단추가 우연히 이 청소를 대신하고 있었다.
-      document.getElementById('lu-none').click();
-      const core = ['계획관리지역', '생산관리지역', '자연녹지지역'];
-      document.querySelectorAll('#land-use-filters input').forEach((i) => {
-        if (core.indexOf(i.dataset.key) >= 0 && !i.checked) i.click();
-      });
-      return got;
-    });
-    check('용도지역 "전체" 단추도 토지를 켠다', trap2);
-    // 뒤 절들이 '처음 화면' 을 본다. 여기서 켠 것을 되돌려 놓는다 —
+    // 뒤 절들이 '처음 화면' 을 본다. 여기서 만진 것을 되돌려 놓는다 —
     // 안 그러면 이 검사가 다음 검사를 깨뜨린다.
     await page.evaluate(() => {
+      const rsel = document.getElementById('road-filter');
+      rsel.value = 'all';
+      rsel.dispatchEvent(new Event('change'));
       const land = [...document.querySelectorAll('#kind-filters input')]
         .find((i) => i.dataset.key === 'land');
       if (land.checked) land.click();
@@ -1856,9 +1842,14 @@ const FAKE_LEAFLET = () => {
         window: pill('window'),
         stat: pill('stat'),
         selects: document.querySelectorAll('#lp-bar select').length,
-        // 왼쪽 필터의 기본값. 요구사항의 셋이어야 한다.
-        rail: [...document.querySelectorAll('#land-use-filters input')]
-          .filter((i) => i.checked).map((i) => i.dataset.key),
+        // 땅값 글자의 용도지역 기본값. 요구사항의 셋이어야 한다.
+        //
+        // **거래 점 필터가 아니라 여기를 본다** (2026-09-10). 거래 점의
+        // 용도지역 칸은 없앴다 — 항상 전체다. 이 셋은 지도에 적히는
+        // 중앙값을 정하는 쪽이고, 그쪽 요구사항은 그대로다.
+        rail: [...document.querySelectorAll('#lp-groups .zone-opt')]
+          .filter((b) => b.getAttribute('aria-pressed') === 'true')
+          .map((b) => b.dataset.group),
       };
     });
     check('땅값 막대가 보인다 (자료가 있을 때만)', lpUi.barShown);
@@ -1866,11 +1857,19 @@ const FAKE_LEAFLET = () => {
           lpUi.selects === 0, `남은 select ${lpUi.selects}개`);
     check('용도지역 칩을 없앴다 (왼쪽 필터 하나로 합쳤다)', !lpUi.groupChip);
     // 요구사항: "초기는 계획관리, 자연녹지, 생산관리 기준".
-    check('처음 켜진 용도지역이 계획관리·생산관리·자연녹지 셋이다',
-          lpUi.rail.length === 3
-          && ['계획관리', '생산관리', '자연녹지']
-            .every((g) => lpUi.rail.some((n) => n.indexOf(g) >= 0)),
+    //
+    // 셋 중 **자료에 있는 것만** 켜진다. 이 검사 자료에는 생산관리가
+    // 없으므로 둘이 맞다 — 없는 칸을 켜라고 요구하면 검사가 화면이
+    // 아니라 자료를 보게 된다.
+    check('땅값 글자가 처음에 분석이 쓰는 용도지역으로 선다',
+          lpUi.rail.length > 0
+          && lpUi.rail.every((n) =>
+            ['계획관리', '생산관리', '자연녹지'].some((g) => n.indexOf(g) >= 0)),
           lpUi.rail.join(','));
+    // 나머지는 꺼져 있어야 한다 — 농림까지 켜진 채로 시작하면 처음
+    // 화면의 중앙값이 무엇을 섞은 것인지 알 수 없다.
+    check('농림·주거는 꺼진 채로 시작한다',
+          !lpUi.rail.some((n) => /농림|주거/.test(n)), lpUi.rail.join(','));
     check('최근 기준을 기간과 건수 둘 다 준다',
           lpUi.windows.includes('y3') && lpUi.windows.includes('c20'),
           lpUi.windows.join(','));
@@ -2208,15 +2207,20 @@ const FAKE_LEAFLET = () => {
           !nag.hidden && nag.group === '자연녹지'
           && /자연녹지\(도시지역\)/.test(nag.text),
           `단추 "${nag.text}"`);
-    // 글자만 띄우고 안 되면 더 나쁘다. **왼쪽 필터가 실제로 켜져야 한다.**
+    // 글자만 띄우고 안 되면 더 나쁘다. **칸이 실제로 켜져야 한다.**
+    //
+    // 이 단추가 켜는 것은 땅값 글자의 용도지역(lp-groups)이다. 예전에는
+    // 거래 점 필터(land-use-filters)를 읽고 있었는데, 거기에도 자연녹지가
+    // 기본으로 켜져 있어서 **단추를 안 눌러도 통과할** 검사였다.
     await page.evaluate(() => document.getElementById('lp-swap').click());
     await page.waitForTimeout(200);
     const swapped = await page.evaluate(() => ({
-      rail: [...document.querySelectorAll('#land-use-filters input')]
-        .filter((i) => i.checked).map((i) => i.dataset.key),
+      rail: [...document.querySelectorAll('#lp-groups .zone-opt')]
+        .filter((b) => b.getAttribute('aria-pressed') === 'true')
+        .map((b) => b.dataset.group),
       peek: window.__lp || {},
     }));
-    check('누르면 왼쪽 필터가 실제로 켜진다',
+    check('누르면 그 용도지역이 실제로 켜진다',
           swapped.rail.some((n) => n.indexOf('자연녹지') >= 0)
           && (swapped.peek.groups || []).includes('자연녹지'),
           `${swapped.rail.join(',')} → ${(swapped.peek.groups || []).join(',')}`);
@@ -3604,7 +3608,10 @@ const FAKE_LEAFLET = () => {
       await page2.waitForTimeout(300);
 
       const styles = await page2.evaluate(() => window.__tradeStyles || []);
-      check('고른 기간의 거래가 그려진다', styles.length === 7,
+      // 여덟이다 — 공장계 넷 + 토지 넷. 용도지역 칸을 없애기 전에는
+      // 일곱이었다 (요구사항 2026-09-10). 농림지역 한 건이 기본값에서
+      // 걸러져 안 보였던 것이고, 그 한 건이 이 숫자로 돌아왔다.
+      check('고른 기간의 거래가 그려진다', styles.length === 8,
             `${styles.length}개`);
       // 반경 밖(무안군) 거래도 그려져야 한다. 예전에는 좌표가 아예 없어
       // 지도에서 통째로 빠졌다.
@@ -3716,65 +3723,43 @@ const FAKE_LEAFLET = () => {
       });
       await page2.waitForTimeout(300);
 
-      /* ── 토지: 개발단계 · 용도지역 (2026-09-07 지시) ── */
+      /* ── 토지: 용도지역은 **거르지 않는다** (요구사항 2026-09-10) ──
+       *
+       * "실거래 표시에서 용지역은 삭제합니다. (항상 전체 표기 함)".
+       *
+       * 전에는 스물다섯 종 중 셋만 켜진 채로 시작해서, 처음 화면에서
+       * 농림지역 거래가 통째로 빠져 있었다. 칸을 없앤 것이 아니라
+       * **조건을 안 거는 것**이라, 켜고 끌 것 없이 다 보여야 한다. */
       const landUi = await page2.evaluate(() => ({
         hidden: document.getElementById('land-box').hidden,
-        uses: [...document.querySelectorAll('#land-use-filters label')]
-          .map((l) => l.textContent.replace(/\s+/g, ' ').trim()),
+        box: !!document.getElementById('land-use-filters'),
+        all: !!document.getElementById('lu-all'),
+        none: !!document.getElementById('lu-none'),
+        road: !!document.getElementById('road-filter'),
       }));
+      // 도로 접함은 여기 남아 있으므로 묶음 자체는 그대로 선다.
       check('토지 필터 묶음이 보인다', landUi.hidden === false);
-      // 개발단계 칸은 뺐다 (요구사항 2026-09-09).
-      check('용도지역이 많은 것부터 늘어선다',
-            landUi.uses[0].startsWith('계획관리지역')
-            && landUi.uses.length === 4,
-            landUi.uses.join(' | '));
-      // 처음에는 세 지역만 켜져 있어야 한다 (2026-09-07 지시).
-      const luOn = await page2.evaluate(() =>
-        [...document.querySelectorAll('#land-use-filters input')]
-          .filter((i) => i.checked).map((i) => i.dataset.key));
-      check('처음에 계획관리·자연녹지만 켜져 있다',
-            luOn.includes('계획관리지역') && luOn.includes('자연녹지지역')
-            && !luOn.includes('농림지역') && !luOn.includes('제2종일반주거지역'),
-            luOn.join(','));
+      check('도로 접함은 그대로 있다', landUi.road);
+      check('용도지역 칸이 없다', !landUi.box && !landUi.all && !landUi.none,
+            `칸 ${landUi.box} · 전체 ${landUi.all} · 해제 ${landUi.none}`);
 
-      // 아래 검사들은 토지가 다 보이는 상태를 가정한다. 기본값이
-      // 세 지역만이므로 먼저 전체를 켠다.
-      await page2.evaluate(() => document.getElementById('lu-all').click());
-      await page2.waitForTimeout(300);
-
-      // 용도지역으로 걸러 본다. **공장·창고는 그대로여야 한다** —
-      // 토지 칸을 만졌는데 공장이 사라지면 화면을 믿을 수 없다.
-      await page2.evaluate(() => {
-        document.getElementById('lu-none').click();
+      // 아무것도 안 만졌는데 네 건이 다 보인다 — 계획관리 둘(2024·2025),
+      // 농림 하나, 자연녹지 하나. **농림이 들어 있는 것이 핵심이다**:
+      // 예전 기본값에서는 이 한 건이 빠져 있었다.
+      const allLu = await page2.evaluate(() => {
+        const t = (window.__tradeStyles || []);
+        return {
+          land: t.filter((x) => x.kind === 'land').length,
+          factory: t.filter((x) => x.kind === 'factory').length,
+          nong: t.filter((x) => /농림/.test(x.popup || '')).length,
+        };
       });
-      await page2.waitForTimeout(300);
-      const noLu = await page2.evaluate(() => (window.__tradeStyles || []).slice());
-      check('용도지역을 모두 끄면 토지가 사라진다',
-            noLu.filter((x) => x.kind === 'land').length === 0
-            && noLu.filter((x) => x.kind === 'factory').length === 4,
-            `토지 ${noLu.filter((x) => x.kind === 'land').length} · 공장계 ${noLu.filter((x) => x.kind === 'factory').length}`);
-
-      // '분석 대상만' 단추는 뺐다 (요구사항 2026-09-09). 칸을 직접
-      // 골라도 같은 자리에 닿는지를 본다 — 단추가 없어졌다고 **고르는
-      // 일 자체가 안 되면** 그것은 다른 문제다.
-      await page2.evaluate(() => {
-        document.querySelectorAll('#land-use-filters input').forEach((i) => {
-          const want = ['계획관리지역', '자연녹지지역'].indexOf(i.dataset.key) >= 0;
-          if (i.checked !== want) i.click();
-        });
-      });
-      await page2.waitForTimeout(300);
-      const core = await page2.evaluate(() => ({
-        on: [...document.querySelectorAll('#land-use-filters input')]
-          .filter((i) => i.checked).map((i) => i.dataset.key),
-        land: (window.__tradeStyles || []).filter((x) => x.kind === 'land').length,
-      }));
-      check('용도지역을 골라 켤 수 있다',
-            core.on.includes('계획관리지역') && core.on.includes('자연녹지지역')
-            && !core.on.includes('농림지역'),
-            core.on.join(','));
-      // 계획관리 둘(2024·2025) + 자연녹지 하나.
-      check('그 선택이 지도에 반영된다', core.land === 3, `토지 ${core.land}건`);
+      check('처음부터 모든 용도지역이 보인다 (걸러내지 않는다)',
+            allLu.land === 4, `토지 ${allLu.land}건`);
+      check('예전 기본값에서 빠져 있던 농림지역도 보인다',
+            allLu.nong === 1, `농림 ${allLu.nong}건`);
+      check('공장·창고는 그대로다', allLu.factory === 4,
+            `공장계 ${allLu.factory}건`);
 
       // 말풍선이 개발단계를 적는가.
       const landPop = await page2.evaluate(() =>
@@ -3782,9 +3767,6 @@ const FAKE_LEAFLET = () => {
       check('말풍선이 지목 옆에 개발단계를 적는다',
             !!landPop && /\(원지\)|\(개발완료\)/.test(landPop.popup),
             landPop ? (landPop.popup.match(/지목[^<]*<[^>]*>[^<]*</) || [''])[0] : '없음');
-
-      await page2.evaluate(() => document.getElementById('lu-all').click());
-      await page2.waitForTimeout(300);
 
       /* ── 토지: 도로 접함 (2026-09-07 지시) ──
        * "도로를 접하는 가가 제일 중요합니다." 실측이 크기까지 확인했다 —

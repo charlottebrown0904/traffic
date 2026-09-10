@@ -538,6 +538,32 @@ if _vj.exists():
           f"함수가 서울(icn1)에 고정돼 있다 (지금 {_cfg.get('regions')!r}) — "
           "한국 공공 API 가 해외 IP 를 막는다")
 
+    # 브이월드 주소는 **하나만** 살려 둔다 (요구사항 2026-09-10:
+    # "toji-gogo.vercel.app/app 에서의 연결은 이제 막습니다").
+    #
+    # 화면(gate.js)에서 막는 것으로는 모자란다. 그 주소로도 /api/tile 이
+    # 그대로 열려 있고, 그 함수가 쓰는 브이월드 키는 하루 3만 건짜리
+    # 자원이다 — 이 프로젝트에서 가장 자주 병목이 되는 것이다. 그래서
+    # 자바스크립트가 아니라 **경로 전체**를 서버에서 돌려보낸다.
+    #
+    # 308(영구) 이 아니라 307(임시) 이다. 영구 리디렉션은 브라우저가
+    # 세게 캐시해서, 나중에 되돌리려 해도 이미 한 번 들른 사람은 영영
+    # 넘어간다.
+    _reds = _cfg.get("redirects") or []
+    _blocked = [r for r in _reds
+                if any(h.get("type") == "host"
+                       and "vercel.app" in str(h.get("value", ""))
+                       for h in (r.get("has") or []))]
+    check(bool(_blocked),
+          "vercel.app 주소가 toji.fyi 로 넘어간다 (브이월드 키가 걸려 있다)")
+    if _blocked:
+        _r = _blocked[0]
+        check(_r.get("source") == "/:path*"
+              and str(_r.get("destination", "")).startswith("https://toji.fyi/"),
+              f"/app 만이 아니라 경로 전체를 넘긴다 (지금 {_r.get('source')!r})")
+        check(_r.get("permanent") is False,
+              "임시(307) 다 — 영구는 브라우저가 캐시해서 되돌릴 수 없다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
