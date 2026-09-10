@@ -287,26 +287,66 @@ def deg_box(z: int, x: int, y: int) -> tuple[float, float, float, float]:
 # 받아 Leaflet 이 그리게 하는 길이 있다. 필지 하나를 눌렀을 때 이미
 # 그렇게 하고 있다 (86 꼭짓점 · 2.2KB). 관건은 **화면 하나에 몇 개가
 # 오고 몇 바이트인가** 다. 그것을 모르고 붙이면 폰이 멎는다.
+def slim(text: str) -> tuple[int, int, int]:
+    """받은 GeoJSON 을 (원본, 속성 버림, 좌표 6자리) 세 크기로 잰다.
+
+    지금 화면에 필요한 것은 **선 하나**다. 지번·면적·소유 구분은
+    누른 뒤에 따로 받는다. 그것을 버리고 좌표를 깎으면 얼마나
+    줄어드는지 — 붙일 수 있는지 없는지가 이 숫자에 달렸다.
+    """
+    import json
+    try:
+        d = json.loads(text)
+    except Exception:                                        # noqa: BLE001
+        return len(text), 0, 0
+    feats = d.get("features") or []
+    bare = {"type": "FeatureCollection",
+            "features": [{"type": "Feature", "properties": {},
+                          "geometry": f.get("geometry")} for f in feats]}
+    raw = len(json.dumps(bare, separators=(",", ":")))
+
+    def cut(v):
+        return [cut(i) for i in v] if isinstance(v, list) \
+            else round(v, 6)
+    for f in bare["features"]:
+        g = f.get("geometry") or {}
+        if g.get("coordinates") is not None:
+            g["coordinates"] = cut(g["coordinates"])
+    six = len(json.dumps(bare, separators=(",", ":")))
+    return len(text), raw, six
+
+
 def wfs_cost() -> None:
     print("  WFS 로 도형째 받으면 얼마인가 (화면 하나 기준)")
     if not TOKEN:
         print("    건너뜀 — 중계기 토큰이 없습니다")
         return
+    print("    받은 것 → 속성 버림 → 좌표 6자리")
     for z in (14, 15, 16, 17):
         # 폰 화면 한 장은 대략 타일 두 장 × 네 장이다. 그만큼의 네모.
         x, y = tile_xy(LAT, LON, z)
         w1, s1, _, _ = deg_box(z, x, y)
         _, _, e2, n2 = deg_box(z, x + 1, y - 3)
         box = f"{w1},{s1},{e2},{n2}"
-        q = ("SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0"
-             "&TYPENAME=lp_pa_cbnd_bubun&SRSNAME=EPSG:4326"
-             "&OUTPUT=application/json&MAXFEATURES=1000"
-             f"&BBOX={box}")
-        code, body, kind = relay_bytes("https://api.vworld.kr/req/wfs?" + q)
+        base = ("SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0"
+                "&TYPENAME=lp_pa_cbnd_bubun&SRSNAME=EPSG:4326"
+                f"&BBOX={box}")
+
+        # 몇 개가 실제로 있는가. MAXFEATURES 로 잘린 것과 구분한다.
+        code, body, _ = relay_bytes("https://api.vworld.kr/req/wfs?"
+                                    + base + "&RESULTTYPE=hits")
+        hits = re.search(r'numberOfFeatures="(\d+)"|numberMatched="(\d+)"',
+                         body.decode("utf-8", "replace"))
+        real = (hits.group(1) or hits.group(2)) if hits else "?"
+
+        code, body, _ = relay_bytes(
+            "https://api.vworld.kr/req/wfs?" + base
+            + "&OUTPUT=application/json&MAXFEATURES=1000")
         text = body.decode("utf-8", "replace")
         n = text.count('"type":"Feature"') or text.count('"type": "Feature"')
-        head = "" if n else "  " + show(text, 140)
-        print(f"    z={z:<3} http={code} {len(body):>8,}B  필지 {n:>4}개{head}")
+        got, bare, six = slim(text)
+        print(f"    z={z:<3} 실제 {real:>6}필지 · 받은 {n:>4}개  "
+              f"{got:>8,}B → {bare:>8,}B → {six:>8,}B")
 
 
 def main() -> int:
