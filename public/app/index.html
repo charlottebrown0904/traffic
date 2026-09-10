@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260910t">
+<link rel="stylesheet" href="/app/style.css?v=20260910u">
 </head>
 <body>
 
@@ -27,7 +27,34 @@
     <span aria-hidden="true">←</span> 홈으로
   </a>
   <div class="brand">
-    <span class="mark" aria-hidden="true"></span>
+    <!-- 아이콘 (요구사항 2026-09-10 — 빈 사각형을 걷어냅니다).
+         파일(/icon.svg)을 부르지 않고 여기 직접 그립니다. 머리띠에
+         늘 붙어 있는 그림이라 요청을 한 번 더 내보낼 이유가 없고,
+         SVG 라 어느 화면에서도 안 깨집니다. -->
+    <svg class="mark" viewBox="0 0 512 512" role="img" aria-label="토지 고고">
+      <defs>
+        <linearGradient id="mark-bg" x1="0" y1="0" x2=".35" y2="1">
+          <stop offset="0" stop-color="#F0E2D0"/>
+          <stop offset="1" stop-color="#CFAE8A"/>
+        </linearGradient>
+        <clipPath id="mark-plot">
+          <path d="M256 138 L424 256 L256 374 L88 256 Z"/>
+        </clipPath>
+      </defs>
+      <rect width="512" height="512" rx="112" fill="url(#mark-bg)"/>
+      <!-- 필지: 위에서 내려다본 땅 -->
+      <path d="M256 138 L424 256 L256 374 L88 256 Z" fill="#FFF8F0"/>
+      <g clip-path="url(#mark-plot)" stroke="#E5D3BE" stroke-width="6">
+        <path d="M-21 97 L315 333"/>
+        <path d="M37 55 L374 292"/>
+      </g>
+      <!-- 길이 땅을 가로질러 위로 뻗는다 (교통량 = 미래가치) -->
+      <g clip-path="url(#mark-plot)">
+        <path d="M133.3 342.1 L303.6 209.9 L320.4 229.9 L166.7 381.9 Z"
+              fill="#8A6547"/>
+      </g>
+      <path d="M282.4 200.4 L400 146 L326.2 252.4 Z" fill="#8A6547"/>
+    </svg>
     <div>
       <div class="brand-name">토지 고고</div>
       <div class="brand-sub">전국 토지 실거래 · 필지 진단</div>
@@ -662,6 +689,6 @@
 <script src="/lib/supabase-init.js?v=20260905a"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
-<script src="/app/gate.js?v=20260910t"></script>
+<script src="/app/gate.js?v=20260910u"></script>
 </body>
 </html>

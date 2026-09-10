@@ -181,10 +181,12 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
   background:var(--surface); border-bottom:1px solid var(--border);
 }
 .brand{display:flex; align-items:center; gap:.65rem}
+/* 아이콘 (요구사항 2026-09-10). 예전에는 accent 색 사각형 하나였고
+   쓰이지도 않는 mask 가 붙어 있었다 — 그것을 걷어내고 그림을 넣는다.
+   display:block 이 없으면 SVG 가 인라인 요소라 아래에 여백이 생겨
+   글자와 가운데가 안 맞는다. */
 .mark{
-  width:1.6rem; height:1.6rem; border-radius:.35rem; flex:0 0 auto;
-  background:var(--accent);
-  -webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  width:1.6rem; height:1.6rem; flex:0 0 auto; display:block;
 }
 .brand-name{font-weight:700; font-size:.95rem; line-height:1.2}
 .brand-sub{font-size:.72rem; color:var(--faint); line-height:1.2}

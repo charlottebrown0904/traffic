@@ -3019,6 +3019,30 @@ const FAKE_LEAFLET = () => {
           ? drawn[0].__opts.interactive : null,
       };
     });
+    // 머리띠 아이콘 (요구사항 2026-09-10 — 빈 사각형을 걷어냅니다).
+    const mark = await page.evaluate(() => {
+      const m = document.querySelector('.brand .mark');
+      if (!m) return null;
+      const cs = getComputedStyle(m);
+      return {
+        tag: m.tagName.toLowerCase(),
+        paths: m.querySelectorAll('path').length,
+        w: Math.round(m.getBoundingClientRect().width),
+        h: Math.round(m.getBoundingClientRect().height),
+        // 예전에는 accent 색으로 칠한 빈 네모였다.
+        bg: cs.backgroundColor,
+      };
+    });
+    check('머리띠에 아이콘이 있다 (빈 사각형이 아니다)',
+          !!mark && mark.tag === 'svg' && mark.paths >= 4,
+          mark ? `${mark.tag} · path ${mark.paths}개` : '없음');
+    check('아이콘이 찌그러지지 않는다 (정사각)',
+          !!mark && mark.w === mark.h && mark.w > 0,
+          mark ? `${mark.w}×${mark.h}` : '없음');
+    check('색 사각형이 아니다 (배경으로 안 칠한다)',
+          !!mark && /rgba\(0, 0, 0, 0\)|transparent/.test(mark.bg),
+          mark ? mark.bg : '없음');
+
     check('필지경계 스위치가 있다', cadLayer.hasBox);
     check('기본은 켬이다', cadLayer.on);
     check('빈 그림을 주는 타일 길로 안 돌아갔다',
