@@ -157,6 +157,18 @@ def cmd_probe_landprice(args):
     landprice.probe()
 
 
+def cmd_value_check(args):
+    """'현재 가치' 2판 격차율 표를 평가서 원장과 견준다."""
+    from . import valuation as V
+    c = V.check_ledger()
+    print(f"원장 {c['n']}건 · 예측/관측 중앙 {c['median']}"
+          f" · ±10% {c['within_10']}건 · ±15% {c['within_15']}건")
+    for r in c["rows"]:
+        flag = "  " if 0.85 <= r["ratio"] <= 1.15 else "!!"
+        print(f"  {flag} {r['sigungu']:<10s} {r['use'][:10]:<10s}"
+              f" 평가서 {r['obs']:.3f}  우리 {r['pred']:.3f}  ({r['ratio']:.2f})")
+
+
 def cmd_probe_history(args):
     ex_api.probe_history(args.endpoint, args.date_param)
 
@@ -2366,6 +2378,10 @@ def main(argv=None):
     sub.add_parser("probe-landprice",
                    help="표준지공시지가 API 탐침 — 좌표·연도·용도지역이 오는지"
                    ).set_defaults(func=cmd_probe_landprice)
+
+    sub.add_parser("value-check",
+                   help="'현재 가치' 2판 — 격차율 표를 평가서 41건과 검산"
+                   ).set_defaults(func=cmd_value_check)
 
     p = sub.add_parser("probe-history",
                        help="과거 날짜 조회 가능 범위 판정 (일별 백필 가능 여부)")
