@@ -1234,53 +1234,42 @@ body.picking .leaflet-container{cursor:crosshair}
 
 /* 현재 가치 · 미래 가치 단추 (요구사항 2026-09-10).
  *
- * 축 설명 바로 아래. 프리미엄이라는 것을 **누르기 전에** 알려야 해서
- * 단추 안에 작게 적습니다 — 눌러 보고 나서 유료라는 것을 알게 되면
- * 속은 느낌이 남습니다.
+ * 축 설명 바로 아래. 이 카드에서 **가장 크게 눌릴 자리**라 다른 줄보다
+ * 키우고, 둘 사이도 벌립니다 — 붙어 있으면 폰에서 옆 것을 누릅니다.
  *
- * 둘을 나란히 두고, 열린 설명은 **아래 한 칸**에 냅니다. 단추 안에서
- * 펼치면 두 칸의 높이가 어긋나 화면이 덜컹거립니다. */
+ * 뱃지는 <em> 이 아니라 <span> 입니다. <em> 은 CSS 가 아직 안 붙은
+ * 한순간에 기울어진 글씨로 이름 옆에 붙어 '현재 가치프리미엄' 처럼
+ * 보입니다. 태그 자체로 뜻이 서게 둡니다. */
 .pc-val-row {
-  display: grid; grid-template-columns: 1fr 1fr; gap: .4rem;
-  margin: .55rem 0 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: .7rem;
+  margin: .9rem 0 0;
 }
 .pc-val {
-  display: flex; flex-direction: column; align-items: flex-start; gap: .1rem;
-  padding: .5rem .6rem; border: 1px solid var(--border); border-radius: 9px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: .3rem;
+  padding: .8rem .8rem .75rem;
+  border: 1px solid var(--border); border-radius: 11px;
   background: var(--card); color: var(--fg); cursor: pointer;
   font: inherit; text-align: left; line-height: 1.25;
 }
-.pc-val b { font-size: 12.5px; font-weight: 600; }
-.pc-val em {
-  font-style: normal; font-size: 10px; letter-spacing: .02em;
-  color: var(--on-accent); background: var(--accent);
-  padding: .05rem .3rem; border-radius: 999px;
+.pc-val b { font-size: 14.5px; font-weight: 600; }
+.pc-val .pcv-tag {
+  font-size: 10.5px; letter-spacing: .02em;
+  color: var(--muted); background: var(--accent-soft);
+  border: 1px solid var(--border);
+  padding: .1rem .38rem; border-radius: 999px;
 }
 .pc-val:hover { border-color: var(--accent); }
 .pc-val.is-on {
   border-color: var(--accent); background: var(--accent-soft);
 }
 .pc-val-box {
-  margin: .45rem 0 0; padding: .6rem .7rem;
-  border: 1px solid var(--border); border-radius: 9px;
-  background: var(--accent-soft); font-size: 11.5px;
+  margin: .6rem 0 0; padding: .7rem .8rem;
+  border: 1px solid var(--border); border-radius: 11px;
+  background: var(--accent-soft);
 }
-.pc-val-box h4 { margin: 0; font-size: 12.5px; font-weight: 600; }
-.pc-val-box .pcv-lead { margin: .2rem 0 0; color: var(--muted); line-height: 1.5; }
-.pc-val-box dl { margin: .5rem 0 0; }
-.pc-val-box dt { font-weight: 600; margin-top: .4rem; }
-.pc-val-box dd { margin: .05rem 0 0; color: var(--muted); line-height: 1.55; }
-.pc-val-box strong { color: var(--fg); font-weight: 600; }
-.pc-val-box .pcv-state {
-  margin: .6rem 0 0; display: flex; align-items: center; gap: .35rem;
-  font-weight: 600;
-}
-.pcv-dot {
-  width: .45rem; height: .45rem; border-radius: 50%;
-  background: var(--tg-new); flex: 0 0 auto;
-}
-.pc-val-box .pcv-warn {
-  margin: .35rem 0 0; color: var(--faint); line-height: 1.5;
+.pc-val-box h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.pc-val-box .pcv-soon {
+  margin: .25rem 0 0; font-size: 12px; color: var(--muted);
 }
 
 .pc-zones { margin: .1rem 0 0; padding: 0; list-style: none; }

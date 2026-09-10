@@ -4718,104 +4718,42 @@ function axisNotes() {
 
 /* 현재 가치 · 미래 가치 (요구사항 2026-09-10).
  *
- * 레이더 아래 단추 둘. **아직 값을 못 냅니다** — 그래서 숫자를 안
- * 적습니다. 없는 값을 그럴듯하게 적어 두면 그것이 그대로 근거가 되어
- * 누군가 계약합니다. 대신 **무엇을 근거로 낼 것인가**를 미리 적고,
- * 지금 어디까지 왔는지(감정평가서 몇 건)를 그대로 보여 줍니다.
+ * 레이더 아래 단추 둘. **지금은 이름과 '곧 공개' 뿐입니다.**
  *
- * 두 서비스가 갈리는 지점:
+ * 처음에는 무엇을 근거로 값을 내는지까지 적어 두었는데, 걷어냈습니다.
+ * 그 설명이 곧 유료 전환의 열쇠라서, 정작 값이 없는 지금 미리 풀어
+ * 놓으면 두 번 손해입니다 — 살 이유를 먼저 소비해 버리고, 그때 가서
+ * 근거가 조금이라도 달라지면 앞말과 어긋납니다. 근거를 실제로 손에
+ * 쥔 뒤에 정확히 적습니다.
  *
- *   현재 가치  감정평가사가 이미 내린 판단(경·공매 감정평가서)을 모아,
- *             그들이 쓴 산식을 이 필지에 대입합니다.
- *             → 지금 이 땅이 얼마인가
- *   미래 가치  주변 개발 사건(도로·철도·산단·택지·IC·대기업)의 전후를
- *             전국에서 견줘 상승폭을 뽑고, 현재 가치에 얹습니다.
- *             → 그 뒤에 얼마가 되는가
+ *   현재 가치  감정평가서에서 배운 배율을 이 필지에 대입 → 지금 얼마인가
+ *   미래 가치  주변 개발 사건의 전후 상승폭을 얹음      → 그 뒤에 얼마가 되는가
  *
- * 미래는 현재 위에 서므로 순서가 있습니다. 현재 가치가 서기 전에는
- * 미래 가치를 못 냅니다 — 그 사실도 화면에 적습니다. */
+ * 미래는 현재 위에 서므로 순서가 있습니다. */
 const VALUE_SERVICES = {
-  now: {
-    label: '현재 가치',
-    lead: '감정평가사들이 이미 내린 판단을 모아, 이 필지에 대입합니다.',
-    body: [
-      ['무엇을 배우는가',
-       '경매·공매에 공개된 <strong>감정평가서</strong>입니다. 한 건마다 '
-       + '토지의 조건(용도지역·지구·구역·지목·형상·지세·도로접·면적)과 '
-       + '그 조건에서 평가사가 매긴 <strong>공시지가 대비 배율</strong>이 '
-       + '함께 적혀 있습니다. 우리가 배우는 것은 그 배율입니다.'],
-      ['왜 실거래로는 안 되는가',
-       '실거래는 <strong>거래가 있었던 땅</strong>만 알려 줍니다. 안 팔린 '
-       + '땅이 얼마인지는 말해 주지 않습니다. 감정평가서는 팔리지 않은 '
-       + '땅에도 값을 매긴 기록이라 그 빈칸을 메웁니다.'],
-      ['이 필지에 무엇을 대입하는가',
-       '왼쪽 <strong>토지 정보</strong>에 적힌 그대로입니다 — 용도지역, '
-       + '지구·구역, 지목, 형상, 지세, 도로접면, 면적, 공시지가. '
-       + '평가사가 보는 칸과 같습니다.'],
-    ],
-  },
-  future: {
-    label: '미래 가치',
-    lead: '주변 개발 소식의 전후를 전국에서 견줘, 오를 폭을 추론합니다.',
-    body: [
-      ['무엇을 사건으로 보는가',
-       '도로·철도 개통, 산업단지 지정, 택지지구 지정, 고속도로 IC 신설, '
-       + '대기업 입주입니다. 사건마다 <strong>언제·어디서</strong>가 있어야 '
-       + '전후를 가를 수 있습니다.'],
-      ['어떻게 재는가',
-       '같은 사건을 겪은 전국의 땅을 모아, 사건 <strong>전</strong>과 '
-       + '<strong>후</strong>의 단가를 견줍니다. 이때 사건을 안 겪은 옆 '
-       + '동네를 나란히 놓습니다 — 그래야 <strong>그 사건이 올린 몫</strong>과 '
-       + '전국이 다 같이 오른 몫이 갈립니다.'],
-      ['왜 현재 가치가 먼저인가',
-       '미래 가격은 <strong>현재 가치 × 상승폭</strong>입니다. 바탕이 '
-       + '되는 현재 값이 틀리면 상승폭이 아무리 정확해도 결과가 틀립니다.'],
-    ],
-  },
+  now: { label: '현재 가치' },
+  future: { label: '미래 가치' },
 };
-
-/* 얼마나 배웠는가. 없는 파일이면 0 건이다 — 그것도 사실이므로 그대로
- * 적는다. '준비 중' 이라고만 적으면 한 달 뒤에도 같은 글이라 진척을
- * 알 수 없다. */
-let valueMeta = null;
-let valueMetaAsked = false;
-async function loadValueMeta() {
-  if (valueMetaAsked) return valueMeta;
-  valueMetaAsked = true;
-  try {
-    const r = await fetch('/app/data/appraisal.json');
-    valueMeta = r.ok ? await r.json() : null;
-  } catch (e) { valueMeta = null; }
-  return valueMeta;
-}
 
 function valueButtons() {
   return '<div class="pc-val-row">'
     + Object.entries(VALUE_SERVICES).map(([k, s]) =>
       `<button type="button" class="pc-val" data-val="${k}" aria-expanded="false">`
-      + `<b>${s.label}</b><em>프리미엄</em></button>`).join('')
+      + `<b>${s.label}</b><span class="pcv-tag">준비 중</span></button>`).join('')
     + '</div><div class="pc-val-box" id="pc-val-box" hidden></div>';
 }
 
-function valuePanel(key, meta) {
+function valuePanel(key) {
   const s = VALUE_SERVICES[key];
   if (!s) return '';
-  const n = (meta && Number(meta.n_reports)) || 0;
-  const at = meta && meta.updated_at ? ` · ${escapeHtml(String(meta.updated_at))}` : '';
-  const learned = key === 'now'
-    ? `지금까지 읽은 감정평가서 <strong>${n.toLocaleString('ko-KR')}건</strong>${at}`
-    : '현재 가치가 선 뒤에 엽니다';
-  return `<h4>${s.label}</h4><p class="pcv-lead">${s.lead}</p>`
-    + '<dl>' + s.body.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>'
-    + `<p class="pcv-state"><span class="pcv-dot"></span>준비 중입니다 — ${learned}.</p>`
-    + '<p class="pcv-warn">값이 설 때까지 <strong>숫자를 지어내지 않습니다.</strong> '
-    + '근거 없는 금액 한 줄이 계약 한 건을 만들기 때문입니다.</p>';
+  return `<h4>${s.label}</h4>`
+    + '<p class="pcv-soon">곧 공개합니다.</p>';
 }
 
 /* 카드는 누를 때마다 통째로 다시 그려진다. 그래서 단추에 직접 듣지
  * 않고 문서에 한 번만 건다 — 안 그러면 두 번째 필지부터 안 눌린다. */
 function wireValueButtons() {
-  document.addEventListener('click', async (e) => {
+  document.addEventListener('click', (e) => {
     const btn = e.target.closest && e.target.closest('.pc-val');
     if (!btn) return;
     const box = document.getElementById('pc-val-box');
@@ -4829,9 +4767,7 @@ function wireValueButtons() {
     if (same) { box.hidden = true; box.dataset.open = ''; return; }
     box.dataset.open = key;
     box.hidden = false;
-    box.innerHTML = valuePanel(key, valueMeta);
-    const meta = await loadValueMeta();
-    if (box.dataset.open === key) box.innerHTML = valuePanel(key, meta);
+    box.innerHTML = valuePanel(key);
   });
 }
 

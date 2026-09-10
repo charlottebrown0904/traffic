@@ -2966,26 +2966,34 @@ const FAKE_LEAFLET = () => {
           String((pc.html.match(/class="pc-val"/g) || []).length));
     check('현재 가치 · 미래 가치 라는 이름이다',
           /현재 가치/.test(pc.html) && /미래 가치/.test(pc.html));
-    // 눌러 보고 나서 유료라는 것을 알면 속은 느낌이 남는다.
-    check('누르기 전에 유료라고 적는다', /프리미엄/.test(pc.html));
+    check('누르기 전에 준비 중이라고 적는다', /준비 중/.test(pc.html));
     check('축 설명 바로 아래에 있다',
           pc.html.indexOf('pc-axis-help') < pc.html.indexOf('pc-val-row')
           && pc.html.indexOf('pc-val-row') < pc.html.indexOf('토지 정보'));
-    // 누르면 무엇을 근거로 낼 것인지 나온다. **값은 아직 없다** —
-    // 없는 금액을 지어 적으면 그 한 줄이 계약 한 건을 만든다.
+    // CSS 가 아직 안 붙은 한순간에 <em> 은 기울어진 글씨로 이름에
+    // 붙어 '현재 가치준비 중' 처럼 보인다. 태그로 뜻이 서게 둔다.
+    check('뱃지를 <em> 으로 달지 않는다',
+          !/<em>준비 중<\/em>/.test(pc.html) && /pcv-tag/.test(pc.html));
+    // 근거는 **아직 적지 않는다** — 그 설명이 곧 유료 전환의 열쇠라,
+    // 값이 없는 지금 미리 풀면 살 이유를 먼저 소비해 버린다.
     const vnow = await page.evaluate(async () => {
       document.querySelector('.pc-val[data-val="now"]').click();
       await new Promise((ok) => setTimeout(ok, 150));
       const b = document.getElementById('pc-val-box');
       return { html: b.innerHTML, open: !b.hidden };
     });
-    check('현재 가치를 누르면 설명이 열린다', vnow.open && vnow.html.length > 50);
-    check('감정평가서를 배운다고 적는다', /감정평가서/.test(vnow.html));
-    check('무엇을 대입하는지 적는다 (용도지역·형상·도로접)',
-          /용도지역/.test(vnow.html) && /형상/.test(vnow.html)
-          && /도로접/.test(vnow.html));
-    check('아직 값이 없다는 것을 밝힌다',
-          /준비 중/.test(vnow.html) && /지어내지 않습니다/.test(vnow.html));
+    check('현재 가치를 누르면 열린다', vnow.open === true);
+    check('곧 공개한다고만 적는다',
+          /곧 공개합니다/.test(vnow.html),
+          vnow.html.replace(/<[^>]+>/g, ' ').trim().slice(0, 60));
+    check('근거를 미리 풀지 않는다 (감정평가서·공시지가 배율)',
+          !/감정평가서/.test(vnow.html) && !/배율/.test(vnow.html)
+          && !/실거래/.test(vnow.html),
+          vnow.html.replace(/<[^>]+>/g, ' ').trim().slice(0, 60));
+    // 몇 건 읽었는지도 안 적는다 — 0 건이라고 적으면 아무것도 없다는
+    // 것을 먼저 말하게 된다.
+    check('가진 것이 없다는 것을 세어 보이지 않는다',
+          !/0건/.test(vnow.html) && !/읽은/.test(vnow.html));
     check('없는 금액을 적지 않는다',
           !/[0-9,]+\s*원\/㎡/.test(vnow.html) && !/예상가/.test(vnow.html),
           (vnow.html.match(/[0-9,]+\s*원[^<]*/) || ['없음'])[0]);
@@ -2994,14 +3002,9 @@ const FAKE_LEAFLET = () => {
       await new Promise((ok) => setTimeout(ok, 150));
       return document.getElementById('pc-val-box').innerHTML;
     });
-    check('미래 가치는 개발 사건 전후를 본다고 적는다',
-          /산업단지/.test(vfut) && /전/.test(vfut) && /후/.test(vfut));
-    // 사건을 안 겪은 옆 동네가 없으면 '전국이 다 오른 몫' 과 안 갈린다.
-    check('대조군이 필요하다는 것을 적는다',
-          /안 겪은/.test(vfut),
-          (vfut.match(/[^>]*안 겪은[^<]*/) || ['없음'])[0]);
-    check('미래는 현재 위에 선다고 적는다',
-          /현재 가치가 선 뒤에/.test(vfut));
+    check('미래 가치도 이름과 곧 공개뿐이다',
+          /미래 가치/.test(vfut) && /곧 공개합니다/.test(vfut)
+          && !/산업단지/.test(vfut));
     const vclose = await page.evaluate(async () => {
       document.querySelector('.pc-val[data-val="future"]').click();
       await new Promise((ok) => setTimeout(ok, 100));
