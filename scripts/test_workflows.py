@@ -339,6 +339,22 @@ _dead = sorted(f.name for f in (ROOT / ".github/workflows").glob("*.yml")
 check(not _dead, f"은퇴한 주소가 남아 있지 않다 — {_dead}" if _dead
       else "은퇴한 주소가 남아 있지 않다")
 
+# **모든 워크플로가 올바른 YAML 인가.**
+#
+# 2026-09-10: 탐침 워크플로 안에 heredoc 을 겹쳐 썼다가 YAML 이 깨졌고,
+# 그것을 못 본 채 밀었다. GitHub 은 깨진 워크플로를 조용히 무시한다 —
+# 목록에서 사라질 뿐 아무도 안 알려준다. 여기서 잡는다.
+_broken = []
+for _wf in sorted((ROOT / ".github/workflows").glob("*.yml")):
+    try:
+        _doc = _yamllib.safe_load(_wf.read_text(encoding="utf-8"))
+        if not isinstance(_doc, dict) or "jobs" not in _doc:
+            _broken.append(f"{_wf.name} (jobs 가 없다)")
+    except Exception as _exc:                                # noqa: BLE001
+        _broken.append(f"{_wf.name} — {type(_exc).__name__}")
+check(not _broken, f"워크플로가 전부 올바른 YAML 이다 — {_broken}" if _broken
+      else "워크플로가 전부 올바른 YAML 이다")
+
 print()
 print("7. 라이브 반영 — 브랜치에만 쌓이고 사이트는 그대로이던 것")
 
