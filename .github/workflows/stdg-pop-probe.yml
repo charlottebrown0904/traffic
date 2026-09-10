@@ -1,0 +1,52 @@
+# 행안부 '법정동별(행정동 통반단위) 주민등록 인구 및 세대현황' 을 두드린다.
+#
+# 요구사항 2026-09-10 — 인구가 안 붙는 법정동을 메우려고 신청한 API.
+#
+# 지금 인구는 KOSIS 읍·면·동 표에서 오는데 그것은 **행정동** 단위라,
+# 법정동인 우리 자료와 이름이 안 맞는다 (실측: 동 18.4%, 리 0%).
+#
+# 이 API 는 한 줄에 법정동명과 행정동명이 같이 들어 있다고 돼 있다.
+# 사실이면 대조표가 따로 필요 없고, 인구를 쪼갤 필요도 없다 — 법정동
+# 단위 총인구수가 바로 온다. 칸 목록에 리명도 있어 리 0% 도 같이 풀린다.
+#
+# **짐작하지 않고 두드려 본다.** 이 저장소는 응답 모양을 세 번 틀렸다.
+#
+# 러너는 미국이라 한국 공공 API 가 막힌다. 서울 중계기를 거치고, 키는
+# 중계기 쪽에만 있다 (api/relay.js 가 넣어 준다).
+name: 법정동 인구 API 탐침 (행안부)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 탐침
+        # 주소를 못 찾아도 워크플로를 빨갛게 만들지 않는다. 그것도
+        # 결과이고, 요약에 남아야 다음 수를 정할 수 있다.
+        run: python scripts/stdg_pop_probe.py 2>&1 | tee /tmp/probe.log || true
+      - name: 실행 요약
+        if: always()
+        run: |
+          {
+            echo "## 법정동 인구 API 탐침"
+            echo
+            echo '```'
+            cat /tmp/probe.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
