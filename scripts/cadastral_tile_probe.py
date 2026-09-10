@@ -34,7 +34,9 @@ BASE = os.environ.get("BASE", "https://toji.fyi")
 TOKEN = os.environ.get("TOKEN", "")
 TIMEOUT = 45
 
-# 안성 한 점을 덮는 타일. 배율마다 좌표가 다르다.
+# 안성 한 점. 필지가 확실히 있는 자리다.
+LAT, LON = 37.0080, 127.2797
+# 그 자리를 덮는 타일. 배율마다 좌표가 다르다.
 TILES = [(14, 13984, 6376), (15, 27969, 12753), (17, 111877, 51013)]
 
 PNG = b"\x89PNG\r\n\x1a\n"
@@ -241,9 +243,12 @@ def variants() -> None:
     for name in ("lp_pa_cbnd_bubun", "lp_pa_cbnd_bonbun", "dt_d002"):
         print(f"     {name:<20} {wms(name, box3857)}")
 
-    print("   · 더 깊이 들어가 본다 (축척 제한이 있는가)")
-    for zz, xx, yy in DEEPER:
-        print(f"     z={zz:<3} {wms('lp_pa_cbnd_bubun', bbox(zz, xx, yy))}")
+    print("   · 배율을 촘촘히 훑는다 (어디서부터 그리는가)")
+    for zz in range(14, 21):
+        xx, yy = tile_xy(LAT, LON, zz)
+        denom = 156543.03392 * math.cos(math.radians(LAT)) / 2 ** zz / 0.00028
+        print(f"     z={zz:<3} 1:{denom:>7,.0f}  "
+              f"{wms('lp_pa_cbnd_bubun', bbox(zz, xx, yy))}")
 
     print("   · 좌표계와 판(version)을 바꿔 본다 (배율 15)")
     # WMS 1.3.0 의 EPSG:4326 은 축 순서가 위도,경도다. 3857 네모를
@@ -257,6 +262,14 @@ def variants() -> None:
     print(f"     1.3.0 CRS=5179     {wms('lp_pa_cbnd_bubun', box3857, crs='EPSG:5179')}")
 
 
+def tile_xy(lat: float, lon: float, z: int) -> tuple[int, int]:
+    n = 2 ** z
+    x = int((lon + 180.0) / 360.0 * n)
+    r = math.radians(lat)
+    y = int((1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * n)
+    return x, y
+
+
 def deg_box(z: int, x: int, y: int) -> tuple[float, float, float, float]:
     """타일 좌표를 위경도 네모로. (서, 남, 동, 북)"""
     n = 2 ** z
@@ -265,6 +278,35 @@ def deg_box(z: int, x: int, y: int) -> tuple[float, float, float, float]:
     lat1 = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n))))
     lat2 = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
     return lon1, lat1, lon2, lat2
+
+
+
+# ── ④ 대안: 선을 벡터로 받아 우리가 그린다 ────────────────────
+#
+# WMS 가 얕은 배율에서 빈 그림을 준다면, 같은 자료를 **WFS 로 도형째**
+# 받아 Leaflet 이 그리게 하는 길이 있다. 필지 하나를 눌렀을 때 이미
+# 그렇게 하고 있다 (86 꼭짓점 · 2.2KB). 관건은 **화면 하나에 몇 개가
+# 오고 몇 바이트인가** 다. 그것을 모르고 붙이면 폰이 멎는다.
+def wfs_cost() -> None:
+    print("  WFS 로 도형째 받으면 얼마인가 (화면 하나 기준)")
+    if not TOKEN:
+        print("    건너뜀 — 중계기 토큰이 없습니다")
+        return
+    for z in (14, 15, 16, 17):
+        # 폰 화면 한 장은 대략 타일 두 장 × 네 장이다. 그만큼의 네모.
+        x, y = tile_xy(LAT, LON, z)
+        w1, s1, _, _ = deg_box(z, x, y)
+        _, _, e2, n2 = deg_box(z, x + 1, y - 3)
+        box = f"{w1},{s1},{e2},{n2}"
+        q = ("SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0"
+             "&TYPENAME=lp_pa_cbnd_bubun&SRSNAME=EPSG:4326"
+             "&OUTPUT=application/json&MAXFEATURES=1000"
+             f"&BBOX={box}")
+        code, body, kind = relay_bytes("https://api.vworld.kr/req/wfs?" + q)
+        text = body.decode("utf-8", "replace")
+        n = text.count('"type":"Feature"') or text.count('"type": "Feature"')
+        head = "" if n else "  " + show(text, 140)
+        print(f"    z={z:<3} http={code} {len(body):>8,}B  필지 {n:>4}개{head}")
 
 
 def main() -> int:
@@ -278,6 +320,9 @@ def main() -> int:
     print()
     print("③ 이름이 맞는가")
     capabilities()
+    print()
+    print("④ 대안 — 벡터로 받으면 얼마인가")
+    wfs_cost()
     print()
 
     zoning_varies = len(set(zoning)) > 1
