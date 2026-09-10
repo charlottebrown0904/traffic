@@ -33,6 +33,11 @@ jobs:
     env:
       BASE: ${{ inputs.base }}
     steps:
+      # **저장소를 받는다.** 이 점검은 오랫동안 curl 만 썼기에 checkout 이
+      # 없었다. 6-D 가 스크립트를 부르면서 필요해졌다 — 없으면
+      # "can't open file … live_probe.py" 로 죽는다 (run 11 실측).
+      - uses: actions/checkout@v4
+
       - name: 0. 먼저 열리는가 (TLS·DNS)
         run: |
           # **사이트가 안 열릴 때 점검이 깨지면 안 된다.** 예전에는 curl 이

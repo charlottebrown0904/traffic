@@ -355,6 +355,20 @@ for _wf in sorted((ROOT / ".github/workflows").glob("*.yml")):
 check(not _broken, f"워크플로가 전부 올바른 YAML 이다 — {_broken}" if _broken
       else "워크플로가 전부 올바른 YAML 이다")
 
+# **저장소 파일을 부르면 checkout 이 있어야 한다.**
+#
+# sitecheck 은 오랫동안 curl 만 써서 checkout 이 없었다. 거기에
+# scripts/live_probe.py 를 부르는 단계를 붙였더니 러너에 그 파일이
+# 없어 죽었다 (run 11). 눈으로는 안 보이는 짝이라 검사로 묶는다.
+for _wf in sorted((ROOT / ".github/workflows").glob("*.yml")):
+    _txt = _wf.read_text(encoding="utf-8")
+    _uses_repo = ("scripts/" in _txt or "src/redt" in _txt
+                  or "python -m redt" in _txt)
+    if not _uses_repo:
+        continue
+    check("actions/checkout" in _txt,
+          f"{_wf.name} 이 저장소 파일을 부르니 checkout 이 있다")
+
 print()
 print("7. 라이브 반영 — 브랜치에만 쌓이고 사이트는 그대로이던 것")
 
