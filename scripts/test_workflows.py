@@ -541,28 +541,41 @@ if _vj.exists():
     # 브이월드 주소는 **하나만** 살려 둔다 (요구사항 2026-09-10:
     # "toji-gogo.vercel.app 주소 입력 시 연결 안되도록").
     #
-    # ## 리디렉션으로 막으려다 오히려 열어 뒀다 (실측 2026-09-10)
+    # ## Vercel 인증은 이 주소를 안 막는다 (실측 2026-09-10)
     #
-    # 처음에는 vercel.json 의 redirects 로 그 주소의 모든 경로를
-    # toji.fyi 로 넘겼다. 러너(로그인 안 된 남)로 재 봤더니 **401 이
-    # 아니라 307** 이 나왔다 — 리디렉션이 Vercel 인증보다 먼저 걸려서
-    # 인증 벽이 아예 작동하지 않았다. 막으려던 규칙이 문을 열어 준 셈이다.
+    # 설정에는 벽이 켜져 있다.
     #
-    # 이 프로젝트에는 Vercel 인증(ssoProtection)이 이미
-    # all_except_custom_domains 로 켜져 있다 — 만들어 준 *.vercel.app
-    # 주소는 로그인을 요구하고 toji.fyi 는 공개다. 리디렉션을 걷어내면
-    # 그 벽이 살아난다.
+    #   ssoProtection: enabled=true, deploymentType=all_except_custom_domains
     #
-    # **그래서 여기서는 규칙이 없는 것을 확인한다.** 누군가 좋은 뜻으로
-    # 다시 넣으면 벽이 또 무력해진다.
+    # 이름만 보면 '만들어 준 *.vercel.app 은 막고 toji.fyi 는 연다' 로
+    # 읽힌다. 그래서 리디렉션을 걷어내 벽에 맡겨 봤다. **열렸다.**
+    # 러너(로그인 안 된 남)로 잰 값이다.
+    #
+    #   리디렉션 있을 때   /api/relay → 307 (toji.fyi 로 넘어감)
+    #   리디렉션 걷었을 때 /api/relay → 200 (그대로 응답)
+    #
+    # 같은 배포가 toji.fyi 도 물고 있어서, 그 배포가 '커스텀 도메인이
+    # 달린 배포' 로 분류돼 통째로 면제되는 것으로 보인다. deploymentType
+    # 을 all 로 바꾸면 toji.fyi 까지 막히므로 그 길은 못 쓴다.
+    #
+    # **그래서 리디렉션이 지금 있는 유일한 방어선이다.** 걷어내면
+    # /api/relay 가 익명에게 열린다 — 중계기는 타일 키보다 큰 문이다.
+    # 주소 자체를 프로젝트에서 떼기 전까지는 이 규칙을 지운다.
     _reds = _cfg.get("redirects") or []
-    _vercel_app = [r for r in _reds
-                   if any(h.get("type") == "host"
-                          and "vercel.app" in str(h.get("value", ""))
-                          for h in (r.get("has") or []))]
-    check(not _vercel_app,
-          "vercel.app 주소를 리디렉션으로 넘기지 않는다 — 넘기면 "
-          "Vercel 인증 벽이 먼저 무력해진다 (러너 실측: 401 이 아니라 307)")
+    _blocked = [r for r in _reds
+                if any(h.get("type") == "host"
+                       and "vercel.app" in str(h.get("value", ""))
+                       for h in (r.get("has") or []))]
+    check(bool(_blocked),
+          "vercel.app 주소가 toji.fyi 로 넘어간다 — 걷어내면 /api/relay 가 "
+          "익명에게 열린다 (러너 실측 200)")
+    if _blocked:
+        _r = _blocked[0]
+        check(_r.get("source") == "/:path*"
+              and str(_r.get("destination", "")).startswith("https://toji.fyi/"),
+              f"/app 만이 아니라 경로 전체를 넘긴다 (지금 {_r.get('source')!r})")
+        check(_r.get("permanent") is False,
+              "임시(307) 다 — 영구는 브라우저가 캐시해서 되돌릴 수 없다")
 
 print()
 if fail:
