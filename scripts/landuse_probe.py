@@ -78,6 +78,29 @@ def geocode(address: str) -> tuple[float, float] | None:
         return None
 
 
+def in_ring(ring, lon, lat) -> bool:
+    inside = False
+    n = len(ring)
+    for i in range(n):
+        x1, y1 = ring[i][0], ring[i][1]
+        x2, y2 = ring[(i + 1) % n][0], ring[(i + 1) % n][1]
+        if (y1 > lat) != (y2 > lat):
+            cut = x1 + (lat - y1) * (x2 - x1) / ((y2 - y1) or 1e-12)
+            if lon < cut:
+                inside = not inside
+    return inside
+
+
+def hits(geom, lon, lat) -> bool:
+    """그 점을 품는가. 네모로 부르면 이웃이 같이 오므로 골라내야 한다."""
+    if not geom:
+        return False
+    t = geom.get("type")
+    polys = geom["coordinates"] if t == "MultiPolygon" else \
+        [geom["coordinates"]] if t == "Polygon" else []
+    return any(r and in_ring(r[0], lon, lat) for r in polys)
+
+
 def catalog() -> list[tuple[str, str]]:
     """서버가 무엇을 여는가. WFS 목록에서 후보를 고른다."""
     print("① 브이월드 WFS 가 여는 것 중 지역·지구로 보이는 것")
