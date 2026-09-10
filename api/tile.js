@@ -569,7 +569,7 @@ async function parcelInfo(req, res) {
   // 주소와 지번은 이 표에 없다. 연속지적도가 addr 로 준다. 두 번째
   // 호출이지만 첫 호출이 성공한 뒤에만 하고, 실패해도 카드는 뜬다 —
   // 주소가 없다고 필지 정보를 통째로 버릴 이유는 없다.
-  const addr = await parcelAddress(req, lon, lat);
+  const addr = await parcelAddress(req, lon, lat, parcel.jimok);
   res.status(200).json({ parcel, addr, geom: round6(hit.geometry) });
 }
 
@@ -580,7 +580,21 @@ async function parcelInfo(req, res) {
  * 그래서 지번을 주인공으로 두고 도로명은 있을 때만 덧붙인다 —
  * 없는 것을 '조회 실패' 로 보여주면 고장으로 읽힌다.
  */
-async function parcelAddress(req, lon, lat) {
+// 도로명주소가 붙는 땅. 건물이 서는 지목만이다.
+//
+// 실측(2026-09-10, scripts/parcel_fields_probe.py): 열 곳 중 두 곳
+// (20%)만 도로명이 나왔고, 그 둘은 강남파이낸스센터와 네이버
+// 그린팩토리였다. 답·전·임야·과수원은 전부 '없음' 이었다.
+//
+// 필지를 한 번 누를 때마다 브이월드를 세 번 부르는데 셋째가 이것이다.
+// 여든 번은 헛걸음이었다. **나올 수 있는 땅에만 묻는다** — 관측된
+// 두 건이 모두 '대' 였으므로 걸러도 놓치는 것이 없다.
+const ROAD_JIMOK = new Set([
+  "대", "공장용지", "창고용지", "학교용지", "주차장", "주유소용지",
+  "종교용지", "의료용지", "체육용지", "수도용지", "철도용지",
+]);
+
+async function parcelAddress(req, lon, lat, jimok) {
   const host = (req.headers || {}).host;
   const domain = process.env.VWORLD_REFERER || `https://${host || "toji.fyi"}/`;
   const out = { jibun: null, road: null, sido: null, sigungu: null,
@@ -595,11 +609,13 @@ async function parcelAddress(req, lon, lat) {
       SRSNAME: "EPSG:4326", OUTPUT: "application/json",
       MAXFEATURES: PARCEL_MAXFEATURES, RESULTTYPE: "results", DOMAIN: domain,
     }, VWORLD_WFS, host),
-    callVworld({
-      service: "address", request: "getAddress", version: "2.0",
-      crs: "epsg:4326", point: `${lon},${lat}`, type: "ROAD",
-      format: "json", simple: "false",
-    }, VWORLD_ADDRESS, host),
+    ROAD_JIMOK.has(String(jimok || "").trim())
+      ? callVworld({
+          service: "address", request: "getAddress", version: "2.0",
+          crs: "epsg:4326", point: `${lon},${lat}`, type: "ROAD",
+          format: "json", simple: "false",
+        }, VWORLD_ADDRESS, host)
+      : null,
   ]);
 
   try {

@@ -506,6 +506,35 @@ const call = async (query, method = 'GET', headers = {}) => {
     check(`${f} 를 넘긴다`, f in ((crowded.json_ || {}).parcel || {}));
   }
 
+  // ── 도로명은 나올 수 있는 땅에만 묻는다 (2026-09-10) ──
+  //
+  // 실측: 열 곳 중 두 곳(20%)만 도로명이 나왔고 둘 다 '대' 였다.
+  // 답·전·임야는 전부 없었다. 클릭 한 번에 브이월드를 세 번 부르는데
+  // 셋째가 이것이라, 여든 번은 헛걸음이었다.
+  const roadCall = (u) => /getAddress/.test(u) && /type=ROAD/.test(u);
+  const withJimok = (j) => ({
+    type: 'FeatureCollection',
+    features: [{
+      properties: { pnu: '4155025300100010000', lndcgr_code_nm: j,
+                    prpos_area_1_nm: '계획관리지역', lndpcl_ar: '1000' },
+      geometry: { type: 'Polygon', coordinates: [[
+        [127.0008, 37.0008], [127.0016, 37.0008],
+        [127.0016, 37.0016], [127.0008, 37.0016], [127.0008, 37.0008]]] },
+    }],
+  });
+
+  stubFetch(parcelReply(withJimok('답')));
+  await call({ mode: 'parcel', lat: '37.0012', lon: '127.0012' });
+  check('답에는 도로명을 안 묻는다 (거의 안 나온다)',
+        !calls.some((c) => roadCall(c.url)),
+        `호출 ${calls.length}회`);
+
+  stubFetch(parcelReply(withJimok('대')));
+  await call({ mode: 'parcel', lat: '37.0012', lon: '127.0012' });
+  check('대에는 도로명을 묻는다 (거기서는 나온다)',
+        calls.some((c) => roadCall(c.url)),
+        `호출 ${calls.length}회`);
+
   console.log();
   console.log('15. 필지 경계선을 칸 단위 도형으로 준다 (mode=parcels)');
   // 왜 그림이 아닌가: 브이월드 WMS 의 연속지적도는 1:1,703(배율 18)
