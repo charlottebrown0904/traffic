@@ -140,6 +140,11 @@ const FAKE_LEAFLET = () => {
           // Leaflet 처럼 모서리를 내놓아야 그 고르기가 돈다.
           getSouthWest: () => ({ lat: box[0], lng: box[1] }),
           getNorthEast: () => ({ lat: box[2], lng: box[3] }),
+          // 경계선은 화면을 덮는 **칸**을 세므로 네 모서리가 다 필요하다.
+          getWest: () => box[1],
+          getEast: () => box[3],
+          getSouth: () => box[0],
+          getNorth: () => box[2],
           pad: () => ({}),
         };
       },
@@ -642,6 +647,24 @@ const FAKE_LEAFLET = () => {
       status: 200, contentType: 'application/json',
       body: JSON.stringify(FAKE_LANDPRICE),
     }));
+
+    // 경계선 칸 (mode=parcels). **뒤에 건다** — Playwright 는 나중에
+    // 건 규칙을 먼저 보고, 위의 'mode=parcel*' 은 'parcels' 도
+    // 삼킨다. 순서가 뒤바뀌면 이 규칙이 죽는다.
+    let cadHits = [];
+    await page.route('**/api/tile?mode=parcels*', (r) => {
+      const u = new URL(r.request().url());
+      cadHits.push(`${u.searchParams.get('z')}/${u.searchParams.get('x')}`
+                   + `/${u.searchParams.get('y')}`);
+      return r.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ n: 1, whole: true, geoms: [{
+          type: 'Polygon',
+          coordinates: [[[127.1, 37.1], [127.2, 37.1],
+                         [127.2, 37.2], [127.1, 37.2], [127.1, 37.1]]],
+        }] }),
+      });
+    });
     await page.route('**/app/data/regions.json*', (r) => r.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify(FAKE_REGIONS),
@@ -763,9 +786,10 @@ const FAKE_LEAFLET = () => {
     console.log();
     console.log('2. 배경 지도에 키가 필요 없다');
     const tiles = await page.evaluate(() => window.__map.tiles);
-    // 배경 지도(OSM) + 용도지역 색면 + 필지 경계선 = 3장.
-    // 뒤의 둘은 우리 서버를 지난다(키를 페이지에 안 적기 위해).
-    check('타일 원천이 셋이다 (배경 + 용도지역 + 필지선)', tiles.length === 3,
+    // 배경 지도(OSM) + 용도지역 색면 = 2장. 필지 경계선은 **타일이
+    // 아니다** — 브이월드 WMS 가 배율 18 아래로 빈 그림만 줘서
+    // 도형(WFS)으로 받아 직접 그린다 (2026-09-10 실측).
+    check('타일 원천이 둘이다 (배경 + 용도지역)', tiles.length === 2,
           tiles.join(' '));
     check('API 키를 요구하는 서비스가 아니다',
           tiles.every((u) => !/carto|stadia|mapbox|thunderforest|apikey/i.test(u)),
@@ -783,7 +807,9 @@ const FAKE_LEAFLET = () => {
     const zone = tiles.find((u) => /layer=zoning/.test(u));
     const cad = tiles.find((u) => /layer=cadastral/.test(u));
     check('용도지역 타일 층이 실제로 만들어진다', !!zone, tiles.join(' '));
-    check('필지 경계선 층도 만들어진다', !!cad, tiles.join(' '));
+    // 경계선은 타일로 돌아가면 안 된다. 그 길은 빈 그림을 주면서도
+    // '✓ 그림' 으로 읽혀 오래 안 들켰다.
+    check('필지 경계선은 타일로 안 받는다', !cad, tiles.join(' '));
     if (zone) {
       check('브이월드를 직접 안 부른다 (키가 페이지에 없다)',
             !/vworld/i.test(zone), zone);
@@ -2850,29 +2876,63 @@ const FAKE_LEAFLET = () => {
     //
     // 예전에는 용도지역 층 **안에** 들어 있어서, 경계선만 보려면 색면
     // 까지 켜야 했고 그 색면이 지도를 덮었다. 따로 떼어 스위치를 줬다.
-    const cadLayer = await page.evaluate(() => {
+    //
+    // **그림이 아니라 도형으로 받는다** (2026-09-10). 브이월드 WMS 는
+    // 배율 18 아래로 아무것도 안 그렸다 — 라이브에서 z14·15·17 이
+    // 전부 '완전히 투명' 한 PNG 였다. 타일을 깐다는 옛 검사는 그
+    // 빈 그림을 통과시켰으므로, 무엇을 재는지 자체를 바꾼다.
+    const cadLayer = await page.evaluate(async () => {
       const box = document.getElementById('cadastral-bg');
       const tiles = (window.__map.tiles || []);
-      const zoningKids = ((window.__zoningKids || [])).length;
+      window.__zoom = 16;
+      // 기본 경계는 '전국' 이라 배율 16 에서 칸이 수만 개가 된다.
+      // 실제 화면만 한 네모로 좁힌다 (안성 언저리 한 칸 남짓).
+      window.__bbox = [37.000, 127.270, 37.012, 127.290];
+      window.__drawCadastral();
+      await new Promise((ok) => setTimeout(ok, 200));
+      const drawn = (window.__map.groups || [])
+        .flatMap((g) => g._items || [])
+        .flatMap((g) => (g && g._items) || [g])
+        .filter((g) => g && g.__opts && g.__opts.pane === 'cadastralPane');
       return {
         hasBox: !!box,
         on: !!(box && box.checked),
-        // 경계선 타일을 실제로 깔았는가.
-        laid: tiles.filter((u) => /layer=cadastral/.test(u)).length,
-        // 용도지역과 같은 층에 섞이지 않았는가 — 판이 따로여야 한다.
-        pane: window.__cadPane || null,
-        minZoom: window.__cadMinZoom,
+        // 옛 길로 돌아가지 않았는가 — 타일은 이제 한 장도 없어야 한다.
+        tiles: tiles.filter((u) => /layer=cadastral/.test(u)).length,
+        drawn: drawn.length,
+        className: (drawn[0] || {}).__opts ? drawn[0].__opts.className : null,
+        interactive: (drawn[0] || {}).__opts
+          ? drawn[0].__opts.interactive : null,
       };
     });
     check('필지경계 스위치가 있다', cadLayer.hasBox);
     check('기본은 켬이다', cadLayer.on);
-    check('경계선 타일을 깐다', cadLayer.laid >= 1, `${cadLayer.laid}장`);
-    check('용도지역과 다른 판에 둔다 (색을 따로 잡으려고)',
-          cadLayer.pane === 'cadastralPane', String(cadLayer.pane));
-    // 15 로 뒀더니 "너무 확대"라는 판단이었다 (2026-09-10). 한 단계
-    // 물러선 14 다. 눈에 안 보이는 상수라 여기서 못을 박는다.
-    check('배율 14 부터 보인다 (한 단계 덜 당겨도)',
-          cadLayer.minZoom === 14, String(cadLayer.minZoom));
+    check('빈 그림을 주는 타일 길로 안 돌아갔다',
+          cadLayer.tiles === 0, `${cadLayer.tiles}장`);
+    check('경계선을 도형으로 받아 그린다',
+          cadLayer.drawn >= 1, `층 ${cadLayer.drawn}개`);
+    check('용도지역과 다른 판에 둔다', true, 'cadastralPane');
+    check('색을 CSS 가 잡게 이름표를 단다 (필터 꼼수를 걷어냈다)',
+          cadLayer.className === 'cad-line', String(cadLayer.className));
+    check('경계선이 누름을 가로채지 않는다', cadLayer.interactive === false);
+
+    // 배율 문턱. 얕으면 한 칸에 든 필지가 상한에 걸려 선이 군데군데
+    // 빠진다 — 빠진 선은 없는 선보다 나쁘다. 눈에 안 보이는 상수라
+    // 여기서 못을 박는다.
+    const cadZoom = await page.evaluate(async () => {
+      window.__zoom = 15;
+      window.__drawCadastral();
+      await new Promise((ok) => setTimeout(ok, 120));
+      const shallow = (window.__map.groups || [])
+        .flatMap((g) => g._items || [])
+        .flatMap((g) => (g && g._items) || [g])
+        .filter((g) => g && g.__opts && g.__opts.pane === 'cadastralPane');
+      window.__zoom = 16;
+      window.__bbox = null;
+      return shallow.length;
+    });
+    check('배율 16 아래에서는 안 그린다 (선이 빠지느니 안 그린다)',
+          cadZoom === 0, `${cadZoom}개`);
 
     // 껐다 켜는 것이 실제로 먹는가. 그리고 그 선택을 기억하는가.
     const cadOff = await page.evaluate(() => {

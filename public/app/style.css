@@ -314,15 +314,23 @@ body[data-basemap="hybrid"] .leaflet-tile-pane{
  *
  * 투명도도 갈린다. 밝은 배경은 선이 잘 보이므로 조금 물리고, 위성은
  * 바탕이 요란하므로 더 세운다. */
-.leaflet-cadastral-pane {
-  filter: grayscale(1) brightness(.45) contrast(1.35);
-  opacity: .58;
+/* 필지 경계선. **벡터라 색을 그대로 정한다** — 예전에는 브이월드가
+   준 래스터 타일이라 명도·채도만 흔들 수 있었고(grayscale·invert),
+   그 꼼수가 필요 없어졌다.
+
+   밝은 배경에서는 어두운 남색 계열이 지도의 도로·지명과 안 싸운다.
+   검정은 글자와 붙어 지저분해지고, 파랑은 물길과 헷갈린다. */
+.cad-line {
+  stroke: #33445E;
+  stroke-opacity: .5;
+  fill: none;
 }
-body[data-basemap="satellite"] .leaflet-cadastral-pane,
-body[data-basemap="hybrid"] .leaflet-cadastral-pane,
-body[data-basemap="midnight"] .leaflet-cadastral-pane {
-  filter: grayscale(1) invert(1) brightness(1.45) contrast(1.2);
-  opacity: .8;
+/* 위성·하이브리드·야간 위에서는 짙은 선이 통째로 사라진다. 뒤집는다. */
+body[data-basemap="satellite"] .cad-line,
+body[data-basemap="hybrid"] .cad-line,
+body[data-basemap="midnight"] .cad-line {
+  stroke: #FFFFFF;
+  stroke-opacity: .7;
 }
 
 /* 야간 배경은 이미 어둡다. 밝기를 올리면 그 어두움이 사라진다. */

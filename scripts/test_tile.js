@@ -350,6 +350,9 @@ const call = async (query, method = 'GET', headers = {}) => {
     ok: true, status: 200,
     headers: { get: (k) => (k === 'content-type' ? 'application/json' : null) },
     text: async () => JSON.stringify(body),
+    // mode=parcels 는 text 가 아니라 json 으로 읽는다. 흉내에 그것이
+    // 없으면 '브이월드가 다른 것을 줬다' 로 잘못 읽힌다.
+    json: async () => body,
   });
 
   stubFetch(parcelReply(PARCEL()));
@@ -457,6 +460,66 @@ const call = async (query, method = 'GET', headers = {}) => {
   stubFetch(pngReply);
   const post = await call({ z: '12', y: '5', x: '5' }, 'POST');
   check('POST 는 405', post.code === 405 && calls.length === 0, String(post.code));
+
+  console.log();
+  console.log('15. 필지 경계선을 칸 단위 도형으로 준다 (mode=parcels)');
+  // 왜 그림이 아닌가: 브이월드 WMS 의 연속지적도는 1:1,703(배율 18)
+  // 아래로 아무것도 안 그린다. 라이브에서 z14·15·16·17 이 전부
+  // '칠해진 화소 0개' 인 PNG 였다 (2026-09-10, cadastral_tile_probe).
+  const LINES = {
+    type: 'FeatureCollection',
+    features: [
+      { properties: { pnu: '4155025300100010000', jibun: '123-4',
+                      ag_geom: '아주 긴 도형 문자열' },
+        geometry: { type: 'Polygon',
+          coordinates: [[[127.00012345678, 37.00012345678], [127.0004, 37.0],
+                         [127.0004, 37.0004], [127.0, 37.0004],
+                         [127.00012345678, 37.00012345678]]] } },
+      { properties: { pnu: '4155025300100020000' },
+        geometry: { type: 'Polygon',
+          coordinates: [[[127.001, 37.001], [127.002, 37.001],
+                         [127.002, 37.002], [127.001, 37.001]]] } },
+    ],
+  };
+  stubFetch(parcelReply(LINES));
+  const lines = await call({ mode: 'parcels', z: '16', x: '55938', y: '25506' });
+  const lineUrl = (calls[0] || {}).url || '';
+  check('연속지적도를 WFS 로 부른다',
+        /\/req\/wfs\?/.test(lineUrl)
+        && /TYPENAME=lp_pa_cbnd_bubun/.test(lineUrl),
+        lineUrl.replace(KEY, '<KEY>').slice(0, 90) || '없음');
+  // 네모의 네 값이 다 달라야 한다. 한 점을 네 번 적으면 폭이 0 이라
+  // 브이월드가 아무것도 안 준다.
+  const bboxRaw = decodeURIComponent(
+    (lineUrl.match(/BBOX=([^&]*)/) || ['', ''])[1]);
+  const bb = bboxRaw.split(',').map(Number);
+  check('그 칸을 덮는 네모로 묻는다 (한 점이 아니다)',
+        bb.length === 4 && bb[2] > bb[0] && bb[3] > bb[1], bboxRaw || '없음');
+  check('선 두 개를 돌려준다', (lines.json_ || {}).n === 2,
+        String((lines.json_ || {}).n));
+  // 지번·면적·도형 문자열은 안 싣는다. 실으면 한 칸이 두 배가 된다
+  // (실측: 속성을 버리면 838KB → 478KB).
+  check('속성은 안 싣는다 (선만 준다)',
+        !/pnu|jibun|ag_geom/.test(JSON.stringify(lines.json_ || {})),
+        JSON.stringify(lines.json_ || {}).slice(0, 70));
+  const first = (((lines.json_ || {}).geoms || [])[0] || {});
+  const pt = ((first.coordinates || [])[0] || [])[0] || [];
+  check('좌표를 여섯 자리로 깎는다', pt[0] === 127.000123,
+        String(pt[0]));
+
+  // 얕은 배율은 거절한다. 부르면 한 칸이 상한에 걸려 선이 빠지는데,
+  // 빠진 선은 없는 선보다 나쁘다.
+  stubFetch(parcelReply(LINES));
+  const shallow = await call({ mode: 'parcels', z: '14', x: '13984', y: '6376' });
+  check('배율 16 아래는 거절한다',
+        shallow.code === 400 && calls.length === 0, String(shallow.code));
+
+  // 격자 밖·한반도 밖은 브이월드를 아예 안 부른다. 부르면 한도만 축난다.
+  stubFetch(parcelReply(LINES));
+  const sea = await call({ mode: 'parcels', z: '16', x: '10', y: '10' });
+  check('한반도 밖이면 브이월드를 안 부른다',
+        sea.code === 200 && (sea.json_ || {}).n === 0 && calls.length === 0,
+        `${sea.code} · 호출 ${calls.length}회`);
 
   console.log();
   console.log(failed ? `실패 ${failed}건` : '모두 통과');

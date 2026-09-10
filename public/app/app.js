@@ -1604,6 +1604,9 @@ function buildMap() {
 
   map.on('moveend', () => {
     drawTrades();
+    // 경계선은 칸 단위라 움직일 때마다 새 칸만 부른다. 말풍선이
+    // 열려 있어도 상관없다 — 이 층은 말풍선을 안 건드린다.
+    drawCadastral();
     // 땅값 글자는 **보이는 곳만** 그린다. 움직이면 다시 그려야 하고,
     // 색도 다시 끊어야 한다 — 화면 안에서의 5분위이기 때문이다.
     // 조회수는 drawLandPrice 가 '지금 화면에 있는 태그' 를 넘겨 준다.
@@ -1990,10 +1993,17 @@ const ZONING_MIN_ZOOM = 12;
 // 필지 경계선은 더 깊이 들어가야 뜻이 있다. 12배율에서 필지선을 깔면
 // 실선 뭉치가 되어 용도지역 색을 오히려 가린다.
 //
-// 처음에 15로 뒀더니 "너무 확대"라는 판단이었다 (2026-09-10). 한 단계
-// 물러서 14로 내린다 — 14는 읍·면 하나가 화면에 들어오는 배율이라,
-// 필지 하나하나는 작아도 어디가 잘게 쪼개졌는지는 보인다.
-const CADASTRAL_MIN_ZOOM = 14;
+// 벡터로 받으므로 브이월드의 z18 문턱에 안 묶인다. 대신 다른 벽이
+// 있다 — 얕을수록 한 화면에 든 필지가 기하급수로 는다. 실측(안성,
+// 폰 화면 하나 기준, 속성 버리고 좌표 여섯 자리):
+//
+//   z14~16  1,000개 상한에 걸림   390~420KB
+//   z17       378개              166KB
+//
+// z16 이 상한에 걸리는 것은 **화면 통째로 부를 때** 다. 칸으로 나눠
+// 부르면 한 칸이 그 1/8 이라 z16 도 선다. 그보다 얕으면 칸마다 상한에
+// 걸려 선이 군데군데 빠진다 — 빠진 선은 없는 선보다 나쁘다.
+const CADASTRAL_MIN_ZOOM = 16;
 
 /* ── 배경 지도 (요구사항 2026-09-09) ────────────────────────────
  *
@@ -2175,20 +2185,117 @@ function addZoningLayer() {
 
 /* 필지 경계선 — 지적편집도의 그 선.
  *
- * 색면보다 깊은 배율(14)에서만 켠다. 그 아래에서는 선이 서로 뭉개져
- * 회색 덩어리가 되고, 타일만 받고 아무것도 못 읽는다.
+ * **그림이 아니라 도형으로 받는다.** 처음에는 브이월드 WMS 타일을
+ * 깔았는데, 라이브에서 재 보니 z14~17 이 전부 '완전히 투명' 한 PNG
+ * 였다 (2026-09-10, scripts/cadastral_tile_probe.py):
  *
- * 투명도와 색은 CSS 가 정한다(.leaflet-cadastral-pane). 배경 지도에
- * 따라 달라야 하기 때문이다 — 위성 위에서는 짙은 선이 사라지고,
- * 밝은 지도 위에서는 흰 선이 사라진다. */
+ *   z=16  1:6,812  칠해진 화소 0개
+ *   z=17  1:3,406  칠해진 화소 0개
+ *   z=18  1:1,703  칠해진 화소 65,536개 (100%)
+ *
+ * 문턱이 z18 이고, 그리기 시작하면 화면을 100% 덮는다 — 선이 아니라
+ * 면이다. 배경으로 쓸 수가 없다.
+ *
+ * 그래서 같은 자료를 WFS 로 받아 여기서 선으로 그린다. 얕은 배율에서
+ * 나오고, 색도 CSS 필터 꼼수 없이 그대로 정한다.
+ *
+ * **칸을 나눠 받는다.** 화면을 통째로 부르면 조금만 움직여도 다시
+ * 받는다. 타일 격자로 자르면 겹치는 칸은 엣지 캐시가 받아내고 새 칸만
+ * 나간다. 받은 칸은 여기서도 들고 있어 되돌아올 때 다시 안 부른다.
+ */
+const cadTiles = new Map();      // 'z/x/y' → L.GeoJSON (그린 것)
+const cadAsked = new Set();      // 부르는 중이거나 이미 부른 칸
+// 한 번에 이보다 많은 칸은 안 부른다. 화면이 넓어도 폰이 버티게.
+const CAD_MAX_TILES = 12;
+
 function addCadastralLayer() {
-  cadastralLayer = L.tileLayer('/api/tile?layer=cadastral&z={z}&y={y}&x={x}', {
-    pane: 'cadastralPane',
-    maxZoom: 19,
-    minZoom: CADASTRAL_MIN_ZOOM,
-    attribution: '지적도 © 국토교통부 브이월드',
-  });
+  cadastralLayer = L.layerGroup();
   if (state.cadastral) cadastralLayer.addTo(map);
+  drawCadastral();
+}
+
+/** 지금 화면을 덮는 칸들의 좌표. 배율은 경계선용으로 따로 잡는다. */
+function cadTileList() {
+  const z = Math.min(Math.round(map.getZoom()), 19);
+  const b = map.getBounds();
+  const n = 2 ** z;
+  const xOf = (lon) => Math.floor(((lon + 180) / 360) * n);
+  const yOf = (lat0) => {
+    const lat = Math.max(-85.05, Math.min(85.05, lat0));
+    const r = (lat * Math.PI) / 180;
+    return Math.floor(
+      ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
+  };
+  const x1 = xOf(b.getWest()); const x2 = xOf(b.getEast());
+  const y1 = yOf(b.getNorth()); const y2 = yOf(b.getSouth());
+  // **넓으면 통째로 그만둔다.** 화면 하나는 배율과 무관하게 칸 몇 개다.
+  // 그보다 넓은 경계가 오면(창이 아직 안 잡혔거나 지도가 세계 전체를
+  // 내놓는 순간) 두 겹 반복이 수십억 바퀴를 돈다 — 화면이 멎는다.
+  if ((x2 - x1 + 1) * (y2 - y1 + 1) > 64) return [];
+  const out = [];
+  for (let x = x1; x <= x2; x += 1) {
+    for (let y = y1; y <= y2; y += 1) {
+      if (x < 0 || y < 0 || x >= n || y >= n) continue;
+      out.push([z, x, y]);
+    }
+  }
+  return out;
+}
+
+function drawCadastral() {
+  if (!map || !cadastralLayer) return;
+  // 꺼져 있거나 너무 멀면 걷어낸다. 들고 있던 칸도 버린다 — 배율이
+  // 바뀌면 칸 좌표 자체가 달라져 쓸 수 없다.
+  if (!state.cadastral || map.getZoom() < CADASTRAL_MIN_ZOOM) {
+    cadastralLayer.clearLayers();
+    cadTiles.clear();
+    return;
+  }
+  const want = cadTileList();
+  const keep = new Set(want.map(([z, x, y]) => `${z}/${x}/${y}`));
+  for (const [key, layer] of cadTiles) {
+    if (!keep.has(key)) { cadastralLayer.removeLayer(layer); cadTiles.delete(key); }
+  }
+  let asked = 0;
+  for (const [z, x, y] of want) {
+    const key = `${z}/${x}/${y}`;
+    if (cadTiles.has(key) || cadAsked.has(key)) continue;
+    if (asked >= CAD_MAX_TILES) break;
+    asked += 1;
+    cadAsked.add(key);
+    fetchCadTile(z, x, y, key);
+  }
+}
+
+function fetchCadTile(z, x, y, key) {
+  fetch(`/api/tile?mode=parcels&z=${z}&x=${x}&y=${y}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      // 도중에 꺼졌거나 배율이 바뀌었으면 그리지 않는다.
+      if (!d || !state.cadastral || !cadastralLayer) return;
+      if (map.getZoom() < CADASTRAL_MIN_ZOOM) return;
+      if (!cadTileList().some(([a, b, c]) => `${a}/${b}/${c}` === key)) return;
+      const geoms = d.geoms || [];
+      if (!geoms.length) { cadTiles.set(key, L.layerGroup()); return; }
+      const layer = L.geoJSON(
+        { type: 'FeatureCollection',
+          features: geoms.map((g) => ({ type: 'Feature', properties: {}, geometry: g })) },
+        {
+          pane: 'cadastralPane',
+          // 누름을 가로채면 안 된다 — 필지를 눌러 카드를 여는 것은
+          // 지도 자신의 click 이 받는다.
+          interactive: false,
+          // 색은 CSS 가 정한다(.cad-line). 배경 지도에 따라 달라야
+          // 하는데, 그 판단을 여기 흩어 놓으면 배경을 바꿀 때마다
+          // 다시 그려야 한다.
+          className: 'cad-line',
+          style: { weight: 1, fill: false },
+        });
+      cadastralLayer.addLayer(layer);
+      cadTiles.set(key, layer);
+    })
+    .catch(() => { /* 한 칸이 안 와도 나머지는 그린다. */ })
+    .finally(() => { cadAsked.delete(key); });
 }
 
 function toggleCadastral(on) {
@@ -2196,7 +2303,9 @@ function toggleCadastral(on) {
   try { localStorage.setItem('toji.cadastral', on ? 'on' : 'off'); }
   catch (e) { /* 사생활 보호 창에서는 못 적는다. 화면은 그대로 돈다. */ }
   if (!map || !cadastralLayer) return;
-  on ? cadastralLayer.addTo(map) : cadastralLayer.remove();
+  if (!on) { cadastralLayer.remove(); cadastralLayer.clearLayers(); cadTiles.clear(); return; }
+  cadastralLayer.addTo(map);
+  drawCadastral();
 }
 
 /* 눌러서 이름을 본다.
@@ -3706,6 +3815,9 @@ function drawLandPrice() {
 // 검사가 '우리가 부르지 않은 자리' 를 흉내낼 수 있게 내놓는다. 조회수
 // RPC 응답도 presence 알림도 밖에서는 이 함수 하나로 보인다.
 window.__drawLandPrice = () => drawLandPrice();
+// 경계선은 화면을 움직여야 도는데, 검사에서는 그것을 흉내내기가
+// 번거롭다. 부를 구멍을 하나 낸다.
+window.__drawCadastral = () => drawCadastral();
 
 function drawLandPriceInner(have) {
   lpLayer.clearLayers();

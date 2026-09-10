@@ -49,6 +49,26 @@ const PARCEL_TYPENAME = "dt_d194";
 // 누른 점 둘레 몇 도를 볼 것인가. 0.0006도 ≈ 60m — 필지 하나가 확실히
 // 들어오면서 이웃을 수십 개씩 끌고 오지는 않는 크기다.
 const PARCEL_HALF_DEG = 0.0006;
+
+// 필지 경계선을 **벡터로** 준다. 왜 그림이 아니라 도형인가:
+//
+//   브이월드 WMS 의 연속지적도는 1:1,703(z18) 아래로는 아무것도 안
+//   그린다. z14~17 은 전부 '완전히 투명' 한 PNG 였다 (2026-09-10 실측,
+//   scripts/cadastral_tile_probe.py). 게다가 그리기 시작하면 화소의
+//   100% 를 칠한다 — 선이 아니라 면이라 배경으로 못 쓴다.
+//
+//   같은 자료를 WFS 로 받으면 도형이 온다. 그것을 Leaflet 이 선으로
+//   그리면 얕은 배율에서도 나오고, 색도 우리가 정한다.
+//
+// **화면 단위가 아니라 타일 단위로 자른다.** 화면 하나를 통째로
+// 부르면 조금만 움직여도 다시 받는다. 타일로 자르면 겹치는 칸은
+// 엣지 캐시(s-maxage 이레)가 받아내고 새 칸만 나간다.
+const PARCEL_VEC_TYPENAME = "lp_pa_cbnd_bubun";
+const PARCEL_VEC_MIN_ZOOM = 16;
+// 한 칸에 이보다 많으면 자른다. z16 한 칸은 한 변 600m 남짓이라
+// 도심이라도 이 안에서 끝난다. 상한이 없으면 서울 한복판에서
+// 한 칸이 수백 KB 가 된다.
+const PARCEL_VEC_MAX = 600;
 // 우리가 쓰는 칸 이름. collect/landchar.FIELDS 와 같은 것을 본다 —
 // 둘이 어긋나면 화면과 분석이 다른 땅을 말한다.
 const PARCEL_FIELDS = {
@@ -347,6 +367,85 @@ function hitsPoint(geom, lon, lat) {
 }
 
 /** 누른 자리의 **필지 특성**을 돌려준다 (도로접·형상·지세·공시지가). */
+/** 타일 한 칸에 든 필지의 **선만** 준다. 지번·면적은 안 싣는다.
+ *
+ * 화면은 선 하나만 그린다. 지번·면적·소유 구분은 필지를 누른 뒤에
+ * mode=parcel 이 따로 준다. 그것을 여기 같이 실으면 한 칸이 두 배로
+ * 커진다 (실측: 속성을 버리면 838KB → 478KB, 좌표를 여섯 자리로
+ * 깎으면 420KB).
+ */
+async function parcelLines(req, res) {
+  const z = whole(String(req.query.z ?? ""));
+  const y = whole(String(req.query.y ?? ""));
+  const x = whole(String(req.query.x ?? ""));
+  if (z === null || y === null || x === null) {
+    return fail(res, 400, "z·y·x 가 0 이상의 정수여야 합니다");
+  }
+  if (z < PARCEL_VEC_MIN_ZOOM || z > MAX_ZOOM) {
+    return fail(res, 400,
+      `z 는 ${PARCEL_VEC_MIN_ZOOM}~${MAX_ZOOM} 이어야 합니다`);
+  }
+  const span = 2 ** z;
+  if (y >= span || x >= span) return fail(res, 400, "그 배율의 격자 밖입니다");
+
+  const [w, s, e, n] = degBbox(z, x, y);
+  // 한반도 밖이면 브이월드에 헛일을 시키지 않는다. 바다·중국 쪽
+  // 칸까지 부르면 한도만 축난다.
+  if (n < KOREA.latMin || s > KOREA.latMax ||
+      e < KOREA.lonMin || w > KOREA.lonMax) {
+    return sendLines(res, [], true);
+  }
+  const out = await callVworld({
+    // 1.1.0 한 길뿐이다 — parcelInfo 의 주석 참고.
+    SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
+    TYPENAME: PARCEL_VEC_TYPENAME,
+    BBOX: [w, s, e, n].join(","),
+    SRSNAME: "EPSG:4326",
+    OUTPUT: "application/json",
+    MAXFEATURES: String(PARCEL_VEC_MAX), RESULTTYPE: "results",
+    DOMAIN: process.env.VWORLD_REFERER
+      || `https://${(req.headers || {}).host || "toji.fyi"}/`,
+  }, VWORLD_WFS, (req.headers || {}).host);
+  if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
+  if (!out.upstream) {
+    return fail(res, out.timedOut ? 504 : 502,
+      out.timedOut ? `브이월드 응답 없음 (${TIMEOUT_MS / 1000}초 초과)`
+                   : "브이월드 호출 실패");
+  }
+  let body;
+  try {
+    body = await out.upstream.json();
+  } catch (err) {
+    // 한도 초과·키 오류는 JSON 이 아니라 XML 로 온다. 그것을 빈
+    // 목록인 척 돌려주면 '필지가 없는 동네' 로 읽힌다.
+    return fail(res, 502, "브이월드가 필지 목록 대신 다른 것을 줬습니다");
+  }
+  const feats = Array.isArray(body && body.features) ? body.features : [];
+  const geoms = [];
+  for (const f of feats) {
+    const g = round6((f || {}).geometry);
+    if (g) geoms.push(g);
+  }
+  return sendLines(res, geoms, feats.length < PARCEL_VEC_MAX);
+}
+
+/** 선 목록을 돌려준다. 빈 칸도 캐시한다 — 바다는 늘 비어 있다. */
+function sendLines(res, geoms, whole_) {
+  res.setHeader("cache-control", CACHE_OK);
+  return res.status(200).json({ n: geoms.length, whole: whole_, geoms });
+}
+
+/** 타일 한 칸을 위경도 네모로. (서, 남, 동, 북) */
+function degBbox(z, x, y) {
+  const n = 2 ** z;
+  const lon = (i) => (i / n) * 360 - 180;
+  const lat = (j) => {
+    const t = Math.PI * (1 - (2 * j) / n);
+    return (Math.atan(Math.sinh(t)) * 180) / Math.PI;
+  };
+  return [lon(x), lat(y + 1), lon(x + 1), lat(y)];
+}
+
 async function parcelInfo(req, res) {
   const lat = decimal(String(req.query.lat ?? ""));
   const lon = decimal(String(req.query.lon ?? ""));
@@ -457,6 +556,10 @@ module.exports = async function handler(req, res) {
   // 위의 layers 를 쓰지 않는다.
   if (String(req.query.mode || "") === "parcel") {
     return parcelInfo(req, res);
+  }
+  // 화면에 미리 깔리는 경계선. 한 칸씩 준다.
+  if (String(req.query.mode || "") === "parcels") {
+    return parcelLines(req, res);
   }
 
   const z = whole(String(req.query.z ?? ""));
