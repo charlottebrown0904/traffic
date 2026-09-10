@@ -1,0 +1,59 @@
+# 법정동에 인구가 안 붙는 이유를 자료로 가른다.
+#
+# 요구사항 2026-09-10: "법정동에 아직 인구가 표시 안된 곳이 많습니다."
+#
+# 내보낸 파일만으로 여기까지는 알아냈다 — 면·동 18.4%, 리 0%, 그리고
+# 인구가 안 붙은 면·동 2,126 중 2,060(97%)이 '동' 으로 끝난다. 읍·면은
+# 행정동 이름과 법정동 이름이 같아서 붙고 도시의 동은 다르다.
+#
+# 남은 물음은 **KOSIS 가 그 시군구에서 어떤 이름을 주는가** 인데, 그것은
+# umd_pop 표에 있고 표는 DB 에만 있다. 그래서 워크플로가 필요하다.
+#
+# 아무것도 안 고친다. 재고 적기만 한다 — 고칠지 말지는 숫자를 보고 정한다.
+name: 인구 이름맞춤 진단 (법정동 vs 행정동)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: umd-pop-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      # 수집은 하지 않는다. 직전 실행이 남긴 DB 를 그대로 읽는다.
+      - name: 이전 수집분 복원
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/processed
+            data/interim
+          key: redt-umdpop-${{ github.run_id }}
+          restore-keys: redt-data-
+
+      - name: 복원 확인
+        run: |
+          if [ ! -f data/processed/redt.duckdb ]; then
+            echo "::error::복원된 DB 가 없습니다. '자료 지키기' 를 restore=true 로"
+            echo "::error::먼저 돌려 캐시를 채우세요."
+            exit 1
+          fi
+
+      - name: 이름맞춤 진단
+        run: python scripts/umd_pop_probe.py
