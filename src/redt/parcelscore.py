@@ -36,12 +36,30 @@
 """
 from __future__ import annotations
 
+import datetime
+
 from . import db
 from .usage import road_grade
 
 # 또래가 이보다 적으면 백분위가 우연이 된다. 시군구 → 시도 → 전국으로
 # 물러난다. 어느 단계로 물러났는지는 화면이 말한다.
 MIN_PEER = 30
+
+# ── 가격 추세 축 (요구사항 2026-09-10) ─────────────────────────
+#
+# 왜 '수준' 이 아니라 '추세' 인가. 지금 비싼 땅이 좋은 땅은 아닙니다.
+# 토지에서는 **오르는 중인지**가 사는 사람에게 더 중요한 정보입니다.
+#
+# 몇 해를 볼 것인가. 짧으면 한 해 튄 값에 통째로 끌려가고, 길면 이미
+# 끝난 상승을 지금 일처럼 말합니다. 여덟 해를 창으로 두고 그 안에서
+# 값이 있는 첫 해와 끝 해로 연평균 상승률을 잡습니다.
+TREND_YEARS = 8
+TREND_FROM = datetime.date.today().year - TREND_YEARS
+# 한 해에 이보다 적으면 그 해는 버립니다. 두세 건의 중앙값은 그
+# 동네 값이 아니라 그 두세 건의 값입니다.
+MIN_TREND_N = 5
+# 첫 해와 끝 해가 이만큼은 떨어져 있어야 상승률이라고 부를 수 있습니다.
+MIN_TREND_SPAN = 3
 
 # 분위 경계를 몇 개로 자를 것인가. 11개면 0·10·…·100 백분위다.
 QUANTILES = [i / 10 for i in range(11)]
@@ -90,9 +108,10 @@ AXES = [
     {"key": "zoning", "label": "개발 여지",
      "desc": "용도지역이 허용하는 폭. 이 시군구 안에서 이 용도지역보다 "
              "여지가 좁은 땅이 몇 %인지."},
-    {"key": "price", "label": "가격 수준",
-     "desc": "공시지가가 또래 안에서 어디쯤인지. 높다고 좋은 것도 낮다고 "
-             "좋은 것도 아닙니다 — 목적에 따라 다릅니다."},
+    {"key": "price", "label": "가격 추세",
+     "desc": "이 동네·이 용도지역의 실거래 단가가 최근 몇 해 동안 얼마나 "
+             "올랐는지. 지금 비싼지 싼지가 아니라 **오르는 중인지**를 "
+             "봅니다. 전국의 다른 동네·용도들과 견준 백분위입니다."},
     {"key": "land", "label": "모양·지세",
      "desc": "형상과 지세. 같은 면적이라도 자루형·급경사는 실제로 쓸 수 "
              "있는 땅이 줄어듭니다."},
@@ -182,6 +201,33 @@ def build(groups: list[tuple[str, str]]) -> dict:
               AND t.sigungu_cd IS NOT NULL
         """).fetchdf()
 
+        # 가격 추세 축 (요구사항 2026-09-10 — '가격 수준' 을 바꿉니다).
+        #
+        # 필지 하나에는 올해 공시지가 한 값뿐이라 그 땅만으로는 추세를
+        # 못 냅니다. **그 땅이 속한 동네·용도지역의 실거래 단가**가
+        # 최근 몇 해 어떻게 움직였는지를 씁니다.
+        #
+        # 해마다 중앙값을 내고 처음과 끝으로 연평균 상승률(CAGR)을
+        # 잡습니다. 평균이 아니라 중앙값인 이유는, 거래 몇 건이 큰
+        # 땅이면 평균이 통째로 끌려가기 때문입니다.
+        #
+        # 한 해에 MIN_TREND_N 건이 안 되는 해는 **버립니다** — 두세 건의
+        # 중앙값은 그 동네 값이 아니라 그 두세 건의 값입니다.
+        trend_rows = con.execute(f"""
+            SELECT sigungu_cd,
+                   CASE {case} ELSE NULL END AS grp,
+                   deal_year,
+                   median(price_per_m2) AS p50,
+                   count(*) AS n
+            FROM trade t
+            WHERE t.kind = 'land' AND t.price_per_m2 IS NOT NULL
+              AND NOT coalesce(t.is_cancelled, FALSE)
+              AND t.sigungu_cd IS NOT NULL
+              AND t.deal_year >= {TREND_FROM}
+            GROUP BY 1, 2, 3
+            HAVING count(*) >= {MIN_TREND_N}
+        """).fetchdf()
+
         # 교통 축. 조인 표에 거리(10km 까지)가 이미 들어 있어서 여기서
         # 다시 재지 않는다. 화물 통행량은 가장 최근 해의 일평균을 쓴다.
         # 화물은 2·3·4·5종이다 — 2종도 물류에 많이 쓰인다.
@@ -263,6 +309,40 @@ def build(groups: list[tuple[str, str]]) -> dict:
         for key in (f"{code}|{r.grp}", f"{code[:2]}|{r.grp}", f"*|{r.grp}"):
             slot(key)["traffic"].append(float(r.grav))
 
+    # ── 가격 추세 ────────────────────────────────────────────
+    #
+    # 해마다의 중앙값을 모아 연평균 상승률을 냅니다. 또래 열쇠는 위와
+    # 같은 세 단계(시군구 · 시도 · 전국)로 채웁니다 — 시군구에서 해가
+    # 모자라면 화면이 위로 물러납니다.
+    years: dict[str, dict[int, float]] = {}
+    for r in trend_rows.itertuples(index=False):
+        if not r.grp or r.p50 is None or not (float(r.p50) > 0):
+            continue
+        code = str(r.sigungu_cd)
+        for key in (f"{code}|{r.grp}", f"{code[:2]}|{r.grp}", f"*|{r.grp}"):
+            # 위 단계는 여러 시군구가 같은 해에 들어오므로 **더한 뒤
+            # 나누지 않습니다** — 중앙값의 평균은 중앙값이 아닙니다.
+            # 대신 그 해의 값들을 모아 두었다가 아래에서 중앙값을 냅니다.
+            years.setdefault(key, {}).setdefault(int(r.deal_year), [])
+            years[key][int(r.deal_year)].append(float(r.p50))
+
+    trends: dict[str, float] = {}
+    for key, by_year in years.items():
+        got = sorted((y, sorted(v)[len(v) // 2]) for y, v in by_year.items())
+        if len(got) < 2:
+            continue
+        (y0, p0), (y1, p1) = got[0], got[-1]
+        span = y1 - y0
+        if span < MIN_TREND_SPAN or p0 <= 0 or p1 <= 0:
+            continue
+        trends[key] = (p1 / p0) ** (1.0 / span) - 1.0
+
+    # 백분위로 읽으려면 견줄 분포가 있어야 합니다. **시군구 단계만**
+    # 모아 전국 분포를 만듭니다 — 시도·전국 열쇠까지 섞으면 같은 땅이
+    # 여러 번 세어져 분포가 가운데로 쏠립니다.
+    trend_q = _quantiles([v for k, v in trends.items()
+                          if not k.startswith("*|") and len(k.split("|")[0]) > 2])
+
     for key, s in bag.items():
         if s["n"] < MIN_PEER and not s["traffic"]:
             continue
@@ -273,6 +353,11 @@ def build(groups: list[tuple[str, str]]) -> dict:
             "price": _quantiles(s["price"]),
             "traffic": _quantiles(s["traffic"]),
         }
+        if key in trends:
+            # 연평균 상승률. 화면이 원값을 그대로 적을 수 있게 싣습니다 —
+            # 백분위만 주면 '상위 20%' 가 몇 %/년인지 알 수 없습니다.
+            peers[key]["trend"] = round(trends[key], 5)
+            peers[key]["trend_span"] = sorted(years[key])[-1] - sorted(years[key])[0]
 
     # 시군구별 개발 여지 사다리.
     sigungu: dict[str, dict] = {}
@@ -286,8 +371,11 @@ def build(groups: list[tuple[str, str]]) -> dict:
     for code, counts in sigungu.items():
         zone_pct[code] = _cum(counts)
 
+    with_trend = sum(1 for v in peers.values() if "trend" in v)
     print(f"  필지 진단 또래 {len(peers):,}묶음"
           f" (시군구·시도·전국 3단계) · 시군구 사다리 {len(zone_pct):,}곳")
+    print(f"  가격 추세 {with_trend:,}묶음 ({with_trend / max(1, len(peers)):.0%})"
+          f" · 최근 {TREND_YEARS}년 · 전국 분포 {len(trend_q)}분위")
     return {
         "axes": AXES,
         "min_peer": MIN_PEER,
@@ -297,5 +385,9 @@ def build(groups: list[tuple[str, str]]) -> dict:
         "slope_grade": SLOPE_GRADE,
         "zone_ladder": ZONE_LADDER,
         "peers": peers,
+        # 전국 시군구×용도의 연평균 상승률 분포. 한 또래의 추세를
+        # 백분위로 바꾸는 자입니다.
+        "trend_q": trend_q,
+        "trend_years": TREND_YEARS,
         "zone_pct": zone_pct,
     }
