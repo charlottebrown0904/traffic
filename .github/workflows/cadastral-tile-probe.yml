@@ -21,4 +21,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: 세 갈래로 나눠 재기
-        run: python3 scripts/cadastral_probe.py
+        run: python3 scripts/cadastral_tile_probe.py
