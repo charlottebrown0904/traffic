@@ -2692,37 +2692,31 @@ const FAKE_LEAFLET = () => {
     // 그러니 moveend 시점에는 popupopen 이 아직 안 왔고, lpOpenPk 는
     // null 이다. 그 한 틈에 태그를 다 지워서 말풍선이 닫혔다.
     // 밀린 뒤에는 가장자리가 아니게 되므로 두세 번째 누름은 됐다.
+    // **여기가 두 번 놓친 자리다.** 진짜 Leaflet 으로 재현해 보니
+    // 순서는 click → popupopen → moveend 였고, moveend 잠금은 제대로
+    // 돌았습니다. 죽인 것은 **조회수 RPC 응답**이 부른 재그리기였습니다
+    // (app.js 의 viewersBump). drawLandPrice 를 부르는 자리가 열여섯
+    // 곳이라 자리마다 막으면 반드시 하나를 빠뜨립니다.
+    //
+    // 그래서 **부르는 쪽이 아니라 그리는 쪽**을 검사합니다 — 말풍선이
+    // 열려 있으면 누가 불러도 안 그려야 합니다.
     const edge = await page.evaluate(async () => {
       const pick = () => (window.__map.groups || []).flatMap((g) => g._items)
         .filter((m) => m.options && m.options.pane === 'lpPane');
       const m = pick()[0];
-      // 1) 누름
-      (m.__handlers.click || []).forEach((f) => f());
-      // 2) autoPan 이 지도를 민다 — popupopen 보다 먼저 온다
-      ((window.__mapOn || {}).moveend || []).forEach((f) => f());
-      const survived = pick().includes(m);
-      // 3) 이제서야 popupopen
       m.openPopup();
-      return { survived, open: !!m.__popupOpen };
-    });
-    check('가장자리 태그 — 밀린 뒤에도 마커가 살아 있다', edge.survived);
-    check('가장자리 태그 — 첫 누름에 말풍선이 켜진다', edge.open);
-
-    // 건너뛴 갱신은 잊지 않는다. 말풍선이 결국 안 열렸다면(끌기였다면)
-    // 태그가 낡은 채로 남으면 안 된다.
-    const catchUp = await page.evaluate(async () => {
-      const pick = () => (window.__map.groups || []).flatMap((g) => g._items)
-        .filter((m) => m.options && m.options.pane === 'lpPane');
-      const before = pick()[0];
-      before.closePopup();                       // 열려 있던 것 정리
-      (before.__handlers.click || []).forEach((f) => f());
+      const opened = !!m.__popupOpen;
+      // 우리가 부르지 않은 자리들이 다시 그리려 든다.
       ((window.__mapOn || {}).moveend || []).forEach((f) => f());
-      // 유예(800ms) 가 지나면 저절로 갚아야 한다.
-      await new Promise((r) => setTimeout(r, 1100));
-      return { redrew: !pick().includes(before), n: pick().length };
+      window.__drawLandPrice();          // 조회수 RPC · presence · 조각 도착
+      window.__drawLandPrice();
+      return { opened, survived: pick().includes(m), open: !!m.__popupOpen };
     });
-    check('건너뛴 갱신을 잠깐 뒤에 갚는다',
-          catchUp.redrew, `다시 그린 태그 ${catchUp.n}개`);
+    check('말풍선이 열려 있으면 누가 불러도 안 그린다',
+          edge.survived, `마커유지=${edge.survived}`);
+    check('가장자리 태그 — 첫 누름에 말풍선이 켜진다',
+          edge.opened && edge.open);
+
 
     // 닫으면 밀린 갱신을 갚는다 — 그래야 태그가 낡은 채로 남지 않는다.
     const after = await page.evaluate(() => {

@@ -1594,25 +1594,11 @@ function buildMap() {
     // 색도 다시 끊어야 한다 — 화면 안에서의 5분위이기 때문이다.
     // 조회수는 drawLandPrice 가 '지금 화면에 있는 태그' 를 넘겨 준다.
     //
-    // **말풍선이 열려 있으면 건너뛴다.** 다시 그리면 그 말풍선이 붙어
-    // 있던 마커가 사라져 말풍선도 함께 닫힌다 (lpOpenPk 설명 참조).
+    // 말풍선이 열려 있으면 헛일을 안 한다. **진짜 잠금은 여기가 아니라
+    // drawLandPrice 안에 있다** — 부르는 자리가 열여섯 곳이다.
     if (lpOpenPk != null) return;
-    // 누른 직후도 건너뛴다 — 이 moveend 가 autoPan 이 민 것일 수 있고,
-    // 그때는 popupopen 이 아직 안 왔다 (lpClickAt 설명 참조).
-    if (Date.now() - lpClickAt < LP_CLICK_GRACE) {
-      // 건너뛴 갱신은 잊지 않는다. 잠깐 뒤에 갚는다 — 말풍선이 결국
-      // 안 열렸다면(끌기였다면) 태그가 낡은 채 남으면 안 된다.
-      clearTimeout(lpCatchUp);
-      lpCatchUp = setTimeout(() => {
-        if (lpOpenPk == null) drawLandPrice();
-      }, LP_CLICK_GRACE);
-      return;
-    }
     drawLandPrice();
   });
-  // autoPan 이 곧 지도를 민다는 신호. _adjustPan 맨 앞에서 오므로
-  // **미는 것보다 먼저** 받는다 — 두 번째 그물이다.
-  map.on('autopanstart', () => { lpClickAt = Date.now(); });
   // 닫으면 그때 다시 그린다 — 열려 있는 동안 밀린 갱신을 여기서 갚는다.
   map.on('popupclose', (e) => {
     const cls = ((e.popup || {}).options || {}).className;
@@ -2982,26 +2968,8 @@ let lpDrawing = false;
  * 그래서 지도를 옮기려고 태그 위에서 끌면 말풍선이 딸려 열립니다.
  * 끌기가 있었으면 열지 않습니다. */
 let lpDragged = false;
-/* 태그를 누른 시각. **왜 시각이 필요한가.**
- *
- * 1차 고침(lpOpenPk)으로 가운데 태그는 살았는데 가장자리 태그는
- * 그대로 꺼졌습니다. Leaflet 안의 순서 때문입니다.
- *
- *   click → 말풍선 붙이기 → _adjustPan(autoPan 으로 지도를 민다)
- *         → moveend        → **그 다음에야** popupopen
- *
- * 즉 지도가 밀리고 moveend 가 오는 시점에는 popupopen 이 아직 안
- * 왔습니다. 그때 lpOpenPk 는 여전히 null 이라 태그를 다 지웠고,
- * 말풍선이 붙어 있던 마커가 사라져 말풍선도 닫혔습니다. 밀리고 난
- * 뒤에는 그 태그가 더 이상 가장자리가 아니므로 두세 번째 누름은
- * 되던 것이 이것입니다.
- *
- * 그래서 **누른 직후 잠깐은 다시 그리지 않습니다.** popupopen 을
- * 기다리지 않으므로 순서에 안 걸리고, 시간이 지나면 저절로 풀리므로
- * 어딘가에 깃발이 걸린 채 남는 일도 없습니다. */
-let lpClickAt = 0;
-let lpCatchUp = null;
-const LP_CLICK_GRACE = 800;   // ms. autoPan 애니메이션(≈250ms)보다 넉넉히.
+/* 말풍선이 열려 있는 동안 미뤄 둔 다시 그리기가 있는가. */
+let lpPending = false;
 
 /* ㎡ 단가를 **평당**으로 바꿔 짧게 쓴다. ㎡당 30만원은 감이 안 오지만
  * 평당 100만원은 바로 온다. */
@@ -3652,6 +3620,25 @@ function drawLandPrice() {
   const have = !!(state.landPrice && (state.landPrice.windows || []).length);
   if (bar) bar.hidden = !have;
   if (!map || !lpLayer) return;
+  /* **잠금은 여기 있어야 한다.** 부르는 자리를 세어 보면 열여섯 곳이고,
+   * 그중에는 우리가 부르지 않은 것들이 섞여 있다 —
+   *
+   *   · 조회수 RPC(bump_place_view) 응답
+   *   · 실시간 접속(presence) 알림
+   *   · 읍면동·명부 조각이 도착했을 때
+   *   · 필터·배율·연도 변경
+   *
+   * 자리마다 막으면 하나는 반드시 빠뜨린다. 실제로 두 번 빠뜨렸다 —
+   * moveend 만 막았더니 조회수 RPC 응답이 말풍선을 죽였다. 진짜
+   * Leaflet 으로 재현해서 확인한 순서가 이것이다:
+   *
+   *   click → popupopen → moveend(건너뜀) → 조회수 RPC → draw() → 사망
+   *
+   * 다시 그리면 clearLayers 가 마커를 지우고, 말풍선은 그 마커에
+   * 붙어 있으므로 함께 닫힌다. 그래서 **열려 있으면 안 그린다.**
+   * 미룬 것은 잊지 않고, 닫을 때 갚는다(map 의 popupclose). */
+  if (lpOpenPk != null) { lpPending = true; return; }
+  lpPending = false;
   lpDrawing = true;
   try {
     drawLandPriceInner(have);
@@ -3659,6 +3646,10 @@ function drawLandPrice() {
     lpDrawing = false;
   }
 }
+
+// 검사가 '우리가 부르지 않은 자리' 를 흉내낼 수 있게 내놓는다. 조회수
+// RPC 응답도 presence 알림도 밖에서는 이 함수 하나로 보인다.
+window.__drawLandPrice = () => drawLandPrice();
 
 function drawLandPriceInner(have) {
   lpLayer.clearLayers();
@@ -3735,11 +3726,6 @@ function drawLandPriceInner(have) {
     // 옮기면 어느 동네 값인지가 끊깁니다. 대신 autoPan 을 켜서, 태그가
     // 화면 끝에 있으면 지도가 스스로 밀려 말풍선이 다 보이게 합니다.
     const tip = lpTip(it, level, w);
-    // **말풍선을 붙이기 전에 귀를 붙인다.** Leaflet 은 등록한 순서로
-    // 부르고, bindPopup 이 등록하는 것이 바로 그 click 처리기다.
-    // 뒤에 붙이면 말풍선이 열리고 지도가 밀린 다음에야 우리 차례가
-    // 온다 — 그때는 이미 늦었다.
-    marker.on('click', () => { lpClickAt = Date.now(); });
     marker.bindTooltip(tip,
       { direction: 'top', className: 'lp-tip', opacity: 1 });
     marker.bindPopup(tip, {
