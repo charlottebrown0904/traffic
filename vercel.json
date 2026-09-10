@@ -9,19 +9,6 @@
   ],
   "cleanUrls": true,
   "trailingSlash": false,
-  "redirects": [
-    {
-      "source": "/:path*",
-      "has": [
-        {
-          "type": "host",
-          "value": "toji-gogo.vercel.app"
-        }
-      ],
-      "destination": "https://toji.fyi/:path*",
-      "permanent": false
-    }
-  ],
   "headers": [
     {
       "source": "/(.*)\\.(css|js)",

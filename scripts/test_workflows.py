@@ -539,30 +539,30 @@ if _vj.exists():
           "한국 공공 API 가 해외 IP 를 막는다")
 
     # 브이월드 주소는 **하나만** 살려 둔다 (요구사항 2026-09-10:
-    # "toji-gogo.vercel.app/app 에서의 연결은 이제 막습니다").
+    # "toji-gogo.vercel.app 주소 입력 시 연결 안되도록").
     #
-    # 화면(gate.js)에서 막는 것으로는 모자란다. 그 주소로도 /api/tile 이
-    # 그대로 열려 있고, 그 함수가 쓰는 브이월드 키는 하루 3만 건짜리
-    # 자원이다 — 이 프로젝트에서 가장 자주 병목이 되는 것이다. 그래서
-    # 자바스크립트가 아니라 **경로 전체**를 서버에서 돌려보낸다.
+    # ## 리디렉션으로 막으려다 오히려 열어 뒀다 (실측 2026-09-10)
     #
-    # 308(영구) 이 아니라 307(임시) 이다. 영구 리디렉션은 브라우저가
-    # 세게 캐시해서, 나중에 되돌리려 해도 이미 한 번 들른 사람은 영영
-    # 넘어간다.
+    # 처음에는 vercel.json 의 redirects 로 그 주소의 모든 경로를
+    # toji.fyi 로 넘겼다. 러너(로그인 안 된 남)로 재 봤더니 **401 이
+    # 아니라 307** 이 나왔다 — 리디렉션이 Vercel 인증보다 먼저 걸려서
+    # 인증 벽이 아예 작동하지 않았다. 막으려던 규칙이 문을 열어 준 셈이다.
+    #
+    # 이 프로젝트에는 Vercel 인증(ssoProtection)이 이미
+    # all_except_custom_domains 로 켜져 있다 — 만들어 준 *.vercel.app
+    # 주소는 로그인을 요구하고 toji.fyi 는 공개다. 리디렉션을 걷어내면
+    # 그 벽이 살아난다.
+    #
+    # **그래서 여기서는 규칙이 없는 것을 확인한다.** 누군가 좋은 뜻으로
+    # 다시 넣으면 벽이 또 무력해진다.
     _reds = _cfg.get("redirects") or []
-    _blocked = [r for r in _reds
-                if any(h.get("type") == "host"
-                       and "vercel.app" in str(h.get("value", ""))
-                       for h in (r.get("has") or []))]
-    check(bool(_blocked),
-          "vercel.app 주소가 toji.fyi 로 넘어간다 (브이월드 키가 걸려 있다)")
-    if _blocked:
-        _r = _blocked[0]
-        check(_r.get("source") == "/:path*"
-              and str(_r.get("destination", "")).startswith("https://toji.fyi/"),
-              f"/app 만이 아니라 경로 전체를 넘긴다 (지금 {_r.get('source')!r})")
-        check(_r.get("permanent") is False,
-              "임시(307) 다 — 영구는 브라우저가 캐시해서 되돌릴 수 없다")
+    _vercel_app = [r for r in _reds
+                   if any(h.get("type") == "host"
+                          and "vercel.app" in str(h.get("value", ""))
+                          for h in (r.get("has") or []))]
+    check(not _vercel_app,
+          "vercel.app 주소를 리디렉션으로 넘기지 않는다 — 넘기면 "
+          "Vercel 인증 벽이 먼저 무력해진다 (러너 실측: 401 이 아니라 307)")
 
 print()
 if fail:
