@@ -1578,12 +1578,34 @@ function buildMap() {
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   // 보이는 영역만 그리므로, 움직이면 다시 그려야 한다. moveend 는
   // 확대·축소 뒤에도 온다.
+  // 누름과 끌기를 가른다. 순서는 pointerdown → dragstart → click 이라,
+  // 누를 때 지우고 끌면 세우면 click 시점에 답이 나와 있다.
+  const holder = map.getContainer();
+  const clearDrag = () => { lpDragged = false; };
+  ['pointerdown', 'mousedown', 'touchstart'].forEach((ev) => {
+    try { holder.addEventListener(ev, clearDrag, { capture: true, passive: true }); }
+    catch (e) { holder.addEventListener(ev, clearDrag, true); }
+  });
+  map.on('dragstart', () => { lpDragged = true; });
+
   map.on('moveend', () => {
     drawTrades();
     // 땅값 글자는 **보이는 곳만** 그린다. 움직이면 다시 그려야 하고,
     // 색도 다시 끊어야 한다 — 화면 안에서의 5분위이기 때문이다.
     // 조회수는 drawLandPrice 가 '지금 화면에 있는 태그' 를 넘겨 준다.
-    drawLandPrice();
+    //
+    // **말풍선이 열려 있으면 건너뛴다.** 다시 그리면 그 말풍선이 붙어
+    // 있던 마커가 사라져 말풍선도 함께 닫힌다 (lpOpenPk 설명 참조).
+    if (lpOpenPk == null) drawLandPrice();
+  });
+  // 닫으면 그때 다시 그린다 — 열려 있는 동안 밀린 갱신을 여기서 갚는다.
+  map.on('popupclose', (e) => {
+    const cls = ((e.popup || {}).options || {}).className;
+    if (cls !== 'lp-pop') return;
+    lpOpenPk = null;
+    // 다시 그리는 도중에 닫힌 것이면 여기서 또 그리면 안 된다 —
+    // clearLayers 가 popupclose 를 부르므로 끝없이 돈다.
+    if (!lpDrawing) drawLandPrice();
   });
   // 배율이 바뀌면 인구를 묶는 단위가 바뀐다 (시도 → 시군 → 구).
   // 다시 그리지 않으면 확대해 들어가도 전국 원 17개가 그대로 남는다.
@@ -2921,6 +2943,31 @@ const lpUmdPending = new Set();
 let lpRosterCache = {};
 const lpRosterPending = new Set();
 
+/* 지금 열려 있는 말풍선의 태그 열쇠. 없으면 null.
+ *
+ * 보고된 문제(2026-09-10): "태그 클릭 시 정보가 나오는데 너무 민감한
+ * 것 같습니다. 조심히 누르지 않거나 가장자리 태그 클릭 시 지도가
+ * 옮겨지면서 계속 사라집니다."
+ *
+ * 손가락이 조금 미끄러지거나 가장자리 태그에서 지도가 스스로 밀리면
+ * (autoPan) moveend 가 오고, 그때 태그를 **전부 지우고 다시 만듭니다**
+ * (drawLandPrice 의 clearLayers). 방금 열린 말풍선은 그 마커에 붙어
+ * 있었으므로 함께 사라집니다. 즉 말풍선을 보여주려고 켠 autoPan 이
+ * 그 말풍선을 스스로 죽이고 있었습니다.
+ *
+ * 그래서 **말풍선이 열려 있는 동안에는 화면을 옮겨도 태그를 다시
+ * 그리지 않습니다.** 읽는 중인 사람에게 태그 갱신은 필요 없고, 닫으면
+ * 그때 한 번 다시 그립니다. */
+let lpOpenPk = null;
+let lpDrawing = false;
+/* 손가락을 끌었는가. 끌었다면 그 끝의 '누름' 은 누른 것이 아니다.
+ *
+ * Leaflet 은 마커 위에서 시작한 끌기를 **누름으로도** 셉니다 —
+ * 마커가 지도와 함께 움직여서 손가락이 계속 그 위에 있기 때문입니다.
+ * 그래서 지도를 옮기려고 태그 위에서 끌면 말풍선이 딸려 열립니다.
+ * 끌기가 있었으면 열지 않습니다. */
+let lpDragged = false;
+
 /* ㎡ 단가를 **평당**으로 바꿔 짧게 쓴다. ㎡당 30만원은 감이 안 오지만
  * 평당 100만원은 바로 온다. */
 /* ─── 값을 적는 규칙 ───────────────────────────────────────────────
@@ -3570,6 +3617,15 @@ function drawLandPrice() {
   const have = !!(state.landPrice && (state.landPrice.windows || []).length);
   if (bar) bar.hidden = !have;
   if (!map || !lpLayer) return;
+  lpDrawing = true;
+  try {
+    drawLandPriceInner(have);
+  } finally {
+    lpDrawing = false;
+  }
+}
+
+function drawLandPriceInner(have) {
   lpLayer.clearLayers();
   const groups = lpGroups();
   window.__lp = { on: false, n: 0, groups, level: null };
@@ -3651,7 +3707,12 @@ function drawLandPrice() {
       autoPanPadding: [12, 12], closeButton: true,
     });
     // 누르면 말풍선이 뜨는데 그 위에 hover 말풍선이 겹치면 두 겹이 된다.
-    marker.on('popupopen', () => marker.closeTooltip());
+    marker.on('popupopen', () => {
+      // 지도를 끌다가 손을 뗀 것이면 누른 것이 아니다. 열지 않는다.
+      if (lpDragged) { marker.closePopup(); return; }
+      marker.closeTooltip();
+      lpOpenPk = it.pk;
+    });
     lpLayer.addLayer(marker);
   });
 

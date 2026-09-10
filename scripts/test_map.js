@@ -106,8 +106,22 @@ const FAKE_LEAFLET = () => {
       },
       on(ev, fn) {
         (window.__mapOn = window.__mapOn || {});
-        (window.__mapOn[ev] = window.__mapOn[ev] || []).push(fn);
+        // 진짜 Leaflet 은 'a b' 처럼 여러 사건을 한 번에 받는다.
+        String(ev).split(/\s+/).filter(Boolean).forEach((one) => {
+          (window.__mapOn[one] = window.__mapOn[one] || []).push(fn);
+        });
         return this;
+      },
+      // **진짜 Leaflet 에는 getContainer 가 있다.** 누름과 끌기를 가르려고
+      // 지도 통에 직접 귀를 붙이므로(pointerdown), 없으면 통째로 터진다.
+      getContainer() {
+        if (!window.__mapBox) {
+          const el = document.createElement('div');
+          el.id = 'fake-map-box';
+          document.body.appendChild(el);
+          window.__mapBox = el;
+        }
+        return window.__mapBox;
       },
       // 거래를 '보이는 영역만' 그리므로 경계가 없으면 한 점도 안 그려진다.
       // 전국이 다 보이는 셈으로 둔다 — 잘라내기 자체는 아래에서 따로 본다.
@@ -174,7 +188,35 @@ const FAKE_LEAFLET = () => {
       m.__latlng = ll;
       // 거래 상세 말풍선. 붙인 내용을 들고 있지 않으면 '눌러도 아무것도
       // 안 나온다' 를 검사로 옮길 수 없다.
-      m.bindPopup = (html) => { m.__popupHtml = html; return m; };
+      m.bindPopup = (html, opts) => {
+        m.__popupHtml = html;
+        m.__popupOpts = Object.assign({}, opts);
+        return m;
+      };
+      // 말풍선을 열고 닫는 흉내. 진짜 Leaflet 처럼 popupopen 을 부르고,
+      // 열려 있는지를 남긴다 — '지도를 옮겨도 안 닫히는가' 를 이것으로 본다.
+      m.__handlers = {};
+      m.on = (ev, fn) => {
+        String(ev).split(/\s+/).filter(Boolean).forEach((one) => {
+          (m.__handlers[one] = m.__handlers[one] || []).push(fn);
+        });
+        return m;
+      };
+      m.openPopup = () => {
+        m.__popupOpen = true;
+        (m.__handlers.popupopen || []).forEach((f) => f({ popup: m }));
+        return m;
+      };
+      m.closePopup = () => {
+        if (!m.__popupOpen) return m;
+        m.__popupOpen = false;
+        (m.__handlers.popupclose || []).forEach((f) => f({ popup: m }));
+        // 지도도 듣는다 (drawLandPrice 를 다시 부르는 쪽).
+        (((window.__mapOn || {}).popupclose) || []).forEach((f) =>
+          f({ popup: { options: m.__popupOpts || {} } }));
+        return m;
+      };
+      m.closeTooltip = () => m;
       return m;
     },
     divIcon: (opts) => ({ options: Object.assign({}, opts) }),
@@ -2614,6 +2656,62 @@ const FAKE_LEAFLET = () => {
     });
     check('숫자가 없는 태그에는 줄이 없다', vw3.lines < vw3.all,
           `태그 ${vw3.all}개 중 줄 ${vw3.lines}개`);
+
+    // 열린 말풍선이 **지도가 움직여도 살아 있어야 한다.**
+    //
+    // 보고된 문제(2026-09-10): "조심히 누르지 않거나 가장자리 태그
+    // 클릭 시 지도가 옮겨지면서 계속 사라집니다." 손가락이 미끄러지거나
+    // 가장자리에서 autoPan 이 지도를 밀면 moveend 가 오고, 그때 태그를
+    // 전부 지우고 다시 만들면서(clearLayers) 방금 열린 말풍선이 함께
+    // 사라졌습니다. 말풍선을 보여주려고 켠 autoPan 이 그것을 죽였습니다.
+    const live = await page.evaluate(() => {
+      const marks = (window.__map.groups || []).flatMap((g) => g._items)
+        .filter((m) => m.options && m.options.pane === 'lpPane');
+      const m = marks[0];
+      m.openPopup();
+      const opened = !!m.__popupOpen;
+      // 지도가 움직인 셈으로 둔다 — autoPan 도, 미끄러진 손가락도 이것이다.
+      ((window.__mapOn || {}).moveend || []).forEach((f) => f());
+      const after = (window.__map.groups || []).flatMap((g) => g._items)
+        .filter((x) => x.options && x.options.pane === 'lpPane');
+      return { opened, stillOpen: !!m.__popupOpen, sameMarks: after.includes(m) };
+    });
+    check('말풍선을 열면 열린다', live.opened);
+    check('지도가 움직여도 말풍선이 안 사라진다',
+          live.stillOpen && live.sameMarks,
+          `열림=${live.stillOpen} 마커유지=${live.sameMarks}`);
+
+    // 닫으면 밀린 갱신을 갚는다 — 그래야 태그가 낡은 채로 남지 않는다.
+    const after = await page.evaluate(() => {
+      const marks = (window.__map.groups || []).flatMap((g) => g._items)
+        .filter((m) => m.options && m.options.pane === 'lpPane');
+      const m = marks.find((x) => x.__popupOpen);
+      if (!m) return { redrew: false };
+      m.closePopup();
+      const now = (window.__map.groups || []).flatMap((g) => g._items)
+        .filter((x) => x.options && x.options.pane === 'lpPane');
+      return { redrew: !now.includes(m) && now.length > 0, n: now.length };
+    });
+    check('닫으면 태그를 다시 그린다 (밀린 갱신을 갚는다)',
+          after.redrew, `다시 그린 태그 ${after.n}개`);
+
+    // 끌기 끝의 '누름' 은 누른 것이 아니다. 지도를 옮기려고 태그 위에서
+    // 끌면 Leaflet 이 그것도 누름으로 세는데, 그때 말풍선이 딸려 열렸다.
+    const drag = await page.evaluate(() => {
+      const marks = (window.__map.groups || []).flatMap((g) => g._items)
+        .filter((m) => m.options && m.options.pane === 'lpPane');
+      const m = marks[0];
+      ((window.__mapOn || {}).dragstart || []).forEach((f) => f());
+      m.openPopup();
+      const afterDrag = !!m.__popupOpen;
+      // 새로 누르면 끌기 표시가 지워진다.
+      window.__mapBox.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      m.openPopup();
+      return { afterDrag, afterTap: !!m.__popupOpen };
+    });
+    check('끌기 끝의 누름으로는 안 열린다', !drag.afterDrag);
+    check('다시 누르면 열린다', drag.afterTap);
+
 
     // 별표 — **시·군 안에서** 하나. 전국 1등을 달면 전국에 별이
     // 하나뿐이라 아무 데서도 안 보인다.
