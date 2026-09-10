@@ -2681,12 +2681,58 @@ const FAKE_LEAFLET = () => {
           live.stillOpen && live.sameMarks,
           `열림=${live.stillOpen} 마커유지=${live.sameMarks}`);
 
+    // **가장자리 태그.** 여기가 1차 고침이 놓친 자리다 (2026-09-10
+    // 2차 보고: "1번은 기존처럼 꺼집니다. 몇번을 눌러야 정상적으로
+    // 켜져 있습니다").
+    //
+    // Leaflet 안의 순서가 이렇다:
+    //   click → 말풍선 붙이기 → autoPan 으로 지도를 민다 → moveend
+    //         → **그 다음에야** popupopen
+    //
+    // 그러니 moveend 시점에는 popupopen 이 아직 안 왔고, lpOpenPk 는
+    // null 이다. 그 한 틈에 태그를 다 지워서 말풍선이 닫혔다.
+    // 밀린 뒤에는 가장자리가 아니게 되므로 두세 번째 누름은 됐다.
+    const edge = await page.evaluate(async () => {
+      const pick = () => (window.__map.groups || []).flatMap((g) => g._items)
+        .filter((m) => m.options && m.options.pane === 'lpPane');
+      const m = pick()[0];
+      // 1) 누름
+      (m.__handlers.click || []).forEach((f) => f());
+      // 2) autoPan 이 지도를 민다 — popupopen 보다 먼저 온다
+      ((window.__mapOn || {}).moveend || []).forEach((f) => f());
+      const survived = pick().includes(m);
+      // 3) 이제서야 popupopen
+      m.openPopup();
+      return { survived, open: !!m.__popupOpen };
+    });
+    check('가장자리 태그 — 밀린 뒤에도 마커가 살아 있다', edge.survived);
+    check('가장자리 태그 — 첫 누름에 말풍선이 켜진다', edge.open);
+
+    // 건너뛴 갱신은 잊지 않는다. 말풍선이 결국 안 열렸다면(끌기였다면)
+    // 태그가 낡은 채로 남으면 안 된다.
+    const catchUp = await page.evaluate(async () => {
+      const pick = () => (window.__map.groups || []).flatMap((g) => g._items)
+        .filter((m) => m.options && m.options.pane === 'lpPane');
+      const before = pick()[0];
+      before.closePopup();                       // 열려 있던 것 정리
+      (before.__handlers.click || []).forEach((f) => f());
+      ((window.__mapOn || {}).moveend || []).forEach((f) => f());
+      // 유예(800ms) 가 지나면 저절로 갚아야 한다.
+      await new Promise((r) => setTimeout(r, 1100));
+      return { redrew: !pick().includes(before), n: pick().length };
+    });
+    check('건너뛴 갱신을 잠깐 뒤에 갚는다',
+          catchUp.redrew, `다시 그린 태그 ${catchUp.n}개`);
+
     // 닫으면 밀린 갱신을 갚는다 — 그래야 태그가 낡은 채로 남지 않는다.
     const after = await page.evaluate(() => {
       const marks = (window.__map.groups || []).flatMap((g) => g._items)
         .filter((m) => m.options && m.options.pane === 'lpPane');
-      const m = marks.find((x) => x.__popupOpen);
+      // **이 절은 스스로 준비한다.** 앞 절들이 열고 닫으므로 '열려 있는
+      // 것을 찾는' 방식은 앞 절의 끝 상태에 기대게 된다.
+      const m = marks.find((x) => x.__popupOpen) || marks[0];
       if (!m) return { redrew: false };
+      if (!m.__popupOpen) m.openPopup();
       m.closePopup();
       const now = (window.__map.groups || []).flatMap((g) => g._items)
         .filter((x) => x.options && x.options.pane === 'lpPane');
