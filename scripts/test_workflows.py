@@ -538,44 +538,38 @@ if _vj.exists():
           f"함수가 서울(icn1)에 고정돼 있다 (지금 {_cfg.get('regions')!r}) — "
           "한국 공공 API 가 해외 IP 를 막는다")
 
-    # 브이월드 주소는 **하나만** 살려 둔다 (요구사항 2026-09-10:
+    # 들어오는 문은 **하나만** 둔다 (요구사항 2026-09-10:
     # "toji-gogo.vercel.app 주소 입력 시 연결 안되도록").
     #
-    # ## Vercel 인증은 이 주소를 안 막는다 (실측 2026-09-10)
+    # ## 어떻게 막혔나 — 코드가 아니라 도메인을 뗐다
     #
-    # 설정에는 벽이 켜져 있다.
+    # 두 가지를 먼저 시도했고 둘 다 안 됐다. 러너(로그인 안 된 남)로
+    # 실제로 재서 얻은 값이다.
     #
-    #   ssoProtection: enabled=true, deploymentType=all_except_custom_domains
+    #   ① vercel.json 리디렉션    /api/relay → 307   넘어갈 뿐 안 막힌다
+    #   ② Vercel 인증에 맡기기    /api/relay → 200   **그대로 열렸다**
     #
-    # 이름만 보면 '만들어 준 *.vercel.app 은 막고 toji.fyi 는 연다' 로
-    # 읽힌다. 그래서 리디렉션을 걷어내 벽에 맡겨 봤다. **열렸다.**
-    # 러너(로그인 안 된 남)로 잰 값이다.
-    #
-    #   리디렉션 있을 때   /api/relay → 307 (toji.fyi 로 넘어감)
-    #   리디렉션 걷었을 때 /api/relay → 200 (그대로 응답)
-    #
+    # ②가 뜻밖이었다. 설정에는 분명 벽이 켜져 있었다 —
+    # ssoProtection: enabled=true, deploymentType=all_except_custom_domains.
     # 같은 배포가 toji.fyi 도 물고 있어서, 그 배포가 '커스텀 도메인이
     # 달린 배포' 로 분류돼 통째로 면제되는 것으로 보인다. deploymentType
     # 을 all 로 바꾸면 toji.fyi 까지 막히므로 그 길은 못 쓴다.
     #
-    # **그래서 리디렉션이 지금 있는 유일한 방어선이다.** 걷어내면
-    # /api/relay 가 익명에게 열린다 — 중계기는 타일 키보다 큰 문이다.
-    # 주소 자체를 프로젝트에서 떼기 전까지는 이 규칙을 지운다.
+    # 결국 Vercel 프로젝트 설정에서 **도메인 자체를 뗐다**. 그 뒤
+    # 러너로 재니 404 DEPLOYMENT_NOT_FOUND — 화면도 /api/tile 도
+    # /api/relay 도 전부 죽었다.
+    #
+    # **그래서 여기서는 리디렉션이 없는 것을 확인한다.** 이제 그 규칙은
+    # 죽은 주소를 가리키는 죽은 코드고, 남겨 두면 다음 사람이 그것을
+    # 방어선으로 착각한다. 진짜 방어선은 저장소 밖(Vercel 설정)에 있다.
     _reds = _cfg.get("redirects") or []
-    _blocked = [r for r in _reds
-                if any(h.get("type") == "host"
-                       and "vercel.app" in str(h.get("value", ""))
-                       for h in (r.get("has") or []))]
-    check(bool(_blocked),
-          "vercel.app 주소가 toji.fyi 로 넘어간다 — 걷어내면 /api/relay 가 "
-          "익명에게 열린다 (러너 실측 200)")
-    if _blocked:
-        _r = _blocked[0]
-        check(_r.get("source") == "/:path*"
-              and str(_r.get("destination", "")).startswith("https://toji.fyi/"),
-              f"/app 만이 아니라 경로 전체를 넘긴다 (지금 {_r.get('source')!r})")
-        check(_r.get("permanent") is False,
-              "임시(307) 다 — 영구는 브라우저가 캐시해서 되돌릴 수 없다")
+    _vercel_app = [r for r in _reds
+                   if any(h.get("type") == "host"
+                          and "vercel.app" in str(h.get("value", ""))
+                          for h in (r.get("has") or []))]
+    check(not _vercel_app,
+          "vercel.app 리디렉션이 없다 — 도메인을 뗐으므로 죽은 규칙이다 "
+          "(막는 것은 코드가 아니라 Vercel 설정이다)")
 
 print()
 if fail:
