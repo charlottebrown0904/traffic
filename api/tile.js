@@ -401,8 +401,25 @@ async function parcelInfo(req, res) {
     const n = Number(parcel[num]);
     parcel[num] = Number.isFinite(n) ? n : null;
   }
-  // 도형은 안 싣는다. 응답이 수십 KB로 커지는데 화면은 쓰지 않는다.
-  res.status(200).json({ parcel });
+  // **도형도 싣는다** (요구사항 2026-09-10 — 부동산플래닛처럼 윤곽).
+  //
+  // 예전에는 안 실었다. "응답이 수십 KB로 커지는데 화면은 쓰지 않는다"
+  // 고 적어 뒀는데, 이제 화면이 그것을 그린다. 무겁던 이유는 도형 자체가
+  // 아니라 **좌표의 소수점**이었다 — 브이월드는 15자리까지 준다.
+  //
+  //   127.123456789012345  →  20자
+  //   127.123457           →  10자   (6자리 = 지상 약 11cm)
+  //
+  // 필지 하나가 꼭짓점 수십 개이므로 자리를 줄이면 절반 아래로 내려간다.
+  // 11cm 보다 정밀한 윤곽은 화면에서 한 픽셀 안이라 뜻이 없다.
+  res.status(200).json({ parcel, geom: round6(hit.geometry) });
+}
+
+/** 좌표의 소수점을 여섯 자리로. 도형 구조는 그대로 둔다. */
+function round6(geom) {
+  if (!geom) return null;
+  const cut = (v) => (Array.isArray(v) ? v.map(cut) : Math.round(v * 1e6) / 1e6);
+  return { type: geom.type, coordinates: cut(geom.coordinates) };
 }
 
 module.exports = async function handler(req, res) {

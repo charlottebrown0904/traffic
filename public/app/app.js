@@ -65,6 +65,8 @@ const state = {
 };
 
 let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, lpLayer;
+/* 고른 필지의 윤곽. 한 번에 하나만 그린다. */
+let parcelLayer = null;
 const markers = new Map();
 
 /* ─────────── 유틸 ─────────── */
@@ -1636,6 +1638,12 @@ function buildMap() {
   // 되는데, 겹쳐 놓으면 눈에는 안 보이고 타일만 두 번 받는다.
   addZoningLayer();
 
+  // 고른 필지의 윤곽 (요구사항 2026-09-10 — 부동산플래닛처럼).
+  // 용도지역 색면(타일 200)보다 위, 땅값 글자(375)보다 아래에 둔다 —
+  // 윤곽이 글자를 덮으면 값을 못 읽는다.
+  map.createPane('parcelPane').style.zIndex = 370;
+  parcelLayer = L.layerGroup().addTo(map);
+
   // 땅값 분위지도. 배경 타일(200)보다 위, 거래(380)보다 아래.
   map.createPane('lpPane').style.zIndex = 375;
   lpLayer = L.layerGroup().addTo(map);
@@ -2633,7 +2641,12 @@ function showDetail(on) {
   const box = document.getElementById('detail');
   if (!box) return;
   box.hidden = !on;
-  if (!on) box.innerHTML = '';
+  if (!on) {
+    box.innerHTML = '';
+    // 칸을 닫으면 윤곽도 지운다. 카드가 없는데 파란 테두리만 남아
+    // 있으면 무엇을 고른 것인지 알 길이 없다.
+    drawParcelShape(null);
+  }
   // 지도가 넓어졌다 좁아졌다 하므로 Leaflet 에 알려야 한다. 안 알리면
   // 타일이 회색으로 남고 클릭 좌표가 어긋난다.
   if (map) setTimeout(() => map.invalidateSize(), 0);
@@ -4336,6 +4349,35 @@ function parcelCard(parcel, diag, at) {
     + '</div>';
 }
 
+/* 고른 필지의 윤곽을 그린다 (요구사항 2026-09-10).
+ *
+ * **한 번에 하나만.** 누를 때마다 쌓이면 지도가 파란 그물이 된다.
+ *
+ * 채우기를 옅게 두는 이유. 이 화면의 주인공은 값(땅값 글자·거래 핀)
+ * 이고, 윤곽은 '어디까지가 이 땅인가' 만 말하면 된다. 진하게 채우면
+ * 그 위의 글자를 덮어 값을 못 읽는다.
+ *
+ * 도형이 없으면 지우기만 한다 — 바다를 눌렀을 때 앞에 고른 필지가
+ * 그대로 남아 있으면 그것을 고른 줄로 읽는다. */
+function drawParcelShape(geom) {
+  if (!parcelLayer) return;
+  parcelLayer.clearLayers();
+  window.__parcelShape = null;
+  if (!geom) return;
+  const shape = L.geoJSON(geom, {
+    pane: 'parcelPane',
+    // 누름을 가로채면 안 된다. 윤곽 위를 다시 눌러 옆 필지로 가는 것이
+    // 막히고, 그 위에 걸친 땅값 글자도 안 눌린다.
+    interactive: false,
+    style: {
+      color: '#1B4F9C', weight: 2.5, opacity: .95,
+      fillColor: '#3B73C4', fillOpacity: .18,
+    },
+  });
+  parcelLayer.addLayer(shape);
+  window.__parcelShape = geom;
+}
+
 /* 지도를 눌렀을 때. 용도지역 말풍선 대신 **오른쪽에 필지 카드**를 연다. */
 async function askParcel(latlng) {
   const box = document.getElementById('detail');
@@ -4351,15 +4393,17 @@ async function askParcel(latlng) {
   ]);
   const parcel = res && res.parcel;
   if (!parcel) {
+    drawParcelShape(null);
     detailBody('<div class="detail-empty"><p>여기서는 필지 자료를 '
       + '못 받았습니다.</p><p class="hint">바다·도로처럼 지적이 없는 곳이거나, '
       + '브이월드가 잠시 응답하지 않은 것입니다.</p></div>');
     window.__parcel = null;
     return;
   }
+  drawParcelShape(res.geom);
   const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng]) : null;
   detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng]));
-  window.__parcel = { parcel, diag };
+  window.__parcel = { parcel, diag, geom: res.geom || null };
 }
 
 /* ─────────── 세 가설 판정 ─────────── */
