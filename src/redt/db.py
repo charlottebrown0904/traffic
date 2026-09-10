@@ -279,7 +279,7 @@ CREATE TABLE IF NOT EXISTS parcel_tile (
 -- ## 원본은 저장소에 두지 않는다
 --
 -- 감정평가서에는 소유자·채무자 이름이 적혀 있다. 이 저장소는 **공개**다.
--- 원본 PDF 는 data/raw/appraisal/ (gitignore 됨) 에만 두고, 이 표에는
+-- 원본 PDF 는 구글 드라이브(개인 계정)에만 두고, 이 표에는
 -- 사람 이름이 들어가는 칸을 아예 만들지 않는다.
 CREATE TABLE IF NOT EXISTS appraisal (
     appraisal_id  VARCHAR PRIMARY KEY,  -- 사건번호-물건번호-일련
