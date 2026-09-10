@@ -4393,6 +4393,36 @@ function parcelGroup(landUse) {
 /* 또래를 고른다. 시군구 → 시도 → 전국으로 물러나고, **어디까지
  * 물러났는지 함께 돌려준다** — 그것을 안 밝히면 '전국 상위 10%' 를
  * '우리 동네 상위 10%' 로 읽는다. */
+/* 추세만 따로 물러난다 (요구사항 2026-09-10).
+ *
+ * 또래는 도로·형상 분포가 두터운 단계에서 고릅니다. 그런데 그 단계에
+ * **추세가 없을 수 있습니다** — 거래가 해마다 다섯 건은 있어야 그 해를
+ * 쓰는데, 시군구 단위에서 그것이 안 서는 조합이 있습니다.
+ *
+ * 실측(2026-09-10): 화면이 고르는 또래에 추세가 있는 조합이 95.2%
+ * (6,794/7,140). 없는 346 조합은 **전부** 위 단계에 값이 있었습니다.
+ * 그래서 추세만 따로 물러나면 100% 가 됩니다.
+ *
+ * 다만 **어디서 온 값인지 말합니다.** 시·도 값을 그 동네 값인 척
+ * 적으면, 읽는 사람은 옆 동네와 견주는 데 그것을 씁니다.
+ */
+function pickTrend(sigunguCd, group) {
+  const st = parcelStats;
+  if (!st || !group) return null;
+  const tries = [
+    { key: `${sigunguCd}|${group}`, level: null },
+    { key: `${String(sigunguCd).slice(0, 2)}|${group}`, level: '시·도 기준' },
+    { key: `*|${group}`, level: '전국 기준' },
+  ];
+  for (const t of tries) {
+    const p = st.peers[t.key];
+    if (p && typeof p.trend === 'number') {
+      return { trend: p.trend, span: p.trend_span || null, from: t.level };
+    }
+  }
+  return null;
+}
+
 function pickPeer(sigunguCd, group) {
   const st = parcelStats;
   if (!st || !group) return null;
@@ -4484,14 +4514,17 @@ function parcelAxes(parcel, at) {
   // 어떻게 움직였는지를 씁니다. 견주는 상대도 달라집니다 — 같은 또래
   // 안에서 재면 모두 같은 값이 되므로, **전국의 다른 동네·용도들**과
   // 견줍니다.
-  const tr = peer && typeof peer.trend === 'number' ? peer.trend : null;
+  // 이름을 tg 로 두면 위의 교통 축(trafficGravity)과 부딪힌다.
+  const mo = pickTrend(code, group);
+  const moNote = [mo && mo.span ? `최근 ${mo.span}년` : null,
+                  mo && mo.from ? mo.from : null].filter(Boolean).join(' · ');
   out.axes.push({
     key: 'price', label: '가격 추세',
-    pct: (tr !== null && (st.trend_q || []).length)
-      ? pctFromQuantiles(tr, st.trend_q) : null,
-    raw: tr !== null
-      ? `연 ${tr >= 0 ? '+' : ''}${(tr * 100).toFixed(1)}%`
-        + (peer.trend_span ? ` (최근 ${peer.trend_span}년)` : '')
+    pct: (mo && (st.trend_q || []).length)
+      ? pctFromQuantiles(mo.trend, st.trend_q) : null,
+    raw: mo
+      ? `연 ${mo.trend >= 0 ? '+' : ''}${(mo.trend * 100).toFixed(1)}%`
+        + (moNote ? ` (${moNote})` : '')
       : '거래가 얇아 추세를 못 냅니다',
   });
 
