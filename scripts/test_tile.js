@@ -102,6 +102,10 @@ const jsonReply = {
 
 const call = async (query, method = 'GET', headers = {}) => {
   const res = fakeRes();
+  // 속도 제한 창을 비운다. 안 그러면 앞 절이 쌓아 둔 횟수가 뒤 절을
+  // 막아, 고치지도 않은 검사가 갑자기 빨개진다.
+  if (!headers.__keepRate) handler.__resetRate();
+  delete headers.__keepRate;
   // 진짜 요청에는 늘 host 헤더가 있다. 없으면 코드가 그것을 읽다 죽는데,
   // 그 죽음이 배포에서만 안 나므로 검사에서도 늘 실어 준다.
   await handler({ method, query, headers: { host: 'toji.fyi', ...headers } }, res);
@@ -594,6 +598,61 @@ const call = async (query, method = 'GET', headers = {}) => {
   check('한반도 밖이면 브이월드를 안 부른다',
         sea.code === 200 && (sea.json_ || {}).n === 0 && calls.length === 0,
         `${sea.code} · 호출 ${calls.length}회`);
+
+  console.log();
+  console.log('16. 속도 제한 — 훑는 프로그램이 브이월드 한도를 대신 태우지 못하게');
+  // 이 함수가 도는 것이 곧 브이월드를 부르는 것이다. 엣지 캐시가
+  // 받아낸 요청은 여기까지 안 오므로, 여기가 정확한 자리다.
+  handler.__resetRate();
+  stubFetch(pngReply);
+  const burst = async (n, q) => {
+    let last = null;
+    for (let i = 0; i < n; i += 1) {
+      last = await call({ ...q, __i: String(i) }, 'GET',
+                        { 'x-forwarded-for': '203.0.113.7', __keepRate: true });
+    }
+    return last;
+  };
+  // 지도를 한 번 움직이면 서른 장쯤 나간다. 그것을 여러 번 해도
+  // 안 걸려야 한다 — 사람을 막으면 제한이 아니라 고장이다.
+  // 한 IP 뒤에 스무 명이 동시에 굴려도 안 걸려야 한다 (CGNAT).
+  const fine = await burst(500, { z: '12', y: '5', x: '5' });
+  check('한 주소 뒤에 여럿이 있어도 안 걸린다 (500장)',
+        fine.code === 200, String(fine.code));
+  const hit = await burst(150, { z: '12', y: '5', x: '5' });
+  check('그보다 훨씬 잦으면 막는다 — 429', hit.code === 429, String(hit.code));
+  // **여기가 급소다.** fail() 은 s-maxage=60 을 붙이는데, 429 에 그것을
+  // 쓰면 훑는 쪽에게 준 응답이 엣지에 박혀 같은 주소를 부른 다른
+  // 사람까지 1분간 막힌다.
+  check('429 를 엣지에 안 박는다 (남까지 막히지 않게)',
+        hit.headers['cache-control'] === 'no-store',
+        hit.headers['cache-control']);
+  check('언제 다시 오면 되는지 알려준다', !!hit.headers['retry-after'],
+        hit.headers['retry-after']);
+  // 막힌 요청은 브이월드로 안 나가야 한다. 나가면 제한한 뜻이 없다.
+  const before = calls.length;
+  await call({ z: '12', y: '5', x: '6' }, 'GET',
+             { 'x-forwarded-for': '203.0.113.7', __keepRate: true });
+  check('막힌 요청은 브이월드로 안 나간다', calls.length === before,
+        `${calls.length - before}회`);
+  // 다른 사람은 멀쩡해야 한다. IP 를 안 나누면 한 명이 전체를 막는다.
+  const other = await call({ z: '12', y: '5', x: '5' }, 'GET',
+                           { 'x-forwarded-for': '198.51.100.9',
+                             __keepRate: true });
+  check('다른 사람은 안 막힌다 (한 명이 전체를 못 막게)',
+        other.code === 200, String(other.code));
+
+  // 필지 조회는 더 좁게 본다 — 캐시가 안 먹고 한 번에 두세 번 나간다.
+  handler.__resetRate();
+  stubFetch(parcelReply(PARCEL()));
+  let pr2 = null;
+  for (let i = 0; i < 121; i += 1) {
+    pr2 = await call({ mode: 'parcel', lat: `37.00${i % 10}2`, lon: '127.0012' },
+                     'GET', { 'x-forwarded-for': '203.0.113.8',
+                              __keepRate: true });
+  }
+  check('필지 조회는 분당 백스물을 넘기면 막는다', pr2.code === 429,
+        String(pr2.code));
 
   console.log();
   console.log(failed ? `실패 ${failed}건` : '모두 통과');

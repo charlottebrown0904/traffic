@@ -2267,9 +2267,22 @@ function drawCadastral() {
   }
 }
 
+// 서버가 '너무 잦다' 고 하면 잠시 쉰다. 계속 두드리면 창이 안 비어
+// 더 오래 막힌다. 지도를 움직이는 것 자체는 그대로 된다 — 선만 잠깐
+// 안 깔린다.
+let cadPausedUntil = 0;
+
 function fetchCadTile(z, x, y, key) {
+  if (Date.now() < cadPausedUntil) return;
   fetch(`/api/tile?mode=parcels&z=${z}&x=${x}&y=${y}`)
-    .then((r) => (r.ok ? r.json() : null))
+    .then((r) => {
+      if (r.status === 429) {
+        const wait = Number(r.headers.get('retry-after')) || 60;
+        cadPausedUntil = Date.now() + wait * 1000;
+        return null;
+      }
+      return r.ok ? r.json() : null;
+    })
     .then((d) => {
       // 도중에 꺼졌거나 배율이 바뀌었으면 그리지 않는다.
       if (!d || !state.cadastral || !cadastralLayer) return;
@@ -4641,8 +4654,22 @@ async function askParcel(latlng) {
   const [stats, res] = await Promise.all([
     loadParcelStats(),
     fetch(`/api/tile?mode=parcel&lat=${lat}&lon=${lon}`)
-      .then((r) => r.json()).catch(() => null),
+      .then((r) => (r.status === 429
+        ? { tooMany: Number(r.headers.get('retry-after')) || 60 }
+        : r.json()))
+      .catch(() => null),
   ]);
+  // **막힌 것과 자료가 없는 것을 구분해 적는다.** 둘을 같은 글로
+  // 보여주면 '이 땅은 정보가 없다' 로 읽히는데, 사실은 잠시 뒤 다시
+  // 누르면 나온다.
+  if (res && res.tooMany) {
+    drawParcelShape(null);
+    detailBody('<div class="detail-empty"><p>잠깐만요 — 요청이 너무 잦습니다.</p>'
+      + `<p class="hint">${res.tooMany}초쯤 뒤에 다시 눌러 주세요. `
+      + '자료가 없는 것이 아닙니다.</p></div>');
+    window.__parcel = null;
+    return;
+  }
   const parcel = res && res.parcel;
   if (!parcel) {
     drawParcelShape(null);

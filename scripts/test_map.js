@@ -3052,6 +3052,28 @@ const FAKE_LEAFLET = () => {
 
     // 바다·도로를 누른 것은 오류가 아니다.
     const sea = await clickMap(38.5, 128.5);
+    // 막힌 것과 자료가 없는 것을 구분해 적는가 (요구사항 2026-09-10).
+    // 둘을 같은 글로 보여주면 '이 땅은 정보가 없다' 로 읽히는데,
+    // 사실은 잠시 뒤 다시 누르면 나온다.
+    const busy = await page.evaluate(async () => {
+      const real = window.fetch;
+      window.fetch = async (u) => (/mode=parcel&/.test(String(u))
+        ? { status: 429, ok: false,
+            headers: { get: (k) => (k === 'retry-after' ? '60' : null) },
+            json: async () => ({}) }
+        : real(u));
+      const fns = ((window.__mapOn || {}).click) || [];
+      fns.forEach((fn) => fn({ latlng: { lat: 37.0012, lng: 127.0012 },
+                               originalEvent: { target: null } }));
+      await new Promise((ok) => setTimeout(ok, 300));
+      window.fetch = real;
+      return document.getElementById('detail').innerHTML;
+    });
+    check('막힌 것을 자료가 없다고 말하지 않는다',
+          /너무 잦습니다/.test(busy) && !/필지 자료를 못 받았습니다/.test(busy),
+          busy.replace(/<[^>]+>/g, ' ').trim().slice(0, 80));
+    check('언제 다시 누르면 되는지 적는다', /60초쯤 뒤에/.test(busy));
+
     check('필지가 없으면 이유를 적는다 (오류가 아니다)',
           /필지 자료를\s*못 받았습니다/.test(sea.html) && sea.peek === null,
           sea.html.slice(0, 90));

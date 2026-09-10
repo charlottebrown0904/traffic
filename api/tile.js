@@ -266,6 +266,92 @@ function fail(res, code, message) {
   res.status(code).json({ tileError: message });
 }
 
+/* ── 속도 제한 (요구사항 2026-09-10) ─────────────────────────────
+ *
+ * 왜 필요한가. 이 함수가 도는 것은 곧 브이월드를 부르는 것입니다.
+ * 필지 경계선이 붙으면서 부를 수 있는 주소가 국토 전체 42만 칸으로
+ * 늘었고, 필지 조회는 좌표가 소수점 여섯 자리라 **캐시가 아예 안
+ * 먹습니다.** 훑는 프로그램 하나가 우리 브이월드 한도를 대신 태울 수
+ * 있습니다.
+ *
+ * **여기가 정확한 자리입니다.** 엣지 캐시가 받아낸 요청은 이 함수를
+ * 아예 안 부릅니다. 그러니 이 함수가 도는 횟수가 곧 브이월드로
+ * 나갈 수 있는 횟수입니다.
+ *
+ * 한도는 사람의 사용을 막지 않을 만큼 넉넉합니다. 폰으로 지도를 한 번
+ * 움직이면 경계선 칸이 최대 12장, 배경 타일이 스무 장쯤 한꺼번에
+ * 나갑니다. 분당 240 이면 그것을 열 번 연속해도 안 걸립니다.
+ *
+ * 필지 조회는 따로, 더 좁게 봅니다. 캐시가 안 먹는 데다 한 번에
+ * 브이월드를 두세 번 부르기 때문입니다. 사람은 1분에 예순 번 넘게
+ * 필지를 누르지 않습니다.
+ *
+ * ## 한계를 분명히 적어 둡니다
+ *
+ * 이 셈은 **함수 인스턴스 안에서만** 삽니다. Vercel 은 부하에 따라
+ * 인스턴스를 여럿 띄우므로, 전역으로 정확히 240 이 아니라 '인스턴스마다
+ * 240' 입니다. 전역 한도를 세우려면 저장소(Redis 등)가 필요하고 그것은
+ * 돈이 듭니다. 지금 필요한 것은 **폭주를 꺾는 것**이지 정밀한 계량이
+ * 아니므로 이 정도로 둡니다.
+ */
+const RATE_WINDOW_MS = 60_000;
+// 분당. 넉넉하게 잡습니다 — 이 제한의 일은 **폭주를 꺾는 것**이지
+// 계량이 아닙니다.
+//
+// 넉넉해야 하는 이유가 하나 더 있습니다. 한국 이동통신은 여러 사용자가
+// 주소 하나를 나눠 씁니다(CGNAT). 같은 IP 로 보이는 사람이 수십 명일
+// 수 있어서, 사람 한 명 기준으로 좁게 잡으면 **애먼 사람이 막힙니다.**
+// 600/분이면 한 IP 뒤에 스무 명이 동시에 지도를 굴려도 안 걸리고,
+// 훑는 프로그램은 국토 42만 칸을 도는 데 열두 시간이 걸립니다.
+const RATE_LIMIT = 600;
+// 필지 조회는 따로 봅니다. 캐시가 안 먹고 한 번에 브이월드를 두세 번
+// 부릅니다. 사람은 1분에 백 번 넘게 필지를 누르지 않습니다.
+const RATE_LIMIT_PARCEL = 120;
+// 이보다 많은 주소를 들고 있지 않는다. 넘으면 오래된 것부터 버린다.
+// 없으면 훑는 쪽이 IP 를 바꿔 가며 우리 메모리를 불릴 수 있다.
+const RATE_MAX_KEYS = 5000;
+const rateHits = new Map();      // ip → number[] (요청 시각)
+
+/** 요청을 보낸 쪽. Vercel 이 x-forwarded-for 를 덮어쓰므로 믿을 수 있다. */
+function callerIp(req) {
+  const h = req.headers || {};
+  const xff = String(h["x-forwarded-for"] || "");
+  return (xff.split(",")[0] || "").trim()
+    || String(h["x-real-ip"] || "").trim()
+    || "unknown";
+}
+
+/** 넘었으면 true. 넘지 않았으면 이번 요청을 세고 false. */
+function overRate(req, limit) {
+  const now = Date.now();
+  const ip = callerIp(req);
+  if (rateHits.size > RATE_MAX_KEYS) {
+    // 통째로 비운다. 창이 1분이라 잃어봐야 1분어치다.
+    rateHits.clear();
+  }
+  const seen = (rateHits.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  if (seen.length >= limit) {
+    rateHits.set(ip, seen);
+    return true;
+  }
+  seen.push(now);
+  rateHits.set(ip, seen);
+  return false;
+}
+
+/** 너무 잦다고 답한다.
+ *
+ * **캐시하면 안 된다.** fail() 은 s-maxage=60 을 붙이는데, 그것을 쓰면
+ * 훑는 쪽에게 준 429 가 엣지에 박혀 **같은 주소를 부른 다른 사람까지**
+ * 1분간 막힙니다. no-store 로 못을 박습니다.
+ */
+function tooMany(res) {
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("retry-after", String(RATE_WINDOW_MS / 1000));
+  res.status(429).json({ tileError: "요청이 너무 잦습니다. 잠시 뒤 다시 시도해 주세요." });
+}
+
+
 /** 정수인지 본다. '01' · '1.5' · '1e3' · 음수를 통과시키면 안 된다. */
 function whole(value) {
   if (typeof value !== "string" || !/^\d{1,7}$/.test(value)) return null;
@@ -658,6 +744,14 @@ function round6(geom) {
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") return fail(res, 405, "GET 만 허용합니다");
 
+  // 속도 제한을 **맨 앞에** 둔다. 뒤에 두면 이미 브이월드를 부른
+  // 뒤가 된다. 필지 조회는 캐시가 안 먹고 한 번에 두세 번 나가므로
+  // 따로, 더 좁게 본다.
+  const mode = String(req.query.mode || "");
+  if (overRate(req, mode === "parcel" ? RATE_LIMIT_PARCEL : RATE_LIMIT)) {
+    return tooMany(res);
+  }
+
   const want = String(req.query.layer || "zoning");
   const layers = LAYERS[want];
   const basemap = BASEMAPS[want];
@@ -665,16 +759,16 @@ module.exports = async function handler(req, res) {
 
   // 누른 자리의 이름을 묻는 요청. 같은 화이트리스트를 쓰고, 목적지도
   // 좌표계도 여기서 정한다 — 밖에서 받는 것은 위경도뿐이다.
-  if (String(req.query.mode || "") === "info") {
+  if (mode === "info") {
     return featureInfo(req, res, layers);
   }
   // 누른 자리의 필지 특성. 레이어 화이트리스트와 무관한 다른 서비스라
   // 위의 layers 를 쓰지 않는다.
-  if (String(req.query.mode || "") === "parcel") {
+  if (mode === "parcel") {
     return parcelInfo(req, res);
   }
   // 화면에 미리 깔리는 경계선. 한 칸씩 준다.
-  if (String(req.query.mode || "") === "parcels") {
+  if (mode === "parcels") {
     return parcelLines(req, res);
   }
 
@@ -731,6 +825,9 @@ async function sendTile(res, out) {
 // 그림은 오는데 땅이 어긋난다 — 눈으로는 잡기 어려운 종류다.
 module.exports.mercBbox = mercBbox;
 module.exports.LAYERS = LAYERS;
+// 검사가 창을 비우고 시작할 수 있게. **여기여야 한다** — 위에 두면
+// module.exports = handler 가 통째로 덮어써 사라진다.
+module.exports.__resetRate = () => rateHits.clear();
 module.exports.BASEMAPS = BASEMAPS;
 module.exports.hitsPoint = hitsPoint;
 module.exports.PARCEL_FIELDS = PARCEL_FIELDS;
