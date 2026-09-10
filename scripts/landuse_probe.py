@@ -119,6 +119,63 @@ def catalog() -> list[tuple[str, str]]:
     return hits
 
 
+# 개발 가부를 실제로 가르는 층만 고른 것. 다 부르면 스무 번이 넘습니다.
+# **한 요청에 여럿을 담을 수 있는지**가 이번 탐침의 핵심입니다.
+SHORTLIST = [
+    "lt_c_agrixue101",   # 농업진흥지역도 — 농업진흥구역/보호구역
+    "lt_c_um000",        # 가축사육제한구역
+    "lt_c_uf151",        # 산림보호구역
+    "lt_c_um710",        # 상수원보호
+    "lt_c_upisuq171",    # 개발행위허가제한지역
+]
+
+
+def multi(lon: float, lat: float) -> None:
+    """한 요청에 여러 층을 담을 수 있는가.
+
+    WFS 1.1.0 은 TYPENAME 에 쉼표로 여럿을 적을 수 있다고 되어 있습니다.
+    된다면 스무 번이 한 번이 됩니다 — 이번 일의 성패가 여기 달렸습니다.
+    WMS 쪽은 이미 그렇게 쓰고 있습니다(용도지역 네 장을 한 번에).
+    """
+    print("   여러 층을 한 요청에 담을 수 있는가 (쉼표로)")
+    names = ",".join(SHORTLIST)
+    q = ("SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0"
+         f"&TYPENAME={names}&SRSNAME=EPSG:4326"
+         "&OUTPUT=application/json&MAXFEATURES=50&RESULTTYPE=results"
+         f"&BBOX={lon - HALF},{lat - HALF},{lon + HALF},{lat + HALF}")
+    code, text = relay("https://api.vworld.kr/req/wfs?" + q)
+    try:
+        feats = (json.loads(text) or {}).get("features") or []
+    except Exception:                                        # noqa: BLE001
+        print(f"     http={code}  안 됩니다 — {show(text, 260)}")
+        return
+    print(f"     http={code}  {len(feats)}건")
+    for f in feats[:10]:
+        p = {k: v for k, v in (f.get("properties") or {}).items()
+             if k != "ag_geom" and v not in (None, "")}
+        label = " / ".join(str(v) for k, v in p.items() if k.endswith("_nm"))
+        print(f"       · {f.get('id') or ''} {label or json.dumps(p, ensure_ascii=False)[:100]}")
+
+
+def portal_search() -> None:
+    """공공데이터포털에 토지이용계획 API 가 무슨 이름으로 있는가.
+
+    길을 네 번 찍어 봤는데 넷 다 '해당 서비스 없거나 폐기됨' 이었습니다.
+    더 찍지 않고 **목록에서 찾습니다.**
+    """
+    print("   공공데이터포털에서 '토지이용계획' 을 찾는다")
+    url = ("https://www.data.go.kr/tcs/dss/selectDataSetList.do"
+           "?dType=API&keyword=" + urllib.parse.quote("토지이용계획"))
+    code, text = relay(url)
+    print(f"     http={code} {len(text):,}B")
+    # 목록 화면의 제목만 긁는다. 자바스크립트로 그려지면 안 나옵니다.
+    titles = re.findall(r'title="([^"]{4,60})"', text)[:20]
+    for t in dict.fromkeys(titles):
+        print(f"       · {t}")
+    if not titles:
+        print("       (제목을 못 긁었습니다 — 자바스크립트로 그리는 화면입니다)")
+
+
 def poke(typename: str, lon: float, lat: float) -> None:
     """한 점을 찔러 무엇이 오는지. 오는 칸 이름을 그대로 적는다."""
     q = ("SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0"
@@ -186,6 +243,8 @@ def main() -> int:
     pnu = parcel_pnu(lon, lat)
     print(f"   그 필지의 PNU: {pnu or '못 얻음'}")
 
+    multi(lon, lat)
+    print()
     print("\n   가) 브이월드 데이터 API")
     for label, data in [("LT_C_LANDINFOBASEMAP", "LT_C_LANDINFOBASEMAP"),
                         ("LT_C_UQ111", "LT_C_UQ111")]:
@@ -214,7 +273,9 @@ def main() -> int:
         url = (f"{base}?pnu={pnu}&format=json&numOfRows=100&pageNo=1"
                "&type=json")
         code, text = relay(url)
-        print(f"     {label:<28} http={code}  {show(text, 320)}")
+        print(f"     {label:<28} http={code}  {show(text, 200)}")
+    print()
+    portal_search()
     return 0
 
 
