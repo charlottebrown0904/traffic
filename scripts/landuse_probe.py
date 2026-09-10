@@ -91,7 +91,7 @@ def catalog() -> list[tuple[str, str]]:
     hits = [(n, t) for n, t in pairs
             if any(w in t for w in NEEDLES) or any(w in n for w in ("uq", "uf"))]
     print(f"   레이어 {len(pairs):,}개 중 후보 {len(hits)}개")
-    for n, t in hits[:40]:
+    for n, t in sorted(hits, key=lambda x: x[1]):
         print(f"     {n:<24} {t}")
     return hits
 
@@ -154,21 +154,60 @@ def main() -> int:
             poke(t, lon, lat)
     print()
 
-    # ③ 토지이용계획을 통째로 주는 길이 있는가. 있으면 위를 다 대신한다.
+    # ③ 토지이용계획을 **한 번에** 주는 길.
+    #
+    # 층마다 따로 부르면 필지 하나에 스무 번이 넘습니다. 토지이음이
+    # 보여주는 그 표를 통째로 주는 API 가 있어야 합니다. 기관마다
+    # 길 이름이 달라 **맞히지 않고 두드려 봅니다.**
     print("③ 토지이용계획을 한 번에 주는 길이 있는가")
-    for label, url in [
-        ("데이터 API (LT_C_UQ111)",
-         "https://api.vworld.kr/req/data?service=data&request=GetFeature"
-         f"&data=LT_C_UQ111&geomFilter=POINT({lon} {lat})&format=json"
-         "&size=10&domain=https://toji.fyi/"),
-        ("데이터 API (LT_C_LANDINFOBASEMAP)",
-         "https://api.vworld.kr/req/data?service=data&request=GetFeature"
-         f"&data=LT_C_LANDINFOBASEMAP&geomFilter=POINT({lon} {lat})"
-         "&format=json&size=10&domain=https://toji.fyi/"),
-    ]:
+    pnu = parcel_pnu(lon, lat)
+    print(f"   그 필지의 PNU: {pnu or '못 얻음'}")
+
+    print("\n   가) 브이월드 데이터 API")
+    for label, data in [("LT_C_LANDINFOBASEMAP", "LT_C_LANDINFOBASEMAP"),
+                        ("LT_C_UQ111", "LT_C_UQ111")]:
+        url = ("https://api.vworld.kr/req/data?service=data"
+               "&request=GetFeature&format=json&size=10"
+               f"&data={data}&geomFilter=POINT({lon} {lat})"
+               "&domain=https://toji.fyi/")
         code, text = relay(url)
-        print(f"   {label:<34} http={code}  {show(text, 240)}")
+        print(f"     {label:<26} http={code}  {show(text, 700)}")
+
+    if not pnu:
+        return 0
+    print("\n   나) 공공데이터포털 — 토지이용계획 후보 길들")
+    # 중계기가 serviceKey 를 붙여 줍니다 (api/relay.js 의 ALLOW).
+    cands = [
+        ("국가공간정보 토지이용계획(속성)",
+         "https://apis.data.go.kr/1611000/nsdi/LandUseService/attr/getLandUseAttr"),
+        ("국가공간정보 토지이용계획(다른 철자)",
+         "https://apis.data.go.kr/1611000/nsdi/LandUseAttrService/attr/getLandUseAttr"),
+        ("국가공간정보 토지특성",
+         "https://apis.data.go.kr/1611000/nsdi/LandCharacteristicsService/attr/getLandCharacteristics"),
+        ("토지이용규제 LURIS",
+         "https://apis.data.go.kr/1613000/LandUseRegulationService/getLandUseRegulation"),
+    ]
+    for label, base in cands:
+        url = (f"{base}?pnu={pnu}&format=json&numOfRows=100&pageNo=1"
+               "&type=json")
+        code, text = relay(url)
+        print(f"     {label:<28} http={code}  {show(text, 320)}")
     return 0
+
+
+def parcel_pnu(lon: float, lat: float) -> str | None:
+    """그 필지의 PNU. 공공데이터포털 쪽은 좌표가 아니라 PNU 로 묻는다."""
+    q = ("SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0"
+         "&TYPENAME=lp_pa_cbnd_bubun&SRSNAME=EPSG:4326"
+         "&OUTPUT=application/json&MAXFEATURES=100&RESULTTYPE=results"
+         f"&BBOX={lon - HALF},{lat - HALF},{lon + HALF},{lat + HALF}")
+    code, text = relay("https://api.vworld.kr/req/wfs?" + q)
+    try:
+        feats = (json.loads(text) or {}).get("features") or []
+    except Exception:                                        # noqa: BLE001
+        return None
+    hit = next((f for f in feats if hits(f.get("geometry"), lon, lat)), None)
+    return ((hit or {}).get("properties") or {}).get("pnu")
 
 
 if __name__ == "__main__":
