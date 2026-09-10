@@ -153,7 +153,12 @@ const FAKE_LEAFLET = () => {
         return el;
       },
     }),
-    tileLayer: (url) => { rec.tiles.push(url); return chain(); },
+    tileLayer: (url, opts) => {
+      rec.tiles.push(url);
+      // 경계선은 색을 따로 잡으려고 판을 따로 쓴다. 검사가 그것을 본다.
+      if (/layer=cadastral/.test(url)) window.__cadPane = (opts || {}).pane;
+      return chain();
+    },
     // 필지 윤곽은 geoJSON 층으로 그린다. 진짜 Leaflet 에 있는 것이다.
     geoJSON: (geom, opts) => chain({ __geojson: geom, __opts: opts || {} }),
     // +/- 는 오른쪽 아래로 옮겼다 (왼쪽 위는 검색칸 자리다).
@@ -1329,7 +1334,10 @@ const FAKE_LEAFLET = () => {
     }));
     check('상단에서 전체 IC 반경 스위치가 사라졌다', !gone.allBands);
     check('상단에서 인구 스위치가 사라졌다', !gone.popBox && !gone.popSwitch);
-    check('남은 것은 둘뿐이다 (IC·영업소 · 용도지역)', gone.switches === 2,
+    // 셋이다 — IC·영업소 · 용도지역 · 필지경계 (요구사항 2026-09-10).
+    // 예전에 넷을 둘로 줄인 절이라, 늘어난 하나는 여기서 못을 박는다.
+    check('스위치는 셋이다 (IC·영업소 · 용도지역 · 필지경계)',
+          gone.switches === 3,
           `${gone.switches}개`);
 
     console.log();
@@ -2835,6 +2843,45 @@ const FAKE_LEAFLET = () => {
     // 가로장방형(4) + 평지(5) → 반올림 5 → land[5] = .95
     check('모양·지세를 한 축으로 묶는다',
           Math.abs(byKey.land.pct - 0.95) < 1e-6, String(byKey.land.pct));
+    // ── 필지 경계선 (요구사항 2026-09-10, A안) ──
+    //
+    // 예전에는 용도지역 층 **안에** 들어 있어서, 경계선만 보려면 색면
+    // 까지 켜야 했고 그 색면이 지도를 덮었다. 따로 떼어 스위치를 줬다.
+    const cadLayer = await page.evaluate(() => {
+      const box = document.getElementById('cadastral-bg');
+      const tiles = (window.__map.tiles || []);
+      const zoningKids = ((window.__zoningKids || [])).length;
+      return {
+        hasBox: !!box,
+        on: !!(box && box.checked),
+        // 경계선 타일을 실제로 깔았는가.
+        laid: tiles.filter((u) => /layer=cadastral/.test(u)).length,
+        // 용도지역과 같은 층에 섞이지 않았는가 — 판이 따로여야 한다.
+        pane: window.__cadPane || null,
+      };
+    });
+    check('필지경계 스위치가 있다', cadLayer.hasBox);
+    check('기본은 켬이다', cadLayer.on);
+    check('경계선 타일을 깐다', cadLayer.laid >= 1, `${cadLayer.laid}장`);
+    check('용도지역과 다른 판에 둔다 (색을 따로 잡으려고)',
+          cadLayer.pane === 'cadastralPane', String(cadLayer.pane));
+
+    // 껐다 켜는 것이 실제로 먹는가. 그리고 그 선택을 기억하는가.
+    const cadOff = await page.evaluate(() => {
+      const box = document.getElementById('cadastral-bg');
+      box.checked = false;
+      box.dispatchEvent(new Event('change'));
+      const off = { removed: window.__removed || 0,
+                    saved: localStorage.getItem('toji.cadastral') };
+      box.checked = true;
+      box.dispatchEvent(new Event('change'));
+      return { off, saved: localStorage.getItem('toji.cadastral') };
+    });
+    check('끄면 층을 걷어낸다', cadOff.off.removed > 0);
+    check('껐다 켠 것을 기억한다',
+          cadOff.off.saved === 'off' && cadOff.saved === 'on',
+          `끔=${cadOff.off.saved} 켬=${cadOff.saved}`);
+
     // 필지 윤곽 (요구사항 2026-09-10 — 부동산플래닛처럼).
     const shape = await page.evaluate(() => {
       const items = (window.__map.groups || []).flatMap((g) => g._items)

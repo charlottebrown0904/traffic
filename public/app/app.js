@@ -29,6 +29,12 @@ const state = {
   // 용도지역 색면은 **꺼진 채로 시작한다** (요구사항 2026-09-08).
   // 색면이 깔리면 그 위의 땅값 글자와 거래 점이 묻힌다.
   zoning: false,
+  // 필지 경계선 (요구사항 2026-09-10). **기본은 켬** — 땅을 보는
+  // 사람에게 경계는 배경이 아니라 본문이다. 껐다 켠 것은 기억한다.
+  cadastral: (() => {
+    try { return localStorage.getItem('toji.cadastral') !== 'off'; }
+    catch (e) { return true; }
+  })(),
   tgYear: null,
   // 고른 차종. **여럿 고를 수 있다** (요구사항 2026-09-09).
   // 처음에는 다 켠다 — 예전 '전체 차종' 과 같은 화면으로 시작한다.
@@ -67,6 +73,12 @@ const state = {
 let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, lpLayer;
 /* 고른 필지의 윤곽. 한 번에 하나만 그린다. */
 let parcelLayer = null;
+/* 필지 경계선 타일. **용도지역과 따로 논다** (요구사항 2026-09-10).
+ *
+ * 예전에는 zoningLayer 안에 같이 들어 있었다. 그래서 경계선만 보려면
+ * 용도지역 색면까지 켜야 했고, 그 색면이 지도를 덮었다 — "필지를
+ * 선택하기 전에 윤곽이 미리 보였으면" 이 안 되던 이유가 이것이다. */
+let cadastralLayer = null;
 const markers = new Map();
 
 /* ─────────── 유틸 ─────────── */
@@ -1638,6 +1650,13 @@ function buildMap() {
   // 되는데, 겹쳐 놓으면 눈에는 안 보이고 타일만 두 번 받는다.
   addZoningLayer();
 
+  // 필지 경계선. 배경 타일(200) 바로 위, 용도지역 색면보다 아래에 둔다.
+  // **판을 따로 파는 이유는 색이다** — 배경 타일 판에는 이미 채도를
+  // 낮추는 손질이 걸려 있어서(.leaflet-tile-pane), 같은 판에 두면 그
+  // 손질이 경계선에도 겹쳐 걸린다.
+  map.createPane('cadastralPane').style.zIndex = 250;
+  addCadastralLayer();
+
   // 고른 필지의 윤곽 (요구사항 2026-09-10 — 부동산플래닛처럼).
   // 용도지역 색면(타일 200)보다 위, 땅값 글자(375)보다 아래에 둔다 —
   // 윤곽이 글자를 덮으면 값을 못 읽는다.
@@ -2146,14 +2165,34 @@ function addZoningLayer() {
     opacity: .42,
     attribution: '용도지역 © 국토교통부 브이월드',
   }).addTo(zoningLayer);
-  // 필지 경계선 — 지적편집도의 그 선. 이것이 있어야 '이 필지' 를
-  // 눈으로 짚을 수 있다. 색면보다 깊은 배율에서만 켠다.
-  L.tileLayer('/api/tile?layer=cadastral&z={z}&y={y}&x={x}', {
+  // **필지 경계선은 여기 없다.** addCadastralLayer 가 따로 깐다.
+  if (state.zoning) zoningLayer.addTo(map);
+}
+
+/* 필지 경계선 — 지적편집도의 그 선.
+ *
+ * 색면보다 깊은 배율(15)에서만 켠다. 그 아래에서는 선이 서로 뭉개져
+ * 회색 덩어리가 되고, 타일만 받고 아무것도 못 읽는다.
+ *
+ * 투명도와 색은 CSS 가 정한다(.leaflet-cadastral-pane). 배경 지도에
+ * 따라 달라야 하기 때문이다 — 위성 위에서는 짙은 선이 사라지고,
+ * 밝은 지도 위에서는 흰 선이 사라진다. */
+function addCadastralLayer() {
+  cadastralLayer = L.tileLayer('/api/tile?layer=cadastral&z={z}&y={y}&x={x}', {
+    pane: 'cadastralPane',
     maxZoom: 19,
     minZoom: CADASTRAL_MIN_ZOOM,
-    opacity: .55,
-  }).addTo(zoningLayer);
-  if (state.zoning) zoningLayer.addTo(map);
+    attribution: '지적도 © 국토교통부 브이월드',
+  });
+  if (state.cadastral) cadastralLayer.addTo(map);
+}
+
+function toggleCadastral(on) {
+  state.cadastral = on;
+  try { localStorage.setItem('toji.cadastral', on ? 'on' : 'off'); }
+  catch (e) { /* 사생활 보호 창에서는 못 적는다. 화면은 그대로 돈다. */ }
+  if (!map || !cadastralLayer) return;
+  on ? cadastralLayer.addTo(map) : cadastralLayer.remove();
 }
 
 /* 눌러서 이름을 본다.
@@ -5044,12 +5083,19 @@ function wireFind() {
   });
 }
 
-/* 지도 위 스위치 — 이제 둘뿐이다 (IC·영업소 · 용도지역). */
+/* 지도 위 스위치 — IC·영업소 · 용도지역 · 필지경계. */
 (function mapSwitches() {
   const zbox = document.getElementById('zoning-bg');
   if (zbox) {
     zbox.checked = state.zoning;
     zbox.addEventListener('change', () => toggleZoning(zbox.checked));
+  }
+
+  // 필지 경계선 (요구사항 2026-09-10). 기본 켬.
+  const cbox = document.getElementById('cadastral-bg');
+  if (cbox) {
+    cbox.checked = state.cadastral;
+    cbox.addEventListener('change', () => toggleCadastral(cbox.checked));
   }
 
   // IC·영업소도 끌 수 있다 (기본 꺼짐, 요구사항 2026-09-08).

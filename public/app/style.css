@@ -297,6 +297,34 @@ body[data-basemap="satellite"] .leaflet-tile-pane,
 body[data-basemap="hybrid"] .leaflet-tile-pane{
   filter:saturate(1) brightness(1) contrast(1.04)
 }
+/* ── 필지 경계선의 색 (요구사항 2026-09-10) ─────────────────────────
+ *
+ * **래스터 타일이라 아무 색으로나 칠할 수는 없다.** 브이월드가 이미
+ * 그려서 보낸 그림이므로, 우리가 할 수 있는 것은 밝기·채도를 옮기는
+ * 것뿐이다. 그래서 '무슨 색' 이 아니라 '어느 쪽으로 미는가' 를 고른다.
+ *
+ * 밝은 배경(기본·브이월드 일반) — **짙은 먹빛**으로 민다.
+ *   배경 지도의 도로는 노랑·주황, 녹지는 초록, 물은 파랑이다. 색이
+ *   있는 선을 하나 더 얹으면 그 무리에 섞여 '길인가 경계인가' 가
+ *   된다. 채도를 빼고 어둡게 눌러야 **우리가 그은 선**으로 읽힌다.
+ *
+ * 어두운 배경(위성·하이브리드·야간) — **흰 선**으로 뒤집는다.
+ *   위성 사진 위에서 짙은 선은 그림자와 구별되지 않는다. 밭고랑과
+ *   경계선이 같은 색이면 경계선을 켠 뜻이 사라진다.
+ *
+ * 투명도도 갈린다. 밝은 배경은 선이 잘 보이므로 조금 물리고, 위성은
+ * 바탕이 요란하므로 더 세운다. */
+.leaflet-cadastral-pane {
+  filter: grayscale(1) brightness(.45) contrast(1.35);
+  opacity: .58;
+}
+body[data-basemap="satellite"] .leaflet-cadastral-pane,
+body[data-basemap="hybrid"] .leaflet-cadastral-pane,
+body[data-basemap="midnight"] .leaflet-cadastral-pane {
+  filter: grayscale(1) invert(1) brightness(1.45) contrast(1.2);
+  opacity: .8;
+}
+
 /* 야간 배경은 이미 어둡다. 밝기를 올리면 그 어두움이 사라진다. */
 body[data-basemap="midnight"] .leaflet-tile-pane{filter:none}
 .map-tools{
