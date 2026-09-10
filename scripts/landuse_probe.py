@@ -116,6 +116,11 @@ def catalog() -> list[tuple[str, str]]:
     print(f"   레이어 {len(pairs):,}개 중 후보 {len(hits)}개")
     for n, t in sorted(hits, key=lambda x: x[1]):
         print(f"     {n:<24} {t}")
+    # 이름을 콕 집어 확인한다. 위 목록은 길어 로그에서 잘리기 쉽다.
+    print("   ── 콕 집어 찾기")
+    for word in ("개발제한", "산지", "접도", "농업진흥", "군사", "문화재"):
+        found = [f"{n}({t})" for n, t in pairs if word in t]
+        print(f"     {word:<6} {', '.join(found) if found else '— 목록에 없음'}")
     return hits
 
 
@@ -138,7 +143,8 @@ def multi(lon: float, lat: float) -> None:
     WMS 쪽은 이미 그렇게 쓰고 있습니다(용도지역 네 장을 한 번에).
     """
     print("   여러 층을 한 요청에 담을 수 있는가 (쉼표로)")
-    names = ",".join(SHORTLIST)
+    print("   ※ 토지특성(dt_d194)까지 같이 담으면 호출이 안 늘어난다")
+    names = ",".join(["dt_d194"] + SHORTLIST)
     q = ("SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0"
          f"&TYPENAME={names}&SRSNAME=EPSG:4326"
          "&OUTPUT=application/json&MAXFEATURES=50&RESULTTYPE=results"
@@ -150,6 +156,11 @@ def multi(lon: float, lat: float) -> None:
         print(f"     http={code}  안 됩니다 — {show(text, 260)}")
         return
     print(f"     http={code}  {len(feats)}건")
+    kinds = {}
+    for f in feats:
+        kinds[str(f.get("id") or "?").split(".")[0]] = \
+            kinds.get(str(f.get("id") or "?").split(".")[0], 0) + 1
+    print(f"     층별: {kinds}")
     for f in feats[:10]:
         p = {k: v for k, v in (f.get("properties") or {}).items()
              if k != "ag_geom" and v not in (None, "")}
