@@ -1,0 +1,23 @@
+# 용도지구·용도구역과 '다른 법령에 따른 지역·지구' 를 받을 수 있는가.
+#
+# 보고(2026-09-10): "단순히 용도 지역으로만 토지를 평가하니 오류가
+# 발생됩니다. (농림지역의 농업진흥구역, 준보전산지, 개발제한구역 등)에
+# 따라 개발 방식이 달라짐"
+#
+# 러너에서 브이월드를 직접 부르면 해외 IP 라 502 다. 중계기를 거친다.
+name: 지역·지구 탐침 (용도지구·용도구역·다른 법령)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE: https://toji.fyi
+      TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 무엇이 열려 있고 그 필지에 무엇이 겹치는가
+        run: python3 scripts/landuse_probe.py

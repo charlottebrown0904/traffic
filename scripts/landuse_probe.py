@@ -1,0 +1,175 @@
+"""용도지구·용도구역과 '다른 법령에 따른 지역·지구' 를 받을 수 있는가.
+
+보고(2026-09-10): "다른 법령에 다른 용도 지구, 용도 구역은 못 가져
+오나요? 단순히 용도 지역으로만 토지를 평가하니 오류가 발생됩니다.
+(농림지역의 농업진흥구역, 준보전산지, 개발제한구역 등)에 따라 개발
+방식이 달라짐"
+
+맞는 지적입니다. 지금 카드는 **용도지역 한 줄**만 보여주고, 레이더의
+'개발 여지' 축도 그것 하나로 계산합니다. 그런데 실제로 무엇을 지을 수
+있는지는 그 위에 겹친 것들이 정합니다.
+
+  계획관리지역   + 농업진흥구역   → 사실상 농업용 말고는 어렵다
+  자연녹지지역   + 개발제한구역   → 원칙적으로 신축 불가
+  계획관리지역   + 준보전산지     → 산지전용허가가 따로 필요하다
+  어디든         + 접도구역       → 도로 경계에서 일정 폭 건축 제한
+
+토지이음 화면(스크린샷)의 '다른 법령 등에 따른 지역·지구등' 칸이
+바로 그것입니다. 그 자료를 우리가 받을 수 있는지 봅니다.
+
+**이름을 맞히지 않습니다.** 이 저장소는 레이어 이름을 세 번 틀렸습니다.
+서버에 무엇이 열려 있는지 목록으로 받고, 그 다음에 실제로 한 점을
+찔러 봅니다.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import urllib.parse
+import urllib.request
+
+BASE = os.environ.get("BASE", "https://toji.fyi")
+TOKEN = os.environ.get("TOKEN", "")
+TIMEOUT = 45
+HALF = 0.00012        # api/tile.js 의 PARCEL_HALF_DEG 와 같은 값
+
+# 스크린샷의 그 필지. 계획관리 + 자연녹지가 겹쳐 있고, 토지이음에는
+# 가축사육제한·건축허가제한·접도구역·준보전산지가 더 붙어 있었습니다.
+SPOT = "경상북도 상주시 함창읍 대조리 707-1"
+
+# 이미 우리가 타일로 쓰는 넷. WFS 로도 한 점을 물을 수 있는지 봅니다.
+#   111 용도지역 · 112 용도지구 · 113 용도구역 · 114 (확인 필요)
+KNOWN = ["lt_c_uq111", "lt_c_uq112", "lt_c_uq113", "lt_c_uq114"]
+
+# 목록에서 이런 말이 든 것을 후보로 봅니다.
+NEEDLES = ("용도", "지구", "구역", "토지이용", "규제", "산지", "농업",
+           "개발제한", "보호", "접도")
+
+HIDE = re.compile(r'(?i)((?:key|apikey|servicekey)=)[^&"\s<]+')
+
+
+def show(text: str, n: int = 300) -> str:
+    return " ".join(HIDE.sub(r"\1(가림)", text)[:n].split())
+
+
+def relay(target: str) -> tuple[int, str]:
+    url = f"{BASE}/api/relay?target={urllib.parse.quote(target, safe='')}"
+    req = urllib.request.Request(url, headers={"x-relay-token": TOKEN})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+            return r.status, r.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")
+    except Exception as exc:                                # noqa: BLE001
+        return 0, f"{type(exc).__name__}: {exc}"
+
+
+def geocode(address: str) -> tuple[float, float] | None:
+    q = ("service=address&request=getcoord&version=2.0&crs=epsg:4326"
+         f"&type=PARCEL&address={urllib.parse.quote(address)}")
+    code, text = relay("https://api.vworld.kr/req/address?" + q)
+    try:
+        pt = json.loads(text)["response"]["result"]["point"]
+        return float(pt["x"]), float(pt["y"])
+    except Exception:                                        # noqa: BLE001
+        print(f"  좌표를 못 얻었습니다 (http={code}) {show(text, 160)}")
+        return None
+
+
+def catalog() -> list[tuple[str, str]]:
+    """서버가 무엇을 여는가. WFS 목록에서 후보를 고른다."""
+    print("① 브이월드 WFS 가 여는 것 중 지역·지구로 보이는 것")
+    code, text = relay("https://api.vworld.kr/req/wfs?"
+                       "SERVICE=WFS&REQUEST=GetCapabilities&VERSION=1.1.0")
+    print(f"   http={code} {len(text):,}B")
+    if code != 200:
+        print("   " + show(text))
+        return []
+    pairs = re.findall(r"<Name>([^<]+)</Name>\s*<Title>([^<]*)</Title>", text)
+    hits = [(n, t) for n, t in pairs
+            if any(w in t for w in NEEDLES) or any(w in n for w in ("uq", "uf"))]
+    print(f"   레이어 {len(pairs):,}개 중 후보 {len(hits)}개")
+    for n, t in hits[:40]:
+        print(f"     {n:<24} {t}")
+    return hits
+
+
+def poke(typename: str, lon: float, lat: float) -> None:
+    """한 점을 찔러 무엇이 오는지. 오는 칸 이름을 그대로 적는다."""
+    q = ("SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0"
+         f"&TYPENAME={typename}&SRSNAME=EPSG:4326"
+         "&OUTPUT=application/json&MAXFEATURES=30&RESULTTYPE=results"
+         f"&BBOX={lon - HALF},{lat - HALF},{lon + HALF},{lat + HALF}")
+    code, text = relay("https://api.vworld.kr/req/wfs?" + q)
+    try:
+        feats = (json.loads(text) or {}).get("features") or []
+    except Exception:                                        # noqa: BLE001
+        print(f"   {typename:<24} http={code}  {show(text, 150)}")
+        return
+    if not feats:
+        print(f"   {typename:<24} http={code}  겹치는 것 없음")
+        return
+    names = []
+    for f in feats:
+        p = {k: v for k, v in (f.get("properties") or {}).items()
+             if k != "ag_geom" and v not in (None, "")}
+        # 사람이 읽는 이름으로 보이는 칸만 골라 적는다.
+        label = " / ".join(str(v) for k, v in p.items()
+                           if k.endswith("_nm") or k in ("dgm_nm", "name"))
+        names.append(label or json.dumps(p, ensure_ascii=False)[:120])
+    print(f"   {typename:<24} http={code}  {len(feats)}건")
+    for nm in names[:8]:
+        print(f"       · {nm}")
+    first = {k: v for k, v in (feats[0].get("properties") or {}).items()
+             if k != "ag_geom"}
+    print(f"       칸: {', '.join(list(first)[:14])}")
+
+
+def main() -> int:
+    if not TOKEN:
+        print("::error::중계기 토큰이 없습니다")
+        return 1
+    print(f"BASE={BASE}\n")
+    hits = catalog()
+    print()
+
+    pt = geocode(SPOT)
+    if not pt:
+        return 1
+    lon, lat = pt
+    print(f"② 그 필지를 찔러 본다 — {SPOT}")
+    print(f"   좌표 {lat:.6f}, {lon:.6f}\n")
+    print("   이미 타일로 쓰는 넷")
+    for t in KNOWN:
+        poke(t, lon, lat)
+    print()
+
+    # 목록에서 새로 나온 후보 가운데 안 찔러 본 것.
+    more = [n for n, _ in hits if n not in KNOWN][:12]
+    if more:
+        print("   목록에서 새로 나온 후보")
+        for t in more:
+            poke(t, lon, lat)
+    print()
+
+    # ③ 토지이용계획을 통째로 주는 길이 있는가. 있으면 위를 다 대신한다.
+    print("③ 토지이용계획을 한 번에 주는 길이 있는가")
+    for label, url in [
+        ("데이터 API (LT_C_UQ111)",
+         "https://api.vworld.kr/req/data?service=data&request=GetFeature"
+         f"&data=LT_C_UQ111&geomFilter=POINT({lon} {lat})&format=json"
+         "&size=10&domain=https://toji.fyi/"),
+        ("데이터 API (LT_C_LANDINFOBASEMAP)",
+         "https://api.vworld.kr/req/data?service=data&request=GetFeature"
+         f"&data=LT_C_LANDINFOBASEMAP&geomFilter=POINT({lon} {lat})"
+         "&format=json&size=10&domain=https://toji.fyi/"),
+    ]:
+        code, text = relay(url)
+        print(f"   {label:<34} http={code}  {show(text, 240)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
