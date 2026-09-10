@@ -1,0 +1,71 @@
+# 필지 조회(WFS)가 왜 400 인가 — 브이월드가 한 말을 그대로 본다.
+#
+# 2026-09-10 실측: 라이브에서 mode=parcel 이 두 지점 모두
+#   {"tileError":"브이월드가 필지를 주지 않았습니다 (HTTP 400)"}
+# 를 냈다. 우리 코드가 본문을 감춘다 — 그 안에 우리가 보낸 요청 URL 이
+# 실려 오고 거기에 인증키가 붙어 있어서다(그 판단은 맞다).
+#
+# 그래서 **중계기로 직접** 부른다. api.vworld.kr 는 허용목록에 있고,
+# 키는 중계기가 붙인다. 키가 로그에 찍히지 않게 응답만 본다.
+#
+# 왜 러너에서 직접 안 하나. 브이월드는 해외 IP 에 502 를 준다
+# (docs/finding-geoblock.md). 서울을 거쳐야 진짜 답이 온다.
+name: 필지 조회 탐침 (WFS 400)
+
+on:
+  workflow_dispatch:
+    inputs:
+      lat:
+        description: "위도"
+        default: "37.0080"
+      lon:
+        description: "경도"
+        default: "127.2797"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE: https://toji.fyi
+      TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+      LAT: ${{ inputs.lat }}
+      LON: ${{ inputs.lon }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 지금 우리가 보내는 꼴과 그 변형들
+        run: |
+          if [ -z "$TOKEN" ]; then echo "::error::중계기 토큰이 없습니다"; exit 1; fi
+          H=0.0006
+          BBOX=$(python3 -c "
+import os
+lat=float(os.environ['LAT']); lon=float(os.environ['LON']); h=$H
+print(f'{lon-h},{lat-h},{lon+h},{lat+h}')")
+          echo "BBOX=$BBOX"
+          echo
+          try () {
+            echo "── $1 ──"
+            ENC=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1],safe=""))' "$2")
+            code=$(curl -sS -o /tmp/w.txt --max-time 45 -w '%{http_code}' \
+              -H "x-relay-token: $TOKEN" "$BASE/api/relay?target=$ENC" || echo 000)
+            echo "  http=$code  $(wc -c < /tmp/w.txt)B"
+            # **키가 실려 올 수 있다.** 로그에 남기지 않게 지운다.
+            python3 - <<'PY'
+import re
+t = open('/tmp/w.txt', encoding='utf-8', errors='replace').read()
+t = re.sub(r'(?i)(key=)[^&"\s<]+', r'\1(가림)', t)
+print('  ' + ' '.join(t[:420].split()))
+PY
+            echo
+          }
+          W="https://api.vworld.kr/req/wfs?SERVICE=WFS&REQUEST=GetFeature&SRSNAME=EPSG:4326&OUTPUT=application/json&BBOX=$BBOX"
+          try "지금 우리 꼴 (2.0.0 · TYPENAME · MAXFEATURES · dt_d194)" \
+              "$W&VERSION=2.0.0&TYPENAME=dt_d194&MAXFEATURES=10&RESULTTYPE=results"
+          try "2.0.0 표준 철자 (TYPENAMES · COUNT)" \
+              "$W&VERSION=2.0.0&TYPENAMES=dt_d194&COUNT=10"
+          try "1.1.0 (TYPENAME · MAXFEATURES)" \
+              "$W&VERSION=1.1.0&TYPENAME=dt_d194&MAXFEATURES=10"
+          try "연속지적도 레이어 (lp_pa_cbnd_bubun)" \
+              "$W&VERSION=1.1.0&TYPENAME=lp_pa_cbnd_bubun&MAXFEATURES=10"
+          try "무엇이 열려 있나 (GetCapabilities)" \
+              "https://api.vworld.kr/req/wfs?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=1.1.0"
