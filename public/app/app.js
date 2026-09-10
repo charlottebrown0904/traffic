@@ -304,17 +304,39 @@ function wireSheet() {
 
 function wireTabs() {
   document.querySelectorAll('.tab').forEach((tab) => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.tab').forEach((t) => {
-        const on = t === tab;
-        t.classList.toggle('is-active', on);
-        t.setAttribute('aria-selected', String(on));
-      });
-      document.querySelectorAll('.view').forEach((v) => v.classList.remove('is-active'));
-      $(`#view-${tab.dataset.view}`).classList.add('is-active');
-      if (tab.dataset.view === 'explore' && map) map.invalidateSize();
-    });
+    tab.addEventListener('click', () => showView(tab.dataset.view));
   });
+  showHiddenView();
+  window.addEventListener('hashchange', showHiddenView);
+}
+
+function showView(key) {
+  document.querySelectorAll('.tab').forEach((t) => {
+    const on = t.dataset.view === key;
+    t.classList.toggle('is-active', on);
+    t.setAttribute('aria-selected', String(on));
+  });
+  document.querySelectorAll('.view').forEach((v) => v.classList.remove('is-active'));
+  const view = $(`#view-${key}`);
+  if (view) view.classList.add('is-active');
+  if (key === 'explore' && map) map.invalidateSize();
+}
+
+/* 접어 둔 화면으로 가는 길 (요구사항 2026-09-10).
+ *
+ * 탭 넷을 숨겼지만 **지운 것이 아니다** — 화면도 코드도 자료도 그대로
+ * 있다. 다시 쓸 날이 오면 index.html 의 hidden 한 글자만 떼면 된다.
+ *
+ * 그때까지도 우리는 그 화면을 봐야 한다(배포가 안 깨졌는지). 주소 끝에
+ * #rank · #trend · #board · #verdict 를 붙이면 열린다. 숨긴 탭도 이때는
+ * 같이 보여 준다 — 화면만 열고 탭을 감추면 돌아갈 길이 없다. */
+function showHiddenView() {
+  const key = (location.hash || '').replace('#', '');
+  if (!key) return;
+  const tab = document.querySelector(`.tab[data-view="${key}"]`);
+  if (!tab) return;
+  if (tab.hidden) tab.hidden = false;
+  showView(key);
 }
 
 /* ─────────── 필터 ─────────── */
@@ -1533,7 +1555,25 @@ function buildMap() {
   // 내줬다. 검색은 지도 조작이지 페이지 요소가 아니라서 지도 위에
   // 얹었고(머리띠에서 65px 이 돌아왔다), 두 개를 같은 자리에 놓을
   // 수는 없다. 오른쪽 아래는 폰에서 엄지가 닿는 자리이기도 하다.
-  map = L.map('map', { zoomControl: false, preferCanvas: true })
+  // **캔버스를 안 쓴다.** 보고된 문제(2026-09-10): "IC/영업소 하나
+  // 클릭 후 지자체 태그에 마우스 올리면 팝업 정보가 안 나와요."
+  //
+  // preferCanvas 를 켜면 Leaflet 이 원(circleMarker·circle)을 그리려고
+  // **지도 전체를 덮는 <canvas> 한 장**을 overlayPane(z 400)에 깝니다.
+  // 그 캔버스는 자기 위에서 일어난 마우스 사건을 전부 받아 스스로
+  // 판정하고, 못 맞히면 그냥 버립니다 — 아래로 안 흘려보냅니다.
+  //
+  // 땅값 글자는 lpPane(375), 거래 핀은 tradePane(380) 이라 **둘 다
+  // 그 캔버스 아래**입니다. 그래서 캔버스가 생기는 순간(=원이 하나라도
+  // 그려지는 순간, 즉 IC·영업소를 켜거나 밴드를 그린 뒤) 글자에 마우스가
+  // 안 닿습니다. 켜기 전에는 캔버스가 없어서 되던 것이 이것 때문입니다.
+  //
+  // SVG 로 그리면 **그려진 선만** 사건을 받습니다(leaflet.css 가
+  // path 에 pointer-events:none 을 걸고 .leaflet-interactive 에만
+  // auto 를 줍니다). 층 순서는 그대로 두고 가로채기만 없앱니다.
+  // 값은 원 561개 + 밴드 몇 개뿐이고, 이것들은 화면을 옮겨도 다시
+  // 그리지 않습니다 — SVG 로 감당이 됩니다.
+  map = L.map('map', { zoomControl: false, preferCanvas: false })
     .setView([36.5, 127.8], 7);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   // 보이는 영역만 그리므로, 움직이면 다시 그려야 한다. moveend 는
@@ -1999,7 +2039,15 @@ function wireMapChrome() {
 
   const full = $('#map-full');
   if (full) {
-    const setFull = (on) => {
+    // 뒤로 가기가 앱을 떠나 버렸다 (보고된 문제 2026-09-10:
+    // "전체 화면 전환 후 뒤로 가기 누르면 로그인 화면으로 갑니다").
+    //
+    // 전체화면은 주소를 안 바꾸므로 방문 기록에 아무것도 안 남았다.
+    // 그래서 안드로이드 뒤로 가기가 **그 앞 기록** — 관문(/account) —
+    // 으로 갔다. 사용자에게는 지도를 크게 켠 것이 '화면 하나' 이므로,
+    // 켤 때 기록을 한 칸 넣고 뒤로 가기로 그것만 닫는다.
+    let pushed = false;
+    const paint = (on) => {
       document.body.classList.toggle('is-mapmax', on);
       full.setAttribute('aria-pressed', on ? 'true' : 'false');
       full.title = on ? '원래대로' : '지도만 보기';
@@ -2007,6 +2055,18 @@ function wireMapChrome() {
       // **크기가 바뀐 것을 Leaflet 에 알려야 한다.** 안 알리면 타일이
       // 예전 크기 그대로 남아 오른쪽·아래가 회색으로 빈다.
       if (map) setTimeout(() => map.invalidateSize(), 60);
+    };
+    // fromPop: 뒤로 가기가 부른 것. 그때 다시 history 를 건드리면
+    // 한 번 더 뒤로 가서 앱을 떠난다.
+    const setFull = (on, fromPop) => {
+      paint(on);
+      if (on && !fromPop) {
+        try { history.pushState({ tojiFull: true }, ''); pushed = true; }
+        catch (e) { pushed = false; }
+      } else if (!on && !fromPop && pushed) {
+        pushed = false;
+        history.back();
+      }
     };
     full.addEventListener('click', () => {
       setFull(!document.body.classList.contains('is-mapmax'));
@@ -2016,6 +2076,13 @@ function wireMapChrome() {
         setFull(false);
       }
     });
+    window.addEventListener('popstate', () => {
+      if (!document.body.classList.contains('is-mapmax')) return;
+      pushed = false;
+      setFull(false, true);
+    });
+    // 검사가 안에서 부를 수 있게 내놓는다.
+    window.__mapFull = setFull;
   }
 }
 
@@ -3567,8 +3634,24 @@ function drawLandPrice() {
         iconSize: null,
       }),
     });
-    marker.bindTooltip(lpTip(it, level, w),
+    // 마우스를 올리면(PC) 그리고 **눌러도**(폰) 나온다.
+    //
+    // 보고된 문제(2026-09-10): "모바일에서는 이 팝업 정보를 볼 수가
+    // 없어요." 터치 화면에는 hover 가 없으므로 말풍선만으로는 영영
+    // 못 봅니다. 같은 내용을 누름에도 답니다.
+    //
+    // **화면 가운데가 아니라 그 태그 자리에** 띄웁니다. 가운데로
+    // 옮기면 어느 동네 값인지가 끊깁니다. 대신 autoPan 을 켜서, 태그가
+    // 화면 끝에 있으면 지도가 스스로 밀려 말풍선이 다 보이게 합니다.
+    const tip = lpTip(it, level, w);
+    marker.bindTooltip(tip,
       { direction: 'top', className: 'lp-tip', opacity: 1 });
+    marker.bindPopup(tip, {
+      className: 'lp-pop', maxWidth: 260, autoPan: true,
+      autoPanPadding: [12, 12], closeButton: true,
+    });
+    // 누르면 말풍선이 뜨는데 그 위에 hover 말풍선이 겹치면 두 겹이 된다.
+    marker.on('popupopen', () => marker.closeTooltip());
     lpLayer.addLayer(marker);
   });
 

@@ -1712,6 +1712,7 @@ const FAKE_LEAFLET = () => {
         at: marks.map((m) => (m.__latlng || [])),
         html: marks.map((m) => (m.options.icon || {}).options.html || ''),
         tips: marks.map((m) => m.__tooltip || ''),
+        pops: marks.map((m) => m.__popupHtml || ''),
         note: document.getElementById('lp-note').textContent,
       };
     });
@@ -2001,6 +2002,16 @@ const FAKE_LEAFLET = () => {
           /<b>백곡면<em>0\.2만<\/em>/.test(
             lpMyeon.html.find((h) => /백곡면/.test(h)) || ''),
           (lpMyeon.html.find((h) => /백곡면/.test(h)) || '없음').slice(0, 90));
+    // 눌러도 같은 내용이 나와야 한다 (보고된 문제 2026-09-10:
+    // "모바일에서는 이 팝업 정보를 볼 수가 없어요"). 터치 화면에는
+    // hover 가 없으므로 말풍선만으로는 영영 못 본다.
+    check('태그를 눌러도 같은 말풍선이 열린다 (폰에는 hover 가 없다)',
+          lpMyeon.pops.length === lpMyeon.tips.length
+          && lpMyeon.pops.every((h, i) => h === lpMyeon.tips[i])
+          && lpMyeon.pops.some((h) => h.length > 0),
+          `누름 ${lpMyeon.pops.filter(Boolean).length}개`
+          + ` / 올림 ${lpMyeon.tips.filter(Boolean).length}개`);
+
     check('묶을 때 리 개수와 함께 건수로 가중한다',
           /2개 리·동 합침/.test(lpMyeon.tips.find((t) => /백곡면/.test(t)) || ''),
           (lpMyeon.tips.find((t) => /백곡면/.test(t)) || '없음').slice(0, 140));
@@ -2248,7 +2259,48 @@ const FAKE_LEAFLET = () => {
     check('가이드·면책이 지도 아래 자리를 비웠다',
           !chrome.guideAtFoot && !chrome.footerLeft);
     check('그 둘은 ⓘ 단추 안에 있다', chrome.noteBtn && chrome.guideInNote);
-    check('검색은 지도 위에 있다', chrome.findOverMap && !chrome.findInHeader);
+    // 검색은 **매물 탭 옆**, 지도 위가 아니다 (요구사항 2026-09-10:
+    // "지도 위에 두는 것이 신경쓰이네요"). 지도 위에 얹으면 세로 자리를
+    // 안 먹는 대신 지도의 윗줄을 가린다 — 그 값이 거슬린다는 판단이다.
+    check('검색은 머리띠에, 지도 위가 아니다',
+          chrome.findInHeader && !chrome.findOverMap,
+          `머리띠=${chrome.findInHeader} 지도위=${chrome.findOverMap}`);
+
+    // ── 탭 정리 (요구사항 2026-09-10) ──
+    const tabs = await page.evaluate(() => {
+      const all = [...document.querySelectorAll('.tab')];
+      const seen = (t) => getComputedStyle(t).display !== 'none';
+      return {
+        shown: all.filter(seen).map((t) => t.textContent.trim()),
+        hiddenViews: all.filter((t) => !seen(t)).map((t) => t.dataset.view),
+        // **지운 것이 아니라 접어 둔 것**이라야 한다. 화면이 남아 있는가.
+        viewsAlive: all.every((t) => !!document.getElementById(`view-${t.dataset.view}`)),
+      };
+    });
+    check("탭은 '지도'와 '매물' 둘만 선다",
+          tabs.shown.join(',') === '지도,매물', tabs.shown.join(',') || '없음');
+    check('나머지 넷은 접혀 있다',
+          tabs.hiddenViews.join(',') === 'rank,trend,board,verdict',
+          tabs.hiddenViews.join(',') || '없음');
+    check('접은 것이지 지운 것이 아니다 (화면이 그대로 있다)', tabs.viewsAlive);
+
+    // 접어 둔 화면으로 가는 길. 이것이 없으면 배포가 깨져도 아무도 모른다.
+    const hid = await page.evaluate(() => {
+      location.hash = '#rank';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      const tab = document.querySelector('.tab[data-view="rank"]');
+      const out = {
+        viewOn: document.getElementById('view-rank').classList.contains('is-active'),
+        tabBack: !tab.hidden,
+      };
+      location.hash = '';
+      document.querySelector('.tab[data-view="explore"]').click();
+      tab.hidden = true;
+      return out;
+    });
+    check('주소에 #rank 를 붙이면 접어 둔 화면이 열린다',
+          hid.viewOn && hid.tabBack,
+          `화면=${hid.viewOn} 탭복귀=${hid.tabBack}`);
 
     // ⓘ 는 눌러야 열린다. 열린 채로 시작하면 지도를 가린다.
     const noteState = await page.evaluate(() => {
@@ -2286,10 +2338,48 @@ const FAKE_LEAFLET = () => {
     check('Esc 로 빠져나온다', full.escOut);
     check('같은 단추로도 빠져나온다', full.on2 && full.off);
 
+    // 뒤로 가기로도 빠져나와야 한다 (보고된 문제 2026-09-10:
+    // "전체 화면 전환 후 뒤로 가기 누르면 로그인 화면으로 갑니다").
+    // 전체화면이 방문 기록을 안 남기니 뒤로 가기가 앱을 통째로 떠났다.
+    const back = await page.evaluate(async () => {
+      document.getElementById('map-full').click();
+      // history.length 로는 못 잰다 — 브라우저마다 다르게 센다.
+      // **우리가 넣은 표식**이 있는지를 본다.
+      const pushed = !!(history.state && history.state.tojiFull);
+      history.back();
+      await new Promise((r) => setTimeout(r, 150));
+      return { pushed, out: !document.body.classList.contains('is-mapmax') };
+    });
+    check('전체화면이 방문 기록을 한 칸 남긴다', back.pushed);
+    check('뒤로 가기로 전체화면만 풀린다 (앱을 안 떠난다)', back.out);
+
     // **폰 폭에서 실제로 재 본다.** '넓어졌다' 는 말은 재야 말이 된다.
     // 390×844 는 아이폰 기준선이다.
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(150);
+    // 도구막대가 눌리지 않는가. 실사용 화면(2026-09-10)에서 스위치
+    // 글자가 'IC· / 영업 / 소' 로 세 줄이 되고 배경 지도 칩 다섯 중
+    // 둘만 보였다. .map-tools 에 max-width:calc(100% - 22rem) 이
+    // 걸려 있어서 390px 폰에서 폭이 38px 이었다.
+    const tools = await page.evaluate(() => {
+      const pick = document.getElementById('basemap-pick');
+      const sw = document.querySelector('.map-switch span');
+      return {
+        toolsW: Math.round(document.querySelector('.map-tools').getBoundingClientRect().width),
+        chips: pick.children.length,
+        clipped: pick.scrollWidth > pick.clientWidth + 1,
+        // 낱말이 중간에서 끊기면 높이가 한 줄보다 훨씬 커진다.
+        swH: Math.round(sw.getBoundingClientRect().height),
+      };
+    });
+    check('도구막대가 눌리지 않는다',
+          tools.toolsW > 200, `폭 ${tools.toolsW}px`);
+    check('배경 지도 칩이 잘리지 않는다',
+          !tools.clipped && tools.chips >= 5,
+          `칩 ${tools.chips}개 · 잘림=${tools.clipped}`);
+    check('스위치 글자가 낱말 중간에서 안 끊긴다',
+          tools.swH < 30, `글자 높이 ${tools.swH}px`);
+
     const phone = await page.evaluate(() => {
       const h = () => {
         const r = document.querySelector('.map-wrap').getBoundingClientRect();
@@ -2634,10 +2724,18 @@ const FAKE_LEAFLET = () => {
     // 밴드가 같이 유의하면 IC 효과가 아니고, 표본이 모자라면 '효과 없음'
     // 이 아니라 '아직 모름' 이다. 그 구분이 화면에서 사라지면 사람은
     // 스스로 결론을 채워 넣는다 — 그래서 화면에 실제로 남아 있는지 본다.
-    const vTab = await page.$('.tab[data-view="verdict"]');
-    check('가설 판정 탭이 있다', !!vTab);
+    // 탭은 접혀 있다(요구사항 2026-09-10). **그래도 화면은 살아 있어야
+    // 한다** — 접은 것과 지운 것은 다르다. 접어 둔 화면을 여는 길
+    // (주소 끝의 #verdict)로 열어서 안이 멀쩡한지 본다.
+    const vTab = await page.evaluate(() => {
+      const t = document.querySelector('.tab[data-view="verdict"]');
+      if (!t) return false;
+      location.hash = '#verdict';
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+      return true;
+    });
+    check('가설 판정 화면이 접힌 채로 살아 있다', !!vTab);
     if (vTab) {
-      await vTab.click();
       await page.waitForTimeout(300);
       const v = await page.evaluate(() => {
         const cards = [...document.querySelectorAll('#verdict-card' + 's .verdict-card')];

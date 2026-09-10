@@ -13,7 +13,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260910d">
+<link rel="stylesheet" href="/app/style.css?v=20260910e">
 </head>
 <body>
 
@@ -33,14 +33,29 @@
       <div class="brand-sub">전국 토지 실거래 · 필지 진단</div>
     </div>
   </div>
+  <!-- 탭은 둘만 세운다 (요구사항 2026-09-10). 나머지 넷은 **지우지 않고
+       숨긴다** — 나중에 다시 쓸 수 있어야 한다. 화면(main)도 그대로
+       있고, 주소 끝에 #rank · #trend · #board · #verdict 를 붙이면
+       지금도 열린다 (app.js 의 showHiddenView). -->
   <nav class="tabs" role="tablist">
-    <button class="tab is-active" role="tab" data-view="explore" aria-selected="true">탐색</button>
-    <button class="tab" role="tab" data-view="rank" aria-selected="false">교통량 순위</button>
-    <button class="tab" role="tab" data-view="trend" aria-selected="false">추이 비교</button>
-    <button class="tab" role="tab" data-view="board" aria-selected="false">스코어보드</button>
-    <button class="tab" role="tab" data-view="verdict" aria-selected="false">가설 판정</button>
+    <button class="tab is-active" role="tab" data-view="explore" aria-selected="true">지도</button>
     <button class="tab" role="tab" data-view="listings" aria-selected="false">매물</button>
+    <button class="tab" role="tab" data-view="rank" aria-selected="false" hidden>교통량 순위</button>
+    <button class="tab" role="tab" data-view="trend" aria-selected="false" hidden>추이 비교</button>
+    <button class="tab" role="tab" data-view="board" aria-selected="false" hidden>스코어보드</button>
+    <button class="tab" role="tab" data-view="verdict" aria-selected="false" hidden>가설 판정</button>
   </nav>
+
+  <!-- 지역 검색은 **매물 탭 옆**이다 (요구사항 2026-09-10).
+       지도 위에 얹어 봤더니 거슬린다는 판단이었다. 탭이 둘로 줄어
+       머리띠에 자리가 남으므로, 여기서는 줄을 새로 먹지 않는다. -->
+  <div class="map-find">
+    <input type="search" id="find-q" autocomplete="off" spellcheck="false"
+           placeholder="지역 이름으로 찾기 (예: 안성시, 공도읍)"
+           aria-label="지역 이름으로 찾기"
+           role="combobox" aria-expanded="false" aria-controls="find-list">
+    <ul class="find-list" id="find-list" role="listbox" hidden></ul>
+  </div>
   <div class="meta-stamp" id="meta-stamp"></div>
 </header>
 
@@ -290,18 +305,6 @@
     <div class="map-note" id="map-note" hidden>
       <p class="map-note-txt" id="disclaimer"></p>
       <a class="guide-link" href="/guide">토지·건축 가이드 →</a>
-    </div>
-
-    <!-- 지역 검색. **지도 조작이지 페이지 요소가 아니다** — 호갱노노·
-         부동산플래닛도 지도 위에 얹는다. 머리띠에서 내리면 65px 이
-         지도로 돌아온다. Leaflet 의 +/- 는 오른쪽 아래로 옮겨서
-         이 자리를 비웠다 (app.js). -->
-    <div class="map-find">
-      <input type="search" id="find-q" autocomplete="off" spellcheck="false"
-             placeholder="지역 이름으로 찾기 (예: 안성시, 공도읍)"
-             aria-label="지역 이름으로 찾기"
-             role="combobox" aria-expanded="false" aria-controls="find-list">
-      <ul class="find-list" id="find-list" role="listbox" hidden></ul>
     </div>
 
     <div id="map"></div>
@@ -642,6 +645,6 @@
 <script src="/lib/supabase-init.js?v=20260905a"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
-<script src="/app/gate.js?v=20260910d"></script>
+<script src="/app/gate.js?v=20260910e"></script>
 </body>
 </html>

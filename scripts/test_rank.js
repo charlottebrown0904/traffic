@@ -57,9 +57,16 @@ async function openApp(browser) {
       profile: { status: 'approved' } }) };
   });
   await page.goto(`${BASE}/app/`, { waitUntil: 'domcontentloaded' });
-  // 탭을 눌러야 뷰가 보인다. 눌러서 여는 것까지가 이 화면의 동작이다.
-  await page.waitForSelector('.tab[data-view="rank"]', { timeout: 15000 });
-  await page.click('.tab[data-view="rank"]');
+  // 탭은 접혀 있다 (요구사항 2026-09-10 — 지도·매물만 세운다).
+  // **화면은 그대로 살아 있어야 한다** — 접은 것과 지운 것은 다르다.
+  // 접어 둔 화면을 여는 길(주소 끝의 #rank)로 열어서 안을 확인한다.
+  await page.waitForSelector('.tab[data-view="rank"]', {
+    timeout: 15000, state: 'attached',
+  });
+  await page.evaluate(() => {
+    location.hash = '#rank';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+  });
   await page.waitForSelector('#rank-table tbody tr', { timeout: 15000 });
   return page;
 }
