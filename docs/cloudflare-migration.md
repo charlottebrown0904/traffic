@@ -96,13 +96,26 @@ Vercel 자신도 앞단 리버스 프록시를 권하지 않습니다.
 | Supabase | Redirect URLs 에 `https://toji.fyi/**` **추가** | 로그인 불가 |
 | 카카오·구글 | OAuth 리디렉션에 새 주소 **추가** | 로그인 불가 |
 
-**추가**입니다. 옛 주소(`toji-gogo.vercel.app`)는 당분간 남겨 둡니다.
+**추가**입니다. 옛 주소(`toji-gogo.vercel.app`)는 **2026-09-10 에
+뗐습니다** — 그 주소로는 이제 아무것도 안 열립니다.
 
 ### 5. 마지막 — 수집 파이프라인
 
 GitHub → Settings → Secrets → Actions
 
-    REDT_RELAY_URL = https://toji.fyi/api/relay
+    REDT_RELAY_URL = https://toji.fyi
+
+**`/api/relay` 를 붙이지 않습니다.** 코드가 알아서 붙입니다 —
+`config.py` 가 도메인만 받고 `http.py` 의 `_via_relay()` 가
+`f"{cfg.url}/api/relay"` 로 이어 붙입니다. 붙여서 넣으면 실제 호출이
+`https://toji.fyi/api/relay/api/relay` 가 되어 404 납니다.
+
+> 이 문서에 한동안 `https://toji.fyi/api/relay` 로 적혀 있었고,
+> 2026-09-10 에 실제로 그 값을 넣어 수집이 한 번 더 멈췄습니다.
+> 응답 본문이 두 오류를 갈라 줬습니다 —
+> `DEPLOYMENT_NOT_FOUND` 는 도메인이 없는 것이고,
+> `The page could not be found` 는 도메인은 살아 있고 경로가 없는
+> 것입니다. 상태코드(둘 다 404)만 보면 이 구분을 못 합니다.
 
 **4번까지 확인된 뒤에** 바꿉니다. 토큰(`REDT_RELAY_TOKEN`)은 값이
 그대로라 안 건드립니다.

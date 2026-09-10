@@ -572,6 +572,30 @@ if _vj.exists():
           "(막는 것은 코드가 아니라 Vercel 설정이다)")
 
 print()
+print("O. 중계기 주소 — 문서가 코드와 어긋나면 수집이 통째로 멈춘다")
+# 2026-09-10 실측. 시크릿을 문서가 적어 둔 대로 넣었더니 수집이
+# 멈췄다. 코드는 도메인만 받아서 /api/relay 를 **자기가 붙이는데**,
+# 문서에는 붙인 채로 적혀 있어 호출이 이렇게 됐다.
+#
+#   https://toji.fyi/api/relay/api/relay   → 404
+#
+# 상태코드만 보면 도메인이 죽은 404 와 구분이 안 된다. 그날 둘 다
+# 겪었고, 응답 **본문**이 갈라 줬다 (DEPLOYMENT_NOT_FOUND 대
+# The page could not be found).
+#
+# 그래서 문서와 코드가 다시 어긋나지 않게 여기서 맞물려 둔다.
+_http = (ROOT / "src/redt/collect/http.py").read_text(encoding="utf-8")
+check('f"{cfg.url}/api/relay"' in _http,
+      "코드가 /api/relay 를 스스로 붙인다 (그러니 시크릿은 도메인만)")
+_mig = ROOT / "docs/cloudflare-migration.md"
+if _mig.exists():
+    _txt = _mig.read_text(encoding="utf-8")
+    check("REDT_RELAY_URL = https://toji.fyi\n" in _txt,
+          "문서가 시크릿을 도메인만으로 적는다")
+    check("`/api/relay` 를 붙이지 않습니다" in _txt,
+          "왜 붙이면 안 되는지도 적혀 있다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
