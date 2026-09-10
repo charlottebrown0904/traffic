@@ -9,6 +9,7 @@ YAML 을 두 번 깨뜨렸다. 파이썬 파일이면 문법을 바로 잰다.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -47,13 +48,18 @@ def get(url: str) -> tuple[int, bytes]:
 
 def tiles() -> int:
     bad = 0
+    seen: list[str] = []
     print(f"  필지 경계선 타일 (배율 {TILES[0][0]} 이상에서만 그린다)")
     for z, x, y in TILES:
         code, body = get(f"{BASE}/api/tile?layer=cadastral&z={z}&x={x}&y={y}")
         png = code == 200 and body.startswith(PNG)
         ok = png and len(body) >= MIN_INK
         mark = "✓ 그림" if ok else ("✗ 빈 타일" if png else "✗")
-        print(f"    z={z:<3} http={code} {len(body):>6}B  {mark}")
+        # 지문을 같이 적는다. 세 배율이 **같은 그림**이면 좌표를 무시하고
+        # 한 장을 돌려주고 있다는 뜻인데, 크기만 봐서는 안 보인다.
+        ink = hashlib.md5(body).hexdigest()[:8] if png else "--------"
+        seen.append(ink)
+        print(f"    z={z:<3} http={code} {len(body):>6}B  {ink}  {mark}")
         if not ok:
             bad += 1
             if not png:
@@ -61,6 +67,10 @@ def tiles() -> int:
             else:
                 print(f"      PNG 이긴 한데 {MIN_INK}B 도 안 됩니다 — 선이 없는 "
                       "투명 타일로 보입니다.")
+    if len(set(seen)) == 1 and len(seen) > 1:
+        bad += 1
+        print("      배율이 다른데 그림이 똑같습니다 — 좌표를 안 보고 한 장을")
+        print("      돌려주고 있거나, 전부 같은 빈 타일입니다.")
     return bad
 
 
