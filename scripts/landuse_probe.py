@@ -127,11 +127,17 @@ def catalog() -> list[tuple[str, str]]:
 # 개발 가부를 실제로 가르는 층만 고른 것. 다 부르면 스무 번이 넘습니다.
 # **한 요청에 여럿을 담을 수 있는지**가 이번 탐침의 핵심입니다.
 SHORTLIST = [
-    "lt_c_agrixue101",   # 농업진흥지역도 — 농업진흥구역/보호구역
+    "lt_c_ud801",        # 개발제한구역 — 원칙적으로 신축 불가
+    "lt_c_agrixue101",   # 농업진흥지역도 — 농업진흥구역/농업보호구역
     "lt_c_um000",        # 가축사육제한구역
+    "lt_c_upisuq171",    # 개발행위허가제한지역
     "lt_c_uf151",        # 산림보호구역
     "lt_c_um710",        # 상수원보호
-    "lt_c_upisuq171",    # 개발행위허가제한지역
+    "lt_c_uo101",        # 교육환경보호구역
+    "lt_c_uq121",        # 경관지구
+    "lt_c_uq124",        # 방화지구
+    "lt_c_uq126",        # 보호지구
+    "lt_c_uq130",        # 특정용도제한지구
 ]
 
 
@@ -155,7 +161,8 @@ def multi(lon: float, lat: float) -> None:
     except Exception:                                        # noqa: BLE001
         print(f"     http={code}  안 됩니다 — {show(text, 260)}")
         return
-    print(f"     http={code}  {len(feats)}건")
+    print(f"     http={code}  {len(feats)}건  {len(text):,}B"
+          f"  ← 이 크기가 클릭 한 번의 무게다")
     kinds = {}
     for f in feats:
         kinds[str(f.get("id") or "?").split(".")[0]] = \
