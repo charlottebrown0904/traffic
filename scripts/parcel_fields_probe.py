@@ -44,6 +44,25 @@ SPOTS = [
     ("나온다고 하신 곳 (계획관리)", "경기도 안성시 공도읍 승두리 40"),
 ]
 
+# 도로명 주소가 실제로 몇 번에 한 번 나오는가.
+#
+# 필지를 한 번 누를 때마다 브이월드를 세 번 부릅니다(토지특성 ·
+# 연속지적도 · 역지오코딩). 셋째가 도로명인데, 앞서 잰 두 곳 모두
+# NOT_FOUND 였습니다. **거의 안 나온다면 그 호출은 값을 못 합니다.**
+# 도시·농촌·산지를 섞어 비율을 잽니다.
+ROAD_SPOTS = [
+    "서울특별시 종로구 세종로 1",
+    "서울특별시 강남구 역삼동 737",
+    "경기도 성남시 분당구 정자동 178",
+    "경기도 화성시 향남읍 행정리 1",
+    "경기도 안성시 공도읍 승두리 40",
+    "경기도 광주시 초월읍 지월리 14-1",
+    "충청북도 음성군 대소면 대풍리 1",
+    "전라남도 나주시 빛가람동 1",
+    "강원특별자치도 평창군 대관령면 횡계리 1",
+    "경상남도 거제시 연초면 송정리 887",
+]
+
 # 키가 응답에 실려 올 수 있다 — 로그로 나가기 전에 지운다.
 HIDE = re.compile(r'(?i)((?:key|apikey|servicekey)=)[^&"\s<]+')
 
@@ -162,6 +181,32 @@ def main() -> int:
         print("    ③ 주소는 어디서 받는가")
         address(lon, lat)
         print()
+
+    # ④ 도로명이 몇 번에 한 번 나오는가 — 셋째 호출이 값을 하는가.
+    print("── 도로명 주소는 몇 번에 한 번 나오는가 (호출 셋 중 하나가 이것)")
+    got = 0
+    for addr_text in ROAD_SPOTS:
+        pt = geocode(addr_text)
+        if not pt:
+            print(f"    {addr_text:<32} 좌표 없음")
+            continue
+        lon, lat = pt
+        q = ("service=address&request=getAddress&version=2.0"
+             f"&crs=epsg:4326&point={lon},{lat}&type=ROAD"
+             "&format=json&simple=false")
+        code, text = relay("https://api.vworld.kr/req/address?" + q)
+        road = None
+        try:
+            items = json.loads(text)["response"]["result"]
+            road = next((i.get("text") for i in items if i.get("text")), None)
+        except Exception:                                    # noqa: BLE001
+            pass
+        if road:
+            got += 1
+        print(f"    {addr_text:<32} {road or '— 없음'}")
+    n = len(ROAD_SPOTS)
+    print(f"\n    {n}곳 중 {got}곳에서 도로명이 나왔습니다 ({got / n:.0%}).")
+    print("    낮으면 그 호출을 빼고 지번만 쓰는 편이 낫습니다.")
     return 0
 
 
