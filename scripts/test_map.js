@@ -154,6 +154,8 @@ const FAKE_LEAFLET = () => {
       },
     }),
     tileLayer: (url) => { rec.tiles.push(url); return chain(); },
+    // 필지 윤곽은 geoJSON 층으로 그린다. 진짜 Leaflet 에 있는 것이다.
+    geoJSON: (geom, opts) => chain({ __geojson: geom, __opts: opts || {} }),
     // +/- 는 오른쪽 아래로 옮겼다 (왼쪽 위는 검색칸 자리다).
     // 어디에 붙였는지 검사가 볼 수 있게 기록해 둔다.
     control: {
@@ -568,12 +570,19 @@ const FAKE_LEAFLET = () => {
       }
       return r.fulfill({
         status: 200, contentType: 'application/json',
-        body: JSON.stringify({ parcel: {
-          pnu: '4111110300100010000', jimok: '전', land_use: '계획관리지역',
-          use_situation: '전', area_m2: 1653, road_side: '중로한면',
-          shape: '가로장방형', slope: '평지', official_price: 250000,
-          stdr_year: '2025',
-        } }),
+        body: JSON.stringify({
+          parcel: {
+            pnu: '4111110300100010000', jimok: '전', land_use: '계획관리지역',
+            use_situation: '전', area_m2: 1653, road_side: '중로한면',
+            shape: '가로장방형', slope: '평지', official_price: 250000,
+            stdr_year: '2025',
+          },
+          // 윤곽. 실제 응답과 같은 꼴이다 (좌표 여섯 자리).
+          geom: { type: 'Polygon', coordinates: [[
+            [127.0108, 37.3035], [127.0114, 37.3035],
+            [127.0114, 37.3044], [127.0108, 37.3044], [127.0108, 37.3035],
+          ]] },
+        }),
       });
     });
     // 검사가 fixture 와 화면을 맞대어 볼 수 있게 페이지에도 심는다.
@@ -2826,6 +2835,42 @@ const FAKE_LEAFLET = () => {
     // 가로장방형(4) + 평지(5) → 반올림 5 → land[5] = .95
     check('모양·지세를 한 축으로 묶는다',
           Math.abs(byKey.land.pct - 0.95) < 1e-6, String(byKey.land.pct));
+    // 필지 윤곽 (요구사항 2026-09-10 — 부동산플래닛처럼).
+    const shape = await page.evaluate(() => {
+      const items = (window.__map.groups || []).flatMap((g) => g._items)
+        .filter((m) => m.__opts && m.__opts.pane === 'parcelPane');
+      return {
+        n: items.length,
+        kept: !!window.__parcelShape,
+        // 윤곽이 누름을 가로채면 옆 필지로 못 넘어간다.
+        passthrough: items.every((m) => m.__opts.interactive === false),
+      };
+    });
+    check('고른 필지의 윤곽을 그린다', shape.n === 1 && shape.kept,
+          `층 ${shape.n}개`);
+    check('윤곽이 누름을 가로채지 않는다', shape.passthrough);
+
+    // 토지이음 단추. 우리가 못 주는 칸(소유·지역지구·토지이동)은 여기서 본다.
+    const eum = await page.evaluate(() => {
+      const a = document.querySelector('.parcel-card .pc-eum');
+      return a ? { href: a.getAttribute('href'), rel: a.getAttribute('rel'),
+                   tgt: a.getAttribute('target'), txt: a.textContent } : null;
+    });
+    check('토지이음으로 넘기는 단추가 있다', !!eum);
+    check('그 필지의 PNU 로 간다',
+          !!eum && eum.href.includes('pnu=4111110300100010000'),
+          eum ? eum.href : '없음');
+    // **mode=search 는 안 쓴다.** 실측(2026-09-10)에서 표가 바로 나오는
+    // 대신 값이 섞였다 — 검색칸은 우리 필지인데 소재지·지목·면적은 남의
+    // 것이었다. 섞여 나오는 링크는 없느니만 못하다.
+    check('값이 섞이는 mode=search 는 안 쓴다',
+          !!eum && !/mode=search/.test(eum.href), eum ? eum.href : '없음');
+    check('한 번 더 눌러야 한다는 것을 미리 적는다',
+          !!eum && /열람/.test(eum.txt), eum ? eum.txt : '없음');
+    check('새 창으로 열고 opener 를 안 준다',
+          !!eum && eum.tgt === '_blank' && /noopener/.test(eum.rel || ''),
+          eum ? `${eum.tgt} ${eum.rel}` : '없음');
+
     check('축마다 원값을 같이 적는다',
           /중로한면/.test(pc.html) && /가로장방형/.test(pc.html),
           byKey.road.raw);
