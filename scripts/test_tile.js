@@ -539,6 +539,63 @@ const call = async (query, method = 'GET', headers = {}) => {
         calls.some((c) => roadCall(c.url)),
         `호출 ${calls.length}회`);
 
+  // ── 겹친 지구·구역 (2026-09-10) ──
+  //
+  // 용도지역만으로는 무엇을 지을 수 있는지 알 수 없습니다. WFS 는
+  // TYPENAME 에 쉼표로 여럿을 담을 수 있어, 토지특성과 같은 요청에
+  // 실으면 클릭당 호출이 안 늘어납니다 (실측 12층 · 14,837B).
+  const WITH_ZONES = {
+    type: 'FeatureCollection',
+    features: [
+      { id: 'dt_d194.fid-1', properties: {
+          pnu: '4725025027107070001', lndcgr_code_nm: '임야',
+          prpos_area_1_nm: '계획관리지역', lndpcl_ar: '12409' },
+        geometry: { type: 'Polygon', coordinates: [[
+          [127.0008, 37.0008], [127.0016, 37.0008],
+          [127.0016, 37.0016], [127.0008, 37.0016], [127.0008, 37.0008]]] } },
+      { id: 'lt_c_um000.57606',
+        properties: { remark: '절대제한지역(전 축종)' },
+        geometry: { type: 'Polygon', coordinates: [[
+          [126.9, 36.9], [127.9, 36.9],
+          [127.9, 37.9], [126.9, 37.9], [126.9, 36.9]]] } },
+      // 그 점을 안 품는 이웃 규제. 딸려 오면 안 된다.
+      { id: 'lt_c_ud801.1', properties: { remark: '개발제한' },
+        geometry: { type: 'Polygon', coordinates: [[
+          [120.0, 30.0], [120.1, 30.0],
+          [120.1, 30.1], [120.0, 30.1], [120.0, 30.0]]] } },
+    ],
+  };
+  stubFetch(parcelReply(WITH_ZONES));
+  const zoned = await call({ mode: 'parcel', lat: '37.0012', lon: '127.0012' });
+  const zUrl = (calls[0] || {}).url || '';
+  // 둘이어야 한다 — 토지특성+구역이 한 번, 주소가 한 번. 구역을 따로
+  // 부르면 열둘이 된다. 셋이면 도로명까지 부른 것인데 임야에는 안 부른다.
+  check('지구·구역을 같은 요청에 담는다 (호출이 안 는다)',
+        calls.length === 2 && /TYPENAME=dt_d194%2Clt_c_/.test(zUrl),
+        `호출 ${calls.length}회 · `
+        + (zUrl.match(/TYPENAME=[^&]{0,60}/) || ['없음'])[0]);
+  check('구역을 층마다 따로 부르지 않는다',
+        !calls.some((c, i) => i > 0 && /TYPENAME=lt_c_/.test(c.url)),
+        calls.map((c) => (c.url.match(/TYPENAME=[^&]{0,24}/) || [''])[0])
+          .join(' | '));
+  const zones = (zoned.json_ || {}).zones || [];
+  check('걸린 구역을 돌려준다', zones.length === 1,
+        JSON.stringify(zones).slice(0, 80));
+  check('그 구역의 세부 이름을 싣는다',
+        (zones[0] || {}).detail === '절대제한지역(전 축종)',
+        String((zones[0] || {}).detail));
+  check('무엇을 막는지 함께 싣는다',
+        /축사/.test((zones[0] || {}).note || ''),
+        (zones[0] || {}).note);
+  // 네모로 부르면 이웃 규제가 딸려 온다. 안 품으면 빼야 한다.
+  check('그 점을 안 품는 이웃 규제는 뺀다',
+        !zones.some((z) => z.label === '개발제한구역'),
+        zones.map((z) => z.label).join(','));
+  // 규제가 딸려 와도 필지는 토지특성에서 골라야 한다.
+  check('필지는 토지특성 층에서 고른다',
+        ((zoned.json_ || {}).parcel || {}).jimok === '임야',
+        String(((zoned.json_ || {}).parcel || {}).jimok));
+
   console.log();
   console.log('15. 필지 경계선을 칸 단위 도형으로 준다 (mode=parcels)');
   // 왜 그림이 아닌가: 브이월드 WMS 의 연속지적도는 1:1,703(배율 18)

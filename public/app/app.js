@@ -4496,7 +4496,7 @@ function radarSvg(axes) {
  * '지정되지않음' 은 값이 아니라 빈칸이다. 브이월드가 그렇게 적어
  * 보내는데, 그대로 두면 사람이 무슨 뜻인지 되묻게 된다.
  */
-function parcelFacts(parcel) {
+function parcelFacts(parcel, zones) {
   const won = (v) => Math.round(v).toLocaleString('ko-KR');
   const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
   const blank = (v) => !v || /^지정되지\s*않음$/.test(String(v).trim());
@@ -4521,6 +4521,14 @@ function parcelFacts(parcel) {
     // 뗄 곳도 다르므로 적어 준다.
     ['대장', parcel.register === '2' ? '임야대장'
       : parcel.register === '1' ? '토지대장' : null],
+    // 요구사항(2026-09-10): "하단 토지정보 리스트에 지구, 구역에
+    // 대해 자세히 표시". 세부 이름까지 적습니다 — '가축사육제한구역'
+    // 만으로는 '절대제한(전 축종)' 인지 '일부 축종' 인지 모릅니다.
+    ['지구·구역', (zones || []).length
+      ? zones.map((z) => escapeHtml(z.label)
+          + (z.detail ? ` <em>${escapeHtml(String(z.detail))}</em>` : ''))
+        .join('<br>')
+      : null],
   ].filter(([, v]) => !blank(v));
   if (!facts.length) return '';
   return '<table class="pc-facts"><tbody>'
@@ -4547,7 +4555,35 @@ function parcelAddr(addr, parcel) {
     + '</div>';
 }
 
-function parcelCard(parcel, diag, at, addr) {
+/* 겹친 지구·구역 (요구사항 2026-09-10).
+ *
+ * 보고: "단순히 용도 지역으로만 토지를 평가하니 오류가 발생됩니다."
+ * 무엇을 지을 수 있는지는 용도지역 위에 겹친 것들이 정합니다.
+ *
+ * **레이더는 안 건드립니다.** 규제의 무게를 숫자 하나로 환산하면
+ * 그 환산율 자체가 근거 없는 점수가 됩니다. 대신 아래에 따로,
+ * 무엇이 걸렸고 그것이 무엇을 막는지 글로 적습니다.
+ *
+ * **이것이 전부가 아니라고 적습니다.** 준보전산지·접도구역은
+ * 브이월드에 아예 없습니다(목록을 훑어 확인). 다 보여준 척하는 것이
+ * 안 보여주는 것보다 위험합니다.
+ */
+function parcelZones(zones) {
+  const list = (zones || []).filter((z) => z && z.label);
+  const rows = list.map((z) => '<li><b>' + escapeHtml(z.label) + '</b>'
+    + (z.detail ? ` <em>${escapeHtml(String(z.detail))}</em>` : '')
+    + `<span>${escapeHtml(z.note || '')}</span></li>`).join('');
+  return '<h4 class="pc-sub">건축 제한</h4>'
+    + (rows
+       ? `<ul class="pc-zones">${rows}</ul>`
+       : '<p class="pc-zone-none">확인한 구역 중에서는 걸린 것이 '
+         + '없습니다.</p>')
+    + '<p class="pc-zone-note">여기 적힌 것이 전부가 아닙니다 — '
+    + '<strong>준보전산지·접도구역</strong> 등은 우리가 받는 자료에 '
+    + '없습니다. 실제 건축 전에는 토지이음에서 확인하세요.</p>';
+}
+
+function parcelCard(parcel, diag, at, addr, zones) {
   const won = (v) => Math.round(v).toLocaleString('ko-KR');
   const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
   const rows = (diag ? diag.axes : []).map((a) => {
@@ -4566,7 +4602,8 @@ function parcelCard(parcel, diag, at, addr) {
     + (diag ? radarSvg(diag.axes) : '')
     + (rows ? `<table class="pc-axes"><tbody>${rows}</tbody></table>` : '')
     + '<h4 class="pc-sub">토지 정보</h4>'
-    + parcelFacts(parcel)
+    + parcelFacts(parcel, zones)
+    + parcelZones(zones)
     + (peer
        ? `<p class="pc-peer">${escapeHtml(peer.level)}의 `
          + `${escapeHtml(peer.group)} 거래 ${peer.n.toLocaleString('ko-KR')}건과 견줬습니다.</p>`
@@ -4681,9 +4718,10 @@ async function askParcel(latlng) {
   }
   drawParcelShape(res.geom);
   const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng]) : null;
-  detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng], res.addr));
+  detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng],
+                        res.addr, res.zones || []));
   window.__parcel = { parcel, diag, geom: res.geom || null,
-                      addr: res.addr || null };
+                      addr: res.addr || null, zones: res.zones || [] };
 }
 
 /* ─────────── 세 가설 판정 ─────────── */

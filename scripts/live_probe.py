@@ -89,6 +89,18 @@ def parcel() -> int:
         return 1
     pts = json.dumps(g).count("[") - 2
     print(f"    ✓ 윤곽 {g.get('type')} · 꼭짓점 약 {pts}개")
+    # 겹친 지구·구역 (요구사항 2026-09-10). 라이브에서 실제로 오는지.
+    # 안성 그 필지는 아무 규제도 안 걸릴 수 있어 **개수만 적고** 실패로
+    # 세지 않는다 — 0개가 곧 고장은 아니다. 다만 칸 자체가 없으면
+    # 서버가 그것을 아예 안 싣는 것이므로 그때는 잡는다.
+    if "zones" not in d:
+        print("      ✗ zones 칸이 없습니다 — 서버가 구역을 안 싣습니다")
+        return 1
+    zs = d.get("zones") or []
+    print(f"    ✓ 겹친 지구·구역 {len(zs)}개"
+          + ("".join(f"\n        · {z.get('label')}"
+                     f"{' ' + str(z.get('detail')) if z.get('detail') else ''}"
+                     for z in zs) if zs else " (이 필지에는 걸린 것이 없음)"))
     return 0
 
 

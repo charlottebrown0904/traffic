@@ -1209,6 +1209,27 @@ body.picking .leaflet-container{cursor:crosshair}
 .pc-facts td { padding: 3px 0; color: var(--ink); }
 .pc-facts em { font-style: normal; color: var(--muted); }
 
+/* 건축 제한 (요구사항 2026-09-10). 무엇이 걸렸고 그것이 무엇을
+   막는지를 한 덩이로 읽히게 둔다. 이름만 적으면 '개발행위허가제한
+   지역' 이 무슨 뜻인지 되묻게 된다. */
+.pc-zones { margin: .1rem 0 0; padding: 0; list-style: none; }
+.pc-zones li {
+  padding: .4rem 0 .45rem; border-bottom: 1px solid var(--border);
+  font-size: 12.5px; line-height: 1.5;
+}
+.pc-zones li:last-child { border-bottom: 0; }
+.pc-zones b { font-weight: 600; }
+.pc-zones em {
+  font-style: normal; color: var(--muted); font-size: 11.5px;
+}
+.pc-zones span { display: block; color: var(--muted); font-size: 11.5px; }
+.pc-zone-none { margin: .2rem 0 0; font-size: 12.5px; color: var(--muted); }
+/* 다 보여준 척하지 않는다. 우리가 못 받는 규제가 있다. */
+.pc-zone-note {
+  margin: .5rem 0 0; font-size: 11px; color: var(--faint); line-height: 1.5;
+}
+.pc-zone-note strong { color: var(--muted); font-weight: 600; }
+
 
 /* ── 큰 분류 셋 + 왼쪽 칸 (요구사항 2026-09-08) ──
    "왼쪽 필터를 큰 분류별로 묶어주세요 (호갱노노 참조).

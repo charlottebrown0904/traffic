@@ -64,7 +64,8 @@ const PARCEL_TYPENAME = "dt_d194";
 // 네모는 도심에서도 몇 개면 끝나고, 넉넉한 상한은 필지가 아주 잘게
 // 쪼개진 곳에서 다시 같은 일이 나지 않게 한다.
 const PARCEL_HALF_DEG = 0.00012;
-const PARCEL_MAXFEATURES = "100";
+// 열두 층을 한 요청에 담으므로 넉넉히 둔다.
+const PARCEL_MAXFEATURES = "200";
 
 // 필지 경계선을 **벡터로** 준다. 왜 그림이 아니라 도형인가:
 //
@@ -119,6 +120,64 @@ const PARCEL_ADDR_FIELDS = {
   jiga: "jiga", gosi_year: "gosi_year", gosi_month: "gosi_month",
 };
 const PARCEL_ADDR_TYPENAME = "lp_pa_cbnd_bubun";
+
+/* 필지에 겹친 **지구·구역** (요구사항 2026-09-10).
+ *
+ * 보고: "단순히 용도 지역으로만 토지를 평가하니 오류가 발생됩니다.
+ * (농림지역의 농업진흥구역, 준보전산지, 개발제한구역 등)에 따라
+ * 개발 방식이 달라짐"
+ *
+ * 맞는 말입니다. 무엇을 지을 수 있는지는 용도지역 위에 겹친 것들이
+ * 정합니다. 상주 대조리 707-1 은 화면에 '계획관리 · 자연녹지' 만
+ * 떴는데 실제로는 가축사육제한구역(절대제한)이 걸려 있었습니다.
+ *
+ * ## 왜 호출이 안 늘어나는가
+ *
+ * WFS 는 TYPENAME 에 쉼표로 여럿을 적을 수 있습니다. 토지특성까지
+ * 한 요청에 담아 부르면 **클릭당 호출은 그대로 둘**입니다
+ * (2026-09-10 실측, scripts/landuse_probe.py):
+ *
+ *   TYPENAME=dt_d194,lt_c_ud801,…(열둘)  → 200 · 14,837B
+ *   층별 {'dt_d194': 1, 'lt_c_um000': 1}
+ *
+ * 어느 층에서 왔는지는 feature id 앞머리로 갈립니다
+ * (lt_c_um000.57606).
+ *
+ * ## 못 주는 것
+ *
+ * **준보전산지와 접도구역은 브이월드 WFS 에 없습니다.** 목록을 훑어
+ * 확인했습니다. 그 둘은 "국토교통부_토지이용계획정보" 에만 있고
+ * 제공신청이 필요합니다. 그래서 화면에 '이것이 전부는 아니다' 라고
+ * 적습니다 — 다 보여준 척하는 것이 안 보여주는 것보다 위험합니다.
+ */
+const PARCEL_ZONES = {
+  lt_c_ud801: { label: "개발제한구역",
+    note: "원칙적으로 신축이 안 됩니다. 기존 건축물 증축·용도변경도 따로 허가를 받습니다." },
+  lt_c_agrixue101: { label: "농업진흥지역",
+    note: "농업 관련 시설 외에는 어렵습니다. 진흥구역이 보호구역보다 더 엄합니다." },
+  lt_c_um000: { label: "가축사육제한구역",
+    note: "축사를 지을 수 없습니다. 제한 축종은 지자체 고시에 따릅니다." },
+  lt_c_upisuq171: { label: "개발행위허가제한지역",
+    note: "기간을 정해 개발행위 허가를 묶어 둔 곳입니다." },
+  lt_c_uf151: { label: "산림보호구역",
+    note: "입목 벌채와 형질변경이 제한됩니다." },
+  lt_c_um710: { label: "상수원보호구역",
+    note: "오수를 내는 시설이 막힙니다. 건축 자체가 크게 제한됩니다." },
+  lt_c_uo101: { label: "교육환경보호구역",
+    note: "학교 둘레라 제한 업종이 있습니다 (숙박·유흥 등)." },
+  lt_c_uq121: { label: "경관지구",
+    note: "높이·형태·색채에 제한이 붙습니다." },
+  lt_c_uq124: { label: "방화지구",
+    note: "건축물을 내화구조로 지어야 합니다." },
+  lt_c_uq126: { label: "보호지구",
+    note: "문화재·생태·시설 보호를 위해 행위가 제한됩니다." },
+  lt_c_uq130: { label: "특정용도제한지구",
+    note: "특정 용도의 건축물을 못 짓습니다." },
+};
+const PARCEL_ZONE_NAMES = Object.keys(PARCEL_ZONES);
+// 그 구역의 세부 이름이 담기는 칸. 층마다 이름이 달라 순서대로 본다.
+// (실측: 가축사육제한구역은 remark 에 "절대제한지역(전 축종)")
+const ZONE_DETAIL_KEYS = ["remark", "alias", "dgm_nm", "name", "zone_nm"];
 const VWORLD_ADDRESS = "https://api.vworld.kr/req/address";
 
 // 화면에 깔 수 있는 것. 목적지를 받지 않고 이 표에서만 고른다.
@@ -598,7 +657,9 @@ async function parcelInfo(req, res) {
     // 즉 이 서비스에는 1.1.0 한 길뿐이다. (scripts/parcel_probe.py 로
     // 언제든 다시 잰다.)
     SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
-    TYPENAME: PARCEL_TYPENAME,
+    // 지구·구역을 **같은 요청에** 담는다. 따로 부르면 클릭당 호출이
+    // 열둘이 된다 — 쉼표로 담으면 그대로 하나다.
+    TYPENAME: [PARCEL_TYPENAME].concat(PARCEL_ZONE_NAMES).join(","),
     BBOX: [lon - h, lat - h, lon + h, lat + h].join(","),
     SRSNAME: "EPSG:4326",
     // GML 로 요청하면 중계기가 죽는다 (docs/land-price-fallback.md).
@@ -627,8 +688,13 @@ async function parcelInfo(req, res) {
   } catch (e) {
     return fail(res, 502, "브이월드 응답을 읽지 못했습니다");
   }
+  // 어느 층에서 왔는지는 feature id 앞머리로 갈린다 (lt_c_um000.57606).
+  const layerOf = (f) => String((f || {}).id || "").split(".")[0];
   // **누른 점을 품는 필지**를 고른다. bbox 로 부르면 이웃이 같이 온다.
-  const hit = feats.find((f) => hitsPoint(f.geometry, lon, lat)) || null;
+  const hit = feats.find((f) => layerOf(f) === PARCEL_TYPENAME
+                                && hitsPoint(f.geometry, lon, lat))
+    // id 가 없는 응답도 있었다. 그때는 예전처럼 아무거나 품는 것을 쓴다.
+    || feats.find((f) => hitsPoint(f.geometry, lon, lat)) || null;
   res.setHeader("cache-control", hit ? CACHE_OK : CACHE_BAD);
   if (!hit) return res.status(200).json({ parcel: null });
   const props = hit.properties || {};
@@ -655,8 +721,23 @@ async function parcelInfo(req, res) {
   // 주소와 지번은 이 표에 없다. 연속지적도가 addr 로 준다. 두 번째
   // 호출이지만 첫 호출이 성공한 뒤에만 하고, 실패해도 카드는 뜬다 —
   // 주소가 없다고 필지 정보를 통째로 버릴 이유는 없다.
+  // 겹친 지구·구역. 같은 층이 여러 조각으로 와도 한 줄로 묶는다.
+  const zones = [];
+  const seen = new Set();
+  for (const f of feats) {
+    const layer = layerOf(f);
+    const meta = PARCEL_ZONES[layer];
+    if (!meta || seen.has(layer)) continue;
+    if (!hitsPoint(f.geometry, lon, lat)) continue;
+    seen.add(layer);
+    const props = f.properties || {};
+    const detail = ZONE_DETAIL_KEYS
+      .map((k) => props[k]).find((v) => v !== undefined && v !== "") || null;
+    zones.push({ label: meta.label, note: meta.note, detail });
+  }
+
   const addr = await parcelAddress(req, lon, lat, parcel.jimok);
-  res.status(200).json({ parcel, addr, geom: round6(hit.geometry) });
+  res.status(200).json({ parcel, addr, zones, geom: round6(hit.geometry) });
 }
 
 /** 누른 자리의 주소. 지번은 늘, 도로명은 있으면.
