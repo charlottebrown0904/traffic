@@ -233,6 +233,19 @@ def cmd_value_check(args):
               f" 평가서 {r['obs']:.3f}  우리 {r['pred']:.3f}  ({r['ratio']:.2f})")
 
 
+def cmd_probe_law(args):
+    """국가법령정보센터 자치법규 API — 뚫리는지, 조문 JSON 키가 무엇인지."""
+    from .collect import law
+    law.probe(args.query)
+
+
+def cmd_load_ordinances(args):
+    """전국 도시계획조례를 받아 관심 조문(건폐율·용적률·개발행위 기준)만 남긴다."""
+    from .collect import law
+    info = law.fetch(args.query, limit=args.limit)
+    print(info)
+
+
 def cmd_value_test(args):
     """현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다.
 
@@ -2629,6 +2642,14 @@ def main(argv=None):
     sub.add_parser("value-check",
                    help="'현재 가치' 2판 — 격차율 표를 평가서 41건과 검산"
                    ).set_defaults(func=cmd_value_check)
+    p = sub.add_parser("probe-law", help="자치법규 Open API 탐침 (조례 한 건)")
+    p.add_argument("--query", default="안성시 도시계획 조례")
+    p.set_defaults(func=cmd_probe_law)
+    p = sub.add_parser("load-ordinances", help="전국 도시계획조례 → data/ordinance/ (관심 조문만)")
+    p.add_argument("--query", default="도시계획 조례")
+    p.add_argument("--limit", type=int, default=None, help="처음 n건만 (시험용)")
+    p.set_defaults(func=cmd_load_ordinances)
+
     p = sub.add_parser("value-test",
                        help="현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다")
     p.add_argument("--sigungu", default="41550", help="시군구 코드 5자리 (기본 안성시)")
