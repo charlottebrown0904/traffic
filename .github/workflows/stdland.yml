@@ -189,6 +189,7 @@ jobs:
           path: |
             data/processed/law_probe.json
             data/processed/ordinance/probe-*.json
+            data/processed/ordinance/probe-web-*.html
           if-no-files-found: ignore
 
       - name: 탐침 결과 첨부

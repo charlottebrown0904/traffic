@@ -30,8 +30,15 @@ SERVICE = "https://www.law.go.kr/DRF/lawService.do"
 # 같은 자료의 둘째 길 — 공공데이터포털 '법제처 국가법령정보 공유서비스'(15000115).
 # apis.data.go.kr 은 중계기가 DATA_GO_KR_KEY 를 끼워 주고, 법제처처럼 호출 IP 를
 # 등록하라고 하지 않는다 (run 23: law.go.kr 은 서울 중계기로도 "IP·도메인 등록" 거부).
-PORTAL_SEARCH = "https://apis.data.go.kr/1170000/law/lawSearchList.do"
+# 활용가이드(2022-10-19, 사용자 제공): 자치법규 목록은 law/ordinSearchList.do,
+# 파라미터는 serviceKey·target=ordin·query·numOfRows·pageNo, 응답은 XML 로
+# totalCnt·law[]{자치법규일련번호, 자치법규명, 자치법규ID, 자치법규상세링크(…MST=)}.
+# **본문 조회는 포털에 없다** — 상세링크가 law.go.kr DRF 를 가리키는데 그쪽은
+# 호출 IP 등록을 요구한다. 그래서 본문은 law.go.kr 의 웹 페이지(ordinInfoP.do)를
+# 중계기로 읽어 본다 (probe 가 잰다).
+PORTAL_SEARCH = "https://apis.data.go.kr/1170000/law/ordinSearchList.do"
 PORTAL_SERVICE = "https://apis.data.go.kr/1170000/law/lawService.do"
+WEB_ORDIN = "https://www.law.go.kr/LSW/ordinInfoP.do"
 RAW_DIR = PROCESSED / "ordinance"          # 본문 통째 (Actions 캐시에 남는다)
 OUT_DIR = ROOT / "data" / "ordinance"      # 뽑은 조문 (저장소에 커밋)
 
@@ -101,7 +108,35 @@ def _xml_obj(node):
 
 
 def _portal_raw(url: str, params: dict, kind: str = "XML"):
-    return get_once(url, {"serviceKey": VIA_RELAY, "target": "ordin", "type": kind, **params}, timeout=40)
+    # 가이드의 파라미터만 보낸다 — type 같은 낯선 이름은 게이트웨이가 HTTP_ERROR 04 로 돌려보낸다.
+    return get_once(url, {"serviceKey": VIA_RELAY, "target": "ordin", **params}, timeout=40)
+
+
+def portal_list(query: str, page: int = 1, rows: int = 100) -> tuple[list[dict], int, str]:
+    """포털 자치법규 목록 한 쪽. (행들, totalCnt, 오류)."""
+    import xml.etree.ElementTree as ET
+    resp = _portal_raw(PORTAL_SEARCH, {"query": query, "numOfRows": str(rows), "pageNo": str(page)})
+    body = resp.text
+    if resp.status_code != 200:
+        return [], 0, f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", body[:200])
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return [], 0, "XML 아님: " + re.sub(r"\s+", " ", body)[:200]
+    obj = _xml_obj(root)
+    if isinstance(obj, dict) and "cmmMsgHeader" in obj:
+        return [], 0, json.dumps(obj["cmmMsgHeader"], ensure_ascii=False)[:200]
+    out = _find_rows(obj)
+    total = _find_int(obj, ("totalCnt",))
+    return out, total, ""
+
+
+def web_body(ordin_seq: str) -> tuple[str, str]:
+    """law.go.kr 웹 페이지의 본문 HTML — 중계기(서울)로. (html, 오류)."""
+    resp = get_once(WEB_ORDIN, {"OC": VIA_RELAY, "ordinSeq": str(ordin_seq), "chrClsCd": "010202"}, timeout=40)
+    if resp.status_code != 200:
+        return "", f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", resp.text[:160])
+    return resp.text, ""
 
 
 def _portal(url: str, params: dict) -> tuple[dict | list | None, str]:
@@ -251,27 +286,24 @@ def probe(query: str = "안성시 도시계획 조례") -> dict:
     except Exception as e:                          # noqa: BLE001
         out["direct"] = {"error": f"{type(e).__name__}: {str(e)[:160]}"}
         print(f"직접 호출 실패: {out['direct']['error']}")
-    # 2) 공공데이터포털 길 — 어느 주소·형식이 통하는지 그대로 찍는다
-    out["portal"] = {}
-    base = PORTAL_SEARCH.rsplit("/", 1)[0]
-    oc = os.getenv("LAW_OC") or ""
-    combos = [
-        ("lawSearchList XML", f"{base}/lawSearchList.do", {"query": query, "display": "3"}),
-        ("lawSearchList XML +OC", f"{base}/lawSearchList.do", {"query": query, "display": "3", "OC": oc}),
-        ("lawSearch XML +OC", f"{base}/lawSearch.do", {"query": query, "display": "3", "OC": oc}),
-        ("lawSearchList XML target=law +OC", f"{base}/lawSearchList.do", {"query": "도로교통법", "display": "3", "OC": oc, "target": "law"}),
-        ("lawService XML +OC MST", f"{base}/lawService.do", {"OC": oc, "MST": "1611223"}),
-        ("ordinSearchList XML +OC", f"{base}/ordinSearchList.do", {"query": query, "display": "3", "OC": oc}),
-    ]
-    for label, url, p in combos:
-        try:
-            r = _portal_raw(url, p, "XML")
-            snip = re.sub(r"\s+", " ", r.text)[:220]
-            out["portal"][label] = {"status": r.status_code, "snippet": snip}
-            print(f"포털 {label}: HTTP {r.status_code} · {snip}")
-        except Exception as e:                      # noqa: BLE001
-            out["portal"][label] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
-            print(f"포털 {label}: 실패 {out['portal'][label]['error']}")
+    # 2) 공공데이터포털 목록 (가이드대로) → 첫 행의 일련번호로 law.go.kr 웹 본문
+    rows_p, total_p, why_p = portal_list(query, rows=5)
+    out["portal"] = {"n": len(rows_p), "total": total_p, "why": why_p,
+                     "keys": sorted(rows_p[0].keys()) if rows_p else []}
+    print(f"포털 목록: {len(rows_p)}건 / 전체 {total_p}" + (f" — {why_p}" if why_p else ""))
+    for r in rows_p[:5]:
+        print("  ", {k: str(v)[:50] for k, v in list(r.items())[:8]})
+    if rows_p:
+        seq = _pick(rows_p[0], "자치법규일련번호", "일련번호", "ID")
+        html, why_w = web_body(seq)
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+        out["web"] = {"seq": seq, "why": why_w, "len": len(html), "has_gunpye": "건폐율" in html,
+                      "snippet": text[:300]}
+        print(f"웹 본문 (ordinSeq={seq}): {why_w or 'HTTP 200'} · {len(html):,}자 · 건폐율 {'있음' if '건폐율' in html else '없음'}")
+        print("   " + text[:300])
+        if html:
+            RAW_DIR.mkdir(parents=True, exist_ok=True)
+            (RAW_DIR / f"probe-web-{seq}.html").write_text(html, encoding="utf-8")
     # 3) 우리 경로 — 법제처(중계기) → 거부되면 포털
     rows, total, why = search(query, display=5)
     out["route"] = "portal" if use_portal() else ("relay" if _oc() == VIA_RELAY else "direct")
