@@ -836,12 +836,16 @@ module.exports = async function handler(req, res) {
   const mode = String(req.query.mode || "");
   // 주소 → 좌표도 필지 조회와 같은 좁은 한도다 — 같은 브이월드 키의 하루
   // 한도(지오코딩 3만 건)를 쓴다.
-  if (overRate(req, (mode === "parcel" || mode === "geocode") ? RATE_LIMIT_PARCEL : RATE_LIMIT)) {
+  if (overRate(req, (mode === "parcel" || mode === "geocode" || mode === "pnu") ? RATE_LIMIT_PARCEL : RATE_LIMIT)) {
     return tooMany(res);
   }
   // 주소를 치면 그 필지로 간다 (요구사항 2026-09-11). 레이어와 무관하다.
   if (mode === "geocode") {
     return geocode(req, res);
+  }
+  // 지번 → PNU → 연속지적도에서 그 필지 하나. 지오코더가 모르는 땅도 찾는다.
+  if (mode === "pnu") {
+    return parcelByPnu(req, res);
   }
 
   const want = String(req.query.layer || "zoning");
@@ -947,6 +951,75 @@ async function geocode(req, res) {
     }
   }
   return fail(res, 404, "주소를 찾지 못했습니다 — 시·군과 읍·면·동을 함께 적어 주세요");
+}
+
+/* ── PNU 로 필지 하나 (요구사항 2026-09-11: 주소 → 그 필지) ──
+ *
+ * 지오코더(req/address)는 주소 DB 기반이라 **건물 없는 땅의 지번을 모른다**
+ * (실측 2026-09-11: 건업리 140 → '140-1' 로 뭉개고, 없는 지번은 NOT_FOUND).
+ * 땅을 보는 서비스에는 연속지적도가 원천이다. 화면이 법정동코드(명부)와
+ * 지번으로 PNU 를 만들어 오면, 연속지적도(lp_pa_cbnd_bubun)를 **OGC 필터**로
+ * 걸러 그 필지 하나를 받는다.
+ *
+ *   PNU = 법정동코드(10) + 대장구분(1: 토지 1 · 임야(산) 2) + 본번(4) + 부번(4)
+ *
+ * 탐침(scripts/pnu_probe.py, 2026-09-11 러너): FILTER(OGC PropertyIsEqualTo)만
+ * 먹는다. CQL_FILTER 와 임의 파라미터는 조용히 무시되어 **엉뚱한 첫 다섯
+ * 필지**가 온다 — 그 길로 만들면 늘 거창군 장기리가 나온다. FEATUREID 는
+ * 0개. 그래서 FILTER 하나만 쓴다. 찾은 필지는 길게 캐시한다. */
+const PNU_RE = /^\d{19}$/;
+
+function geomCenter(geom) {
+  // 좌표 전체의 경계상자 가운데. 필지는 작고 볼록한 편이라 이것으로 족하다
+  // — 다음 단계(askParcel)가 이 점으로 필지를 다시 물어 카드를 연다.
+  let w = Infinity; let s2 = Infinity; let e = -Infinity; let n = -Infinity;
+  const walk = (v) => {
+    if (!Array.isArray(v)) return;
+    if (v.length >= 2 && typeof v[0] === "number" && typeof v[1] === "number") {
+      w = Math.min(w, v[0]); e = Math.max(e, v[0]);
+      s2 = Math.min(s2, v[1]); n = Math.max(n, v[1]);
+      return;
+    }
+    v.forEach(walk);
+  };
+  walk((geom || {}).coordinates);
+  if (!Number.isFinite(w) || !Number.isFinite(n)) return null;
+  return { lat: (s2 + n) / 2, lon: (w + e) / 2 };
+}
+
+async function parcelByPnu(req, res) {
+  const pnu = String(req.query.pnu || "").trim();
+  if (!PNU_RE.test(pnu)) return fail(res, 400, "pnu 는 19자리 숫자여야 합니다");
+  const host = (req.headers || {}).host;
+  const out = await callVworld({
+    SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
+    TYPENAME: PARCEL_VEC_TYPENAME,
+    FILTER: "<Filter><PropertyIsEqualTo><PropertyName>pnu</PropertyName>"
+      + `<Literal>${pnu}</Literal></PropertyIsEqualTo></Filter>`,
+    SRSNAME: "EPSG:4326", OUTPUT: "application/json",
+    MAXFEATURES: "2", RESULTTYPE: "results",
+    DOMAIN: process.env.VWORLD_REFERER || `https://${host || "toji.fyi"}/`,
+  }, VWORLD_WFS, host);
+  if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
+  if (!out.upstream) {
+    return fail(res, out.timedOut ? 504 : 502,
+      out.timedOut ? `브이월드 응답 없음 (${TIMEOUT_MS / 1000}초 초과)` : "브이월드 호출 실패");
+  }
+  let body;
+  try { body = await out.upstream.json(); }
+  catch (err) { return fail(res, 502, "브이월드가 필지 대신 다른 것을 줬습니다"); }
+  const feats = Array.isArray(body && body.features) ? body.features : [];
+  // 필터가 무시되면 엉뚱한 필지가 온다 — pnu 가 같은 것만 믿는다.
+  const hit = feats.find((f) => String(((f || {}).properties || {}).pnu || "") === pnu);
+  if (!hit) return fail(res, 404, "그 지번의 필지가 연속지적도에 없습니다");
+  const geom = round6(hit.geometry);
+  const c = geomCenter(geom);
+  if (!c) return fail(res, 502, "필지 도형을 읽지 못했습니다");
+  res.setHeader("cache-control", CACHE_OK);
+  return res.status(200).json({
+    pnu, addr: (hit.properties || {}).addr || null,
+    lat: Math.round(c.lat * 1e6) / 1e6, lon: Math.round(c.lon * 1e6) / 1e6, geom,
+  });
 }
 
 /** 브이월드가 준 것을 그림으로 돌려준다. 배경도 용도지역도 여기를 지난다. */

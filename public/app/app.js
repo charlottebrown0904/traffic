@@ -6001,6 +6001,57 @@ const SIDO_BY_PREFIX = {
   44: '충청남도', 46: '전라남도', 47: '경상북도', 48: '경상남도', 50: '제주특별자치도',
   51: '강원특별자치도', 52: '전북특별자치도',
 };
+// 끝의 지번을 떼어 낸다 — '산 12', '140-25', '140번지'.
+function findJibun(q) {
+  const m = /(?:^|\s)(산\s?)?(\d{1,4})(?:-(\d{1,4}))?(?:번지)?$/.exec(q.trim());
+  if (!m) return null;
+  return { san: !!m[1], bon: m[2], bu: m[3] || '0',
+           head: q.trim().slice(0, m.index).trim() };
+}
+
+/* 법정동코드(10자리). 명부 조각(umd-roster-NN.json)의 일곱째 칸이다 —
+   내보내기(webexport._umd_roster)가 2026-09-11 부터 싣는다. 이름과
+   시군구 코드가 같은 줄을 찾는다. 없으면 '' (지오코더로 물러난다). */
+async function findLdCode(sg, name) {
+  const idx = (state.landPrice || {}).umd_roster || [];
+  const c = idx.find((x) => String(x.p) === String(sg || '').slice(0, 2));
+  if (!c) return '';
+  if (!lpRosterCache[c.p]) {
+    try {
+      const r = await fetch(`/app/data/${c.f}`, { cache: 'no-cache' });
+      if (r.ok) lpRosterCache[c.p] = await r.json();
+    } catch (e) { /* 못 받으면 지오코더로 */ }
+  }
+  const rows = ((lpRosterCache[c.p] || {}).rows) || [];
+  const hit = rows.find((row) => row[0] === name && String(row[1]) === String(sg))
+    || rows.find((row) => row[0] === name);
+  const ld = hit ? String(hit[6] || '') : '';
+  return /^\d{10}$/.test(ld) ? ld : '';
+}
+
+/* 검색어를 주소로 푼다: 완성한 주소 글(text)과, PNU 를 만들 재료(색인에서
+   찾은 읍·면·동 이름 name · 시군구 코드 sg · 지번). */
+function findAddressParse(q, rows) {
+  const jb = findJibun(q);
+  const clean = q.replace(/\s+/g, ' ').trim();
+  const words = clean.split(' ');
+  const regions = state.regions || [];
+  const out = { text: clean, name: '', sg: '', jibun: jb };
+  const head = (jb ? jb.head : clean).split(' ').filter(Boolean);
+  for (let n = Math.min(head.length, 2); n >= 1; n -= 1) {
+    const name = head.slice(head.length - n).join(' ');
+    const hit = (rows || []).find((r) => r.k === 'umd' && (r.n === name || r.n.endsWith(' ' + name)));
+    if (hit) { out.name = hit.n; out.sg = String(hit.sg || ''); break; }
+  }
+  const hasSg = regions.find((r) => words.includes(r.name));
+  if (hasSg) {
+    const sd = hasSg.sido || '';
+    out.text = sd && !words.includes(sd) ? `${sd} ${clean}` : clean;
+    if (!out.sg) out.sg = String(hasSg.sigungu_cd || '');
+  }
+  return out;
+}
+
 function findAddressText(q, rows) {
   const clean = q.replace(/\s+/g, ' ').trim();
   const words = clean.split(' ');
@@ -6045,13 +6096,32 @@ async function findGoAddress(row, list) {
   }
   let hit = null;
   let why = '';
-  try {
-    const r = await fetch(`/api/tile?mode=geocode&q=${encodeURIComponent(row.p)}`);
-    if (r.status === 429) why = '요청이 너무 잦습니다. 잠시 뒤 다시 해 주세요.';
-    else if (r.ok) hit = await r.json();
-    else why = ((await r.json().catch(() => ({}))).tileError) || '주소를 찾지 못했습니다.';
-  } catch (err) {
-    why = '서버에 닿지 못했습니다.';
+  let via = 'geocode';
+  // 1) 연속지적도 — 법정동코드 + 지번 → PNU. 건물 없는 땅도 찾는다.
+  const ps = row.parsed || {};
+  if (ps.jibun && ps.name && ps.sg) {
+    try {
+      const ld = await findLdCode(ps.sg, ps.name);
+      if (ld) {
+        const pnu = ld + (ps.jibun.san ? '2' : '1')
+          + String(ps.jibun.bon).padStart(4, '0') + String(ps.jibun.bu).padStart(4, '0');
+        const r = await fetch(`/api/tile?mode=pnu&pnu=${pnu}`);
+        if (r.ok) { hit = await r.json(); via = 'pnu'; if (hit && hit.addr) hit.text = hit.addr; }
+        else if (r.status === 429) why = '요청이 너무 잦습니다. 잠시 뒤 다시 해 주세요.';
+        else if (r.status === 404) why = '그 지번의 필지가 연속지적도에 없습니다.';
+      }
+    } catch (err) { /* 지오코더로 */ }
+  }
+  // 2) 지오코더 — 명부에 없거나(코드 없음) 지적에 없으면 주소 DB 로.
+  if (!hit && !/너무 잦습니다/.test(why)) {
+    try {
+      const r = await fetch(`/api/tile?mode=geocode&q=${encodeURIComponent(row.p)}`);
+      if (r.status === 429) why = '요청이 너무 잦습니다. 잠시 뒤 다시 해 주세요.';
+      else if (r.ok) { hit = await r.json(); via = 'geocode'; }
+      else if (!why) why = ((await r.json().catch(() => ({}))).tileError) || '주소를 찾지 못했습니다.';
+    } catch (err) {
+      why = why || '서버에 닿지 못했습니다.';
+    }
   }
   if (!hit || !Number.isFinite(Number(hit.lat)) || !Number.isFinite(Number(hit.lon))) {
     if (list) {
@@ -6068,7 +6138,7 @@ async function findGoAddress(row, list) {
   if (!map) return;
   map.setView([lat, lon], FIND_ZOOM.addr);
   setTimeout(() => map.invalidateSize(), 0);
-  window.__find = { went: hit.text || row.p, level: 'addr', at: [lat, lon] };
+  window.__find = { went: hit.text || row.p, level: 'addr', at: [lat, lon], via };
   // 지도를 누른 것과 같다 — 필지 윤곽 + 카드.
   askParcel({ lat, lng: lon });
 }
@@ -6127,7 +6197,8 @@ function wireFind() {
     // 지번이 붙어 있으면 **필지로 가는 줄을 맨 위에** 둔다. 이름 후보는
     // 그 아래 — '건업리 140-25' 를 쳤는데 건업리 중심으로 가면 틀린 답이다.
     if (FIND_JIBUN_RE.test(q.trim())) {
-      hits = [{ k: 'addr', n: q.trim(), p: findAddressText(q, rows) }].concat(hits);
+      hits = [{ k: 'addr', n: q.trim(), p: findAddressText(q, rows),
+                parsed: findAddressParse(q, rows) }].concat(hits);
     }
     cur = -1;
     paint();

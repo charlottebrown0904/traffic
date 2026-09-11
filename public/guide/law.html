@@ -327,12 +327,15 @@
     ];
     out.innerHTML =
       `<p class="meta"><strong>${esc(o.name)}</strong> · 시행 ${esc(effTxt)} · ` +
-      `<a href="${esc(o.url)}" target="_blank" rel="noopener">원문 (국가법령정보센터)</a></p>` +
+      '<a class="f-src" target="_blank" rel="noopener">원문 (국가법령정보센터)</a></p>' +
       (rows.length
         ? `<div class="scroller"><table><thead><tr><th>용도지역</th><th class="num">건폐율</th><th class="num">용적률</th></tr></thead><tbody>${rows.join('')}</tbody></table></div>`
         : '<p class="hint">이 조례에는 비도시·녹지 건폐율 조문이 없습니다 (도시지역만 있거나, 자치구라 광역시·도 조례를 따릅니다).</p>') +
       `<div class="scroller"><table><thead><tr><th>개발행위허가 기준</th><th>값</th></tr></thead><tbody>` +
       dev.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('') + '</tbody></table></div>';
+    // 주소는 속성으로 넣는다 (글자로 짜 넣지 않는다 — 배포 검사가 상대경로로 오해한다).
+    const a = out.querySelector('.f-src');
+    if (a) a.href = String(o.url || 'https://www.law.go.kr');
   };
   const fillOrd = (sido, pick) => {
     const list = (bySido.get(sido) || []).slice().sort((a, b) => String(a.org).localeCompare(String(b.org), 'ko'));

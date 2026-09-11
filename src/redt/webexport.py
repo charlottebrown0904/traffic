@@ -1277,6 +1277,10 @@ def _umd_roster() -> dict[str, dict]:
         chunk["rows"].append([
             name, code, round(float(r.lat), 5), round(float(r.lon), 5),
             int(pop), "r" if str(r.level) == "ri" else "u",
+            # 법정동코드 10자리 (2026-09-11). 지번 검색이 이것으로 PNU 를
+            # 만들어 연속지적도에서 그 필지를 바로 찾는다 — 지오코더는
+            # 주소 DB 라 건물 없는 땅의 지번을 모른다.
+            str(r.region_cd or ""),
         ])
         who = sgnm.setdefault(prefix, {})
         if code not in who:

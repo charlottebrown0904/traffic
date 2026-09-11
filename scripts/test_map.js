@@ -669,6 +669,9 @@ const FAKE_LEAFLET = () => {
           ['백곡면 신대리', '43750', 37.11, 127.41, 0, 'r'],
           // 거래가 한 건도 없는 동. 이름만 뜨고 값 줄이 없어야 한다.
           ['조원동', '41111', 37.30, 127.01, 3200, 'u'],
+          // 법정동코드(일곱째 칸, 2026-09-11) — 지번 검색이 PNU 를 만든다.
+          // 화면 밖(37.40)이라 태그 검사에는 안 걸린다.
+          ['곤지암읍 건업리', '41610', 37.4028, 127.39476, 0, 'r', '4161025930'],
         ],
       },
     };
@@ -690,6 +693,19 @@ const FAKE_LEAFLET = () => {
     // 경계선 칸 (mode=parcels). **뒤에 건다** — Playwright 는 나중에
     // 건 규칙을 먼저 보고, 위의 'mode=parcel*' 은 'parcels' 도
     // 삼킨다. 순서가 뒤바뀌면 이 규칙이 죽는다.
+    // 지번 → PNU → 필지 (mode=pnu). 무엇을 물었는지 기록한다.
+    const pnuAsked = [];
+    await page.route('**/api/tile?mode=pnu*', (r) => {
+      const u = new URL(r.request().url());
+      pnuAsked.push(u.searchParams.get('pnu'));
+      return r.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ pnu: u.searchParams.get('pnu'), addr: '경기도 광주시 곤지암읍 건업리 140-25',
+                               lat: 37.4031, lon: 127.3951,
+                               geom: { type: 'Polygon', coordinates: [[[127.395, 37.403], [127.3952, 37.403],
+                                       [127.3952, 37.4032], [127.395, 37.4032], [127.395, 37.403]]] } }),
+      });
+    });
     // 주소 → 좌표 (mode=geocode). 무엇을 물었는지 기록한다.
     const geoAsked = [];
     await page.route('**/api/tile?mode=geocode*', (r) => {
@@ -2390,12 +2406,38 @@ const FAKE_LEAFLET = () => {
     });
     check('지번을 치면 맨 위 후보가 "필지로 이동" 이다',
           addr.firstKind === 'addr' && /필지로 이동/.test(addr.firstText), addr.firstText);
-    check('시·군을 안 쳐도 색인으로 시·도·시·군을 채워 묻는다',
-          geoAsked.length === 1 && geoAsked[0] === '경기도 광주시 곤지암읍 건업리 140-25', geoAsked.join(' | '));
+    // 명부에 법정동코드가 있으면 **연속지적도(PNU)** 로 간다 — 지오코더는
+    // 건물 없는 땅의 지번을 모른다. 건업리 = 4161025930, 140-25 → …1 0140 0025.
+    check('명부의 법정동코드로 PNU 를 만들어 연속지적도에 묻는다 (지오코더 아님)',
+          pnuAsked.length === 1 && pnuAsked[0] === '4161025930101400025' && geoAsked.length === 0,
+          `pnu ${pnuAsked.join(',')} · geocode ${geoAsked.join(',')}`);
     check('좌표로 옮기고 그 필지를 조회한다 (지도를 누른 것과 같은 길)',
-          !!addr.went && addr.went.level === 'addr' && Array.isArray(addr.went.at)
-          && Math.abs(addr.went.at[0] - 37.4028) < 1e-6 && parcelHits > parcelBefore,
+          !!addr.went && addr.went.level === 'addr' && addr.went.via === 'pnu' && Array.isArray(addr.went.at)
+          && Math.abs(addr.went.at[0] - 37.4031) < 1e-6 && parcelHits > parcelBefore,
           `${JSON.stringify(addr.went)} · 필지 조회 ${parcelBefore} → ${parcelHits}`);
+
+    // 명부에 코드가 없는 곳(승두리는 가짜 명부에 없다)은 지오코더로 물러난다.
+    // 시·군을 안 쳐도 색인으로 '경기도 안성시' 를 채운다.
+    const addr2 = await page.evaluate(async () => {
+      const q = document.getElementById('find-q');
+      q.value = '공도읍 승두리 40';
+      q.dispatchEvent(new Event('input'));
+      await new Promise((r) => setTimeout(r, 400));
+      const first = document.getElementById('find-list').querySelector('li[data-i]');
+      first.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 900));
+      const out = window.__find || null;
+      const x = document.querySelector('#detail .detail-close');
+      if (x) x.click();
+      const row = document.querySelector('tr[data-id], [data-id]');
+      if (row) row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 800));
+      return out;
+    });
+    check('코드가 없으면 지오코더로 — 시·군을 안 쳐도 시·도·시·군을 채워 묻는다',
+          geoAsked.length === 1 && geoAsked[0] === '경기도 안성시 공도읍 승두리 40'
+          && !!addr2 && addr2.via === 'geocode',
+          `geocode ${geoAsked.join(',')} · ${JSON.stringify(addr2)}`);
 
     // 겹침을 **실제로 잰다.** 지난번에 칩이 Leaflet +/- 와 겹쳐 지적받았다.
     const overlap = await page.evaluate(() => {

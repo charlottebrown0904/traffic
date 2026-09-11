@@ -697,6 +697,39 @@ const call = async (query, method = 'GET', headers = {}) => {
   check('80자를 넘으면 받지 않는다', geoLong.code === 400 && calls.length === 0);
 
   console.log();
+  console.log('18. 지번 → PNU → 필지 하나 (mode=pnu) — 지오코더가 모르는 땅');
+  const PNU = '4161025930101400001';
+  const pnuBody = (pnu) => ({ type: 'FeatureCollection', features: [
+    { properties: { pnu, addr: '경기도 광주시 곤지암읍 건업리 140-1', jibun: '140-1전' },
+      geometry: { type: 'Polygon', coordinates: [[[127.4040, 37.3925], [127.4050, 37.3925],
+                                                  [127.4050, 37.3935], [127.4040, 37.3935], [127.4040, 37.3925]]] } },
+  ] });
+  stubFetch(parcelReply(pnuBody(PNU)));
+  const byPnu = await call({ mode: 'pnu', pnu: PNU });
+  check('필지 하나를 가운데 점·도형과 함께 준다',
+        byPnu.code === 200 && byPnu.json_ && byPnu.json_.pnu === PNU
+        && Math.abs(byPnu.json_.lat - 37.393) < 1e-6 && Math.abs(byPnu.json_.lon - 127.4045) < 1e-6
+        && byPnu.json_.geom && byPnu.json_.geom.type === 'Polygon' && /건업리 140-1/.test(byPnu.json_.addr),
+        byPnu.body);
+  check('연속지적도를 OGC FILTER 로 거른다 (CQL 은 무시되어 엉뚱한 필지가 온다)',
+        calls.length === 1 && /TYPENAME=lp_pa_cbnd_bubun/.test(calls[0].url)
+        && /FILTER=%3CFilter%3E%3CPropertyIsEqualTo%3E%3CPropertyName%3Epnu/.test(calls[0].url)
+        && new RegExp(`%3CLiteral%3E${PNU}%3C%2FLiteral%3E`).test(calls[0].url) && !/CQL_FILTER/.test(calls[0].url),
+        calls.map((c) => c.url.replace(/key=[^&]+/, 'key=***')).join(' | '));
+  check('찾은 필지는 길게 캐시한다', /s-maxage=2592000/.test(byPnu.headers['cache-control'] || ''));
+  // 필터가 무시되어 다른 필지가 오면 믿지 않는다.
+  stubFetch(parcelReply(pnuBody('4888040027109330003')));
+  const wrong = await call({ mode: 'pnu', pnu: PNU });
+  check('pnu 가 다른 필지가 오면 없는 것으로 (거창군 장기리를 건업리라 하지 않는다)',
+        wrong.code === 404 && /s-maxage=60/.test(wrong.headers['cache-control'] || ''), `${wrong.code} ${wrong.body}`);
+  stubFetch(parcelReply({ type: 'FeatureCollection', features: [] }));
+  const pnuNone = await call({ mode: 'pnu', pnu: PNU });
+  check('없으면 404 를 짧게', pnuNone.code === 404 && /s-maxage=60/.test(pnuNone.headers['cache-control'] || ''));
+  stubFetch(parcelReply({}));
+  const badPnu = await call({ mode: 'pnu', pnu: '12345' });
+  check('19자리 숫자가 아니면 상류를 부르지 않는다', badPnu.code === 400 && calls.length === 0);
+
+  console.log();
   console.log('16. 속도 제한 — 훑는 프로그램이 브이월드 한도를 대신 태우지 못하게');
   // 이 함수가 도는 것이 곧 브이월드를 부르는 것이다. 엣지 캐시가
   // 받아낸 요청은 여기까지 안 오므로, 여기가 정확한 자리다.
