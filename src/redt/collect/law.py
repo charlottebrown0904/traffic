@@ -100,10 +100,15 @@ def _xml_obj(node):
     return out
 
 
+def _portal_raw(url: str, params: dict, kind: str = "XML"):
+    return get_once(url, {"serviceKey": VIA_RELAY, "target": "ordin", "type": kind, **params}, timeout=40)
+
+
 def _portal(url: str, params: dict) -> tuple[dict | list | None, str]:
-    """공공데이터포털 길. serviceKey 는 중계기가 끼운다. XML 이 오면 dict 로 바꾼다."""
+    """공공데이터포털 길. serviceKey 는 중계기가 끼운다. 포털은 XML 이 기본이다
+    (run 25: type=JSON 은 게이트웨이가 HTTP_ERROR 04 로 돌려보냈다). XML 을 dict 로 바꾼다."""
     import xml.etree.ElementTree as ET
-    resp = get_once(url, {"serviceKey": VIA_RELAY, "target": "ordin", "type": "JSON", **params}, timeout=40)
+    resp = _portal_raw(url, params, "XML")
     body = resp.text
     if resp.status_code != 200:
         return None, f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", body[:200])
@@ -246,10 +251,23 @@ def probe(query: str = "안성시 도시계획 조례") -> dict:
     except Exception as e:                          # noqa: BLE001
         out["direct"] = {"error": f"{type(e).__name__}: {str(e)[:160]}"}
         print(f"직접 호출 실패: {out['direct']['error']}")
-    # 2) 공공데이터포털 길 — 무엇이 오는지 그대로
-    payload, why = _portal(PORTAL_SEARCH, {"query": query, "display": "3"})
-    out["portal"] = {"why": why, "keys": _keys(payload) if payload is not None else []}
-    print(f"포털 길: " + ("됨 · 위 키 " + str(_keys(payload)[:8]) if payload is not None else why))
+    # 2) 공공데이터포털 길 — 어느 주소·형식이 통하는지 그대로 찍는다
+    out["portal"] = {}
+    for label, url, kind in (("lawSearchList XML", PORTAL_SEARCH, "XML"),
+                             ("lawSearchList JSON", PORTAL_SEARCH, "JSON"),
+                             ("ordinSearchList XML", PORTAL_SEARCH.replace("lawSearchList", "ordinSearchList"), "XML"),
+                             ("lawSearchList XML target=law", PORTAL_SEARCH, "XML")):
+        try:
+            p = {"query": query, "display": "3"}
+            if label.endswith("target=law"):
+                p["target"] = "law"
+            r = _portal_raw(url, p, kind)
+            snip = re.sub(r"\s+", " ", r.text)[:220]
+            out["portal"][label] = {"status": r.status_code, "snippet": snip}
+            print(f"포털 {label}: HTTP {r.status_code} · {snip}")
+        except Exception as e:                      # noqa: BLE001
+            out["portal"][label] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+            print(f"포털 {label}: 실패 {out['portal'][label]['error']}")
     # 3) 우리 경로 — 법제처(중계기) → 거부되면 포털
     rows, total, why = search(query, display=5)
     out["route"] = "portal" if use_portal() else ("relay" if _oc() == VIA_RELAY else "direct")

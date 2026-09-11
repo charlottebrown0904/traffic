@@ -77,8 +77,7 @@ jobs:
           python -m redt.cli urban-check $ARGS 2>&1 | tee /tmp/urban.log
 
       - name: 결과 보관 (다음 export-web 이 읽는다)
-        if: ${{ !inputs.skip_check }}
-        if: always()
+        if: ${{ (!inputs.skip_check) && (always()) }}
         uses: actions/cache/save@v4
         with:
           path: |
