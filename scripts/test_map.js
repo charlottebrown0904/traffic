@@ -160,6 +160,8 @@ const FAKE_LEAFLET = () => {
     }),
     tileLayer: (url, opts) => {
       rec.tiles.push(url);
+      rec.tileOpts = rec.tileOpts || [];
+      rec.tileOpts.push({ url, opts: opts || {} });
       // 경계선은 색을 따로 잡으려고 판을 따로 쓴다. 검사가 그것을 본다.
       if (/layer=cadastral/.test(url)) {
         window.__cadPane = (opts || {}).pane;
@@ -4051,6 +4053,51 @@ const FAKE_LEAFLET = () => {
           `${await page2.evaluate(() => (window.__tradeStyles || []).length)}개`));
 
       await page2.close();
+    }
+
+    // 타일 비용 (G, 2026-09-11). 우리 함수를 거치는 층은 요청을 아끼는 옵션을
+    // 달고, 지도 키가 있으면 배경 타일이 브이월드로 바로 간다.
+    {
+      // 앞 절이 page 를 닫았다 — 새 페이지로 본다.
+      const pg = await browser.newPage({ viewport: { width: 420, height: 900 } });
+      for (const pat of ['**/lib/supabase-init.js*', '**/app/supabase.js*',
+                         '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'])
+        await pg.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
+      await pg.route('**/app/config.js*', (r) => r.fulfill({
+        status: 200, contentType: 'application/javascript',
+        body: fs.readFileSync(path.join(ROOT, 'public', 'app', 'config.js'), 'utf8')
+          + "\nwindow.REDT_CONFIG.vworldMapKey = 'MAPKEY-TEST';\n",
+      }));
+      await pg.addInitScript(FAKE_LEAFLET);
+      await pg.addInitScript(() => {
+        // 관문을 지나기 위한 최소 가짜 (위 본 페이지와 같은 꼴, 짧게).
+        const ch = { on() { return ch; }, subscribe(cb) { if (cb) cb('SUBSCRIBED'); return ch; },
+                     track() { return Promise.resolve(); }, presenceState() { return {}; } };
+        window.SB = { channel: () => ch, removeChannel: () => Promise.resolve(),
+                      rpc: () => Promise.resolve({ data: 1, error: null }),
+                      from: () => { const q = { select: () => q, eq: () => q,
+                        maybeSingle: () => Promise.resolve({ data: null, error: null }) }; return q; } };
+        window.ME = { user: { id: 'u1' }, profile: { status: 'approved', grade: 'B' } };
+        window.SBUtil = { me: async () => window.ME };
+        try { localStorage.setItem('toji.basemap', 'satellite'); } catch (e) { /* */ }
+      });
+      await pg.goto(`${BASE}/app/`, { waitUntil: 'domcontentloaded' });
+      await pg.waitForSelector('#gate-bg', { timeout: 20000 }).catch(() => {});
+      await pg.waitForFunction(() => (window.__map && (window.__map.tiles || []).length > 1), null, { timeout: 10000 })
+        .catch(() => {});
+      const t2 = await pg.evaluate(() => (window.__map.tileOpts || []).map((t) => ({
+        url: t.url, uz: t.opts.updateWhenZooming, ui: t.opts.updateWhenIdle, kb: t.opts.keepBuffer })));
+      const zoning = t2.find((t) => /layer=zoning/.test(t.url));
+      const osm = t2.find((t) => /openstreetmap/.test(t.url));
+      check('용도지역 층은 배율 바꾸는 동안 안 받고, 멈춘 뒤 받고, 네 줄을 들고 있는다',
+            !!zoning && zoning.uz === false && zoning.ui === true && zoning.kb === 4, JSON.stringify(zoning));
+      check('OSM 은 남의 서버라 그대로 둔다', !osm || osm.uz === undefined, JSON.stringify(osm));
+      const sat = t2.find((t) => /Satellite/.test(t.url));
+      check('지도 키가 있으면 배경 타일이 브이월드로 바로 간다 (우리 함수 0회)',
+            !!sat && /^https:\/\/api\.vworld\.kr\/req\/wmts\/1\.0\.0\/MAPKEY-TEST\/Satellite\/\{z\}\/\{y\}\/\{x\}\.jpeg$/.test(sat.url)
+            && sat.uz === false && !t2.some((t) => /api\/tile\?layer=satellite/.test(t.url)),
+            JSON.stringify(t2.filter((t) => !/openstreetmap/.test(t.url)).slice(0, 4)));
+      await pg.close();
     }
 
     // 가이드 05 · 법령과 조례 (E, 2026-09-11). 같은 조례 표를 읽어 시·군을 고르게 한다.

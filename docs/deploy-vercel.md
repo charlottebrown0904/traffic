@@ -208,3 +208,42 @@ Usage 화면: **Deployment Storage 20.88 GB / 10 GB**. 배포 하나가 194MB(�
    Canceled 를 가장 짧게 두면 저절로 지워진다.
 3. 지운 뒤 main 이 자동으로 안 올라가면 Settings → Git → Deploy Hooks 로 main 훅을
    만들어 URL 을 한 번 연다.
+
+이 절의 '계정 주인이 할 것' 은 같은 날 저녁에 끝났다 — VERCEL_TOKEN 시크릿으로
+`scripts/vercel_cleanup.py` 가 722개를 지웠고, 매주 일요일 03:00 KST 에 다시 돈다
+(`.github/workflows/vercel-cleanup.yml`).
+
+## 함수 호출 한도 — api/tile (2026-09-11)
+
+Usage 화면(9월 11일): **Function Invocations 522K / 1M**, Edge Requests 785K / 1M,
+Fast Origin Transfer 7.06 / 10GB. Hobby 는 한도를 넘기면 기능을 멈춘다 (배포 저장
+한도처럼 조용히). 함수는 사실상 `api/tile` 하나다 — 배경(브이월드)·용도지역·필지
+경계선·필지 조회가 모두 이 함수를 지난다.
+
+실측 (런타임 로그): 지도를 한 번 움직이면 **1초 안에 40장**이 함수를 돌렸고 전부
+`cache=MISS` 였다. 엣지 요청 중 함수 호출이 66% 라는 것은 캐시가 거의 못 받아
+준다는 뜻이다 — 사람마다 다른 동네를 보고, 배율을 손가락으로 바꾸는 동안 Leaflet
+이 정수 배율마다 한 벌씩 새로 받는다.
+
+한 일 (커밋 참조):
+- **엣지 캐시 한 달** (`s-maxage=2592000`) + 브라우저 한 주 + `stale-while-revalidate`
+  하루. 전에는 이레·하루였다. 두 번째 사람부터 함수가 안 돈다.
+- **층 옵션** (`app.js TILE_OPTS`): `updateWhenZooming:false` (배율 바꾸는 동안 안 받음
+  — z10→16 이면 여섯 벌이 한 벌로), `updateWhenIdle:true`, `keepBuffer:4`. OSM 은
+  남의 서버라 그대로.
+- **지도 전용 브이월드 키 자리** (`config.js vworldMapKey`). 넣으면 배경 타일이
+  브라우저에서 브이월드로 바로 가고 우리 함수는 0회다. 로그 한 줄
+  (`tile kind=… z=…`) 로 층별 호출 수를 센다.
+
+계정 주인이 할 것 (선택, 효과가 가장 크다):
+1. 브이월드 콘솔에서 **키를 하나 더** 발급한다 (서비스 URL `https://toji.fyi`). 지금
+   키는 지오코딩(하루 3만 건)과 같이 쓰므로 페이지에 실으면 안 된다 — 새 키가 새면
+   지도만 하루 멈추고 수집은 안 선다.
+2. `public/app/config.js` 의 `vworldMapKey: ''` 에 넣고 main 에 올린다. 이 파일은
+   공개되지만, 브이월드 키는 서비스 주소에 묶여 Referer 를 본다.
+3. 용도지역 색면과 경계선은 계속 함수를 거친다 (WMS/WFS 는 키를 물음표 뒤에 실어야
+   해 같은 방법이 안 된다). 색면은 기본 꺼짐, 경계선은 z16 부터라 양이 적다.
+
+한도를 넘기면: Usage 에서 어느 항목인지 보고, 함수 호출이면 `vworldMapKey` 를 넣는
+것이 유일한 큰 손잡이다. Cloudflare 로 옮기는 길은 브이월드가 그쪽 IP 를 502 로
+막아 닫혀 있다 (docs/cloudflare-migration.md).

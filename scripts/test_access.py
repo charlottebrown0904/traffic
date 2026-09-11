@@ -64,6 +64,23 @@ check("function public.set_grade(" in sql and "insert into public.grade_log" in 
 check("function public.premium_ok()" in sql and "grade_until is null or grade_until > now()" in sql,
       "서버용 premium_ok — B 는 기한 안에서만")
 check("or grade = 'admin'" in sql, "is_admin 이 grade=admin 도 본다")
+# 어드바이저 정리 (0005, 2026-09-11)
+sql5 = (ROOT / "supabase" / "migrations" / "0005_advisors.sql").read_text(encoding="utf-8")
+check("revoke all on function public.handle_new_user() from public, anon, authenticated" in sql5
+      and "revoke all on function public.is_admin() from public, anon" in sql5,
+      "가입 트리거·is_admin 을 anon 이 못 부른다")
+check("create policy listing_anon_read on public.listing for select to anon" in sql5
+      and "to anon" not in sql5.replace("for select to anon\n  using (status = 'published')", "")
+                                 .replace("to anon, authenticated", ""),
+      "anon 정책은 매물 공개 읽기 하나뿐 — 함수 호출 없이")
+check("drop view if exists public.profile_public" in sql5
+      and "create table if not exists public.profile_public" in sql5
+      and "id       uuid primary key references public.profile (id) on delete cascade,\n  nickname text\n)" in sql5,
+      "profile_public 은 두 컬럼짜리 표 (SECURITY DEFINER 뷰 아님)")
+check("auth.uid())" not in sql5.replace("(select auth.uid())", ""),
+      "정책의 auth.uid() 는 전부 (select …) 로")
+check("for all to authenticated" in sql5 and sql5.count("for all") == 1,
+      "ALL 정책은 favorite 하나만 (나머지는 insert/update/delete 로 쪼갬)")
 
 print()
 print("3. 관문 → 앱 → 계정 화면")

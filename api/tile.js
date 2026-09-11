@@ -315,9 +315,14 @@ function parseInfo(text) {
 
 const MAX_ZOOM = 19;
 const TIMEOUT_MS = 10_000;
-// 성공한 타일은 하루, CDN 에는 한 주. 용도지역은 자주 바뀌는 자료가 아니다.
+// 성공한 타일은 브라우저에 한 주, CDN 에 한 달 (+ 하루는 낡은 것을 주며
+// 뒤에서 갱신). 용도지역·배경·경계선은 자주 바뀌는 자료가 아니다.
+//
+// **이 함수가 도는 횟수가 곧 돈이다** (Vercel Hobby: 함수 호출 월 100만).
+// 실측(2026-09-11): 지도 한 번 움직임에 40장이 1초 안에 나가고 전부 MISS
+// 였다. 엣지 캐시가 오래 붙들수록 두 번째 사람부터는 함수가 안 돈다.
 // 실패는 짧게만 — 한도가 풀린 뒤에도 빈 화면이 오래 남으면 안 된다.
-const CACHE_OK = "public, max-age=86400, s-maxage=604800";
+const CACHE_OK = "public, max-age=604800, s-maxage=2592000, stale-while-revalidate=86400";
 const CACHE_BAD = "public, max-age=0, s-maxage=60";
 
 function fail(res, code, message) {
@@ -837,6 +842,10 @@ module.exports = async function handler(req, res) {
   const layers = LAYERS[want];
   const basemap = BASEMAPS[want];
   if (!layers && !basemap) return fail(res, 400, "그런 레이어가 없습니다");
+  // 어느 층이 함수를 돌리는지 세려고 한 줄 남긴다 (좌표는 안 적는다 —
+  // 로그에 사람이 본 자리를 남길 이유가 없다). Vercel 로그 검색:
+  // "tile kind=" 로 층별 호출 수를 센다.
+  console.log(`tile kind=${mode || want} z=${String(req.query.z ?? "-")}`);
 
   // 누른 자리의 이름을 묻는 요청. 같은 화이트리스트를 쓰고, 목적지도
   // 좌표계도 여기서 정한다 — 밖에서 받는 것은 위경도뿐이다.

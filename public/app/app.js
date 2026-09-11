@@ -2043,23 +2043,56 @@ const CADASTRAL_MIN_ZOOM = 16;
  * 두 번째 호출이 x-vercel-cache: HIT 로 왔습니다. 그래서 실제 함수 호출은
  * 그 동네를 **처음 여는 사람** 몫뿐입니다.
  */
+/**
+ * 브이월드 배경 타일 주소.
+ *
+ * 기본은 우리 서버(/api/tile)를 거친다. 그런데 그 함수 호출이 곧 비용이다
+ * — Vercel Hobby 는 월 100만 회이고, 배경 타일은 한 번 움직임에 열 장 남짓
+ * 나간다. config.js 에 **지도 전용** 브이월드 키(`vworldMapKey`)를 두면
+ * 브라우저가 브이월드를 바로 부르고 우리 함수는 한 번도 안 돈다.
+ *
+ * 그 키는 페이지에 그대로 실린다. 그래서 **지오코딩에 쓰는 키와 다른
+ * 키**여야 한다 — 새는 것은 지도 키의 하루 한도뿐이고, 수집은 안 선다.
+ * 브이월드 키는 서비스 주소(toji.fyi)에 묶여 Referer 를 본다.
+ */
+const VWORLD_WMTS = { base: ['Base', 'png'], satellite: ['Satellite', 'jpeg'],
+                      hybrid: ['Hybrid', 'png'], midnight: ['midnight', 'png'] };
+function vworldTileUrl(key) {
+  const mk = CONFIG.vworldMapKey;
+  if (mk && VWORLD_WMTS[key]) {
+    const [name, ext] = VWORLD_WMTS[key];
+    return `https://api.vworld.kr/req/wmts/1.0.0/${mk}/${name}/{z}/{y}/{x}.${ext}`;
+  }
+  return `/api/tile?layer=${key}&z={z}&y={y}&x={x}`;
+}
 const BASEMAPS = [
   { key: 'osm', label: '기본',
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '© OpenStreetMap' },
   { key: 'base', label: '브이월드',
-    url: '/api/tile?layer=base&z={z}&y={y}&x={x}',
+    url: vworldTileUrl('base'),
     attribution: '배경지도 © 국토교통부 브이월드' },
   { key: 'satellite', label: '위성',
-    url: '/api/tile?layer=satellite&z={z}&y={y}&x={x}',
+    url: vworldTileUrl('satellite'),
     attribution: '위성영상 © 국토교통부 브이월드' },
   { key: 'hybrid', label: '위성+지명',
-    url: '/api/tile?layer=hybrid&z={z}&y={y}&x={x}',
+    url: vworldTileUrl('hybrid'),
     attribution: '배경지도 © 국토교통부 브이월드' },
   { key: 'midnight', label: '야간',
-    url: '/api/tile?layer=midnight&z={z}&y={y}&x={x}',
+    url: vworldTileUrl('midnight'),
     attribution: '배경지도 © 국토교통부 브이월드' },
 ];
+
+/**
+ * 우리 서버를 거치는 타일 층의 공통 옵션 — 요청 수를 줄인다.
+ *
+ *   updateWhenZooming: false  손가락으로 배율을 바꾸는 동안 Leaflet 은
+ *                             정수 배율마다 타일을 새로 받는다 (z10→16 이면
+ *                             여섯 벌). 끝난 뒤 한 벌만 받게 한다.
+ *   updateWhenIdle: true      움직이는 동안이 아니라 멈춘 뒤에 받는다.
+ *   keepBuffer: 4             화면 밖 네 줄까지 들고 있어 되돌아오면 안 받는다.
+ */
+const TILE_OPTS = { updateWhenZooming: false, updateWhenIdle: true, keepBuffer: 4 };
 
 let baseLayer = null;
 
@@ -2070,6 +2103,8 @@ function setBaseMap(key, first) {
     if (baseLayer) map.removeLayer(baseLayer);
     baseLayer = L.tileLayer(spec.url, {
       maxZoom: 19, attribution: spec.attribution,
+      // OSM 은 남의 서버라 그대로 두고, 브이월드는 우리 함수를 아낀다.
+      ...(spec.key === 'osm' ? {} : TILE_OPTS),
     }).addTo(map);
     // **맨 아래로 내린다.** 갈아 끼운 층은 나중에 붙은 것이라 위에
     // 얹히는데, 그러면 용도지역 색면과 거래 점을 덮는다.
@@ -2187,6 +2222,7 @@ function addZoningLayer() {
   // (api/tile.js 의 LAYERS.zoning). 브이월드 공식 색이라 지적편집도를
   // 읽어온 분들에게는 설명이 필요 없다.
   L.tileLayer('/api/tile?layer=zoning&z={z}&y={y}&x={x}', {
+    ...TILE_OPTS,
     maxZoom: 19,
     minZoom: ZONING_MIN_ZOOM,
     // 위에 거래 점과 영업소가 얹히므로 반투명해야 한다. 불투명하면

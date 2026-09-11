@@ -177,6 +177,10 @@ const call = async (query, method = 'GET', headers = {}) => {
   const maxAge = Number((/max-age=(\d+)/.exec(cc) || [])[1] || 0);
   check('성공 타일을 길게 캐시한다 (CDN 이 반복 요청을 받아준다)',
         maxAge >= 3600, cc);
+  // 함수 호출이 곧 한도다 (2026-09-11). 브라우저 한 주 · CDN 한 달 · 낡은 것 하루.
+  const sMax = Number((/s-maxage=(\d+)/.exec(cc) || [])[1] || 0);
+  check('브라우저 한 주 · 엣지 한 달 · 낡은 것을 주며 갱신',
+        maxAge >= 604800 && sMax >= 2592000 && /stale-while-revalidate=\d+/.test(cc), cc);
   check('그림으로 돌려준다',
         /^image\//.test(good.headers['content-type'] || '') && Buffer.isBuffer(good.body),
         good.headers['content-type'] || '(없음)');
