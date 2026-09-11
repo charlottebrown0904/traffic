@@ -2,7 +2,8 @@
 
 배포 하나가 194MB 였고 그중 표준지 조각이 138MB 다. 브랜치 push 마다 미리보기가
 만들어져 하루에 수십 개, 사본이 20.88GB 가 되어 배포가 멈췄다. 두 가지로 막는다:
-  1. 표준지 조각은 배포에서 빼고(.vercelignore) 공개 저장소의 CDN 에서 받는다.
+  1. 표준지 조각·격차율 표는 저장소·배포에서 빼고 Supabase 비공개 버킷에서 받는다
+     (프리미엄 자물쇠, docs/membership-grades.md §3).
   2. 작업 브랜치는 미리보기 배포를 만들지 않는다 (vercel.json git.deploymentEnabled).
 
   실행: python scripts/test_deploy_size.py   (make test 에 포함)
@@ -21,21 +22,15 @@ def check(ok, label, extra=""):
         fail.append(label)
 
 
-print("1. 표준지 조각은 배포에서 빠지고 CDN 에서 온다")
-ign = (ROOT / ".vercelignore").read_text(encoding="utf-8")
-check("/public/app/data/stdland-*.json" in ign, ".vercelignore 에 표준지 조각")
+print("1. 프리미엄 파일은 공개 배포에 없다 (Supabase 비공개 버킷에서만)")
+pub = ROOT / "public" / "app" / "data"
+chunks = list(pub.glob("stdland-*.json"))
+check(not chunks, f"public/ 에 표준지 조각 없음 — {len(chunks)}개", str(chunks[:2]))
+check(not (pub / "valuation.json").exists(), "public/ 에 격차율 표 없음")
 cfg = (ROOT / "public" / "app" / "config.js").read_text(encoding="utf-8")
-check("stdlandBase" in cfg and "cdn.jsdelivr.net/gh/charlottebrown0904/traffic@main/public/app/data" in cfg,
-      "config.js stdlandBase 가 jsDelivr 의 이 저장소 main 을 가리킨다")
+check("jsdelivr" not in cfg and "stdlandBase" not in cfg, "공개 CDN 주소 없음")
 app = (ROOT / "public" / "app" / "app.js").read_text(encoding="utf-8")
-check("const urls = base ? [`${base}/stdland-${code}.json`, local] : [local];" in app,
-      "앱은 CDN 먼저, 안 되면 같은 자리")
-# 조각 파일 이름과 CDN 경로가 맞물린다 — 저장소에 실제로 그 이름으로 있어야 한다.
-chunks = list((ROOT / "public" / "app" / "data").glob("stdland-*.json"))
-check(len(chunks) >= 200 and all(len(c.stem) == len("stdland-41550") for c in chunks[:20]),
-      f"저장소에 조각 {len(chunks)}개 · 이름 꼴 stdland-NNNNN.json")
-big = [c for c in chunks if c.stat().st_size > 50 * 1024 * 1024]
-check(not big, "jsDelivr 한도(파일당 50MB) 안", str(big[:3]))
+check("sb.storage.from('premium').download(name)" in app, "앱은 버킷에서 받는다")
 
 print()
 print("2. 작업 브랜치는 미리보기 배포를 만들지 않는다")
@@ -45,11 +40,10 @@ check(de.get("claude/real-estate-traffic-correlation-liujkh") is False, "vercel.
 check("main" not in de or de["main"] is True, "main 은 배포한다")
 
 print()
-print("3. 남는 배포 크기")
+print("3. 배포 크기")
 total = sum(f.stat().st_size for f in (ROOT / "public").rglob("*") if f.is_file())
-kept = total - sum(c.stat().st_size for c in chunks)
-print(f"   public/ {total / 1e6:,.0f}MB → 배포 {kept / 1e6:,.0f}MB")
-check(kept < 100 * 1e6, "배포 하나가 100MB 아래")
+print(f"   public/ {total / 1e6:,.0f}MB")
+check(total < 100 * 1e6, "배포 하나가 100MB 아래")
 
 print()
 if fail:

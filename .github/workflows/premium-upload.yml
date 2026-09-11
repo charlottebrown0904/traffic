@@ -7,8 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       src:
-        description: "올릴 폴더 (처음엔 저장소에 남은 public/app/data, 이후엔 비우면 data/processed/premium)"
-        default: "public/app/data"
+        description: "올릴 폴더 (비우면 data/processed/premium)"
+        default: ""
+      upload:
+        description: "0 이면 올리지 않고 익명 거부 확인만"
+        default: "1"
 
 permissions:
   contents: read
@@ -29,14 +32,19 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: 올리기
+        if: inputs.upload != '0'
         run: |
           set -o pipefail
           python -m redt.cli premium-upload ${{ inputs.src && format('--src {0}', inputs.src) || '' }} 2>&1 | tee /tmp/up.log
       - name: 익명은 못 받는지 확인
+        # 시크릿 SUPABASE_URL 에 스킴 없는 값이 들어 있을 수 있어(run 15) 주소는 코드가 푼다.
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' "${SUPABASE_URL%/}/storage/v1/object/premium/valuation.json")
-          echo "익명 GET valuation.json → HTTP $code (400/401/403 이어야 한다)"
-          case "$code" in 400|401|403|404) ;; *) echo "::error::익명이 받아 갔습니다"; exit 1;; esac
+          base=$(python -c "from redt.appraisal_db import base_url; print(base_url())")
+          for f in valuation.json stdland-41550.json; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$base/storage/v1/object/premium/$f")
+            echo "익명 GET $f → HTTP $code (400/401/403 이어야 한다)" | tee -a /tmp/up.log
+            case "$code" in 400|401|403) ;; *) echo "::error::익명이 받아 갔거나 주소가 틀렸습니다 ($code)"; exit 1;; esac
+          done
       - name: 실행 요약
         if: always()
         run: |
