@@ -1,3 +1,3 @@
 sado-toji / traffic
-deploy-marker: 2026-08-31-a (사도 토지 · 아이콘)
+deploy-marker: 2026-09-11-a (조례·개발 한도·회원 등급)
 paths: / , /app/ , /guide/ , /board/ , /account/
