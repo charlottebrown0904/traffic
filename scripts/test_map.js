@@ -2982,6 +2982,11 @@ const FAKE_LEAFLET = () => {
           !/<em>준비 중<\/em>/.test(pc.html) && /pcv-tag/.test(pc.html));
     // 근거는 **아직 적지 않는다** — 그 설명이 곧 유료 전환의 열쇠라,
     // 값이 없는 지금 미리 풀면 살 이유를 먼저 소비해 버린다.
+    // 저장소에 전국 표준지 조각이 실려 있으면(2026-09-11 부터) 이 시군구 조각도
+    // 진짜로 있다. 이 절은 '조각이 없을 때' 를 검사하므로 없는 척한다 — 성공만
+    // 기억하는 로더라 404 는 다음 절의 고정 조각을 막지 않는다.
+    await page.route('**/app/data/valuation.json*', (r) => r.fulfill({ status: 404, body: '' }));
+    await page.route('**/app/data/stdland-*.json*', (r) => r.fulfill({ status: 404, body: '' }));
     const vnow = await page.evaluate(async () => {
       document.querySelector('.pc-val[data-val="now"]').click();
       await new Promise((ok) => setTimeout(ok, 150));
@@ -3048,6 +3053,8 @@ const FAKE_LEAFLET = () => {
         y: 2025, pr: 300000, jm: '전', ar: 1500, lu: '자연녹지지역', lu2: null, dz: null,
         us: '전', rs: '중로한면', sh: '가로장방', sl: '평지', lon: null, lat: null },
     ] };
+    await page.unroute('**/app/data/valuation.json*');
+    await page.unroute('**/app/data/stdland-*.json*');
     await page.route('**/app/data/valuation.json*', (r) => r.fulfill({
       status: 200, contentType: 'application/json', body: JSON.stringify(VAL) }));
     await page.route('**/app/data/stdland-41111.json*', (r) => r.fulfill({

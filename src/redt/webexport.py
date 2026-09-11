@@ -303,9 +303,11 @@ def _stdland_files() -> None:
     total = 0
     # 빈 문자열은 값이 아니다 — 브이월드가 '' 로 준 용도지역2 가 그대로
     # 실리면 화면이 그것을 이름으로 읽는다.
+    # 2026 파일은 없는 값을 '지정되지않음' 이라는 글자로 준다 — 이름이 아니다.
+    NOT_A_VALUE = {"", "지정되지않음", "해당없음", "없음", "-"}
     for c in df.columns:
         if df[c].dtype == object:
-            df[c] = df[c].where(df[c].astype(str).str.strip() != "", None)
+            df[c] = df[c].where(~df[c].astype(str).str.strip().isin(NOT_A_VALUE), None)
     for code, g in df.groupby("sigungu_cd"):
         rows = []
         for r in g.itertuples(index=False):
