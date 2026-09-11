@@ -581,6 +581,19 @@ const FAKE_LEAFLET = () => {
       status: 200, contentType: 'application/json',
       body: JSON.stringify(FAKE_STATS),
     }));
+    // 개발 한도 표 (C1). 41111(수원시 장안구)은 수원시 조례 — 도시지역만이라
+    // 계획관리 값이 없다. 시행령 상한으로 물러나는 길이 보이게 그대로 둔다.
+    await page.route('**/app/data/zoning-limits.json*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        generated: '2026-09-11',
+        law: { '계획관리': { bcr_max: 40, far_min: 50, far_max: 100 } },
+        ord: { '2102141': { name: '수원시 도시계획 조례', org: '경기도 수원시', eff: '20251231',
+                            url: 'https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102141',
+                            bcr: { '자연녹지': 20 }, far: { '자연녹지': 100 }, slope: 10, elev: 100 } },
+        sg: { '41111': ['2102141', 'sigungu'] },
+      }),
+    }));
     let parcelHits = 0;
     await page.route('**/api/tile?mode=parcel*', (r) => {
       parcelHits += 1;
@@ -2914,6 +2927,23 @@ const FAKE_LEAFLET = () => {
     check('용도지역은 겹치지 않으면 하나만 적는다',
           /<th>용도지역<\/th><td>계획관리지역<\/td>/.test(pc.html),
           (pc.html.match(/<th>용도지역<\/th><td>[^<]*/) || ['없음'])[0]);
+
+    // 개발 한도 (C4 · docs §6 (1)). 토지 정보 바로 아래, 접혀서.
+    check('개발 한도 칸이 토지 정보 아래에 선다',
+          /pc-limits/.test(pc.html)
+          && pc.html.indexOf('토지 정보') < pc.html.indexOf('pc-limits')
+          && pc.html.indexOf('pc-limits') < pc.html.indexOf('건축 제한'));
+    check('조례에 값이 없으면 시행령 상한을 ≤ 로 적고 미확인이라 말한다',
+          /<th>건폐율<\/th><td>≤ <b>40%<\/b> <em>시행령 상한 · 조례 값 미확인/.test(pc.html),
+          (pc.html.match(/<th>건폐율<\/th><td>[^\n]{0,80}/) || ['없음'])[0]);
+    check('면적으로 바닥·연면적 최대를 계산한다 (1,653㎡ × 40% · 100%)',
+          /바닥 661㎡ · 연면적 1,653㎡/.test(pc.html),
+          (pc.html.match(/<th>최대 규모<\/th><td>[^<]{0,60}/) || ['없음'])[0]);
+    check('경사·표고는 조례 문턱만 적고 잰 값이 없다고 말한다',
+          /10° 미만/.test(pc.html) && /못 잼/.test(pc.html) && !/통과/.test(pc.html));
+    check('근거 조례에 원문 링크를 단다',
+          /ordinInfoP\.do\?ordinSeq=2102141[^>]*>수원시 도시계획 조례</.test(pc.html)
+          && /시행 2025-12-31/.test(pc.html));
 
     // 건축 제한 (요구사항 2026-09-10). 레이더는 안 건드리고 아래에
     // 따로 적는다 — 규제의 무게를 숫자로 환산하면 그 환산율 자체가

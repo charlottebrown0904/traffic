@@ -1,0 +1,5584 @@
+# 개발 한도 — 법의 범위와 시군구 조례의 값 (C1). **만든 파일이다.**
+#
+#   python -m redt.cli zoning-limits      ← data/ordinance/index.json + regions.json 에서
+#
+# 손으로 고치지 말 것. 조례 값이 틀렸으면 data/ordinance 의 조문(원문 링크)을 보고
+# src/redt/collect/law.py 의 정규식을 고친 뒤 다시 만든다. 값은 정규식으로 뽑은
+# **첫 값**이라 완화·강화 단서는 담지 않는다 — 원문 조문이 근거다.
+#
+# law:      국토계획법 시행령 §84①·§85① 상한 (단위 %). 조례는 이 안에서 정한다.
+# sigungu:  시군구 코드(법정동 앞 5자리) → 적용 조례. level 이 sido 면 광역시·도
+#           조례를 쓴 것 (자치구·행정시·세종). bcr=건폐율 far=용적률 (비도시 8개
+#           용도지역만). slope_deg=개발행위 경사도 한도, elev_m=표고, forest_pct=입목축적.
+# missing:  조례를 못 붙인 시군구. dropped: 시행령 범위 밖이라 버린 값 (읽기 오류).
+#
+generated: '2026-09-11'
+law_source: 국토의 계획 및 이용에 관한 법률 시행령 제84조제1항(건폐율) · 제85조제1항(용적률) · 제56조 별표 1의2(개발행위허가 기준은 조례 위임)
+law:
+  제1종전용주거:
+    bcr_max: 50
+    far_min: 50
+    far_max: 100
+  제2종전용주거:
+    bcr_max: 50
+    far_min: 50
+    far_max: 150
+  제1종일반주거:
+    bcr_max: 60
+    far_min: 100
+    far_max: 200
+  제2종일반주거:
+    bcr_max: 60
+    far_min: 100
+    far_max: 250
+  제3종일반주거:
+    bcr_max: 50
+    far_min: 100
+    far_max: 300
+  준주거:
+    bcr_max: 70
+    far_min: 200
+    far_max: 500
+  중심상업:
+    bcr_max: 90
+    far_min: 200
+    far_max: 1500
+  일반상업:
+    bcr_max: 80
+    far_min: 200
+    far_max: 1300
+  근린상업:
+    bcr_max: 70
+    far_min: 200
+    far_max: 900
+  유통상업:
+    bcr_max: 80
+    far_min: 200
+    far_max: 1100
+  전용공업:
+    bcr_max: 70
+    far_min: 150
+    far_max: 300
+  일반공업:
+    bcr_max: 70
+    far_min: 150
+    far_max: 350
+  준공업:
+    bcr_max: 70
+    far_min: 150
+    far_max: 400
+  보전녹지:
+    bcr_max: 20
+    far_min: 50
+    far_max: 80
+  생산녹지:
+    bcr_max: 20
+    far_min: 50
+    far_max: 100
+  자연녹지:
+    bcr_max: 20
+    far_min: 50
+    far_max: 100
+  보전관리:
+    bcr_max: 20
+    far_min: 50
+    far_max: 80
+  생산관리:
+    bcr_max: 20
+    far_min: 50
+    far_max: 80
+  계획관리:
+    bcr_max: 40
+    far_min: 50
+    far_max: 100
+  농림:
+    bcr_max: 20
+    far_min: 50
+    far_max: 80
+  자연환경보전:
+    bcr_max: 20
+    far_min: 50
+    far_max: 80
+zones:
+- 보전관리
+- 생산관리
+- 계획관리
+- 보전녹지
+- 생산녹지
+- 자연녹지
+- 농림
+- 자연환경보전
+sigungu:
+  '11110':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: &id001
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far: &id002
+      보전녹지: 50
+      생산녹지: 50
+      자연녹지: 50
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 종로구
+  '11140':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 중구
+  '11170':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 용산구
+  '11200':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 성동구
+  '11215':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 광진구
+  '11230':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 동대문구
+  '11260':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 중랑구
+  '11290':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 성북구
+  '11305':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 강북구
+  '11320':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 도봉구
+  '11350':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 노원구
+  '11380':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 은평구
+  '11410':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 서대문구
+  '11440':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 마포구
+  '11470':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 양천구
+  '11500':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 강서구
+  '11530':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 구로구
+  '11545':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 금천구
+  '11560':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 영등포구
+  '11590':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 동작구
+  '11620':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 관악구
+  '11650':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 서초구
+  '11680':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 강남구
+  '11710':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 송파구
+  '11740':
+    org: 서울특별시
+    name: 서울특별시 도시계획 조례
+    effective: '20260713'
+    mst: '2149501'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501
+    bcr: *id001
+    far: *id002
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 강동구
+  '12110':
+    org: 전남광주통합특별시 목포시
+    name: 목포시 도시계획 조례
+    effective: '20251229'
+    mst: '2099295'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2099295
+    bcr:
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far:
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: 100
+    level: sigungu
+    region: 목포시
+  '12130':
+    org: 전남광주통합특별시 여수시
+    name: 여수시 도시계획 조례
+    effective: '20251208'
+    mst: '2090475'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2090475
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: 100
+    forest_pct: null
+    level: sigungu
+    region: 여수시
+  '12150':
+    org: 전남광주통합특별시 순천시
+    name: 순천시 도시계획 조례
+    effective: '20260701'
+    mst: '2139799'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2139799
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 50
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 50
+    slope_deg: 21
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 순천시
+  '12170':
+    org: 전남광주통합특별시 나주시
+    name: 나주시 도시계획 조례
+    effective: '20251231'
+    mst: '2103137'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2103137
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: 150
+    level: sigungu
+    region: 나주시
+  '12190':
+    org: 전남광주통합특별시 광양시
+    name: 광양시 도시계획 조례
+    effective: '20251231'
+    mst: '2105463'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2105463
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 광양시
+  '12710':
+    org: 전남광주통합특별시 담양군
+    name: 담양군 계획 조례
+    effective: '20260810'
+    mst: '2159603'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2159603
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 담양군
+  '12720':
+    org: 전남광주통합특별시 곡성군
+    name: 곡성군 군계획 조례
+    effective: '20260812'
+    mst: '2159961'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2159961
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 18
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 곡성군
+  '12730':
+    org: 전남광주통합특별시 구례군
+    name: 구례군계획 조례
+    effective: '20250423'
+    mst: '1931817'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=1931817
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 구례군
+  '12740':
+    org: 전남광주통합특별시 고흥군
+    name: 고흥군 군계획 조례
+    effective: '20260824'
+    mst: '2157245'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2157245
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 고흥군
+  '12750':
+    org: 전남광주통합특별시 보성군
+    name: 보성군 군계획 조례
+    effective: '20260804'
+    mst: '2157793'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2157793
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 보성군
+  '12760':
+    org: 전남광주통합특별시 화순군
+    name: 화순군 도시계획 조례
+    effective: '20251222'
+    mst: '2095815'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2095815
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 화순군
+  '12780':
+    org: 전남광주통합특별시 강진군
+    name: 강진군 군계획 조례
+    effective: '20251013'
+    mst: '2080951'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2080951
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: 150
+    level: sigungu
+    region: 강진군
+  '12790':
+    org: 전남광주통합특별시 해남군
+    name: 해남군 군계획 조례
+    effective: '20251215'
+    mst: '2092395'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2092395
+    bcr: {}
+    far: {}
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: 150
+    level: sigungu
+    region: 해남군
+  '12800':
+    org: 전남광주통합특별시 영암군
+    name: 영암군 도시계획 조례
+    effective: '20260806'
+    mst: '2158147'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2158147
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 영암군
+  '12820':
+    org: 전남광주통합특별시 함평군
+    name: 함평군 군계획 조례
+    effective: '20260731'
+    mst: '2155805'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2155805
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 함평군
+  '12830':
+    org: 전남광주통합특별시 영광군
+    name: 영광군 도시계획 조례
+    effective: '20260810'
+    mst: '2160687'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2160687
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 영광군
+  '12840':
+    org: 전남광주통합특별시 장성군
+    name: 장성군 도시계획 조례
+    effective: '20260818'
+    mst: '2163925'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2163925
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 장성군
+  '12850':
+    org: 전남광주통합특별시 완도군
+    name: 완도군 도시계획 조례
+    effective: '20260804'
+    mst: '2159767'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2159767
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: 100
+    level: sigungu
+    region: 완도군
+  '12860':
+    org: 전남광주통합특별시 진도군
+    name: 진도군계획 조례
+    effective: '20260701'
+    mst: '2133547'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2133547
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 진도군
+  '12870':
+    org: 전남광주통합특별시 신안군
+    name: 신안군 도시계획 조례
+    effective: '20260814'
+    mst: '2164649'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2164649
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 신안군
+  '26140':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: &id003
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      자연환경보전: 20
+    far: &id004
+      보전녹지: 60
+      생산녹지: 80
+      자연녹지: 80
+      자연환경보전: 60
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 서구
+  '26170':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 동구
+  '26200':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 영도구
+  '26230':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 부산진구
+  '26260':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 동래구
+  '26290':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 남구
+  '26320':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 북구
+  '26350':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 해운대구
+  '26380':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 사하구
+  '26410':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 금정구
+  '26440':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 강서구
+  '26470':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 연제구
+  '26500':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 수영구
+  '26530':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 사상구
+  '26710':
+    org: 부산광역시
+    name: 부산광역시 도시계획 조례
+    effective: '20260408'
+    mst: '2120465'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120465
+    bcr: *id003
+    far: *id004
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 80
+    level: sido
+    region: 기장군
+  '27110':
+    org: 대구광역시
+    name: 대구광역시 도시계획 조례
+    effective: '20260511'
+    mst: '2128915'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128915
+    bcr: &id005
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id006
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 60
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 50
+    level: sido
+    region: 중구
+  '27140':
+    org: 대구광역시
+    name: 대구광역시 도시계획 조례
+    effective: '20260511'
+    mst: '2128915'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128915
+    bcr: *id005
+    far: *id006
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 50
+    level: sido
+    region: 동구
+  '27170':
+    org: 대구광역시
+    name: 대구광역시 도시계획 조례
+    effective: '20260511'
+    mst: '2128915'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128915
+    bcr: *id005
+    far: *id006
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 50
+    level: sido
+    region: 서구
+  '27200':
+    org: 대구광역시
+    name: 대구광역시 도시계획 조례
+    effective: '20260511'
+    mst: '2128915'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128915
+    bcr: *id005
+    far: *id006
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 50
+    level: sido
+    region: 남구
+  '27230':
+    org: 대구광역시
+    name: 대구광역시 도시계획 조례
+    effective: '20260511'
+    mst: '2128915'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128915
+    bcr: *id005
+    far: *id006
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 50
+    level: sido
+    region: 북구
+  '27260':
+    org: 대구광역시
+    name: 대구광역시 도시계획 조례
+    effective: '20260511'
+    mst: '2128915'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128915
+    bcr: *id005
+    far: *id006
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 50
+    level: sido
+    region: 수성구
+  '27290':
+    org: 대구광역시
+    name: 대구광역시 도시계획 조례
+    effective: '20260511'
+    mst: '2128915'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128915
+    bcr: *id005
+    far: *id006
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 50
+    level: sido
+    region: 달서구
+  '27710':
+    org: 대구광역시
+    name: 대구광역시 도시계획 조례
+    effective: '20260511'
+    mst: '2128915'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128915
+    bcr: *id005
+    far: *id006
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 50
+    level: sido
+    region: 달성군
+  '27720':
+    org: 대구광역시
+    name: 대구광역시 도시계획 조례
+    effective: '20260511'
+    mst: '2128915'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128915
+    bcr: *id005
+    far: *id006
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 50
+    level: sido
+    region: 군위군
+  '28125':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: &id007
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id008
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 50
+      생산녹지: 80
+      자연녹지: 80
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 제물포구
+  '28155':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 영종구
+  '28177':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 미추홀구
+  '28185':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 연수구
+  '28200':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 남동구
+  '28237':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 부평구
+  '28245':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 계양구
+  '28275':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 서해구
+  '28290':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 검단구
+  '28710':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 강화군
+  '28720':
+    org: 인천광역시
+    name: 인천광역시 도시계획 조례
+    effective: '20260713'
+    mst: '2150257'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2150257
+    bcr: *id007
+    far: *id008
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 옹진군
+  '30110':
+    org: 대전광역시
+    name: 대전광역시 도시계획 조례
+    effective: '20260213'
+    mst: '2110261'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2110261
+    bcr: &id009
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id010
+      보전관리: 60
+      생산관리: 70
+      계획관리: 80
+      보전녹지: 60
+      생산녹지: 70
+      자연녹지: 80
+      농림: 70
+      자연환경보전: 60
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 40
+    level: sido
+    region: 동구
+  '30140':
+    org: 대전광역시
+    name: 대전광역시 도시계획 조례
+    effective: '20260213'
+    mst: '2110261'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2110261
+    bcr: *id009
+    far: *id010
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 40
+    level: sido
+    region: 중구
+  '30170':
+    org: 대전광역시
+    name: 대전광역시 도시계획 조례
+    effective: '20260213'
+    mst: '2110261'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2110261
+    bcr: *id009
+    far: *id010
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 40
+    level: sido
+    region: 서구
+  '30200':
+    org: 대전광역시
+    name: 대전광역시 도시계획 조례
+    effective: '20260213'
+    mst: '2110261'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2110261
+    bcr: *id009
+    far: *id010
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 40
+    level: sido
+    region: 유성구
+  '30230':
+    org: 대전광역시
+    name: 대전광역시 도시계획 조례
+    effective: '20260213'
+    mst: '2110261'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2110261
+    bcr: *id009
+    far: *id010
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 40
+    level: sido
+    region: 대덕구
+  '31110':
+    org: 울산광역시
+    name: 울산광역시 도시계획 조례
+    effective: '20260409'
+    mst: '2120867'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120867
+    bcr: &id011 {}
+    far: &id012 {}
+    slope_deg: 17
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 중구
+  '31140':
+    org: 울산광역시
+    name: 울산광역시 도시계획 조례
+    effective: '20260409'
+    mst: '2120867'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120867
+    bcr: *id011
+    far: *id012
+    slope_deg: 17
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 남구
+  '31170':
+    org: 울산광역시
+    name: 울산광역시 도시계획 조례
+    effective: '20260409'
+    mst: '2120867'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120867
+    bcr: *id011
+    far: *id012
+    slope_deg: 17
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 동구
+  '31200':
+    org: 울산광역시
+    name: 울산광역시 도시계획 조례
+    effective: '20260409'
+    mst: '2120867'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120867
+    bcr: *id011
+    far: *id012
+    slope_deg: 17
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 북구
+  '31710':
+    org: 울산광역시
+    name: 울산광역시 도시계획 조례
+    effective: '20260409'
+    mst: '2120867'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120867
+    bcr: *id011
+    far: *id012
+    slope_deg: 17
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 울주군
+  '36110':
+    org: 세종특별자치시
+    name: 세종특별자치시 도시계획 조례
+    effective: '20260227'
+    mst: '2113473'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2113473
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 세종시
+  '41111':
+    org: 경기도 수원시
+    name: 수원시 도시계획 조례
+    effective: '20251231'
+    mst: '2102141'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102141
+    bcr: &id013
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far: &id014
+      보전녹지: 50
+      생산녹지: 100
+      자연녹지: 100
+    slope_deg: 10
+    elev_m: 100
+    forest_pct: null
+    level: sigungu
+    region: 수원시 장안구
+  '41113':
+    org: 경기도 수원시
+    name: 수원시 도시계획 조례
+    effective: '20251231'
+    mst: '2102141'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102141
+    bcr: *id013
+    far: *id014
+    slope_deg: 10
+    elev_m: 100
+    forest_pct: null
+    level: sigungu
+    region: 수원시 권선구
+  '41115':
+    org: 경기도 수원시
+    name: 수원시 도시계획 조례
+    effective: '20251231'
+    mst: '2102141'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102141
+    bcr: *id013
+    far: *id014
+    slope_deg: 10
+    elev_m: 100
+    forest_pct: null
+    level: sigungu
+    region: 수원시 팔달구
+  '41117':
+    org: 경기도 수원시
+    name: 수원시 도시계획 조례
+    effective: '20251231'
+    mst: '2102141'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102141
+    bcr: *id013
+    far: *id014
+    slope_deg: 10
+    elev_m: 100
+    forest_pct: null
+    level: sigungu
+    region: 수원시 영통구
+  '41131':
+    org: 경기도 성남시
+    name: 성남시 도시계획 조례
+    effective: '20260224'
+    mst: '2111431'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2111431
+    bcr: &id015
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far: &id016
+      보전녹지: 70
+      생산녹지: 50
+      자연녹지: 100
+    slope_deg: 15
+    elev_m: null
+    forest_pct: 100
+    level: sigungu
+    region: 성남시 수정구
+  '41133':
+    org: 경기도 성남시
+    name: 성남시 도시계획 조례
+    effective: '20260224'
+    mst: '2111431'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2111431
+    bcr: *id015
+    far: *id016
+    slope_deg: 15
+    elev_m: null
+    forest_pct: 100
+    level: sigungu
+    region: 성남시 중원구
+  '41135':
+    org: 경기도 성남시
+    name: 성남시 도시계획 조례
+    effective: '20260224'
+    mst: '2111431'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2111431
+    bcr: *id015
+    far: *id016
+    slope_deg: 15
+    elev_m: null
+    forest_pct: 100
+    level: sigungu
+    region: 성남시 분당구
+  '41150':
+    org: 경기도 의정부시
+    name: 의정부시 도시계획 조례
+    effective: '20250925'
+    mst: '2072835'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2072835
+    bcr:
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far:
+      보전녹지: 50
+      생산녹지: 60
+      자연녹지: 80
+    slope_deg: 18
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 의정부시
+  '41171':
+    org: 경기도 안양시
+    name: 안양시 도시계획 조례
+    effective: '20260331'
+    mst: '2117933'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2117933
+    bcr: &id017
+      보전녹지: 20
+      자연녹지: 20
+    far: &id018
+      보전녹지: 50
+      자연녹지: 80
+    slope_deg: 18
+    elev_m: 110
+    forest_pct: 120
+    level: sigungu
+    region: 안양시 만안구
+  '41173':
+    org: 경기도 안양시
+    name: 안양시 도시계획 조례
+    effective: '20260331'
+    mst: '2117933'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2117933
+    bcr: *id017
+    far: *id018
+    slope_deg: 18
+    elev_m: 110
+    forest_pct: 120
+    level: sigungu
+    region: 안양시 동안구
+  '41192':
+    org: 경기도 부천시
+    name: 부천시 도시계획 조례
+    effective: '20260706'
+    mst: '2144525'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2144525
+    bcr: &id019
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far: &id020
+      보전녹지: 50
+      생산녹지: 50
+      자연녹지: 80
+    slope_deg: 15
+    elev_m: 75
+    forest_pct: 50
+    level: sigungu
+    region: 부천시 원미구
+  '41194':
+    org: 경기도 부천시
+    name: 부천시 도시계획 조례
+    effective: '20260706'
+    mst: '2144525'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2144525
+    bcr: *id019
+    far: *id020
+    slope_deg: 15
+    elev_m: 75
+    forest_pct: 50
+    level: sigungu
+    region: 부천시 소사구
+  '41196':
+    org: 경기도 부천시
+    name: 부천시 도시계획 조례
+    effective: '20260706'
+    mst: '2144525'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2144525
+    bcr: *id019
+    far: *id020
+    slope_deg: 15
+    elev_m: 75
+    forest_pct: 50
+    level: sigungu
+    region: 부천시 오정구
+  '41210':
+    org: 경기도 광명시
+    name: 광명시 도시계획 조례
+    effective: '20260805'
+    mst: '2157445'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2157445
+    bcr:
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far:
+      보전녹지: 50
+      생산녹지: 100
+      자연녹지: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 광명시
+  '41220':
+    org: 경기도 평택시
+    name: 평택시 도시계획 조례
+    effective: '20260518'
+    mst: '2122835'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2122835
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 15
+    elev_m: null
+    forest_pct: 120
+    level: sigungu
+    region: 평택시
+  '41250':
+    org: 경기도 동두천시
+    name: 동두천시 도시계획 조례
+    effective: '20260506'
+    mst: '2127631'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2127631
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 23
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 동두천시
+  '41271':
+    org: 경기도 안산시
+    name: 안산시 도시계획 조례
+    effective: '20250919'
+    mst: '2067975'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2067975
+    bcr: &id021
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      자연환경보전: 20
+    far: &id022
+      보전녹지: 50
+      생산녹지: 80
+      자연녹지: 80
+      자연환경보전: 50
+    slope_deg: 17
+    elev_m: 40
+    forest_pct: 130
+    level: sigungu
+    region: 안산시 상록구
+  '41273':
+    org: 경기도 안산시
+    name: 안산시 도시계획 조례
+    effective: '20250919'
+    mst: '2067975'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2067975
+    bcr: *id021
+    far: *id022
+    slope_deg: 17
+    elev_m: 40
+    forest_pct: 130
+    level: sigungu
+    region: 안산시 단원구
+  '41281':
+    org: 경기도 고양시
+    name: 고양시 도시계획 조례
+    effective: '20251114'
+    mst: '2086131'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2086131
+    bcr: &id023
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id024
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 50
+      생산녹지: 90
+      자연녹지: 100
+      농림: 80
+    slope_deg: 15
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 고양시 덕양구
+  '41285':
+    org: 경기도 고양시
+    name: 고양시 도시계획 조례
+    effective: '20251114'
+    mst: '2086131'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2086131
+    bcr: *id023
+    far: *id024
+    slope_deg: 15
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 고양시 일산동구
+  '41287':
+    org: 경기도 고양시
+    name: 고양시 도시계획 조례
+    effective: '20251114'
+    mst: '2086131'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2086131
+    bcr: *id023
+    far: *id024
+    slope_deg: 15
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 고양시 일산서구
+  '41290':
+    org: 경기도 과천시
+    name: 과천시 도시계획 조례
+    effective: '20251010'
+    mst: '2078539'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2078539
+    bcr:
+      보전녹지: 20
+      자연녹지: 20
+    far:
+      보전녹지: 50
+      자연녹지: 60
+    slope_deg: 15
+    elev_m: 30
+    forest_pct: null
+    level: sigungu
+    region: 과천시
+  '41310':
+    org: 경기도 구리시
+    name: 구리시 도시계획 조례
+    effective: '20251202'
+    mst: '2089953'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2089953
+    bcr:
+      보전녹지: 20
+      자연녹지: 20
+    far:
+      보전녹지: 80
+      자연녹지: 100
+    slope_deg: 21
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 구리시
+  '41360':
+    org: 경기도 남양주시
+    name: 남양주시 도시계획 조례
+    effective: '20251229'
+    mst: '2099095'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2099095
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 60
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 60
+      자연환경보전: 60
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 남양주시
+  '41370':
+    org: 경기도 오산시
+    name: 오산시 도시계획 조례
+    effective: '20260506'
+    mst: '2127873'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2127873
+    bcr:
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far:
+      보전녹지: 50
+      생산녹지: 80
+      자연녹지: 100
+    slope_deg: 15
+    elev_m: 75
+    forest_pct: 150
+    level: sigungu
+    region: 오산시
+  '41390':
+    org: 경기도 시흥시
+    name: 시흥시 도시계획 조례
+    effective: '20260820'
+    mst: '2164147'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2164147
+    bcr:
+      보전녹지: 20
+      자연녹지: 20
+    far:
+      보전녹지: 80
+      자연녹지: 100
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 130
+    level: sigungu
+    region: 시흥시
+  '41410':
+    org: 경기도
+    name: 경기도 도시계획 조례
+    effective: '20260629'
+    mst: '2136213'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2136213
+    bcr: {}
+    far: {}
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 군포시
+  '41430':
+    org: 경기도 의왕시
+    name: 의왕시 도시계획 조례
+    effective: '20241230'
+    mst: '2002325'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2002325
+    bcr:
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far:
+      보전녹지: 60
+      생산녹지: 60
+      자연녹지: 100
+    slope_deg: 17
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 의왕시
+  '41450':
+    org: 경기도 하남시
+    name: 하남시 도시계획 조례
+    effective: '20250811'
+    mst: '2064475'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2064475
+    bcr:
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+    far:
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+    slope_deg: 15
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 하남시
+  '41461':
+    org: 경기도 용인시
+    name: 용인시 도시계획 조례
+    effective: '20251231'
+    mst: '2102461'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102461
+    bcr: &id025
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id026
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 70
+      생산녹지: 100
+      자연녹지: 100
+      농림: 70
+      자연환경보전: 70
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 용인시 처인구
+  '41463':
+    org: 경기도 용인시
+    name: 용인시 도시계획 조례
+    effective: '20251231'
+    mst: '2102461'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102461
+    bcr: *id025
+    far: *id026
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 용인시 기흥구
+  '41465':
+    org: 경기도 용인시
+    name: 용인시 도시계획 조례
+    effective: '20251231'
+    mst: '2102461'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102461
+    bcr: *id025
+    far: *id026
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 용인시 수지구
+  '41480':
+    org: 경기도 파주시
+    name: 파주시 도시계획 조례
+    effective: '20250320'
+    mst: '2022815'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2022815
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 50
+      생산녹지: 50
+      자연녹지: 80
+      농림: 50
+      자연환경보전: 50
+    slope_deg: null
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 파주시
+  '41500':
+    org: 경기도 이천시
+    name: 이천시 도시계획 조례
+    effective: '20260227'
+    mst: '2113131'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2113131
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: 150
+    level: sigungu
+    region: 이천시
+  '41550':
+    org: 경기도 안성시
+    name: 안성시 도시계획 조례
+    effective: '20260410'
+    mst: '2121099'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2121099
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 안성시
+  '41570':
+    org: 경기도 김포시
+    name: 김포시 도시계획 조례
+    effective: '20250512'
+    mst: '2036273'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2036273
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 18
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 김포시
+  '41591':
+    org: 경기도 화성시
+    name: 화성시 도시계획 조례
+    effective: '20260310'
+    mst: '2115001'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2115001
+    bcr: &id027
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id028
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 70
+      생산녹지: 80
+      자연녹지: 100
+      농림: 60
+      자연환경보전: 50
+    slope_deg: 15
+    elev_m: 15
+    forest_pct: null
+    level: sigungu
+    region: 화성시 만세구
+  '41593':
+    org: 경기도 화성시
+    name: 화성시 도시계획 조례
+    effective: '20260310'
+    mst: '2115001'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2115001
+    bcr: *id027
+    far: *id028
+    slope_deg: 15
+    elev_m: 15
+    forest_pct: null
+    level: sigungu
+    region: 화성시 효행구
+  '41595':
+    org: 경기도 화성시
+    name: 화성시 도시계획 조례
+    effective: '20260310'
+    mst: '2115001'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2115001
+    bcr: *id027
+    far: *id028
+    slope_deg: 15
+    elev_m: 15
+    forest_pct: null
+    level: sigungu
+    region: 화성시 병점구
+  '41597':
+    org: 경기도 화성시
+    name: 화성시 도시계획 조례
+    effective: '20260310'
+    mst: '2115001'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2115001
+    bcr: *id027
+    far: *id028
+    slope_deg: 15
+    elev_m: 15
+    forest_pct: null
+    level: sigungu
+    region: 화성시 동탄구
+  '41610':
+    org: 경기도 광주시
+    name: 광주시 도시계획 조례
+    effective: '20260415'
+    mst: '2123363'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2123363
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 80
+      자연녹지: 100
+      농림: 50
+      자연환경보전: 50
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: 150
+    level: sigungu
+    region: 광주시
+  '41630':
+    org: 경기도 양주시
+    name: 양주시 도시계획 조례
+    effective: '20251124'
+    mst: '2088967'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2088967
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 21
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 양주시
+  '41650':
+    org: 경기도 포천시
+    name: 포천시 도시계획 조례
+    effective: '20260814'
+    mst: '2161793'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2161793
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 포천시
+  '41670':
+    org: 경기도 여주시
+    name: 여주시 도시계획 조례
+    effective: '20251222'
+    mst: '2095885'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2095885
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 여주시
+  '41800':
+    org: 경기도 연천군
+    name: 연천군 군계획조례
+    effective: '20260416'
+    mst: '2123687'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2123687
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 연천군
+  '41820':
+    org: 경기도 가평군
+    name: 가평군 군계획 조례
+    effective: '20260420'
+    mst: '2124585'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2124585
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 가평군
+  '41830':
+    org: 경기도 양평군
+    name: 양평군 도시계획 조례
+    effective: '20241226'
+    mst: '2005435'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2005435
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: 150
+    level: sigungu
+    region: 양평군
+  '43111':
+    org: 충청북도 청주시
+    name: 청주시 도시계획 조례
+    effective: '20260410'
+    mst: '2122093'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2122093
+    bcr: &id029
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id030
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 80
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 청주시 상당구
+  '43112':
+    org: 충청북도 청주시
+    name: 청주시 도시계획 조례
+    effective: '20260410'
+    mst: '2122093'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2122093
+    bcr: *id029
+    far: *id030
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 청주시 서원구
+  '43113':
+    org: 충청북도 청주시
+    name: 청주시 도시계획 조례
+    effective: '20260410'
+    mst: '2122093'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2122093
+    bcr: *id029
+    far: *id030
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 청주시 흥덕구
+  '43114':
+    org: 충청북도 청주시
+    name: 청주시 도시계획 조례
+    effective: '20260410'
+    mst: '2122093'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2122093
+    bcr: *id029
+    far: *id030
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 청주시 청원구
+  '43130':
+    org: 충청북도 충주시
+    name: 충주시 도시계획 조례
+    effective: '20260430'
+    mst: '2126707'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2126707
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 50
+      생산녹지: 80
+      자연녹지: 80
+      농림: 80
+      자연환경보전: 50
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 충주시
+  '43150':
+    org: 충청북도 제천시
+    name: 제천시 도시계획 조례
+    effective: '20260508'
+    mst: '2128449'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2128449
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 60
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 60
+      생산녹지: 80
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 제천시
+  '43720':
+    org: 충청북도 보은군
+    name: 보은군 군계획 조례
+    effective: '20251107'
+    mst: '2082909'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2082909
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 보은군
+  '43730':
+    org: 충청북도 옥천군
+    name: 옥천군 군계획 조례
+    effective: '20250710'
+    mst: '2054307'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2054307
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 옥천군
+  '43740':
+    org: 충청북도 영동군
+    name: 영동군 군계획 조례
+    effective: '20241231'
+    mst: '2005799'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2005799
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 영동군
+  '43745':
+    org: 충청북도 증평군
+    name: 증평군 군계획 조례
+    effective: '20260508'
+    mst: '2152413'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2152413
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 200
+    forest_pct: null
+    level: sigungu
+    region: 증평군
+  '43750':
+    org: 충청북도 진천군
+    name: 진천군 군계획 조례
+    effective: '20260209'
+    mst: '2109249'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2109249
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 진천군
+  '43760':
+    org: 충청북도 괴산군
+    name: 괴산군 군계획 조례
+    effective: '20260206'
+    mst: '2109185'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2109185
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 괴산군
+  '43770':
+    org: 충청북도 음성군
+    name: 음성군 군계획 조례
+    effective: '20260630'
+    mst: '2146217'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2146217
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 음성군
+  '43800':
+    org: 충청북도 단양군
+    name: 단양군 군계획 조례
+    effective: '20251231'
+    mst: '1974929'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=1974929
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 단양군
+  '44131':
+    org: 충청남도 천안시
+    name: 천안시 도시계획 조례
+    effective: '20240517'
+    mst: '1932763'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=1932763
+    bcr: &id031
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id032
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 60
+      생산녹지: 80
+      자연녹지: 80
+      농림: 80
+      자연환경보전: 60
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 천안시 동남구
+  '44133':
+    org: 충청남도 천안시
+    name: 천안시 도시계획 조례
+    effective: '20240517'
+    mst: '1932763'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=1932763
+    bcr: *id031
+    far: *id032
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 천안시 서북구
+  '44150':
+    org: 충청남도 공주시
+    name: 공주시 도시계획 조례
+    effective: '20251215'
+    mst: '2092049'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2092049
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 50
+      생산녹지: 80
+      자연녹지: 80
+      농림: 80
+      자연환경보전: 50
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 공주시
+  '44180':
+    org: 충청남도 보령시
+    name: 보령시 도시계획 조례
+    effective: '20251110'
+    mst: '2083897'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2083897
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 보령시
+  '44200':
+    org: 충청남도 아산시
+    name: 아산시 도시계획 조례
+    effective: '20260818'
+    mst: '2162613'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2162613
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      생산녹지: 80
+      자연녹지: 80
+      농림: 80
+      자연환경보전: 60
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 아산시
+  '44210':
+    org: 충청남도 서산시
+    name: 서산시 도시계획 조례
+    effective: '20251210'
+    mst: '2090923'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2090923
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 서산시
+  '44230':
+    org: 충청남도 논산시
+    name: 논산시 도시계획 조례
+    effective: '20251222'
+    mst: '2095519'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2095519
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 80
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 논산시
+  '44250':
+    org: 충청남도 계룡시
+    name: 계룡시 도시계획 조례
+    effective: '20251120'
+    mst: '2088919'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2088919
+    bcr:
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      자연환경보전: 20
+    far:
+      보전녹지: 80
+      생산녹지: 80
+      자연녹지: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 계룡시
+  '44270':
+    org: 충청남도 당진시
+    name: 당진시 도시계획 조례
+    effective: '20251215'
+    mst: '2092539'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2092539
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 60
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 당진시
+  '44710':
+    org: 충청남도 금산군
+    name: 금산군 도시계획 조례
+    effective: '20251110'
+    mst: '2083975'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2083975
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 금산군
+  '44760':
+    org: 충청남도 부여군
+    name: 부여군 군계획 조례
+    effective: '20260825'
+    mst: '2165187'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2165187
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 부여군
+  '44770':
+    org: 충청남도 서천군
+    name: 서천군 도시계획 조례
+    effective: '20251128'
+    mst: '2089339'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2089339
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 80
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 60
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 서천군
+  '44790':
+    org: 충청남도 청양군
+    name: 청양군 군계획 조례
+    effective: '20260803'
+    mst: '2156897'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2156897
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 50
+      생산녹지: 100
+      자연녹지: 80
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 청양군
+  '44800':
+    org: 충청남도 홍성군
+    name: 홍성군 군계획 조례
+    effective: '20260227'
+    mst: '2113307'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2113307
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 100
+    forest_pct: null
+    level: sigungu
+    region: 홍성군
+  '44810':
+    org: 충청남도 예산군
+    name: 예산군 군계획 조례
+    effective: '20251121'
+    mst: '2088757'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2088757
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 90
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 70
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 예산군
+  '44825':
+    org: 충청남도 태안군
+    name: 태안군 도시계획 조례
+    effective: '20260331'
+    mst: '2117975'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2117975
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      보전녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 태안군
+  '47111':
+    org: 경상북도 포항시
+    name: 포항시 도시계획 조례
+    effective: '20260107'
+    mst: '2106311'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2106311
+    bcr: &id033
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id034
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 10
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 포항시 남구
+  '47113':
+    org: 경상북도 포항시
+    name: 포항시 도시계획 조례
+    effective: '20260107'
+    mst: '2106311'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2106311
+    bcr: *id033
+    far: *id034
+    slope_deg: 10
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 포항시 북구
+  '47130':
+    org: 경상북도 경주시
+    name: 경주시 도시계획 조례
+    effective: '20250715'
+    mst: '2057435'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2057435
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 60
+      생산관리: 60
+      계획관리: 100
+      보전녹지: 60
+      생산녹지: 60
+      자연녹지: 100
+      농림: 60
+      자연환경보전: 60
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 경주시
+  '47150':
+    org: 경상북도 김천시
+    name: 김천시 도시계획 조례
+    effective: '20260226'
+    mst: '2112719'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2112719
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 김천시
+  '47170':
+    org: 경상북도 안동시
+    name: 안동시 도시계획 조례
+    effective: '20260120'
+    mst: '2103263'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2103263
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 30
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 안동시
+  '47190':
+    org: 경상북도 구미시
+    name: 구미시 도시계획 조례
+    effective: '20260708'
+    mst: '2146305'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2146305
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 100
+    level: sigungu
+    region: 구미시
+  '47210':
+    org: 경상북도 영주시
+    name: 영주시 도시계획 조례
+    effective: '20251229'
+    mst: '2099533'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2099533
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 영주시
+  '47230':
+    org: 경상북도 영천시
+    name: 영천시 도시계획 조례
+    effective: '20241227'
+    mst: '2000711'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2000711
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 영천시
+  '47250':
+    org: 경상북도 상주시
+    name: 상주시 도시계획 조례
+    effective: '20260324'
+    mst: '2116275'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2116275
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 상주시
+  '47280':
+    org: 경상북도 문경시
+    name: 문경시 도시계획 조례
+    effective: '20251230'
+    mst: '2100779'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2100779
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 문경시
+  '47290':
+    org: 경상북도 경산시
+    name: 경산시 도시계획 조례
+    effective: '20260107'
+    mst: '2106343'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2106343
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: 120
+    level: sigungu
+    region: 경산시
+  '47730':
+    org: 경상북도 의성군
+    name: 의성군 도시계획 조례
+    effective: '20260417'
+    mst: '2124091'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2124091
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 의성군
+  '47750':
+    org: 경상북도 청송군
+    name: 청송군 도시계획 조례
+    effective: '20250701'
+    mst: '2048533'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2048533
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 18
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 청송군
+  '47760':
+    org: 경상북도 영양군
+    name: 영양군 군계획 조례
+    effective: '20251219'
+    mst: '2094775'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2094775
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 영양군
+  '47770':
+    org: 경상북도 영덕군
+    name: 영덕군 군계획 조례
+    effective: '20251222'
+    mst: '2095663'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2095663
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 영덕군
+  '47820':
+    org: 경상북도
+    name: 경상북도 도시계획 조례
+    effective: '20240219'
+    mst: '1908145'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=1908145
+    bcr: {}
+    far: {}
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 청도군
+  '47830':
+    org: 경상북도 고령군
+    name: 고령군 군계획 조례
+    effective: '20260414'
+    mst: '2122635'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2122635
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: 150
+    level: sigungu
+    region: 고령군
+  '47840':
+    org: 경상북도 성주군
+    name: 성주군 도시계획조례
+    effective: '20251215'
+    mst: '2092439'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2092439
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 성주군
+  '47850':
+    org: 경상북도 칠곡군
+    name: 칠곡군 도시계획 조례
+    effective: '20251226'
+    mst: '2098119'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2098119
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 칠곡군
+  '47900':
+    org: 경상북도 예천군
+    name: 예천군 군계획 조례
+    effective: '20251224'
+    mst: '2096259'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2096259
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 예천군
+  '47920':
+    org: 경상북도 봉화군
+    name: 봉화군 군계획 조례
+    effective: '20251215'
+    mst: '2093765'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2093765
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 봉화군
+  '47930':
+    org: 경상북도 울진군
+    name: 울진군 군계획조례
+    effective: '20230501'
+    mst: '1807053'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=1807053
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 울진군
+  '47940':
+    org: 경상북도 울릉군
+    name: 울릉군 군계획 조례
+    effective: '20260420'
+    mst: '2125271'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2125271
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 30
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 울릉군
+  '48121':
+    org: 경상남도
+    name: 경상남도 도시계획 조례
+    effective: '20260102'
+    mst: '2105665'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2105665
+    bcr: &id035 {}
+    far: &id036 {}
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 창원시 의창구
+  '48123':
+    org: 경상남도
+    name: 경상남도 도시계획 조례
+    effective: '20260102'
+    mst: '2105665'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2105665
+    bcr: *id035
+    far: *id036
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 창원시 성산구
+  '48125':
+    org: 경상남도
+    name: 경상남도 도시계획 조례
+    effective: '20260102'
+    mst: '2105665'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2105665
+    bcr: *id035
+    far: *id036
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 창원시 마산합포구
+  '48127':
+    org: 경상남도
+    name: 경상남도 도시계획 조례
+    effective: '20260102'
+    mst: '2105665'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2105665
+    bcr: *id035
+    far: *id036
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 창원시 마산회원구
+  '48129':
+    org: 경상남도
+    name: 경상남도 도시계획 조례
+    effective: '20260102'
+    mst: '2105665'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2105665
+    bcr: *id035
+    far: *id036
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 창원시 진해구
+  '48170':
+    org: 경상남도 진주시
+    name: 진주시 도시계획조례
+    effective: '20260504'
+    mst: '2127421'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2127421
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 60
+      생산관리: 60
+      계획관리: 100
+      보전녹지: 60
+      생산녹지: 60
+      자연녹지: 80
+      농림: 60
+      자연환경보전: 50
+    slope_deg: 12
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 진주시
+  '48220':
+    org: 경상남도 통영시
+    name: 통영시 도시계획조례
+    effective: '20260102'
+    mst: '2105587'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2105587
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 100
+    forest_pct: null
+    level: sigungu
+    region: 통영시
+  '48240':
+    org: 경상남도 사천시
+    name: 사천시 도시계획조례
+    effective: '20260702'
+    mst: '2138397'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2138397
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 80
+      자연녹지: 80
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 18
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 사천시
+  '48250':
+    org: 경상남도 김해시
+    name: 김해시 도시계획 조례
+    effective: '20260401'
+    mst: '2118405'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2118405
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 70
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 18
+    elev_m: null
+    forest_pct: 100
+    level: sigungu
+    region: 김해시
+  '48270':
+    org: 경상남도 밀양시
+    name: 밀양시 도시계획 조례
+    effective: '20250508'
+    mst: '2035513'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2035513
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 밀양시
+  '48310':
+    org: 경상남도 거제시
+    name: 거제시 도시계획 조례
+    effective: '20260409'
+    mst: '2120831'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2120831
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 60
+      생산녹지: 80
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: 100
+    level: sigungu
+    region: 거제시
+  '48330':
+    org: 경상남도 양산시
+    name: 양산시 도시계획 조례
+    effective: '20251211'
+    mst: '2091561'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2091561
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 21
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 양산시
+  '48720':
+    org: 경상남도 의령군
+    name: 의령군 계획 조례
+    effective: '20260325'
+    mst: '2116509'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2116509
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 의령군
+  '48730':
+    org: 경상남도 함안군
+    name: 함안군 계획 조례
+    effective: '20260630'
+    mst: '2136625'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2136625
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 100
+    forest_pct: null
+    level: sigungu
+    region: 함안군
+  '48740':
+    org: 경상남도 창녕군
+    name: 창녕군계획 조례
+    effective: '20251218'
+    mst: '2093817'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2093817
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 창녕군
+  '48820':
+    org: 경상남도 고성군
+    name: 고성군계획 조례
+    effective: '20251222'
+    mst: '2095695'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2095695
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 70
+    forest_pct: 150
+    level: sigungu
+    region: 고성군
+  '48840':
+    org: 경상남도 남해군
+    name: 남해군 도시계획 조례
+    effective: '20260407'
+    mst: '2119933'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2119933
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: 80
+    level: sigungu
+    region: 남해군
+  '48850':
+    org: 경상남도 하동군
+    name: 하동군 계획 조례
+    effective: '20260424'
+    mst: '2125873'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2125873
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 하동군
+  '48860':
+    org: 경상남도 산청군
+    name: 산청군 군계획 조례
+    effective: '20251127'
+    mst: '2089703'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2089703
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 산청군
+  '48870':
+    org: 경상남도 함양군
+    name: 함양군 군계획 조례
+    effective: '20260806'
+    mst: '2162351'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2162351
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: 150
+    level: sigungu
+    region: 함양군
+  '48880':
+    org: 경상남도 거창군
+    name: 거창군 계획조례
+    effective: '20251231'
+    mst: '2103751'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2103751
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 50
+      생산녹지: 80
+      자연녹지: 80
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 18
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 거창군
+  '48890':
+    org: 경상남도 합천군
+    name: 합천군 군계획 조례
+    effective: '20260416'
+    mst: '2123757'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2123757
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 60
+      생산녹지: 80
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: null
+    level: sigungu
+    region: 합천군
+  '50110':
+    org: 제주특별자치도
+    name: 제주특별자치도 도시계획 조례
+    effective: '20251224'
+    mst: '2096577'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2096577
+    bcr: &id037
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far: &id038
+      보전관리: 60
+      생산관리: 60
+      계획관리: 50
+      보전녹지: 60
+      자연녹지: 80
+      농림: 50
+      자연환경보전: 50
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 제주시
+  '50130':
+    org: 제주특별자치도
+    name: 제주특별자치도 도시계획 조례
+    effective: '20251224'
+    mst: '2096577'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2096577
+    bcr: *id037
+    far: *id038
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 서귀포시
+  '51110':
+    org: 강원특별자치도 춘천시
+    name: 춘천시 도시계획 조례
+    effective: '20260813'
+    mst: '2160495'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2160495
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 130
+    level: sigungu
+    region: 춘천시
+  '51130':
+    org: 강원특별자치도 원주시
+    name: 원주시 도시계획 조례
+    effective: '20251231'
+    mst: '2106795'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2106795
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 17
+    elev_m: null
+    forest_pct: 130
+    level: sigungu
+    region: 원주시
+  '51150':
+    org: 강원특별자치도 강릉시
+    name: 강릉시 도시계획 조례
+    effective: '20251231'
+    mst: '2102673'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102673
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 강릉시
+  '51170':
+    org: 강원특별자치도 동해시
+    name: 동해시 도시계획 조례
+    effective: '20251212'
+    mst: '2091767'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2091767
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 동해시
+  '51190':
+    org: 강원특별자치도 태백시
+    name: 태백시 도시계획 조례
+    effective: '20260213'
+    mst: '2110049'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2110049
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 22
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 태백시
+  '51210':
+    org: 강원특별자치도 속초시
+    name: 속초시 도시계획 조례
+    effective: '20260410'
+    mst: '2121085'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2121085
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 30
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 속초시
+  '51230':
+    org: 강원특별자치도 삼척시
+    name: 삼척시 도시계획 조례
+    effective: '20260901'
+    mst: '2165579'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2165579
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 50
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 삼척시
+  '51720':
+    org: 강원특별자치도 홍천군
+    name: 홍천군 군계획 조례
+    effective: '20260410'
+    mst: '2121139'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2121139
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 홍천군
+  '51730':
+    org: 강원특별자치도 횡성군
+    name: 횡성군 군계획 조례
+    effective: '20260416'
+    mst: '2125215'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2125215
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 횡성군
+  '51750':
+    org: 강원특별자치도 영월군
+    name: 영월군 군계획 조례
+    effective: '20260206'
+    mst: '2109147'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2109147
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 영월군
+  '51760':
+    org: 강원특별자치도 평창군
+    name: 평창군 군계획 조례
+    effective: '20241025'
+    mst: '1979117'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=1979117
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 평창군
+  '51770':
+    org: 강원특별자치도 정선군
+    name: 정선군 군계획 조례
+    effective: '20250415'
+    mst: '2029433'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2029433
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 정선군
+  '51780':
+    org: 강원특별자치도 철원군
+    name: 철원군 도시계획조례
+    effective: '20260828'
+    mst: '2165573'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2165573
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 50
+    forest_pct: 150
+    level: sigungu
+    region: 철원군
+  '51790':
+    org: 강원특별자치도 화천군
+    name: 화천군 군계획 조례
+    effective: '20260327'
+    mst: '2117227'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2117227
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 화천군
+  '51800':
+    org: 강원특별자치도 양구군
+    name: 양구군 도시계획조례
+    effective: '20251219'
+    mst: '2094605'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2094605
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 양구군
+  '51810':
+    org: 강원특별자치도 인제군
+    name: 인제군 군계획 조례
+    effective: '20251229'
+    mst: '2099217'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2099217
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 인제군
+  '51820':
+    org: 강원특별자치도 고성군
+    name: 고성군 군계획 조례
+    effective: '20260629'
+    mst: '2136061'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2136061
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 고성군
+  '51830':
+    org: 강원특별자치도 양양군
+    name: 양양군 군계획 조례
+    effective: '20251231'
+    mst: '2102945'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102945
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 양양군
+  '52111':
+    org: 전북특별자치도
+    name: 전북특별자치도 도시계획 조례
+    effective: '20250711'
+    mst: '2056297'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2056297
+    bcr: &id039 {}
+    far: &id040 {}
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 전주시 완산구
+  '52113':
+    org: 전북특별자치도
+    name: 전북특별자치도 도시계획 조례
+    effective: '20250711'
+    mst: '2056297'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2056297
+    bcr: *id039
+    far: *id040
+    slope_deg: null
+    elev_m: null
+    forest_pct: null
+    level: sido
+    region: 전주시 덕진구
+  '52130':
+    org: 전북특별자치도 군산시
+    name: 군산시 도시계획 조례
+    effective: '20250415'
+    mst: '2030847'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2030847
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 12
+    elev_m: 45
+    forest_pct: 100
+    level: sigungu
+    region: 군산시
+  '52140':
+    org: 전북특별자치도 익산시
+    name: 익산시 도시계획 조례
+    effective: '20251231'
+    mst: '2103039'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2103039
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 50
+    slope_deg: 18
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 익산시
+  '52180':
+    org: 전북특별자치도 정읍시
+    name: 정읍시 도시계획 조례
+    effective: '20260410'
+    mst: '2121657'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2121657
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      자연환경보전: 80
+    slope_deg: 21
+    elev_m: 100
+    forest_pct: 100
+    level: sigungu
+    region: 정읍시
+  '52190':
+    org: 전북특별자치도 남원시
+    name: 남원시 도시계획 조례
+    effective: '20260709'
+    mst: '2147077'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2147077
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 21
+    elev_m: null
+    forest_pct: 100
+    level: sigungu
+    region: 남원시
+  '52210':
+    org: 전북특별자치도 김제시
+    name: 김제시 도시계획 조례
+    effective: '20251216'
+    mst: '2092743'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2092743
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 18
+    elev_m: 50
+    forest_pct: 100
+    level: sigungu
+    region: 김제시
+  '52710':
+    org: 전북특별자치도 완주군
+    name: 완주군 계획 조례
+    effective: '20251218'
+    mst: '2093577'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2093577
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+    slope_deg: 21
+    elev_m: null
+    forest_pct: 150
+    level: sigungu
+    region: 완주군
+  '52720':
+    org: 전북특별자치도 진안군
+    name: 진안군 계획 조례
+    effective: '20260330'
+    mst: '2117603'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2117603
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 100
+    forest_pct: 100
+    level: sigungu
+    region: 진안군
+  '52730':
+    org: 전북특별자치도 무주군
+    name: 무주군 군계획 조례
+    effective: '20251210'
+    mst: '2090963'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2090963
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 무주군
+  '52740':
+    org: 전북특별자치도 장수군
+    name: 장수군 군계획 조례
+    effective: '20260401'
+    mst: '2118571'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2118571
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: null
+    forest_pct: null
+    level: sigungu
+    region: 장수군
+  '52750':
+    org: 전북특별자치도 임실군
+    name: 임실군 계획 조례
+    effective: '20260225'
+    mst: '2111947'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2111947
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 80
+      자연녹지: 80
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 25
+    elev_m: 100
+    forest_pct: 150
+    level: sigungu
+    region: 임실군
+  '52770':
+    org: 전북특별자치도 순창군
+    name: 순창군 계획 조례
+    effective: '20260818'
+    mst: '2163587'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2163587
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 20
+    elev_m: 50
+    forest_pct: 100
+    level: sigungu
+    region: 순창군
+  '52790':
+    org: 전북특별자치도 고창군
+    name: 고창군 계획 조례
+    effective: '20251231'
+    mst: '2105969'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2105969
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: null
+    elev_m: 250
+    forest_pct: 100
+    level: sigungu
+    region: 고창군
+  '52800':
+    org: 전북특별자치도 부안군
+    name: 부안군 군계획 조례
+    effective: '20250718'
+    mst: '2059843'
+    url: https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2059843
+    bcr:
+      보전관리: 20
+      생산관리: 20
+      계획관리: 40
+      보전녹지: 20
+      생산녹지: 20
+      자연녹지: 20
+      농림: 20
+      자연환경보전: 20
+    far:
+      보전관리: 80
+      생산관리: 80
+      계획관리: 100
+      보전녹지: 80
+      생산녹지: 100
+      자연녹지: 100
+      농림: 80
+      자연환경보전: 80
+    slope_deg: 21
+    elev_m: 150
+    forest_pct: 100
+    level: sigungu
+    region: 부안군
+missing:
+- 12210 전남광주통합특별시 동구
+- 12240 전남광주통합특별시 서구
+- 12270 전남광주통합특별시 남구
+- 12300 전남광주통합특별시 북구
+- 12330 전남광주통합특별시 광산구
+- 12770 전남광주통합특별시 장흥군
+- 12810 전남광주통합특별시 무안군
+dropped:
+- 강원특별자치도 삼척시 용적률 농림 30% ∉ 시행령 50~80%
+- 강원특별자치도 평창군 건폐율 농림 30% > 시행령 20%
+- 강원특별자치도 평창군 용적률 농림 120% ∉ 시행령 50~80%
+- 경상남도 창원시 건폐율 계획관리 50% > 시행령 40%
+- 경상남도 창원시 건폐율 농림 30% > 시행령 20%
+- 부산광역시 용적률 농림 100% ∉ 시행령 50~80%
+- 전북특별자치도 완주군 용적률 자연환경보전 20% ∉ 시행령 50~80%
+- 전북특별자치도 전주시 건폐율 계획관리 50% > 시행령 40%
+- 전북특별자치도 전주시 건폐율 생산녹지 30% > 시행령 20%
+- 제주특별자치도 용적률 생산녹지 30% ∉ 시행령 50~100%
+- 충청남도 태안군 건폐율 계획관리 50% > 시행령 40%
+- 충청남도 태안군 건폐율 생산녹지 30% > 시행령 20%

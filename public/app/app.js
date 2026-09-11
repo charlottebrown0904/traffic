@@ -4653,6 +4653,72 @@ function parcelFacts(parcel, zones) {
     + '</tbody></table>';
 }
 
+/* 개발 한도 (docs/dev-constraints-and-costs.md §6 (1) · C2·C4).
+ *
+ * '토지 정보' 바로 아래. 용도지역·지목·구역이 바로 위에 있고 이 표는
+ * 그것들의 **결과**다. 값 옆에 근거(조례·조문)를 적어 '왜 40%냐' 를
+ * 화면이 답하게 한다.
+ *
+ * 두 층이다. 법(시행령)은 상한 **범위**, 조례는 그 안의 **값**. 조례 값이
+ * 있으면 그것을 크게, 없으면 시행령 상한을 '≤' 로 적고 조례 미확인이라
+ * 말한다. 경사·표고·임목은 조례의 **문턱**만 적는다 — 필지의 경사·표고는
+ * 아직 못 잰다(DEM 없음). 문턱만 있고 잰 값이 없으면 '통과' 라고 쓰지
+ * 않는다. */
+function parcelLimits(parcel, Z) {
+  if (!Z || !Z.law) return '';
+  const e = escapeHtml;
+  const won = (v) => Math.round(v).toLocaleString('ko-KR');
+  const code = String(parcel.pnu || '').slice(0, 5);
+  const ref = (Z.sg || {})[code];
+  const ord = ref ? (Z.ord || {})[ref[0]] : null;
+  const zone = String(parcel.land_use || '').replace(/지역$/, '');
+  const law = Z.law[zone];
+  const bcr = ord && ord.bcr && ord.bcr[zone] != null ? ord.bcr[zone] : null;
+  const far = ord && ord.far && ord.far[zone] != null ? ord.far[zone] : null;
+  const rows = [];
+  if (law) {
+    const bcrV = bcr != null ? bcr : law.bcr_max;
+    const farV = far != null ? far : law.far_max;
+    rows.push(['건폐율', bcr != null
+      ? `<b>${bcr}%</b> <em>조례</em>`
+      : `≤ <b>${law.bcr_max}%</b> <em>시행령 상한 · 조례 값 미확인</em>`]);
+    rows.push(['용적률', far != null
+      ? `<b>${far}%</b> <em>조례</em>`
+      : `<b>${law.far_min}~${law.far_max}%</b> <em>시행령 범위 · 조례 값 미확인</em>`]);
+    if (parcel.area_m2) {
+      rows.push(['최대 규모', `바닥 ${won(parcel.area_m2 * bcrV / 100)}㎡ · 연면적 ${won(parcel.area_m2 * farV / 100)}㎡`
+        + ` <em>(${won(parcel.area_m2)}㎡ × ${bcrV}% · ${farV}%)</em>`]);
+    }
+  } else if (zone) {
+    rows.push(['건폐율·용적률', `<em>${e(zone)} 은 용도지역별 상한 표에 없습니다</em>`]);
+  }
+  if (ord) {
+    rows.push(['경사도', ord.slope != null
+      ? `허가 기준 <b>${ord.slope}° 미만</b> <em>필지 경사는 아직 못 잼 (DEM 없음)</em>`
+      : '<em>조례에 숫자 기준 없음</em>']);
+    rows.push(['표고', ord.elev != null
+      ? `기준 지반고 위 <b>${ord.elev} m 미만</b> <em>필지 표고는 아직 못 잼</em>`
+      : '<em>조례에 숫자 기준 없음</em>']);
+    rows.push(['입목축적', ord.forest != null
+      ? `시군 평균의 <b>${ord.forest}% 미만</b> <em>임상도 오기 전 · 확정은 현장 조사</em>`
+      : '<em>조례에 숫자 기준 없음</em>']);
+  }
+  if (!rows.length) return '';
+  const basis = ord
+    ? `<a href="${e(ord.url)}" target="_blank" rel="noopener">${e(ord.name)}</a>`
+      + (ord.eff ? ` <em>(시행 ${e(String(ord.eff).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))})</em>` : '')
+      + (ref[1] === 'sido' ? ' <em>· 자치구·행정시는 광역시·도 조례를 따릅니다</em>' : '')
+    : '<em>이 시군구 조례는 아직 못 받았습니다 — 시행령 상한만 적었습니다</em>';
+  return '<details class="pc-limits"><summary>개발 한도 <em>건폐율·용적률·개발행위 문턱</em></summary>'
+    + '<table class="pc-facts"><tbody>'
+    + rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')
+    + '</tbody></table>'
+    + `<p class="pc-limits-src">근거: ${basis}</p>`
+    + '<p class="pc-limits-note">조례의 첫 값입니다. 완화·강화 단서(성장관리계획구역·기존 공장 등)는 '
+    + '원문 조문에 있고, 지구·구역이 걸리면 그쪽이 먼저입니다.</p>'
+    + '</details>';
+}
+
 /* 카드 머리의 주소 (요구사항 2026-09-10).
  *
  * **지번이 주인공이다.** 도로명주소는 건물이 있는 곳에만 붙는데,
@@ -4785,6 +4851,19 @@ function valuePanel(key) {
  * 있는 척하지 않는다. 마디가 하나라도 비면 산출을 **보류**한다. */
 let valuationTables = null;
 const stdlandCache = {};
+let zoningLimits = null;
+
+/* 개발 한도 표 (C1). 시행령 상한(법) + 시군구 조례 값. 원본은
+ * config/zoning_limits.yaml (python -m redt.cli zoning-limits 가 만든다).
+ * 없으면 카드는 그 칸을 건너뛴다 — 값이 없는데 있는 척하지 않는다. */
+async function loadZoningLimits() {
+  if (zoningLimits) return zoningLimits;
+  try {
+    const r = await fetch('/app/data/zoning-limits.json', { cache: 'no-cache' });
+    if (r.ok) zoningLimits = await r.json();
+  } catch (e) { /* 없으면 개발 한도 칸이 안 선다. 나머지는 그대로. */ }
+  return zoningLimits;
+}
 
 /* 실패는 **기억하지 않는다.** 처음 누를 때 조각이 없었다고 그 세션 내내
  * '곧 공개' 로 굳으면, 잠깐의 망 오류가 기능 하나를 통째로 끈다.
@@ -5078,7 +5157,7 @@ function wireValueButtons() {
   });
 }
 
-function parcelCard(parcel, diag, at, addr, zones) {
+function parcelCard(parcel, diag, at, addr, zones, limits) {
   const won = (v) => Math.round(v).toLocaleString('ko-KR');
   const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
   const rows = (diag ? diag.axes : []).map((a) => {
@@ -5100,6 +5179,7 @@ function parcelCard(parcel, diag, at, addr, zones) {
     + valueButtons()
     + '<h4 class="pc-sub">토지 정보</h4>'
     + parcelFacts(parcel, zones)
+    + parcelLimits(parcel, limits || zoningLimits)
     + parcelZones(zones)
     + (peer
        ? `<p class="pc-peer">${escapeHtml(peer.level)}의 `
@@ -5185,13 +5265,14 @@ async function askParcel(latlng) {
   const lon = latlng.lng.toFixed(6);
   showDetail(true);
   detailBody('<div class="detail-empty"><p>필지를 확인하는 중…</p></div>');
-  const [stats, res] = await Promise.all([
+  const [stats, res, limits] = await Promise.all([
     loadParcelStats(),
     fetch(`/api/tile?mode=parcel&lat=${lat}&lon=${lon}`)
       .then((r) => (r.status === 429
         ? { tooMany: Number(r.headers.get('retry-after')) || 60 }
         : r.json()))
       .catch(() => null),
+    loadZoningLimits(),
   ]);
   // **막힌 것과 자료가 없는 것을 구분해 적는다.** 둘을 같은 글로
   // 보여주면 '이 땅은 정보가 없다' 로 읽히는데, 사실은 잠시 뒤 다시
@@ -5216,7 +5297,7 @@ async function askParcel(latlng) {
   drawParcelShape(res.geom);
   const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng], res.zones || []) : null;
   detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng],
-                        res.addr, res.zones || []));
+                        res.addr, res.zones || [], limits));
   window.__parcel = { parcel, diag, geom: res.geom || null,
                       addr: res.addr || null, zones: res.zones || [] };
 }
