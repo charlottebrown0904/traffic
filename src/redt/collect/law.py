@@ -27,6 +27,11 @@ from .http import get_once, polite_sleep
 
 SEARCH = "https://www.law.go.kr/DRF/lawSearch.do"
 SERVICE = "https://www.law.go.kr/DRF/lawService.do"
+# 같은 자료의 둘째 길 — 공공데이터포털 '법제처 국가법령정보 공유서비스'(15000115).
+# apis.data.go.kr 은 중계기가 DATA_GO_KR_KEY 를 끼워 주고, 법제처처럼 호출 IP 를
+# 등록하라고 하지 않는다 (run 23: law.go.kr 은 서울 중계기로도 "IP·도메인 등록" 거부).
+PORTAL_SEARCH = "https://apis.data.go.kr/1170000/law/lawSearchList.do"
+PORTAL_SERVICE = "https://apis.data.go.kr/1170000/law/lawService.do"
 RAW_DIR = PROCESSED / "ordinance"          # 본문 통째 (Actions 캐시에 남는다)
 OUT_DIR = ROOT / "data" / "ordinance"      # 뽑은 조문 (저장소에 커밋)
 
@@ -78,9 +83,64 @@ def _call(url: str, params: dict) -> tuple[dict | list | None, str]:
     return payload, ""
 
 
+def _xml_obj(node):
+    """XML 을 dict/list 로 — 조문 걷기(articles)가 JSON 과 같은 길을 타게."""
+    kids = list(node)
+    if not kids:
+        return (node.text or "").strip()
+    out: dict = {}
+    for k in kids:
+        v = _xml_obj(k)
+        if k.tag in out:
+            if not isinstance(out[k.tag], list):
+                out[k.tag] = [out[k.tag]]
+            out[k.tag].append(v)
+        else:
+            out[k.tag] = v
+    return out
+
+
+def _portal(url: str, params: dict) -> tuple[dict | list | None, str]:
+    """공공데이터포털 길. serviceKey 는 중계기가 끼운다. XML 이 오면 dict 로 바꾼다."""
+    import xml.etree.ElementTree as ET
+    resp = get_once(url, {"serviceKey": VIA_RELAY, "target": "ordin", "type": "JSON", **params}, timeout=40)
+    body = resp.text
+    if resp.status_code != 200:
+        return None, f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", body[:200])
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        try:
+            payload = _xml_obj(ET.fromstring(body))
+        except ET.ParseError:
+            return None, "JSON/XML 아님: " + re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))[:240]
+    text = json.dumps(payload, ensure_ascii=False)[:300]
+    if not _find_rows(payload) and not articles(payload):
+        return None, "행 없음: " + text
+    return payload, ""
+
+
+_ROUTE = {"portal": False}
+
+
+def use_portal() -> bool:
+    return _ROUTE["portal"] or os.getenv("LAW_ROUTE") == "portal"
+
+
 def search(query: str, page: int = 1, display: int = 100) -> tuple[list[dict], int, str]:
     """목록 한 쪽. (행들, 전체 건수, 오류)."""
-    payload, why = _call(SEARCH, {"query": query, "display": str(display), "page": str(page)})
+    params = {"query": query, "display": str(display), "page": str(page)}
+    if use_portal():
+        payload, why = _portal(PORTAL_SEARCH, params)
+    else:
+        payload, why = _call(SEARCH, params)
+        if payload is None and "검증에 실패" in why:
+            # 법제처가 호출 IP 를 거부하면 포털 길로 갈아탄다 (이 실행 동안 계속).
+            payload, why2 = _portal(PORTAL_SEARCH, params)
+            if payload is not None:
+                _ROUTE["portal"] = True
+            else:
+                why = f"{why} / 포털: {why2}"
     if payload is None:
         return [], 0, why
     rows = _find_rows(payload)
@@ -89,6 +149,8 @@ def search(query: str, page: int = 1, display: int = 100) -> tuple[list[dict], i
 
 
 def body(mst: str) -> tuple[dict | None, str]:
+    if use_portal():
+        return _portal(PORTAL_SERVICE, {"MST": str(mst)})
     return _call(SERVICE, {"MST": str(mst)})
 
 
@@ -184,9 +246,13 @@ def probe(query: str = "안성시 도시계획 조례") -> dict:
     except Exception as e:                          # noqa: BLE001
         out["direct"] = {"error": f"{type(e).__name__}: {str(e)[:160]}"}
         print(f"직접 호출 실패: {out['direct']['error']}")
-    # 2) 우리 경로 — 중계기(서울) 우선, 거부되면 직접
+    # 2) 공공데이터포털 길 — 무엇이 오는지 그대로
+    payload, why = _portal(PORTAL_SEARCH, {"query": query, "display": "3"})
+    out["portal"] = {"why": why, "keys": _keys(payload) if payload is not None else []}
+    print(f"포털 길: " + ("됨 · 위 키 " + str(_keys(payload)[:8]) if payload is not None else why))
+    # 3) 우리 경로 — 법제처(중계기) → 거부되면 포털
     rows, total, why = search(query, display=5)
-    out["route"] = "relay" if _oc() == VIA_RELAY else "direct"
+    out["route"] = "portal" if use_portal() else ("relay" if _oc() == VIA_RELAY else "direct")
     print(f"경로 {out['route']}: {len(rows)}건" + (f" — {why}" if why else ""))
     out["search"] = {"n": len(rows), "total": total, "why": why,
                      "keys": sorted(rows[0].keys()) if rows else []}
