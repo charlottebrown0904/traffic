@@ -41,7 +41,10 @@ import statistics
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-LEDGER = ROOT / "data" / "appraisal" / "ledger.tsv"
+# 원장은 비공개 DB 에 있다 (appraisal_db). 저장소에는 파일이 없다.
+from . import appraisal_db as _adb
+
+LEDGER = _adb.PRIVATE_LEDGER
 
 # ─────────────────────────────────────────────────────────────────
 # 1. 분류 — 용도지역군 · 지목군 · 지대
@@ -455,7 +458,7 @@ def time_factor(base_date: dt.date, at: dt.date,
 # 5. 그 밖의 요인
 #
 # 두 갈래를 다 적고 하나로 결정한다 — 평가서가 그렇게 한다.
-#   평가선례 기준: 원장(ledger.tsv)의 f_other.  (시군구 → 시도 → 전국)
+#   평가선례 기준: 비공개 원장(appraisal_db)의 f_other.  (시군구 → 시도 → 전국)
 #   거래사례 기준: 우리 실거래 DB 의 실거래단가 ÷ 개별공시지가 중앙값.
 #     검산: 원장 39건의 (결정단가 ÷ 개별공시지가) 중앙 2.3 = f_other
 #     중앙 2.3 — 개별요인 중앙이 1.0 이라 두 자가 같은 것을 가리킨다.
@@ -464,9 +467,15 @@ def time_factor(base_date: dt.date, at: dt.date,
 MIN_CELL = 3
 
 
-def load_ledger(path: Path = LEDGER) -> list[dict]:
-    with open(path, encoding="utf-8") as f:
-        return list(csv.DictReader(f, delimiter="\t"))
+def load_ledger(path: Path | None = None) -> list[dict]:
+    """평가서 원장. Supabase(service key) → data/private 손 사본 → 빈 목록.
+
+    빈 목록이면 그 밖의 요인은 '자료 없음' 이 된다 — 1.00 으로 메우지
+    않는다. 러너에 SUPABASE_URL·SUPABASE_SERVICE_KEY 가 없을 때가 그렇다."""
+    if path is not None:
+        with open(path, encoding="utf-8") as f:
+            return list(csv.DictReader(f, delimiter="\t"))
+    return _adb.load_cases()
 
 
 def _num(v):
@@ -755,6 +764,7 @@ def tables_for_web() -> dict:
         "time_clamp": [0.98, 1.03],
         "zone_groups": ZONE_GROUPS, "use_groups": USE_GROUPS,
         "ledger_n": len(rows),
+        "ledger_source": _adb.source(),
     }
 
 

@@ -2,8 +2,9 @@
 
 두 가지를 본다.
 
-  1. 원장 검산 — data/appraisal/ledger.tsv 의 41건에 격차율 표를 대입해
-     평가사가 적은 개별요인과 견준다. 표를 손대면 여기서 걸린다.
+  1. 원장 검산 — 비공개 원장(Supabase 또는 data/private/ledger.tsv)의
+     41건에 격차율 표를 대입해 평가사가 적은 개별요인과 견준다. 표를
+     손대면 여기서 걸린다. 원장이 없는 환경(CI)에서는 건너뛴다.
   2. 산출표 — 다섯 마디가 순서대로 곱해지고, 없는 마디는 1.00 으로
      메워지지 않고 '보류' 가 되는가.
 
@@ -66,11 +67,17 @@ check(any("개발제한구역" in w for w in r["warnings"]), "개발제한구역
 
 print()
 print("3. 원장 검산 — 평가서 41건")
-c = V.check_ledger()
-print(f"     n={c['n']} · 중앙 {c['median']} · ±10% {c['within_10']} · ±15% {c['within_15']}")
-check(c["n"] >= 40, "40건 이상 대입")
-check(0.95 <= c["median"] <= 1.05, "예측/관측 중앙값이 1.00 ± 0.05")
-check(c["within_15"] / c["n"] >= 0.6, "±15% 안이 60% 이상")
+HAVE_LEDGER = bool(V.load_ledger())
+if not HAVE_LEDGER:
+    print("     (원장 없음 — SUPABASE 미설정이고 data/private/ledger.tsv 도 없다. 건너뜀)")
+    c = V.check_ledger()
+    check(c["n"] == 0 and c["median"] is None, "원장이 없으면 검산은 비고, 죽지 않는다")
+else:
+    c = V.check_ledger()
+    print(f"     n={c['n']} · 중앙 {c['median']} · ±10% {c['within_10']} · ±15% {c['within_15']}")
+    check(c["n"] >= 40, "40건 이상 대입")
+    check(0.95 <= c["median"] <= 1.05, "예측/관측 중앙값이 1.00 ± 0.05")
+    check(c["within_15"] / c["n"] >= 0.6, "±15% 안이 60% 이상")
 
 print()
 print("4. 비교표준지 선정")
@@ -99,10 +106,14 @@ check(t["factor"] <= 1.03, "추세 대체는 평가서 관측 범위 안으로 �
 
 print()
 print("6. 그 밖의 요인 — 원장에서, 물러난 단계를 밝힌다")
-o = V.ledger_other_factor("경기", "화성시", "계획관리지역", "전")
-check(o["median"] and o["n"] >= 3 and o["level"], f"관리 전·답 → {o['median']} (n={o['n']}, {o['level']})")
-o2 = V.ledger_other_factor("제주", "제주시", "계획관리지역", "임야")
-check(o2["level"] and o2["level"].startswith("전국"), "표본 없는 시도는 전국으로 물러난다")
+if HAVE_LEDGER:
+    o = V.ledger_other_factor("경기", "화성시", "계획관리지역", "전")
+    check(o["median"] and o["n"] >= 3 and o["level"], f"관리 전·답 → {o['median']} (n={o['n']}, {o['level']})")
+    o2 = V.ledger_other_factor("제주", "제주시", "계획관리지역", "임야")
+    check(o2["level"] and o2["level"].startswith("전국"), "표본 없는 시도는 전국으로 물러난다")
+else:
+    o = V.ledger_other_factor("경기", "화성시", "계획관리지역", "전")
+    check(o["median"] is None and o["n"] == 0, "원장이 없으면 '자료 없음' (1.00 으로 메우지 않는다)")
 d = V.decide_other({"median": 2.0, "n": 3, "q1": 1.8, "q3": 2.4, "source": "평가선례"},
                    {"median": 3.0, "n": 30, "q1": 2.5, "q3": 3.5, "source": "거래사례"})
 check(2.7 < d["factor"] < 3.0, f"두 갈래는 건수 가중 기하평균 ({d['factor']})")

@@ -57,6 +57,7 @@ test: test-server
 	$(PY) scripts/test_landprice.py
 	$(PY) scripts/test_parcelscore.py
 	$(PY) scripts/test_valuation.py
+	$(PY) scripts/test_appraisal_db.py
 	$(PY) scripts/test_urban.py
 	$(PY) scripts/test_stdland.py
 	$(PY) scripts/test_analysis.py

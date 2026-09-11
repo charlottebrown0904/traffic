@@ -404,8 +404,9 @@ def fetch_vworld(con, sigungu_codes: list[str], years: list[int] | None = None,
     for code in sigungu_codes:
         for year in (years or [None]):
             if year is not None:
+                # 5자리면 그 시군구, 2자리(훑어 둔 코드가 없는 시도)면 그 시도 전체.
                 have = con.execute("SELECT count(*) FROM std_land WHERE source='vworld' "
-                                   "AND sigungu_cd=? AND year=?", [code, year]).fetchone()[0]
+                                   "AND sigungu_cd LIKE ? AND year=?", [code + "%", year]).fetchone()[0]
                 if have:
                     skipped += 1
                     continue

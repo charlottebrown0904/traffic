@@ -7,13 +7,17 @@
 #   drive   드라이브 CSV 를 받아 std_land 에 적재 (파일이 링크 공유여야 한다)
 #   odcloud uddi 로 끝까지 넘겨 적재
 #   vworld  시군구별 속성 조회로 적재 (ldCode 5자리 · 연도)
+#   value-test  현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다
+#
+# 비공개 감정평가 인자 DB(Supabase)는 SUPABASE_URL · SUPABASE_SERVICE_KEY 로
+# 읽는다. 없으면 '평가선례 자료 없음' 으로 돈다 — 값을 지어내지 않는다.
 name: 표준지공시지가 (탐침 · 적재)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld"
+        description: "probe / drive / odcloud / vworld / value-test"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -25,11 +29,20 @@ on:
         description: "odcloud 모드 — 쪽 수 상한 (비우면 전부)"
         default: ""
       sido:
-        description: "vworld 모드 — 시도 코드 (쉼표). 전국은 비움"
+        description: "vworld 모드 — 시도 코드 (쉼표). 전국은 all (비우면 기본값이 들어간다)"
         default: "41"
       years:
         description: "vworld 모드 — 연도 (쉼표). 비우면 전체"
         default: "2025,2026"
+      sigungu:
+        description: "value-test 모드 — 시군구 코드 5자리"
+        default: "41550"
+      zone:
+        description: "value-test 모드 — 용도지역 조각"
+        default: "계획관리"
+      n:
+        description: "value-test 모드 — 임의로 뽑을 거래 수"
+        default: "5"
 
 concurrency:
   group: collect
@@ -43,6 +56,8 @@ jobs:
       PYTHONPATH: src
       REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
       REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -87,12 +102,18 @@ jobs:
           set -o pipefail
           python -m redt.cli load-stdland --vworld "${{ inputs.sido }}" --years "${{ inputs.years }}" 2>&1 | tee /tmp/stdland.log
 
+      - name: 현재 가치 검증 (실거래 대입)
+        if: inputs.mode == 'value-test'
+        run: |
+          set -o pipefail
+          python -m redt.cli value-test --sigungu "${{ inputs.sigungu }}" --zone "${{ inputs.zone }}" --n "${{ inputs.n }}" 2>&1 | tee /tmp/stdland.log
+
       - name: 받은 파일은 캐시에 안 남긴다
         if: inputs.mode == 'drive'
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test'
         uses: actions/cache/save@v4
         with:
           path: |
