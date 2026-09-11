@@ -332,7 +332,7 @@ def flat_text(x) -> str:
     def walk(v):
         if isinstance(v, dict):
             for k, w in v.items():
-                if k in ("조문번호", "조문여부", "조문키", "조문시행일자", "조문변경여부"):
+                if k in ("조문번호", "조문여부", "조문키", "조문시행일자", "조문변경여부", "조문제목"):
                     continue
                 walk(w)
         elif isinstance(v, list):
@@ -360,10 +360,10 @@ def art_no(raw: str) -> str:
 def relevant(payload) -> list[dict]:
     out = []
     for a in articles(payload):
-        text = flat_text(a)
-        if any(k in text for k in KEYWORDS):
+        text, title = flat_text(a), _pick(a, "조문제목")
+        if any(k in title + " " + text for k in KEYWORDS):
             no = _pick(a, "조문번호", "조번호")
-            out.append({"no": no, "label": art_no(no), "title": _pick(a, "조문제목"), "text": text[:8000]})
+            out.append({"no": no, "label": art_no(no), "title": title, "text": text[:8000]})
     return out
 
 
@@ -640,3 +640,43 @@ def fetch(query: str = "", limit: int | None = None) -> dict:
             w.writerows(index)
     print(f"본문 새로 받음 {fetched}건 · 실패 {failed}건 · 관심 조문 파일 {len(index)}개 → {OUT_DIR}")
     return {"listed": len(rows), "wanted": len(want), "fetched": fetched, "failed": failed, "files": len(index)}
+
+
+def sido_of(org: str) -> str:
+    """'경기도 안성시' → 경기도, '강원특별자치도' → 강원특별자치도, '세종특별자치시' → 그대로."""
+    return (org or "").split()[0] if org else "기타"
+
+
+def bundle(out_dir: Path | None = None) -> list[Path]:
+    """드라이브에 올릴 꼴 — 시도별 마크다운(관심 조문 전문) + 전국 요약표.
+    JSON 250개를 그대로 올리면 휴대폰에서 못 읽는다."""
+    out_dir = out_dir or (OUT_DIR / "bundle")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    index = json.loads((OUT_DIR / "index.json").read_text(encoding="utf-8"))
+    by: dict[str, list[dict]] = {}
+    for row in index:
+        by.setdefault(sido_of(row["org"]), []).append(row)
+    written = []
+    for sido, rows in sorted(by.items()):
+        lines = [f"# {sido} 도시계획조례 — 관심 조문 (건폐율·용적률·개발행위허가 기준)", "",
+                 f"출처: 국가법령정보센터(law.go.kr) 자치법규 · 받은 날 {__import__('datetime').date.today()}", "",
+                 "| 기관 | 조례 | 시행일 | 건폐율 계획관리 | 생산관리 | 보전관리 | 자연녹지 | 용적률 계획관리 | 경사도 | 표고 | 입목축적 |",
+                 "|---|---|---|---|---|---|---|---|---|---|---|"]
+        for r in rows:
+            lines.append(f"| {r['org']} | {r['name']} | {r['effective']} | {r['건폐율_계획관리']} | {r['건폐율_생산관리']} | "
+                         f"{r['건폐율_보전관리']} | {r['건폐율_자연녹지']} | {r['용적률_계획관리']} | {r['경사도_도']} | "
+                         f"{r['표고_m']} | {r['입목축적_pct']} |")
+        lines += ["", "빈칸은 조문에서 숫자를 자동으로 못 찾은 것 — 아래 원문을 보라.", ""]
+        for r in rows:
+            doc = json.loads((OUT_DIR / r["file"]).read_text(encoding="utf-8"))
+            lines += [f"## {r['org']} — {r['name']} (시행 {r['effective']} · MST {r['mst']})", ""]
+            for a in doc["articles"]:
+                lines += [f"### {a['label']}({a['title']})", "", a["text"], ""]
+        path = out_dir / f"{sido}_도시계획조례_관심조문.md"
+        path.write_text("\n".join(lines), encoding="utf-8")
+        written.append(path)
+    if (OUT_DIR / "summary.csv").exists():
+        dst = out_dir / "전국_도시계획조례_요약.csv"
+        dst.write_bytes((OUT_DIR / "summary.csv").read_bytes())
+        written.append(dst)
+    return written

@@ -246,6 +246,13 @@ def cmd_load_ordinances(args):
     print(info)
 
 
+def cmd_ordinance_bundle(args):
+    """data/ordinance → 시도별 마크다운 + 전국 요약표 (드라이브에 올릴 꼴)."""
+    from .collect import law
+    for path in law.bundle():
+        print(f"{path.stat().st_size:>9,}  {path.name}")
+
+
 def cmd_value_test(args):
     """현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다.
 
@@ -2655,6 +2662,8 @@ def main(argv=None):
     p.add_argument("--query", default="", help="쉼표로 여럿 · 비우면 law.QUERIES")
     p.add_argument("--limit", type=int, default=None, help="처음 n건만 (시험용)")
     p.set_defaults(func=cmd_load_ordinances)
+    p = sub.add_parser("ordinance-bundle", help="data/ordinance → 시도별 md + 요약 csv (드라이브용)")
+    p.set_defaults(func=cmd_ordinance_bundle)
 
     p = sub.add_parser("value-test",
                        help="현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다")
