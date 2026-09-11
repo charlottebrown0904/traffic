@@ -5930,7 +5930,10 @@ document.addEventListener('keydown', (e) => {
  * 얹으면 지도가 그만큼 늦게 뜨는데, 검색은 대부분의 방문에서 안 쓰인다.
  */
 const FIND_MAX = 8;
-const FIND_ZOOM = { sido: 9, sigungu: 11, umd: 13 };
+const FIND_ZOOM = { sido: 9, sigungu: 11, umd: 13, addr: 18 };
+// 지번이 붙어 있는가 — '건업리 140-25', '산 12', '140번지'. 끝에 숫자가
+// 오면 지번으로 본다 (요구사항 2026-09-11: 주소를 치면 그 필지로).
+const FIND_JIBUN_RE = /(^|\s)(산\s?)?\d{1,4}(-\d{1,4})?(번지)?$/;
 let findIndex = null;
 let findLoading = null;
 
@@ -5987,7 +5990,91 @@ function findMatch(rows, q) {
   return starts.sort(by).concat(inside.sort(by)).slice(0, FIND_MAX);
 }
 
-function findGo(row) {
+/* 지번 검색의 주소 보완. '곤지암읍 건업리 140-25' 라고만 치면 지오코더가
+   어느 광주인지 모른다. 색인에서 읍·면·동을 찾아 시·도와 시·군·구를 앞에
+   붙인다 — '경기도 광주시 곤지암읍 건업리 140-25'. 이미 시·군·구가 들어
+   있으면 시·도만 채운다. 못 찾으면 친 그대로 보낸다. */
+// 시·군·구 코드 앞 두 자리 → 시·도. 지역 표(regions.json)에 없을 때의 뒷받침이다.
+const SIDO_BY_PREFIX = {
+  11: '서울특별시', 26: '부산광역시', 27: '대구광역시', 28: '인천광역시', 29: '광주광역시',
+  30: '대전광역시', 31: '울산광역시', 36: '세종특별자치시', 41: '경기도', 43: '충청북도',
+  44: '충청남도', 46: '전라남도', 47: '경상북도', 48: '경상남도', 50: '제주특별자치도',
+  51: '강원특별자치도', 52: '전북특별자치도',
+};
+function findAddressText(q, rows) {
+  const clean = q.replace(/\s+/g, ' ').trim();
+  const words = clean.split(' ');
+  const regions = state.regions || [];
+  const sidoOf = (sgName, code) => {
+    const byName = regions.find((r) => r.name === sgName);
+    if (byName && byName.sido) return byName.sido;
+    const c = String(code || '');
+    const byCode = regions.find((r) => String(r.sigungu_cd || '').slice(0, 2) === c.slice(0, 2));
+    return (byCode && byCode.sido) || SIDO_BY_PREFIX[c.slice(0, 2)] || '';
+  };
+  // 이미 시·군·구가 들어 있나 (시·도도 함께면 그대로).
+  const hasSg = regions.find((r) => words.includes(r.name));
+  if (hasSg) {
+    const sd = hasSg.sido || '';
+    return sd && !clean.startsWith(sd) && !words.includes(sd) ? `${sd} ${clean}` : clean;
+  }
+  // 숫자 앞의 낱말들로 읍·면·동(·리) 을 찾는다 — 긴 것부터.
+  const head = words.filter((w) => !/^(산\s?)?\d/.test(w) && !/^\d/.test(w));
+  for (let n = Math.min(head.length, 2); n >= 1; n -= 1) {
+    const name = head.slice(head.length - n).join(' ');
+    const hit = (rows || []).find((r) => r.k === 'umd' && (r.n === name || r.n.endsWith(' ' + name)));
+    if (hit && hit.p) {
+      const sd = sidoOf(hit.p, hit.sg);
+      // 색인의 이름('곤지암읍 건업리')이 친 것보다 길면 그것으로 갈아 끼운다.
+      const rest = words.filter((w) => !head.slice(head.length - n).includes(w));
+      return [sd, hit.p, hit.n].filter(Boolean).join(' ') + (rest.length ? ' ' + rest.join(' ') : '');
+    }
+  }
+  return clean;
+}
+
+/* 주소 → 좌표 → 그 필지. 서버(api/tile mode=geocode)가 브이월드 지오코더를
+   대신 부른다 (키가 페이지에 없다). 좌표가 오면 그 자리로 옮기고 지도를
+   누른 것과 같은 길(askParcel)로 필지 윤곽과 카드를 연다. */
+async function findGoAddress(row, list) {
+  const tab = document.querySelector('.tab[data-view="explore"]');
+  if (tab && !tab.classList.contains('is-active')) tab.click();
+  if (list) {
+    list.innerHTML = `<li class="find-none">주소를 찾는 중… <em>${escapeHtml(row.p)}</em></li>`;
+    list.hidden = false;
+  }
+  let hit = null;
+  let why = '';
+  try {
+    const r = await fetch(`/api/tile?mode=geocode&q=${encodeURIComponent(row.p)}`);
+    if (r.status === 429) why = '요청이 너무 잦습니다. 잠시 뒤 다시 해 주세요.';
+    else if (r.ok) hit = await r.json();
+    else why = ((await r.json().catch(() => ({}))).tileError) || '주소를 찾지 못했습니다.';
+  } catch (err) {
+    why = '서버에 닿지 못했습니다.';
+  }
+  if (!hit || !Number.isFinite(Number(hit.lat)) || !Number.isFinite(Number(hit.lon))) {
+    if (list) {
+      list.innerHTML = `<li class="find-none">${escapeHtml(why || '주소를 찾지 못했습니다.')}`
+        + ' <em>(예: 광주시 곤지암읍 건업리 140-25 — 시·군·읍·면·리와 지번을 함께)</em></li>';
+      list.hidden = false;
+    }
+    window.__find = { went: null, level: 'addr', failed: why || true };
+    return;
+  }
+  const lat = Number(hit.lat);
+  const lon = Number(hit.lon);
+  if (list) list.hidden = true;
+  if (!map) return;
+  map.setView([lat, lon], FIND_ZOOM.addr);
+  setTimeout(() => map.invalidateSize(), 0);
+  window.__find = { went: hit.text || row.p, level: 'addr', at: [lat, lon] };
+  // 지도를 누른 것과 같다 — 필지 윤곽 + 카드.
+  askParcel({ lat, lng: lon });
+}
+
+function findGo(row, list) {
+  if (row.k === 'addr') { findGoAddress(row, list); return; }
   // 검색칸이 머리띠로 올라가면서(2026-09-09) 다른 탭에서도 보인다.
   // 거기서 고르면 지도가 안 보이는 채로 움직인다 — 탭부터 옮긴다.
   const tab = document.querySelector('.tab[data-view="explore"]');
@@ -6014,15 +6101,16 @@ function wireFind() {
   const paint = () => {
     if (!hits.length) {
       list.innerHTML = '<li class="find-none">찾는 이름이 없습니다'
-        + ' <em>(읍·면·동까지 찾습니다 — 지번은 자료가 가려져 있어'
-        + ' 못 찾습니다)</em></li>';
+        + ' <em>(읍·면·동까지 찾고, 지번까지 적으면 그 필지로 갑니다 —'
+        + ' 예: 곤지암읍 건업리 140-25)</em></li>';
       list.hidden = false;
       input.setAttribute('aria-expanded', 'true');
       return;
     }
-    const kind = { sido: '시·도', sigungu: '시·군·구', umd: '읍·면·동' };
+    const kind = { sido: '시·도', sigungu: '시·군·구', umd: '읍·면·동', addr: '필지로 이동' };
     list.innerHTML = hits.map((r, i) =>
       `<li role="option" data-i="${i}"${i === cur ? ' class="is-on"' : ''}`
+      + `${r.k === 'addr' ? ' data-k="addr"' : ''}`
       + ` aria-selected="${i === cur}">`
       + `<b>${escapeHtml(r.n)}</b>`
       + `<span>${escapeHtml(r.p || '')}</span>`
@@ -6034,7 +6122,13 @@ function wireFind() {
   const run = async () => {
     const q = input.value;
     if (!q.trim()) { close(); return; }
-    hits = findMatch(await findLoad(), q);
+    const rows = await findLoad();
+    hits = findMatch(rows, q);
+    // 지번이 붙어 있으면 **필지로 가는 줄을 맨 위에** 둔다. 이름 후보는
+    // 그 아래 — '건업리 140-25' 를 쳤는데 건업리 중심으로 가면 틀린 답이다.
+    if (FIND_JIBUN_RE.test(q.trim())) {
+      hits = [{ k: 'addr', n: q.trim(), p: findAddressText(q, rows) }].concat(hits);
+    }
     cur = -1;
     paint();
   };
@@ -6051,7 +6145,7 @@ function wireFind() {
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const pick = hits[cur >= 0 ? cur : 0];
-      if (pick) { findGo(pick); input.blur(); close(); }
+      if (pick) { input.blur(); if (pick.k !== 'addr') close(); findGo(pick, list); }
     } else if (e.key === 'Escape') {
       close();
     }
@@ -6060,9 +6154,10 @@ function wireFind() {
     const li = e.target.closest('li[data-i]');
     if (!li) return;
     e.preventDefault();
-    findGo(hits[Number(li.dataset.i)]);
+    const pick = hits[Number(li.dataset.i)];
     input.blur();
-    close();
+    if (!pick || pick.k !== 'addr') close();   // 주소는 찾는 동안 목록에 진행을 보인다
+    if (pick) findGo(pick, list);
   });
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.map-find')) close();

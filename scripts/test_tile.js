@@ -661,6 +661,42 @@ const call = async (query, method = 'GET', headers = {}) => {
         `${sea.code} · 호출 ${calls.length}회`);
 
   console.log();
+  console.log('17. 주소 → 좌표 (mode=geocode) — 주소를 치면 그 필지로');
+  const geoReply = (body) => ({
+    ok: true, status: 200,
+    headers: { get: (k) => (k === 'content-type' ? 'application/json' : null) },
+    text: async () => JSON.stringify(body),
+  });
+  // 브이월드 지오코더의 실제 응답 모양 (collect/geocode.py 가 읽는 그것).
+  stubFetch(geoReply({ response: { status: 'OK', refined: { text: '경기도 광주시 곤지암읍 건업리 140-25' },
+                                   result: { crs: 'EPSG:4326', point: { x: '127.394760', y: '37.402800' } } } }));
+  const geo = await call({ mode: 'geocode', q: ' 경기도  광주시 곤지암읍 건업리 140-25 ' });
+  check('좌표를 숫자로 돌려준다', geo.code === 200 && geo.json_ && geo.json_.lat === 37.4028 && geo.json_.lon === 127.39476,
+        geo.body);
+  check('지번(PARCEL)으로 먼저 묻고, 주소의 겹친 공백은 정리해 보낸다',
+        calls.length === 1 && /req\/address\?/.test(calls[0].url) && /request=getcoord/.test(calls[0].url)
+        && /type=PARCEL/.test(calls[0].url) && /address=%EA%B2%BD%EA%B8%B0%EB%8F%84\+%EA%B4%91%EC%A3%BC%EC%8B%9C/.test(calls[0].url),
+        calls.map((c) => c.url.replace(/key=[^&]+/, 'key=***')).join(' | '));
+  check('찾은 주소는 길게 캐시한다 (주소는 안 움직인다)',
+        /s-maxage=2592000/.test(geo.headers['cache-control'] || ''), geo.headers['cache-control']);
+  check('응답에 키가 없다', !/key=/.test(geo.body || ''));
+  stubFetch(geoReply({ response: { status: 'NOT_FOUND' } }));
+  const geoNone = await call({ mode: 'geocode', q: '있을리없는읍 없는리 1' });
+  check('지번으로 없으면 도로명(ROAD)으로 한 번 더 묻고, 그래도 없으면 404 를 짧게 캐시',
+        geoNone.code === 404 && calls.length === 2 && /type=ROAD/.test(calls[1].url)
+        && /s-maxage=60/.test(geoNone.headers['cache-control'] || ''),
+        `${geoNone.code} · 호출 ${calls.length}번 · ${geoNone.headers['cache-control']}`);
+  stubFetch(geoReply({ response: { status: 'ERROR', error: { code: 'INCORRECT_KEY', text: '…' } } }));
+  const geoErr = await call({ mode: 'geocode', q: '경기도 광주시 곤지암읍 건업리 140-25' });
+  check('한도·키 오류는 사용자 잘못이 아니라고 502 로 말한다 (404 가 아니다)',
+        geoErr.code === 502 && /INCORRECT_KEY/.test(geoErr.body), geoErr.body);
+  stubFetch(geoReply({}));
+  const geoBad = await call({ mode: 'geocode', q: '' });
+  check('주소가 없으면 상류를 부르지 않는다', geoBad.code === 400 && calls.length === 0);
+  const geoLong = await call({ mode: 'geocode', q: 'ㄱ'.repeat(81) });
+  check('80자를 넘으면 받지 않는다', geoLong.code === 400 && calls.length === 0);
+
+  console.log();
   console.log('16. 속도 제한 — 훑는 프로그램이 브이월드 한도를 대신 태우지 못하게');
   // 이 함수가 도는 것이 곧 브이월드를 부르는 것이다. 엣지 캐시가
   // 받아낸 요청은 여기까지 안 오므로, 여기가 정확한 자리다.

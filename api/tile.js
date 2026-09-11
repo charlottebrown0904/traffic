@@ -834,8 +834,14 @@ module.exports = async function handler(req, res) {
   // 뒤가 된다. 필지 조회는 캐시가 안 먹고 한 번에 두세 번 나가므로
   // 따로, 더 좁게 본다.
   const mode = String(req.query.mode || "");
-  if (overRate(req, mode === "parcel" ? RATE_LIMIT_PARCEL : RATE_LIMIT)) {
+  // 주소 → 좌표도 필지 조회와 같은 좁은 한도다 — 같은 브이월드 키의 하루
+  // 한도(지오코딩 3만 건)를 쓴다.
+  if (overRate(req, (mode === "parcel" || mode === "geocode") ? RATE_LIMIT_PARCEL : RATE_LIMIT)) {
     return tooMany(res);
+  }
+  // 주소를 치면 그 필지로 간다 (요구사항 2026-09-11). 레이어와 무관하다.
+  if (mode === "geocode") {
+    return geocode(req, res);
   }
 
   const want = String(req.query.layer || "zoning");
@@ -887,6 +893,61 @@ module.exports = async function handler(req, res) {
   }, null, (req.headers || {}).host);
   return sendTile(res, out);
 };
+
+/* ── 주소 → 좌표 (요구사항 2026-09-11: "주소 입력 시 해당 필지로 이동") ──
+ *
+ * 브이월드 지오코더(req/address getcoord). 지번(PARCEL)로 먼저 묻고 없으면
+ * 도로명(ROAD)으로 다시 묻는다 — 사람은 둘을 섞어 친다. 수집 파이프라인
+ * (src/redt/collect/geocode.py)과 같은 호출이라 응답 모양도 같다:
+ *
+ *   response.status  OK | NOT_FOUND | ERROR
+ *   response.result.point.{x,y}   경도, 위도 (epsg:4326)
+ *
+ * 찾은 주소는 길게 캐시한다 — 주소는 움직이지 않는다. 못 찾은 것은 짧게.
+ * 키는 응답에 싣지 않는다 (url 을 오류 문구에 넣지 않는다). */
+const GEOCODE_MAX_LEN = 80;
+
+async function geocode(req, res) {
+  const q = String(req.query.q || "").replace(/\s+/g, " ").trim();
+  if (!q || q.length > GEOCODE_MAX_LEN || /[<>\n\r\t]/.test(q)) {
+    return fail(res, 400, `q(주소)가 필요합니다 (${GEOCODE_MAX_LEN}자 이내)`);
+  }
+  const host = (req.headers || {}).host;
+  for (const type of ["PARCEL", "ROAD"]) {
+    const out = await callVworld({
+      service: "address", request: "getcoord", version: "2.0",
+      crs: "epsg:4326", type, address: q, format: "json",
+    }, VWORLD_ADDRESS, host);
+    if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
+    if (!out.upstream) {
+      return fail(res, out.timedOut ? 504 : 502,
+        out.timedOut ? `브이월드 응답 없음 (${TIMEOUT_MS / 1000}초 초과)` : "브이월드 호출 실패");
+    }
+    let body;
+    try { body = JSON.parse(await out.upstream.text()); }
+    catch (err) { return fail(res, 502, "브이월드 지오코더가 JSON 을 주지 않았습니다"); }
+    const r = (body || {}).response || {};
+    if (r.status === "OK") {
+      const pt = ((r.result || {}).point) || {};
+      const lat = Number(pt.y);
+      const lon = Number(pt.x);
+      if (Number.isFinite(lat) && Number.isFinite(lon)) {
+        res.setHeader("cache-control", CACHE_OK);
+        return res.status(200).json({
+          lat, lon, type,
+          text: ((r.refined || {}).text) || q,
+        });
+      }
+      return fail(res, 502, "OK 인데 좌표 칸을 못 읽었습니다 — 응답 모양 확인");
+    }
+    if (r.status !== "NOT_FOUND") {
+      // ERROR — 한도 초과·인증·장애. 사용자 잘못이 아니다.
+      const code = ((r.error || {}).code) || r.status || "?";
+      return fail(res, 502, `브이월드 지오코더 오류 (${code})`);
+    }
+  }
+  return fail(res, 404, "주소를 찾지 못했습니다 — 시·군과 읍·면·동을 함께 적어 주세요");
+}
 
 /** 브이월드가 준 것을 그림으로 돌려준다. 배경도 용도지역도 여기를 지난다. */
 async function sendTile(res, out) {

@@ -690,6 +690,17 @@ const FAKE_LEAFLET = () => {
     // 경계선 칸 (mode=parcels). **뒤에 건다** — Playwright 는 나중에
     // 건 규칙을 먼저 보고, 위의 'mode=parcel*' 은 'parcels' 도
     // 삼킨다. 순서가 뒤바뀌면 이 규칙이 죽는다.
+    // 주소 → 좌표 (mode=geocode). 무엇을 물었는지 기록한다.
+    const geoAsked = [];
+    await page.route('**/api/tile?mode=geocode*', (r) => {
+      const u = new URL(r.request().url());
+      geoAsked.push(u.searchParams.get('q'));
+      return r.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({ lat: 37.4028, lon: 127.39476, type: 'PARCEL',
+                               text: '경기도 광주시 곤지암읍 건업리 140-25' }),
+      });
+    });
     let cadHits = [];
     await page.route('**/api/tile?mode=parcels*', (r) => {
       const u = new URL(r.request().url());
@@ -2348,8 +2359,43 @@ const FAKE_LEAFLET = () => {
       return document.getElementById('find-list').textContent;
     });
     check('없으면 없다고 말한다', /없습니다/.test(none), none.slice(0, 40));
-    check('지번을 못 찾는 이유를 그 자리에서 밝힌다',
-          /읍·면·동까지/.test(none) && /가려져/.test(none), none.slice(0, 80));
+    check('지번까지 적으면 필지로 간다고 그 자리에서 알린다',
+          /읍·면·동까지/.test(none) && /지번까지/.test(none), none.slice(0, 80));
+
+    // 지번 검색 (요구사항 2026-09-11: "주소 입력 시 해당 필지로 이동").
+    // 시·군을 안 쳐도 색인으로 '경기도 광주시' 를 채워 지오코더에 묻고,
+    // 좌표가 오면 지도를 누른 것과 같은 길(필지 조회)로 카드를 연다.
+    const parcelBefore = parcelHits;
+    const addr = await page.evaluate(async () => {
+      const q = document.getElementById('find-q');
+      q.value = '곤지암읍 건업리 140-25';
+      q.dispatchEvent(new Event('input'));
+      await new Promise((r) => setTimeout(r, 400));
+      const list = document.getElementById('find-list');
+      const first = list.querySelector('li[data-i]');
+      const firstText = first ? first.textContent : '';
+      const firstKind = first ? first.dataset.k : '';
+      first.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 900));
+      const out = { firstText, firstKind, went: window.__find || null,
+                    detail: (document.getElementById('detail') || {}).textContent || '' };
+      // 뒤 절은 **영업소 상세가 열려 있는 상태**를 전제한다 (3절에서 고른 것).
+      // 필지 카드가 그 자리를 차지했으니 같은 영업소를 다시 고른다.
+      const x = document.querySelector('#detail .detail-close');
+      if (x) x.click();
+      const row = document.querySelector('tr[data-id], [data-id]');
+      if (row) row.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 800));
+      return out;
+    });
+    check('지번을 치면 맨 위 후보가 "필지로 이동" 이다',
+          addr.firstKind === 'addr' && /필지로 이동/.test(addr.firstText), addr.firstText);
+    check('시·군을 안 쳐도 색인으로 시·도·시·군을 채워 묻는다',
+          geoAsked.length === 1 && geoAsked[0] === '경기도 광주시 곤지암읍 건업리 140-25', geoAsked.join(' | '));
+    check('좌표로 옮기고 그 필지를 조회한다 (지도를 누른 것과 같은 길)',
+          !!addr.went && addr.went.level === 'addr' && Array.isArray(addr.went.at)
+          && Math.abs(addr.went.at[0] - 37.4028) < 1e-6 && parcelHits > parcelBefore,
+          `${JSON.stringify(addr.went)} · 필지 조회 ${parcelBefore} → ${parcelHits}`);
 
     // 겹침을 **실제로 잰다.** 지난번에 칩이 Leaflet +/- 와 겹쳐 지적받았다.
     const overlap = await page.evaluate(() => {
