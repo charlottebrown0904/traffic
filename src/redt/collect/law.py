@@ -60,12 +60,12 @@ def _oc() -> str:
     return os.getenv("LAW_OC") or VIA_RELAY
 
 
-def _direct(url: str, params: dict, oc: str | None = None):
+def _direct(url: str, params: dict, oc: str | None = None, timeout: int = 30):
     """중계기를 거치지 않고 바로 부른다 — 러너 IP 로. 등록 도메인을 Referer 로 싣는다.
     oc="test" 는 법제처 안내서의 공개 견본 계정 — 포털 상세링크가 이것을 쓴다."""
     import requests
     oc = oc or os.getenv("LAW_OC") or "test"
-    return requests.get(url, params={**params, "OC": oc}, timeout=30,
+    return requests.get(url, params={**params, "OC": oc}, timeout=timeout,
                         headers={"User-Agent": "Mozilla/5.0 redt-research", "Referer": REFERER})
 
 
@@ -531,7 +531,7 @@ def wanted(rows: list[dict]) -> list[dict]:
         if "폐지" in _pick(r, "제개정구분명"):
             continue
         org = _pick(r, "지자체기관명", "기관명", "org")
-        if org.startswith("구 ") or org.startswith("구)"):
+        if org.startswith(("구 ", "구)", "(구)")):
             continue
         key = (org, re.sub(r"\s", "", name))
         row = {**r, "_mst": _pick(r, "자치법규일련번호", "MST", "ordinSeq", "ID"), "_name": name, "_org": org,
@@ -546,7 +546,9 @@ def body_xml(mst: str) -> tuple[dict | None, str]:
     안 되면 중계기로 같은 주소(중계기가 OC=test 를 살려 보내면 통한다). (payload, 오류)."""
     import xml.etree.ElementTree as ET
     params = {"target": "ordin", "MST": str(mst), "type": "XML"}
-    tries = (lambda: _direct(SERVICE, params, oc="test"),
+    # 미국 러너의 직접 호출은 가끔 접속 자체가 막힌다(ConnectTimeout). 30초씩 기다리면
+    # 200건이 한 시간을 넘기므로(run 32) 짧게 끊고 중계기로 넘어간다.
+    tries = (lambda: _direct(SERVICE, params, oc="test", timeout=(6, 20)),
              lambda: get_once(SERVICE, {"OC": "test", **params}, timeout=40))
     why = ""
     for call in tries:
@@ -596,9 +598,14 @@ def fetch(query: str = "", limit: int | None = None) -> dict:
     print(f"목록 합계 {len(rows)}건 → 도시계획조례 {len(want)}건 (기관별 최신 하나)")
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
+    import time
     fetched = failed = 0
     index = []
-    for r in want[:limit] if limit else want:
+    t0 = time.time()
+    todo = want[:limit] if limit else want
+    for i, r in enumerate(todo, 1):
+        if i % 20 == 0:
+            print(f"  … {i}/{len(todo)} · {time.time() - t0:,.0f}초 · 새로 받음 {fetched} · 실패 {failed}", flush=True)
         mst = r["_mst"]
         raw_j, raw_h = RAW_DIR / f"{mst}.json", RAW_DIR / f"{mst}.html"
         payload, source = None, ""
@@ -671,7 +678,10 @@ def bundle(out_dir: Path | None = None) -> list[Path]:
             doc = json.loads((OUT_DIR / r["file"]).read_text(encoding="utf-8"))
             lines += [f"## {r['org']} — {r['name']} (시행 {r['effective']} · MST {r['mst']})", ""]
             for a in doc["articles"]:
-                lines += [f"### {a['label']}({a['title']})", "", a["text"], ""]
+                text = a["text"]
+                if a["title"] and text.startswith(a["title"] + " "):     # 예전 산출은 제목을 되풀이했다
+                    text = text[len(a["title"]) + 1:]
+                lines += [f"### {a['label']}({a['title']})", "", text, ""]
         path = out_dir / f"{sido}_도시계획조례_관심조문.md"
         path.write_text("\n".join(lines), encoding="utf-8")
         written.append(path)
