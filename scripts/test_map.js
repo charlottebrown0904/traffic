@@ -3011,6 +3011,83 @@ const FAKE_LEAFLET = () => {
     check('미래 가치도 이름과 곧 공개뿐이다',
           /미래 가치/.test(vfut) && /곧 공개합니다/.test(vfut)
           && !/산업단지/.test(vfut));
+
+    // ── 현재 가치 2판 — 표준지 조각과 격차율 표가 있으면 산출표를 낸다
+    //    (2026-09-11). 숫자는 valuation.json(원본 src/redt/valuation.py)
+    //    에서 읽고, 화면은 산식만 옮겼다. 마디가 비면 보류다.
+    const VAL = {
+      road_index: [['맹지', 0.8], ['광대', 1.25], ['중로', 1.18], ['소로', 1.1],
+                   ['(불)', 0.88], ['불가', 0.88], ['(가)', 1], ['가능', 1]],
+      road_corner_bonus: 0.03,
+      shape_index: [['정방', 1], ['가장', 1], ['가로장방', 1], ['세장', 1], ['세로장방', 1], ['장방', 1],
+                    ['사다리', 0.98], ['삼각', 0.93], ['역삼각', 0.93], ['부정', 0.95], ['자루', 0.9]],
+      slope_index: { '임야지대': [['평지', 1], ['완경사', 0.95], ['급경사', 0.82]],
+                     '*': [['평지', 1], ['완경사', 0.97], ['급경사', 0.88]] },
+      use_mismatch: { '임야|대': [0.9, '지목 임야'] },
+      special: { '현황도로': [0.33, '현황이 도로'], '자연취락지구': [1.15, '자연취락지구 안'] },
+      must_match: ['개발제한구역', '농업진흥', '보전산지'], std_known: ['개발제한구역'],
+      area_rules: { '주택지대': [[0, 0.5, 0.95, '과소 필지'], [0.5, 3, 1, null], [3, null, 0.95, '과대 필지']] },
+      other: { '관리|전·답': { '*': { median: 2.34, q1: 1.82, q3: 2.45, n: 6, level: '전국 · 용도지역군 · 지목군', source: '평가선례' },
+                            '41': { median: 2.32, q1: 1.82, q3: 2.45, n: 5, level: '같은 시·도 · 용도지역군 · 지목군', source: '평가선례' } } },
+      time_clamp: [0.98, 1.03],
+      zone_groups: [['관리', ['관리']], ['녹지', ['녹지']], ['농림', ['농림', '자연환경']],
+                    ['주거', ['주거', '일주', '전주']], ['상업', ['상업']], ['공업', ['공업']]],
+      use_groups: [['임야', ['임야', '자연림']], ['전·답', ['전', '답']], ['대', ['대', '주거']], ['공장·도로', ['공장', '도로']]],
+    };
+    const STD = { sigungu: '41111', n: 3, rows: [
+      // A — 같은 동리, 세로(가)·부정형. 도로 1단·형상 벌점 0.5 → 뽑혀야 한다.
+      { pnu: '4111110300100050000', ld: '4111110300', nm: '경기도 광주시 초월읍 지월리', jb: '5',
+        y: 2025, pr: 150000, jm: '전', ar: 1500, lu: '계획관리지역', lu2: null, dz: null,
+        us: '전', rs: '세로한면(가)', sh: '부정형', sl: '평지', lon: null, lat: null },
+      // B — 다른 동리, 조건은 같다. 벌점 1.0.
+      { pnu: '4111110400100070000', ld: '4111110400', nm: '경기도 광주시 초월읍 대쌍령리', jb: '7',
+        y: 2025, pr: 200000, jm: '전', ar: 1600, lu: '계획관리지역', lu2: null, dz: null,
+        us: '전', rs: '중로한면', sh: '가로장방', sl: '평지', lon: null, lat: null },
+      // C — 자연녹지. 용도지역이 달라 후보가 아니다.
+      { pnu: '4111110300100090000', ld: '4111110300', nm: '경기도 광주시 초월읍 지월리', jb: '9',
+        y: 2025, pr: 300000, jm: '전', ar: 1500, lu: '자연녹지지역', lu2: null, dz: null,
+        us: '전', rs: '중로한면', sh: '가로장방', sl: '평지', lon: null, lat: null },
+    ] };
+    await page.route('**/app/data/valuation.json*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify(VAL) }));
+    await page.route('**/app/data/stdland-41111.json*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json', body: JSON.stringify(STD) }));
+    const vcalc = await page.evaluate(async () => {
+      // 닫았다가 다시 연다 — 조각이 이제 있으므로 산출표가 나와야 한다.
+      const b = document.querySelector('.pc-val[data-val="now"]');
+      b.click(); await new Promise((ok) => setTimeout(ok, 50));
+      b.click(); await new Promise((ok) => setTimeout(ok, 400));
+      return document.getElementById('pc-val-box').innerHTML;
+    });
+    const vtxt = vcalc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+    check('표준지가 있으면 산출표를 낸다 (다섯 마디)',
+          /비교표준지/.test(vcalc) && /시점수정/.test(vcalc) && /지역요인/.test(vcalc)
+          && /개별요인/.test(vcalc) && /그 밖의 요인/.test(vcalc), vtxt.slice(0, 120));
+    const vhead = vtxt.slice(vtxt.indexOf('비교표준지'), vtxt.indexOf('시점수정'));
+    check('같은 동리의 표준지 A 를 고른다 (다른 동리 B 는 벌점 1.0)',
+          /지월리 5/.test(vhead) && !/대쌍령리/.test(vhead), vhead.slice(0, 160));
+    check('용도지역이 다른 표준지는 후보에서 뺀다',
+          !/지월리 9/.test(vcalc));
+    // 개별요인 = 도로 1.18/1.00 × 형상 1.00/0.95(→1.053) × 지세 1 = 1.243 (항목마다 셋째 자리로)
+    check('개별요인이 격차율의 곱이다 (1.243)', /1\.243/.test(vcalc),
+          (vcalc.match(/개별요인[^<]*<\/th><td><b>[^<]*/) || ['없음'])[0]);
+    check('그 밖의 요인은 시·도 값 (경기 관리 전·답 2.32)', /2\.32/.test(vcalc) && /같은 시·도/.test(vcalc));
+    check('시점수정은 추세로 대신했다고 적고 상한 1.03 안이다',
+          /추세로 대신함/.test(vcalc) && /1\.030/.test(vcalc),
+          (vcalc.match(/시점수정[^<]*<\/th><td>[^<]*<b>[^<]*/) || ['없음'])[0]);
+    // 150,000 × 1.03 × 1.243 × 2.32 = 445,560 → 1,000원 단위 → 446,000
+    check('결정단가를 자리수 규칙으로 낸다 (446,000원/㎡)', /446,000원\/㎡/.test(vcalc),
+          (vcalc.match(/결정단가[^<]*<b>[^<]*/) || ['없음'])[0]);
+    check('범위(그 밖의 요인 사분위)를 함께 적는다', /흔히 [0-9,]+~[0-9,]+/.test(vtxt));
+    check('총액도 적는다 (1,653㎡)', /총액 약/.test(vcalc));
+    check('농업진흥은 표준지 자료에 없어 확인 못 했다고 적는다', /확인하지 못했다/.test(vcalc));
+    check('다른 표준지를 쓰면 얼마인지도 보인다', /다른 표준지를 쓰면/.test(vcalc) && /대쌍령리 7/.test(vcalc));
+    check('감정평가가 아니라고 적는다', /감정평가가 아니며/.test(vcalc));
+    // 뒤 검사는 '미래 가치' 가 열린 상태에서 시작한다. 그 상태로 되돌린다.
+    await page.evaluate(async () => {
+      document.querySelector('.pc-val[data-val="future"]').click();
+      await new Promise((ok) => setTimeout(ok, 100));
+    });
     const vclose = await page.evaluate(async () => {
       document.querySelector('.pc-val[data-val="future"]').click();
       await new Promise((ok) => setTimeout(ok, 100));

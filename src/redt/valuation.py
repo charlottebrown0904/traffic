@@ -125,10 +125,12 @@ def zone_kind(land_use, jimok, use_situation=None) -> str:
 # ─────────────────────────────────────────────────────────────────
 
 # 도로접면 지수. 순서는 usage.road_grade 의 사다리와 같다.
+# 도로접면 글은 원천마다 다르다 — 평가서 '세로(가)', 토지특성·표준지
+# '세로한면(가)'·'세로각지(불)'. 그래서 '세로(가)' 를 통째로 찾지 않고
+# **순서대로** 광대·중로·소로를 먼저, 그다음 '(불)'·'(가)' 로 세로를 가른다.
 ROAD_INDEX = [
-    ("맹지", 0.80), ("세각(불)", 0.88), ("세로(불)", 0.88),
-    ("세각(가)", 1.00), ("세로(가)", 1.00),
-    ("소로", 1.10), ("중로", 1.18), ("광대", 1.25),
+    ("맹지", 0.80), ("광대", 1.25), ("중로", 1.18), ("소로", 1.10),
+    ("(불)", 0.88), ("불가", 0.88), ("(가)", 1.00), ("가능", 1.00),
 ]
 ROAD_CORNER_BONUS = 0.03        # 각지 — 평가서는 1.02~1.05 를 적었다
 
@@ -167,7 +169,13 @@ SPECIAL = {
 
 # 표준지와 반드시 같아야 하는 구역. 다르면 격차율로 메우지 않고 표준지를
 # 다시 고르라고 한다 — 평가사도 그렇게 한다.
-MUST_MATCH = ("개발제한구역", "농업진흥구역", "보전산지")
+#
+# 다만 표준지 자료(브이월드 속성)에는 용도지역·용도지구만 있고 농업진흥·
+# 보전산지는 **없다.** 없는 것을 '다르다' 로 읽으면 후보가 전부 사라진다.
+# 그래서 거르는 것은 표준지 쪽에도 적히는 개발제한구역뿐이고, 나머지는
+# 경고로 남긴다 ('농업진흥' 은 진흥구역·진흥지역·보호구역을 다 잡는다).
+MUST_MATCH = ("개발제한구역", "농업진흥", "보전산지")
+STD_KNOWN = ("개발제한구역",)
 
 # 면적. 주택·상업·공업지대에서만 본다 — 농지·임야는 평가서가 면적
 # 격차를 거의 안 적었다 (8㎡ 소필지 한 건뿐).
@@ -293,7 +301,10 @@ def individual_factor(subject: dict, std: dict) -> dict:
     zd = set(_zone_names(std))
     for name in MUST_MATCH:
         if (name in zs) != (name in zd):
-            warnings.append(f"{name} 이(가) 대상·표준지 한쪽에만 있다 — 표준지를 같은 구역에서 다시 고를 것")
+            if name in STD_KNOWN:
+                warnings.append(f"{name} 이(가) 대상·표준지 한쪽에만 있다 — 표준지를 같은 구역에서 다시 고를 것")
+            elif name in zs:
+                warnings.append(f"대상이 {name} 안인데 표준지 자료에는 그 구역 정보가 없어 같은지 확인하지 못했다")
     for name, (ratio, why) in SPECIAL.items():
         if name in ("현황도로",):
             continue
@@ -371,7 +382,7 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3) -> list[d
         if zg and zone_group(c.get("land_use")) != zg:
             continue
         zc = set(_zone_names(c))
-        if any((n in zs) != (n in zc) for n in MUST_MATCH):
+        if any((n in zs) != (n in zc) for n in STD_KNOWN):
             continue
         # 같은 용도지역군 안에서도 세분(계획관리/생산관리)이 다르면 거른다.
         if subject.get("land_use") and c.get("land_use") \
@@ -704,6 +715,47 @@ def render(result: dict) -> str:
     for w in result["warnings"]:
         lines.append(f"  ! {w}")
     return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────
+# 6-b. 화면용 표 — 격차율 표와 그 밖의 요인을 JSON 하나로
+#
+# 화면(app.js)은 산식만 옮기고 **숫자는 이 표에서 읽는다.** 표가 두 곳에
+# 있으면 언젠가 어긋난다. 그 밖의 요인은 원장에서 (시도 → 전국) 으로
+# 물러난 값을 용도지역군 × 지목군마다 미리 계산해 둔다.
+# ─────────────────────────────────────────────────────────────────
+
+SIDO_NAMES = {"11": "서울", "26": "부산", "27": "대구", "28": "인천", "29": "광주", "30": "대전",
+              "31": "울산", "36": "세종", "41": "경기", "43": "충북", "44": "충남", "45": "전북",
+              "46": "전남", "47": "경북", "48": "경남", "50": "제주", "51": "강원", "52": "전북"}
+
+
+def tables_for_web() -> dict:
+    rows = load_ledger()
+    zones = [z for z, _ in ZONE_GROUPS]
+    uses = [u for u, _ in USE_GROUPS]
+    other = {}
+    for zg in zones:
+        for ug in uses:
+            # 대표 용도지역·지목 문자열로 조회한다 (그룹 이름이 부분 문자열).
+            key = f"{zg}|{ug}"
+            other[key] = {"*": ledger_other_factor(None, None, zg, None, ug, rows)}
+            for code, name in SIDO_NAMES.items():
+                got = ledger_other_factor(name, None, zg, None, ug, rows)
+                if got.get("level", "").startswith("같은 시·도"):
+                    other[key][code] = got
+    return {
+        "road_index": ROAD_INDEX, "road_corner_bonus": ROAD_CORNER_BONUS,
+        "shape_index": SHAPE_INDEX, "slope_index": SLOPE_INDEX,
+        "use_mismatch": {f"{a}|{b}": v for (a, b), v in USE_MISMATCH.items()},
+        "special": SPECIAL, "must_match": list(MUST_MATCH), "std_known": list(STD_KNOWN),
+        "area_rules": {k: [[lo, (None if hi == math.inf else hi), r, why] for lo, hi, r, why in v]
+                       for k, v in AREA_RULES.items()},
+        "other": other,
+        "time_clamp": [0.98, 1.03],
+        "zone_groups": ZONE_GROUPS, "use_groups": USE_GROUPS,
+        "ledger_n": len(rows),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────
