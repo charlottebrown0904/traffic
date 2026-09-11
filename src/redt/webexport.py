@@ -309,12 +309,14 @@ def _stdland_files() -> None:
     for code, g in df.groupby("sigungu_cd"):
         rows = []
         for r in g.itertuples(index=False):
-            rows.append({"pnu": r.pnu, "ld": r.ld_code, "nm": r.ld_name, "jb": r.jibun,
-                         "y": int(r.year) if r.year == r.year else None,
-                         "pr": r.price, "jm": r.jimok, "ar": r.area_m2, "lu": r.land_use,
-                         "lu2": r.land_use2, "dz": r.district, "us": r.use_situation,
-                         "rs": r.road_side, "sh": r.shape, "sl": r.slope,
-                         "lon": r.lon, "lat": r.lat})
+            row = {"pnu": r.pnu, "ld": r.ld_code, "nm": r.ld_name, "jb": r.jibun,
+                   "y": int(r.year) if r.year == r.year else None,
+                   "pr": r.price, "jm": r.jimok, "ar": r.area_m2, "lu": r.land_use,
+                   "lu2": r.land_use2, "dz": r.district, "us": r.use_situation,
+                   "rs": r.road_side, "sh": r.shape, "sl": r.slope,
+                   "lon": r.lon, "lat": r.lat}
+            # 빈 칸은 싣지 않는다 — 전국 60만 필지라 null 열쇠만으로도 수 MB 다.
+            rows.append({k: v for k, v in row.items() if v is not None and v == v})
         fname = f"stdland-{code}.json"
         _write(fname, {"sigungu": str(code), "n": len(rows), "rows": rows})
         keep.add(fname)
