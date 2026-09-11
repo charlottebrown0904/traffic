@@ -253,15 +253,19 @@ def probe(query: str = "안성시 도시계획 조례") -> dict:
         print(f"직접 호출 실패: {out['direct']['error']}")
     # 2) 공공데이터포털 길 — 어느 주소·형식이 통하는지 그대로 찍는다
     out["portal"] = {}
-    for label, url, kind in (("lawSearchList XML", PORTAL_SEARCH, "XML"),
-                             ("lawSearchList JSON", PORTAL_SEARCH, "JSON"),
-                             ("ordinSearchList XML", PORTAL_SEARCH.replace("lawSearchList", "ordinSearchList"), "XML"),
-                             ("lawSearchList XML target=law", PORTAL_SEARCH, "XML")):
+    base = PORTAL_SEARCH.rsplit("/", 1)[0]
+    oc = os.getenv("LAW_OC") or ""
+    combos = [
+        ("lawSearchList XML", f"{base}/lawSearchList.do", {"query": query, "display": "3"}),
+        ("lawSearchList XML +OC", f"{base}/lawSearchList.do", {"query": query, "display": "3", "OC": oc}),
+        ("lawSearch XML +OC", f"{base}/lawSearch.do", {"query": query, "display": "3", "OC": oc}),
+        ("lawSearchList XML target=law +OC", f"{base}/lawSearchList.do", {"query": "도로교통법", "display": "3", "OC": oc, "target": "law"}),
+        ("lawService XML +OC MST", f"{base}/lawService.do", {"OC": oc, "MST": "1611223"}),
+        ("ordinSearchList XML +OC", f"{base}/ordinSearchList.do", {"query": query, "display": "3", "OC": oc}),
+    ]
+    for label, url, p in combos:
         try:
-            p = {"query": query, "display": "3"}
-            if label.endswith("target=law"):
-                p["target"] = "law"
-            r = _portal_raw(url, p, kind)
+            r = _portal_raw(url, p, "XML")
             snip = re.sub(r"\s+", " ", r.text)[:220]
             out["portal"][label] = {"status": r.status_code, "snippet": snip}
             print(f"포털 {label}: HTTP {r.status_code} · {snip}")

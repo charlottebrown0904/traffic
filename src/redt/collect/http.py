@@ -40,8 +40,8 @@ class ApiError(RuntimeError):
 
 
 # 중계기가 키를 끼워 넣으므로, 이쪽에서 보낸 키 자리는 지우고 보낸다.
-# OC 는 국가법령정보센터의 가입 아이디 — 키처럼 다룬다 (collect/law.py).
-_KEY_PARAMS = ("serviceKey", "key", "apiKey", "authKey", "accessKey", "OC")
+# OC(법제처 아이디)는 여기 없다 — 중계기로 실어 보내야 포털이 법제처로 넘길 수 있다.
+_KEY_PARAMS = ("serviceKey", "key", "apiKey", "authKey", "accessKey")
 
 
 def _via_relay(url: str, params: dict) -> tuple[str, dict, dict]:
