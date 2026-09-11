@@ -1273,6 +1273,11 @@ body.picking .leaflet-container{cursor:crosshair}
   padding: .1rem .38rem; border-radius: 999px;
 }
 .pc-val:hover { border-color: var(--accent); }
+/* 프리미엄 잠김 (C 등급). 단추는 그대로 두고 꼬리표만 바꾼다 — 누르면
+   무엇이 필요한지 말한다. 감추면 있는 줄도 모른다. */
+.pc-val .pcv-lock { color: var(--accent); }
+.pcv-lock-msg { margin: .4rem 0 0; font-size: 12.5px; line-height: 1.55; }
+.pcv-lock-msg a { color: var(--accent); }
 .pc-val.is-on {
   border-color: var(--accent); background: var(--accent-soft);
 }

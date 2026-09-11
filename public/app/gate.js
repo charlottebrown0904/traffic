@@ -23,7 +23,7 @@
     var s = document.createElement("script");
     // 캐시 무효화용 꼬리표. 이것이 없으면 style.css·app.js 를 고쳐도
     // 이미 받아 둔 브라우저에는 영영 안 간다 — 화면이 반만 바뀐다.
-    s.src = "/app/app.js?v=20260910y";
+    s.src = "/app/app.js?v=20260911a";
     document.body.appendChild(s);
   }
 
@@ -87,6 +87,8 @@
         pending(status);
         return;
       }
+      // 앱이 등급을 본다 (프리미엄 가림). 자물쇠는 데이터베이스다.
+      window.ME = me;
       enter();
     } catch (err) {
       broken("확인 중 오류가 났습니다 — " + (err && err.message ? err.message : err));
