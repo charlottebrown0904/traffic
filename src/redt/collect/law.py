@@ -39,9 +39,24 @@ def _oc() -> str:
     return os.getenv("LAW_OC") or VIA_RELAY
 
 
+def _direct(url: str, params: dict):
+    """중계기를 거치지 않고 바로 부른다 — 미국 러너에서 law.go.kr 이 열리는지를
+    이것이 잰다. 중계기(main 배포분)가 아직 www.law.go.kr 을 모를 때의 우회이기도 하다."""
+    import requests
+    oc = os.getenv("LAW_OC") or "test"
+    return requests.get(url, params={**params, "OC": oc}, timeout=30,
+                        headers={"User-Agent": "Mozilla/5.0 redt-research"})
+
+
 def _call(url: str, params: dict) -> tuple[dict | list | None, str]:
-    """JSON 이면 (payload, ''), 아니면 (None, 왜) — HTML 오류 페이지가 온다."""
+    """JSON 이면 (payload, ''), 아니면 (None, 왜) — HTML 오류 페이지가 온다.
+    중계기가 목적지를 모르면(403 relayError) 직접 부른다."""
     resp = get_once(url, {"OC": _oc(), "target": "ordin", "type": "JSON", **params}, timeout=40)
+    if resp.status_code == 403 and "relayError" in resp.text:
+        try:
+            resp = _direct(url, {"target": "ordin", "type": "JSON", **params})
+        except Exception as e:                      # noqa: BLE001
+            return None, f"중계기 거부 + 직접 호출 실패 ({type(e).__name__}: {str(e)[:120]})"
     body = resp.text
     if resp.status_code != 200:
         return None, f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", body[:200])
@@ -146,7 +161,18 @@ def relevant(payload) -> list[dict]:
 
 def probe(query: str = "안성시 도시계획 조례") -> dict:
     """한 건을 받아 본다 — 뚫리는지, JSON 키가 무엇인지."""
-    out: dict = {"query": query}
+    out: dict = {"query": query, "oc_set": bool(os.getenv("LAW_OC"))}
+    print(f"LAW_OC {'있음' if out['oc_set'] else '없음 — OC=test 로 닿는지만 본다'}")
+    # 1) 직접 — 미국에서 열리는가
+    try:
+        r = _direct(SEARCH, {"target": "ordin", "type": "JSON", "query": query, "display": "3"})
+        snippet = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))[:200]
+        out["direct"] = {"status": r.status_code, "snippet": snippet}
+        print(f"직접 호출: HTTP {r.status_code} · {snippet}")
+    except Exception as e:                          # noqa: BLE001
+        out["direct"] = {"error": f"{type(e).__name__}: {str(e)[:160]}"}
+        print(f"직접 호출 실패: {out['direct']['error']}")
+    # 2) 우리 경로 (중계기 → 안 되면 직접)
     rows, total, why = search(query, display=5)
     out["search"] = {"n": len(rows), "total": total, "why": why,
                      "keys": sorted(rows[0].keys()) if rows else []}
