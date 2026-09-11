@@ -139,12 +139,17 @@ def eligible(con, since_year: int) -> int:
 
 
 def _sample(con, since_year: int, limit: int) -> pd.DataFrame:
+    # 표본은 **조건을 다 건 뒤에** 뽑는다. USING SAMPLE 을 WHERE 뒤에 그냥
+    # 붙였더니 조인 결과에서 먼저 뽑고 연도를 걸러, 상한 15만에 2021년
+    # 이후는 2.9만, 2016년 이후는 7.6만만 남았다 (run 1·2 실측). 부분
+    # 질의로 감싸면 걸러진 것에서 뽑는다.
     return con.execute(f"""
-        SELECT t.trade_id, t.sigungu_cd, t.deal_year, t.price_per_m2, t.land_use,
-               pc.pnu, pc.jimok, pc.use_situation, pc.road_side, pc.shape, pc.slope,
-               pc.area_m2
-        {_ELIGIBLE_WHERE.format(since_year=since_year)}
-        USING SAMPLE {limit} ROWS
+        SELECT * FROM (
+            SELECT t.trade_id, t.sigungu_cd, t.deal_year, t.price_per_m2, t.land_use,
+                   pc.pnu, pc.jimok, pc.use_situation, pc.road_side, pc.shape, pc.slope,
+                   pc.area_m2
+            {_ELIGIBLE_WHERE.format(since_year=since_year)}
+        ) USING SAMPLE {limit} ROWS
     """).fetchdf()
 
 
