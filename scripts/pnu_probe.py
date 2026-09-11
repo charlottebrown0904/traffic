@@ -78,7 +78,23 @@ def main() -> int:
     pnu = f"{ld}1{int(BON):04d}{int(BU):04d}"
     print(f"   찾을 PNU: {pnu}")
 
+    known = pnus[0]
+    ogc = lambda v: urllib.parse.quote(  # noqa: E731
+        "<Filter><PropertyIsEqualTo><PropertyName>pnu</PropertyName>"
+        f"<Literal>{v}</Literal></PropertyIsEqualTo></Filter>")
+    ogc_ns = lambda v: urllib.parse.quote(  # noqa: E731
+        '<ogc:Filter xmlns:ogc="http://www.opengis.net/ogc"><ogc:PropertyIsEqualTo>'
+        f"<ogc:PropertyName>pnu</ogc:PropertyName><ogc:Literal>{v}</ogc:Literal>"
+        "</ogc:PropertyIsEqualTo></ogc:Filter>")
     cases = [
+        # 필터가 먹는지는 **있는 줄 알려진 pnu** 로 먼저 본다. 0개면 필터가
+        # 안 먹는 것이고, 1개면 먹는 것이라 140-25 는 진짜 없는 것이다.
+        ("K1. FILTER(OGC) 로 아는 pnu " + known, f"{WFS}{COMMON}&MAXFEATURES=5&FILTER={ogc(known)}"),
+        ("K2. FILTER(ogc: 네임스페이스) 아는 pnu", f"{WFS}{COMMON}&MAXFEATURES=5&FILTER={ogc_ns(known)}"),
+        ("K3. FEATUREID 아는 pnu", f"{WFS}{COMMON}&FEATUREID=lp_pa_cbnd_bubun.{known}"),
+        ("K4. CQL_FILTER 아는 pnu", f"{WFS}{COMMON}&MAXFEATURES=5&CQL_FILTER=" + urllib.parse.quote(f"pnu='{known}'")),
+        ("K5. FILTER(OGC) 같은 리의 본번 140 (부번 0)", f"{WFS}{COMMON}&MAXFEATURES=5&FILTER={ogc(ld + '1' + '0140' + '0000')}"),
+        ("K6. FILTER(OGC) 140-1", f"{WFS}{COMMON}&MAXFEATURES=5&FILTER={ogc(ld + '1' + '0140' + '0001')}"),
         ("A1. CQL_FILTER=pnu='…'", f"{WFS}{COMMON}&MAXFEATURES=5&CQL_FILTER={urllib.parse.quote(chr(112)+'nu='+chr(39)+pnu+chr(39))}"),
         ("A2. FILTER (OGC PropertyIsEqualTo)",
          f"{WFS}{COMMON}&MAXFEATURES=5&FILTER=" + urllib.parse.quote(
