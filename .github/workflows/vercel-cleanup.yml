@@ -23,7 +23,7 @@ permissions:
 jobs:
   cleanup:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120     # 삭제 한 건에 1~2초 — 700개면 30분을 넘긴다 (run 4)
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
       # 예약 실행은 입력이 비어 온다 — 그때는 실제로 지우고 production 2개를 남긴다.

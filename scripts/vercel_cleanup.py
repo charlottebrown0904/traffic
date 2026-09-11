@@ -78,14 +78,17 @@ def main() -> int:
         print("DRY_RUN — 지우지 않았습니다")
         return 0
     done = failed = 0
-    for d in victims:
+    t0 = time.time()
+    for i, d in enumerate(victims, 1):
         try:
             call("DELETE", f"/v13/deployments/{d['uid']}")
             done += 1
         except Exception as e:                      # noqa: BLE001
             failed += 1
-            print("  실패", d["uid"], str(e)[:100])
-        time.sleep(0.3)                             # 초당 요청 한도를 피한다
+            print("  실패", d["uid"], str(e)[:100], flush=True)
+        if i % 25 == 0:
+            print(f"  … {i}/{len(victims)} · {time.time() - t0:,.0f}초", flush=True)
+        time.sleep(0.2)                             # 초당 요청 한도를 피한다
     print(f"지움 {done} · 실패 {failed}")
     return 0 if not failed else 1
 
