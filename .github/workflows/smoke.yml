@@ -1,0 +1,27 @@
+# 배포 확인 — toji.fyi 가 어느 커밋을 내보내고 있고, 표준지 조각이 CDN 에서 오는가.
+# 이 세션의 컨테이너는 toji.fyi·jsDelivr 에 닿지 못해 러너가 대신 본다.
+name: 배포 확인 (smoke)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 확인
+        run: |
+          probe() { printf '%-70s ' "$1"; curl -s -o /tmp/body -w '%{http_code} %{size_download}B %{content_type}\n' "$1"; }
+          echo "== toji.fyi"
+          probe https://toji.fyi/version.txt; cat /tmp/body; echo
+          probe https://toji.fyi/app/data/zoning-limits.json
+          probe https://toji.fyi/lib/access.js
+          probe "https://toji.fyi/app/data/stdland-41550.json"   # 배포에서 뺐으니 404 가 정상
+          echo "== CDN (표준지 조각)"
+          probe https://cdn.jsdelivr.net/gh/charlottebrown0904/traffic@main/public/app/data/stdland-41550.json
+          head -c 160 /tmp/body; echo
+          probe https://cdn.jsdelivr.net/gh/charlottebrown0904/traffic@main/public/app/data/stdland-50110.json
