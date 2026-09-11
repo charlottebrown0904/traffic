@@ -1,0 +1,130 @@
+# 여섯째 축 '주변 이용' 검증 (docs/six-axes-method.md §5-2).
+#
+# 법정동리 도시용지 비율을 parcel 표(434만 필지)로 집계하고, 거래에 붙은
+# 필지로 헤도닉을 돌려 세 문턱(10%p 당 +3% · p<0.05 · 시도 부호 2/3
+# 일치)을 넘는지 본다. 결과는 data/processed/urban_check.json 에 남고,
+# export-web 은 그것이 '채택' 일 때만 parcelstats.json 에 urban 을 싣는다.
+#
+# 수집 캐시(DB)가 필요하다. 이 컨테이너에는 DB 가 없어 여기서 돌린다.
+name: 주변 이용 축 검증 (도시용지 비율 헤도닉)
+
+on:
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "이 해부터의 거래 (비우면 최근 5년)"
+        default: ""
+      sample:
+        description: "회귀 표본 상한"
+        default: "150000"
+      export:
+        description: "채택이면 export-web 까지 돌려 화면 데이터를 커밋"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+# 캐시를 다시 저장하므로 수집·분석과 겹치지 않게 한다.
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  urban:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONPATH: src
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      - name: 이전 수집분 복원
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/processed
+            data/interim
+          key: redt-urban-${{ github.run_id }}
+          restore-keys: redt-data-
+
+      - name: 복원 확인
+        run: |
+          if [ ! -f data/processed/redt.duckdb ]; then
+            echo "::error::복원된 DB 가 없습니다. 먼저 collect 를 한 번 돌리세요."
+            exit 1
+          fi
+          python -m redt.cli status
+
+      - name: 검증
+        run: |
+          ARGS="--sample ${{ inputs.sample }}"
+          if [ -n "${{ inputs.since }}" ]; then ARGS="$ARGS --since ${{ inputs.since }}"; fi
+          python -m redt.cli urban-check $ARGS 2>&1 | tee /tmp/urban.log
+
+      - name: 결과 보관 (다음 export-web 이 읽는다)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/processed
+            data/interim
+          key: redt-data-${{ github.run_id }}
+
+      - name: 화면 데이터
+        if: inputs.export
+        run: python -m redt.cli export-web
+
+      - name: 결과 커밋
+        if: inputs.export
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/app/data
+          if git diff --cached --quiet; then
+            echo "바뀐 화면 데이터가 없습니다 — 커밋 생략"
+            exit 0
+          fi
+          git commit -m "data: 주변 이용 축 검증 뒤 화면 데이터 갱신 (run ${{ github.run_number }})"
+          BRANCH="${{ github.ref_name }}"
+          for i in 1 2 3 4; do
+            git pull --rebase --autostash origin "$BRANCH" \
+              && git push origin "HEAD:$BRANCH" && exit 0
+            sleep $((2 ** i))
+          done
+          exit 1
+
+      - name: 실행 요약
+        if: always()
+        run: |
+          {
+            echo "## 주변 이용 축 검증"
+            echo
+            echo '```'
+            cat /tmp/urban.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'
+            if [ -f data/processed/urban_check.json ]; then
+              echo
+              echo '<details><summary>urban_check.json</summary>'
+              echo
+              echo '```json'
+              cat data/processed/urban_check.json
+              echo '```'
+              echo '</details>'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 결과 파일 첨부
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: urban-check
+          path: data/processed/urban_check.json
+          if-no-files-found: ignore

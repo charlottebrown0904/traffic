@@ -1757,8 +1757,15 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     # 전원주택에는 C급인데, 하나의 숫자로 뭉개면 그 사실이 사라진다.
     try:
         from .parcelscore import build as _peer_build
+        from .analyze import urban as _urban
+        # 여섯째 축은 검증(urban-check)이 채택했을 때만 실린다.
+        with db.connect(read_only=True) as _con:
+            _u = _urban.for_web(_con) if _urban.adopted() else None
+        if _u is None:
+            print("  주변 이용 축: urban_check.json 이 '채택' 이 아니라 싣지 않습니다")
         _write("parcelstats.json",
-               _peer_build([(name, like) for name, like, _k in LANDPRICE_GROUPS]))
+               _peer_build([(name, like) for name, like, _k in LANDPRICE_GROUPS],
+                           urban=_u))
     except Exception as exc:                       # noqa: BLE001
         # 조인 표가 없는 실행(캐시가 비었을 때)에서도 나머지는 나가야 한다.
         print(f"  ⚠ 필지 진단 또래 분포를 못 만들었습니다: {exc}")

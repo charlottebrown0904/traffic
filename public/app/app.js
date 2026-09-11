@@ -4290,7 +4290,7 @@ function wireLandPrice() {
  * 숫자로 뭉개면 그 사실이 사라진다. 레이더는 "무엇이 강하고 무엇이
  * 약한가" 만 말한다.
  *
- * 그래서 다섯 축을 전부 **또래 안의 백분위**로 통일한다. 단위가 같아지고
+ * 그래서 축을 전부 **또래 안의 백분위**로 통일한다 (다섯, 주변 이용이 검증되면 여섯). 단위가 같아지고
  * (전부 %), 넓이를 점수로 안 쓰므로 축 순서도 해롭지 않다. 또래는
  * 같은 시군구·같은 용도지역에서 실제로 거래된 땅이다 — 전국 대비로 재면
  * 시골 땅은 전부 찌그러진 별이 되어 아무것도 못 읽는다. */
@@ -4377,15 +4377,42 @@ function pickTrend(sigunguCd, group) {
   return null;
 }
 
-function pickPeer(sigunguCd, group) {
+/* 지목군 — 또래 열쇠의 앞 단 (요구사항 2026-09-10). 평가서는 같은
+ * 용도지역 안에서도 임야·농지·대지의 표준지를 따로 고른다. 규칙은
+ * valuation.use_group 과 같아야 한다 — 어긋나면 화면이 딴 또래를 찾는다. */
+function useGroupOf(jimok, use) {
+  const j = String(jimok || '').trim();
+  if (j === '임야') return '임야';
+  if (['전', '답', '과수원', '목장용지'].includes(j)) return '전·답';
+  if (j === '대') return '대';
+  if (['공장용지', '도로', '잡종지', '창고용지', '주차장'].includes(j)) return '공장·도로';
+  const t = String(use || '') + ' ' + j;
+  const table = [
+    ['임야', ['임야', '자연림', '토지임야', '임']],
+    ['전·답', ['전', '답', '과수', '묵', '농', '목장']],
+    ['대', ['대', '주거', '주택', '나지', '상업']],
+    ['공장·도로', ['공장', '공업', '도로', '잡종', '창고', '주차']],
+  ];
+  const hit = table.find(([, keys]) => keys.some((k) => t.indexOf(k) >= 0));
+  return hit ? hit[0] : null;
+}
+
+function pickPeer(sigunguCd, group, ug) {
   const st = parcelStats;
   if (!st || !group) return null;
   const min = st.min_peer || 30;
-  const tries = [
+  const sido = String(sigunguCd).slice(0, 2);
+  // 지목군 단이 앞이다: 시군구|용도|지목군 → 시도|… → 전국|… → 시군구|용도 → …
+  const tries = ug ? [
+    { key: `${sigunguCd}|${group}|${ug}`, level: `같은 시군구 · ${ug}` },
+    { key: `${sido}|${group}|${ug}`, level: `같은 시·도 · ${ug}` },
+    { key: `*|${group}|${ug}`, level: `전국 · ${ug}` },
+  ] : [];
+  tries.push(
     { key: `${sigunguCd}|${group}`, level: '같은 시군구' },
-    { key: `${String(sigunguCd).slice(0, 2)}|${group}`, level: '같은 시·도' },
+    { key: `${sido}|${group}`, level: '같은 시·도' },
     { key: `*|${group}`, level: '전국' },
-  ];
+  );
   for (const t of tries) {
     const p = st.peers[t.key];
     if (p && p.n >= min) return { ...p, level: t.level, group };
@@ -4414,15 +4441,17 @@ function trafficGravity(lat, lon) {
   return { grav: sum, near };
 }
 
-/* 필지 하나 → 다섯 축. 값이 없는 축은 **비워 둔다** (0 이 아니다) —
+/* 필지 하나 → 축들. 값이 없는 축은 **비워 둔다** (0 이 아니다) —
  * 조사가 안 된 것과 나쁜 것은 다르다. */
-function parcelAxes(parcel, at) {
+function parcelAxes(parcel, at, zones) {
   const st = parcelStats;
   if (!st) return null;
   const code = String(parcel.pnu || '').slice(0, 5);
   const group = parcelGroup(parcel.land_use);
-  const peer = pickPeer(code, group);
-  const out = { peer, group, axes: [] };
+  const ug = useGroupOf(parcel.jimok, parcel.use_situation);
+  const peer = pickPeer(code, group, ug);
+  const zoneNames = (zones || []).map((z) => String((z && z.label) || z || ''));
+  const out = { peer, group, ug, axes: [] };
 
   const grade = (table, text) => {
     if (!text) return null;
@@ -4441,7 +4470,7 @@ function parcelAxes(parcel, at) {
   // 2) 교통
   const tg = trafficGravity(at[0], at[1]);
   out.axes.push({
-    key: 'traffic', label: '교통',
+    key: 'traffic', label: '물류 교통',
     pct: peer ? pctFromQuantiles(tg.grav, peer.traffic) : null,
     raw: tg.near
       ? `${tg.near.name} ${tg.near.km.toFixed(1)}km · 화물 ${Math.round(tg.near.freight).toLocaleString('ko-KR')}대/일`
@@ -4450,12 +4479,20 @@ function parcelAxes(parcel, at) {
 
   // 3) 개발 여지 — **또래가 아니라 시군구 안에서** 잰다. 또래는 용도지역
   //    으로 묶여 있어서 그 안에서 재면 늘 같은 값이 나온다.
-  const zg = grade(st.zone_ladder, parcel.land_use);
+  let zg = grade(st.zone_ladder, parcel.land_use);
+  // 농업진흥구역·개발제한구역이 겹치면 한 단 아래 (요구사항 2026-09-10,
+  // docs/radar-and-current-value.md §2-5). 평가서도 표준지를 그 구역
+  // 안에서 따로 고른다. 사다리의 분모(시군구 거래)는 용도지역만 알아서
+  // 이 한 단은 대상 필지에만 적용된다 — 그 사실을 raw 에 적는다.
+  const tight = ['농업진흥구역', '개발제한구역'].find((n) =>
+    zoneNames.some((z) => z.indexOf(n) >= 0)
+    || String(parcel.land_use2 || '').indexOf(n) >= 0);
+  if (zg !== null && zg > 0 && tight) zg -= 1;
   const zp = (st.zone_pct || {})[code];
   out.axes.push({
     key: 'zoning', label: '개발 여지',
     pct: (zp && zg !== null) ? zp[zg] : null,
-    raw: parcel.land_use || '용도 미상',
+    raw: (parcel.land_use || '용도 미상') + (tight ? ` · ${tight} (한 단 아래)` : ''),
   });
 
   // 4) 가격 추세 (요구사항 2026-09-10 — '가격 수준' 을 바꿉니다).
@@ -4473,7 +4510,7 @@ function parcelAxes(parcel, at) {
   const moNote = [mo && mo.span ? `최근 ${mo.span}년` : null,
                   mo && mo.from ? mo.from : null].filter(Boolean).join(' · ');
   out.axes.push({
-    key: 'price', label: '가격 추세',
+    key: 'price', label: '시장 동향',
     pct: (mo && (st.trend_q || []).length)
       ? pctFromQuantiles(mo.trend, st.trend_q) : null,
     raw: mo
@@ -4483,15 +4520,36 @@ function parcelAxes(parcel, at) {
   });
 
   // 5) 모양·지세
-  const sg = grade(st.shape_grade, parcel.shape);
+  // 임야는 지세만 (parcelscore.land_grade 와 같은 규칙) — 평가서의
+  // 임야지대 항목표에 형상이 없다.
+  const sg = ug === '임야' ? null : grade(st.shape_grade, parcel.shape);
   const lg = grade(st.slope_grade, parcel.slope);
   const got = [sg, lg].filter((g) => g !== null);
   const land = got.length ? Math.round(got.reduce((a, b) => a + b, 0) / got.length) : null;
   out.axes.push({
     key: 'land', label: '모양·지세',
     pct: (peer && land !== null) ? peer.land[land] : null,
-    raw: [parcel.shape, parcel.slope].filter(Boolean).join(' · ') || '조사 안 됨',
+    raw: (ug === '임야' ? [parcel.slope, '임야는 지세만'] : [parcel.shape, parcel.slope])
+      .filter(Boolean).join(' · ') || '조사 안 됨',
   });
+
+  // 6) 주변 이용 — **검증을 통과했을 때만** 내보내기가 st.urban 을 싣는다
+  //    (analyze/urban.py). 없으면 다섯 축이다. 값은 법정동리(PNU 앞
+  //    10자리)의 도시용지 면적 비율이고, 같은 시군 안 동리들의 분위로
+  //    읽는다 — 토지적성평가가 하는 방식 그대로다.
+  if (st.urban && st.urban.umd) {
+    const umd = String(parcel.pnu || '').slice(0, 10);
+    const v = st.urban.umd[umd];
+    const q = (st.urban.q || {})[code] || (st.urban.q_sido || {})[code.slice(0, 2)] || null;
+    const from = (st.urban.q || {})[code] ? null : '시·도 기준';
+    out.axes.push({
+      key: 'urban', label: '주변 이용',
+      pct: (typeof v === 'number' && q) ? pctFromQuantiles(v, q) : null,
+      raw: typeof v === 'number'
+        ? `도시용지 ${Math.round(v * 100)}% (법정동리${from ? ` · ${from}` : ''})`
+        : '동리 자료 없음',
+    });
+  }
   return out;
 }
 
@@ -4543,7 +4601,7 @@ function radarSvg(axes) {
       font-size="10.5" fill="var(--muted)">${escapeHtml(a.label)}</text>`;
   }).join('');
   return `<svg class="radar" viewBox="0 0 168 160" width="168" height="160"
-    role="img" aria-label="필지 다섯 축 진단">${rings}${spokes}${poly}${dots}${labels}</svg>`;
+    role="img" aria-label="필지 진단 레이더">${rings}${spokes}${poly}${dots}${labels}</svg>`;
 }
 
 /* 필지의 기본 정보를 표로 (요구사항 2026-09-10 — 부동산플래닛 참조).
@@ -4642,7 +4700,7 @@ function parcelZones(zones) {
     + '없습니다. 실제 건축 전에는 토지이음에서 확인하세요.</p>';
 }
 
-/* 다섯 축이 각각 무엇을 재는지 (요구사항 2026-09-10).
+/* 축이 각각 무엇을 재는지 (요구사항 2026-09-10).
  *
  * "5개 항목이 어떤 의미인지 간략하게 도표 아래에 주석으로 표기".
  * 축 이름만으로는 '개발 여지' 가 무엇을 견준 것인지 알 수 없습니다.
@@ -4652,20 +4710,29 @@ function parcelZones(zones) {
  * 가격은 높다고 좋은 것도 낮다고 좋은 것도 아닙니다. 그것을 안 적으면
  * 다섯 축을 같은 방향으로 읽게 됩니다.
  */
-const AXIS_NOTES = [
-  ['도로', '차가 들어올 수 있는가. 맹지에서 광대로까지 사다리로 매겨 또래와 견줍니다.'],
-  ['교통', '10km 안 영업소의 화물(2·3·4·5종) 통행량을 거리로 나눠 더한 값입니다.'],
-  ['개발 여지', '용도지역의 건폐율·용적률 사다리입니다. 같은 시군구 안에서 견줍니다.'],
-  ['가격 추세', '이 동네·용도지역의 실거래 단가가 최근 몇 해 얼마나 올랐는지(연평균)입니다. '
-    + '지금 비싼지가 아니라 <strong>오르는 중인지</strong>를 봅니다. 전국의 다른 동네·용도와 견줍니다.'],
-  ['모양·지세', '필지 형상과 경사입니다. 반듯하고 평평할수록 높습니다.'],
-];
+const AXIS_NOTES = {
+  road: ['도로', '차가 들어올 수 있는가. 맹지에서 광대로까지 사다리로 매겨 또래와 견줍니다. '
+    + '<strong>지적상 접면</strong>이라 현황 도로·진입로와 다를 수 있습니다.'],
+  traffic: ['물류 교통', '10km 안 영업소의 화물(2·3·4·5종) 통행량을 거리로 나눠 더한 값입니다. '
+    + '물류·공장 적성이지, 그래서 오른다는 뜻이 아닙니다.'],
+  zoning: ['개발 여지', '용도지역의 건폐율·용적률 사다리입니다. 같은 시군구 안에서 견줍니다. '
+    + '농업진흥구역·개발제한구역이 겹치면 한 단 아래로 봅니다.'],
+  price: ['시장 동향', '이 동네·용도지역의 실거래 단가가 최근 몇 해 얼마나 올랐는지(연평균)입니다. '
+    + '지금 비싼지가 아니라 <strong>오르는 중인지</strong>를 봅니다. 전국의 다른 동네·용도와 견줍니다. '
+    + '땅의 성질이 아니라 시장의 자리입니다.'],
+  land: ['모양·지세', '필지 형상과 경사입니다. 반듯하고 평평할수록 높습니다. 임야는 평가서처럼 지세만 봅니다.'],
+  urban: ['주변 이용', '이 땅이 속한 법정동리에서 주거·상업·공업으로 쓰이는 땅의 면적 비율입니다. '
+    + '같은 시군 안 동리들과 견줍니다. 높으면 전용 압력, 낮으면 외딴 곳 — '
+    + '<strong>좋고 나쁨의 방향이 없습니다.</strong>'],
+};
 
-function axisNotes() {
-  return '<details class="pc-axis-help"><summary>다섯 축이 무엇을 재는가</summary>'
-    + '<dl>' + AXIS_NOTES.map(([k, v]) =>
-      `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>'
-    + '<p>모두 <strong>같은 또래</strong>(같은 시군구·같은 용도지역의 거래)와 '
+function axisNotes(axes) {
+  const keys = (axes || []).map((a) => a.key).filter((k) => AXIS_NOTES[k]);
+  const n = keys.length === 6 ? '여섯' : '다섯';
+  return `<details class="pc-axis-help"><summary>${n} 축이 무엇을 재는가</summary>`
+    + '<dl>' + keys.map((k) => `<dt>${AXIS_NOTES[k][0]}</dt><dd>${AXIS_NOTES[k][1]}</dd>`).join('')
+    + '</dl>'
+    + '<p>모두 <strong>같은 또래</strong>(같은 시군구·같은 용도지역·같은 지목군의 거래)와 '
     + '견준 백분위입니다. 또래가 얇으면 시·도로 물러납니다.</p></details>';
 }
 
@@ -4742,7 +4809,7 @@ function parcelCard(parcel, diag, at, addr, zones) {
     + (py ? ` <em>(${won(py)}평)</em>` : '') + '</div>'
     + (diag ? radarSvg(diag.axes) : '')
     + (rows ? `<table class="pc-axes"><tbody>${rows}</tbody></table>` : '')
-    + (diag ? axisNotes() : '')
+    + (diag ? axisNotes(diag.axes) : '')
     + valueButtons()
     + '<h4 class="pc-sub">토지 정보</h4>'
     + parcelFacts(parcel, zones)
@@ -4754,7 +4821,7 @@ function parcelCard(parcel, diag, at, addr, zones) {
     // **합산하지 않는다**는 것을 화면에도 적는다. 이것이 이 제품이
     // 땅박사와 갈리는 지점이고, 적어 두지 않으면 사람은 넓이를 점수로
     // 읽는다.
-    + '<p class="pc-note">다섯 축을 더해 하나의 점수로 만들지 않습니다. '
+    + '<p class="pc-note">축을 더해 하나의 점수로 만들지 않습니다. '
     + '같은 땅이 창고에는 좋고 주택에는 나쁠 수 있어서, 그 차이가 '
     + '점수 하나로 뭉개지면 사라집니다.</p>'
     + eumLink(parcel)
@@ -4860,7 +4927,7 @@ async function askParcel(latlng) {
     return;
   }
   drawParcelShape(res.geom);
-  const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng]) : null;
+  const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng], res.zones || []) : null;
   detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng],
                         res.addr, res.zones || []));
   window.__parcel = { parcel, diag, geom: res.geom || null,

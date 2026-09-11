@@ -157,6 +157,16 @@ def cmd_probe_landprice(args):
     landprice.probe()
 
 
+def cmd_urban_check(args):
+    """여섯째 축 '주변 이용' — 법정동리 도시용지 비율을 헤도닉으로 검증한다."""
+    from .analyze import urban
+    with db.connect(read_only=True) as con:
+        result = urban.check(con, since_year=args.since, limit=args.sample)
+    urban.save(result)
+    print(urban.report(result))
+    print(f"\n→ {urban.RESULT}  (export-web 이 '채택' 일 때만 화면에 싣습니다)")
+
+
 def cmd_value_check(args):
     """'현재 가치' 2판 격차율 표를 평가서 원장과 견준다."""
     from . import valuation as V
@@ -2378,6 +2388,12 @@ def main(argv=None):
     sub.add_parser("probe-landprice",
                    help="표준지공시지가 API 탐침 — 좌표·연도·용도지역이 오는지"
                    ).set_defaults(func=cmd_probe_landprice)
+
+    p = sub.add_parser("urban-check",
+                       help="여섯째 축 '주변 이용' 검증 — 도시용지 비율 헤도닉")
+    p.add_argument("--since", type=int, default=None, help="이 해부터의 거래 (기본 최근 5년)")
+    p.add_argument("--sample", type=int, default=150_000, help="회귀 표본 상한 (시군구 더미 250개라 메모리를 본다)")
+    p.set_defaults(func=cmd_urban_check)
 
     sub.add_parser("value-check",
                    help="'현재 가치' 2판 — 격차율 표를 평가서 41건과 검산"
