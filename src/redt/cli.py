@@ -185,8 +185,18 @@ def cmd_load_stdland(args):
             print(f"  std_land 에 {info['rows']:,}행 / 전체 {info['total']:,}")
             if info["unmatched"]:
                 print(f"  못 맞춘 열: {info['unmatched']}")
+        elif args.vworld:
+            # 전국 시군구 코드는 discover-sigungu 가 훑어 둔 목록에서 (권역 설정과 무관).
+            found = yaml.safe_load((ROOT / "config" / "sigungu_codes.yaml").read_text(encoding="utf-8")) or {}
+            prefixes = tuple(p.strip() for p in args.vworld.split(",") if p.strip()) or ("",)
+            codes = sorted(str(code) for sido in found.values() for code in (sido or {})
+                           if str(code).startswith(prefixes))
+            years = [int(y) for y in args.years.split(",")] if args.years else None
+            print(f"  브이월드 · 시군구 {len(codes)}곳 · 연도 {years or '전체'}")
+            info = stdland.fetch_vworld(con, codes, years)
+            print(f"  std_land 에 {info['rows']:,}행 (건너뜀 {info['skipped']})")
         else:
-            sys.exit("--drive <파일ID> · --csv <경로> · --uddi <uddi:…> 중 하나가 필요합니다")
+            sys.exit("--drive <파일ID> · --csv <경로> · --uddi <uddi:…> · --vworld <시도코드> 중 하나가 필요합니다")
         stdland.describe(con)
 
 
@@ -2430,6 +2440,8 @@ def main(argv=None):
     p.add_argument("--csv", help="로컬 CSV 경로")
     p.add_argument("--uddi", help="odcloud uddi (probe-stdland 이 찾은 것)")
     p.add_argument("--max-pages", type=int, default=None)
+    p.add_argument("--vworld", help="브이월드 속성 조회로 받을 시도 코드 (쉼표, 예: 41,43 · 전국은 빈 접두 '')")
+    p.add_argument("--years", default="", help="브이월드 — 받을 연도 (쉼표). 비우면 전체 연도")
     p.set_defaults(func=cmd_load_stdland)
 
     p = sub.add_parser("urban-check",

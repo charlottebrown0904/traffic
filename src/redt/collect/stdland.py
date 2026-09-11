@@ -34,6 +34,8 @@ from ..config import keys, settings
 from .http import get_once, polite_sleep
 
 PORTAL = "https://www.data.go.kr/data/15004246/openapi.do"
+# 승인 화면의 Swagger 주소. 포털의 openapi.do 는 이 데이터셋에 없다(404).
+SWAGGER = "https://infuser.odcloud.kr/oas/docs?namespace=15004246/v1"
 ODCLOUD = "https://api.odcloud.kr/api/15004246/v1"
 VWORLD_ATTR = "https://api.vworld.kr/ned/data/getReferLandPriceAttr"
 DOMAIN = "toji.fyi"
@@ -45,24 +47,28 @@ DOMAIN = "toji.fyi"
 #   브이월드: lower_snake (pnu, stdr_year, pblntf_pclnd, lndcgr_code_nm …)
 COLUMNS = {
     "pnu":           ("고유번호", "pnu", "필지고유번호", "표준지고유번호"),
-    "ld_code":       ("법정동코드", "ld_code", "ldcode", "법정동 코드"),
-    "ld_name":       ("법정동명", "ld_code_nm", "법정동 명", "소재지"),
-    "special":       ("특수지구분", "regstr_se", "대장구분"),
-    "jibun":         ("지번", "lnm", "본번"),
-    "std_no":        ("표준지일련번호", "일련번호", "refer_land_no", "stdland_no"),
+    "ld_code":       ("법정동코드", "ldcodenm!", "ld_code", "ldcode", "법정동 코드"),
+    "ld_name":       ("법정동명", "ld_code_nm", "ldcodenm", "법정동 명", "소재지"),
+    "special":       ("특수지구분", "regstrsecodenm", "regstr_se_code_nm", "대장구분"),
+    "jibun":         ("지번", "mnnmslno", "lnm", "본번"),
+    "std_no":        ("표준지일련번호", "stdlandsn", "일련번호", "refer_land_no", "stdland_no"),
     "year":          ("기준연도", "기준년도", "stdr_year", "stdryear", "공시연도"),
     "month":         ("기준월", "stdr_mt", "stdrmt"),
     "price":         ("공시지가", "pblntf_pclnd", "pblntfpclnd", "단위면적당가격", "가격"),
-    "jimok":         ("지목", "lndcgr", "lndcgr_code_nm"),
-    "area_m2":       ("면적", "lndpcl_ar", "토지면적"),
-    "land_use":      ("용도지역1", "용도지역", "prpos_area_1", "prpos_area_1_nm", "용도지역명1"),
-    "land_use2":     ("용도지역2", "prpos_area_2", "prpos_area_2_nm", "용도지역명2"),
-    "use_situation": ("이용상황", "lad_use_sittn", "토지이용상황"),
+    "jimok":         ("지목", "lndcgrcodenm", "lndcgr_code_nm", "lndcgr"),
+    "area_m2":       ("면적", "lndpcl_ar", "lndpclar", "토지면적"),
+    "land_use":      ("용도지역1", "용도지역", "prposareanm1", "prpos_area_1_nm", "prposarea1", "prpos_area_1", "용도지역명1"),
+    "land_use2":     ("용도지역2", "prposareanm2", "prpos_area_2_nm", "prposarea2", "prpos_area_2", "용도지역명2"),
+    "district":      ("용도지구1", "용도지구", "prposdstrcnm1", "prpos_dstrc_nm_1"),
+    "district2":     ("용도지구2", "prposdstrcnm2", "prpos_dstrc_nm_2"),
+    "use_situation": ("이용상황", "ladusesittnnm", "lad_use_sittn_nm", "lad_use_sittn", "토지이용상황"),
     "surroundings":  ("주위환경", "주위 환경", "surrounding"),
-    "road_side":     ("도로접면", "road_side", "도로 접면", "도로교통"),
-    "slope":         ("지형높이", "지세", "tpgrph_hg", "고저"),
-    "shape":         ("지형형상", "형상", "tpgrph_frm"),
-    "notice_date":   ("공시일자", "pblntf_de", "고시일자"),
+    "road_side":     ("도로접면", "roadsidecodenm", "road_side_code_nm", "road_side", "도로 접면", "도로교통"),
+    "road_dist":     ("도로거리", "roaddstnccodenm", "road_dstnc_code_nm"),
+    "slope":         ("지형높이", "지세", "tpgrphhgcodenm", "tpgrph_hg_code_nm", "tpgrph_hg", "고저"),
+    "shape":         ("지형형상", "형상", "tpgrphfrmcodenm", "tpgrph_frm_code_nm", "tpgrph_frm"),
+    "cnflc_rt":      ("저촉률", "cnflcrt", "cnflc_rt"),
+    "notice_date":   ("공시일자", "pblntf_de", "고시일자", "lastupdtdt"),
     "lon":           ("경도", "lon", "x좌표", "x"),
     "lat":           ("위도", "lat", "y좌표", "y"),
 }
@@ -70,23 +76,38 @@ COLUMNS = {
 NUMERIC = ("price", "area_m2", "lon", "lat")
 
 
+def _norm(c) -> str:
+    return re.sub(r"[\s_()]", "", str(c)).lower()
+
+
 def map_columns(cols: list[str]) -> tuple[dict[str, str], list[str]]:
-    """원천 열 이름 → 우리 이름. (사전, 못 맞춘 열)"""
-    low = {c: re.sub(r"[\s_()]", "", str(c)).lower() for c in cols}
+    """원천 열 이름 → 우리 이름. (사전, 못 맞춘 열)
+
+    두 바퀴 돈다. 먼저 **정확히 같은** 이름, 그다음 부분 일치. 그래야
+    'ldCode' 가 'ldCodeNm' 을, 'tpgrphFrmCode' 가 'tpgrphFrmCodeNm' 을
+    가로채지 않는다 (2026-09-11 탐침에서 실제로 그랬다).
+    """
+    low = {c: _norm(c) for c in cols}
     out: dict[str, str] = {}
     used: set[str] = set()
-    for ours, needles in COLUMNS.items():
-        for c in cols:
-            if c in used:
+    for exact in (True, False):
+        for ours, needles in COLUMNS.items():
+            if ours in out.values():
                 continue
-            if any(re.sub(r"[\s_()]", "", n).lower() in low[c] for n in needles):
-                # 'x' 같은 한 글자 후보는 정확히 같을 때만
-                if any(len(n) <= 1 for n in needles) and low[c] not in (n.lower() for n in needles):
-                    if not any(len(n) > 1 and re.sub(r"[\s_()]", "", n).lower() in low[c] for n in needles):
+            for n in needles:
+                if n.endswith("!"):
+                    continue
+                nn = _norm(n)
+                for c in cols:
+                    if c in used:
                         continue
-                out[c] = ours
-                used.add(c)
-                break
+                    hit = (low[c] == nn) if exact else (len(nn) > 1 and nn in low[c])
+                    if hit:
+                        out[c] = ours
+                        used.add(c)
+                        break
+                if ours in out.values():
+                    break
     unmatched = [c for c in cols if c not in used]
     return out, unmatched
 
@@ -178,9 +199,9 @@ def load_csv(con, path: str, chunk: int = 200_000) -> dict:
 
 
 STD_COLS = ["pnu", "ld_code", "ld_name", "special", "jibun", "std_no", "year", "month",
-            "price", "jimok", "area_m2", "land_use", "land_use2", "use_situation",
-            "surroundings", "road_side", "slope", "shape", "notice_date", "lon", "lat",
-            "sigungu_cd", "source"]
+            "price", "jimok", "area_m2", "land_use", "land_use2", "district", "district2",
+            "use_situation", "surroundings", "road_side", "road_dist", "slope", "shape",
+            "cnflc_rt", "notice_date", "lon", "lat", "sigungu_cd", "source"]
 
 
 def _complete(rows: pd.DataFrame, source: str = "file") -> pd.DataFrame:
@@ -198,13 +219,37 @@ def _complete(rows: pd.DataFrame, source: str = "file") -> pd.DataFrame:
 # ── 2. odcloud ─────────────────────────────────────────────────
 
 def find_uddis() -> list[str]:
+    """스웨거 문서 → 경로(uddi). 포털 페이지가 404 라 스웨거로 간다.
+    infuser 는 중계 목록에 없어 러너가 직접 부른다 — 막히면 그 사실을 적는다."""
+    import requests
+    found: list[str] = []
     try:
-        resp = get_once(PORTAL, {})
+        r = requests.get(SWAGGER, timeout=30)
+        print(f"  스웨거 HTTP {r.status_code} · {len(r.text):,}바이트")
+        if r.status_code == 200:
+            try:
+                doc = r.json()
+                paths = list((doc.get("paths") or {}).keys())
+                print(f"  경로 {len(paths)}개: {paths[:6]}")
+                for p in paths:
+                    m = re.search(r"uddi:[0-9a-fA-F-]{8,}", p)
+                    found.append(m.group(0) if m else p.strip("/"))
+                # 열 이름도 스웨거에 있다 — 응답 스키마의 properties.
+                for name, schema in (doc.get("components", {}).get("schemas") or {}).items():
+                    props = list((schema.get("properties") or {}).keys())
+                    if props:
+                        print(f"  스키마 {name}: {props[:40]}")
+            except ValueError:
+                found = sorted(set(re.findall(r"uddi:[0-9a-fA-F-]{8,}", r.text)))
     except Exception as exc:                      # noqa: BLE001
-        print(f"  포털 페이지 실패: {exc}")
-        return []
-    found = sorted(set(re.findall(r"uddi:[0-9a-fA-F-]{8,}", resp.text)))
-    print(f"  포털 HTTP {resp.status_code} · uddi {len(found)}개: {found[:6]}")
+        print(f"  스웨거 실패: {exc}")
+    if not found:
+        try:
+            resp = get_once(PORTAL, {})
+            found = sorted(set(re.findall(r"uddi:[0-9a-fA-F-]{8,}", resp.text)))
+            print(f"  포털 HTTP {resp.status_code} · uddi {len(found)}개")
+        except Exception as exc:                  # noqa: BLE001
+            print(f"  포털 페이지 실패: {exc}")
     return found
 
 
@@ -272,6 +317,52 @@ def _rows(payload) -> list[dict]:
     return []
 
 
+# ── 브이월드 적재 ─────────────────────────────────────────────
+#
+# 2026-09-11 탐침: ldCode(법정동 10자리)만 주면 그 동리의 표준지가 **모든
+# 해**(2012 부터) 로 온다. pnu 는 받지 않고(INVALID_TYPE), stdrYear=2026 은
+# 0건이었다 — 어느 해까지 있는지는 probe 가 센다. ldCode 는 2~10자리라
+# 시군구(5자리)로 부르면 한 번에 시군구 전체가 온다.
+
+def fetch_vworld(con, sigungu_codes: list[str], years: list[int] | None = None,
+                 per_page: int = 1000) -> dict:
+    """시군구 단위로 표준지 속성을 받아 std_land 에 넣는다. 재개 가능 —
+    이미 그 시군구·연도가 들어 있으면 건너뛴다."""
+    from .. import db
+    total = 0
+    skipped = 0
+    for code in sigungu_codes:
+        for year in (years or [None]):
+            if year is not None:
+                have = con.execute("SELECT count(*) FROM std_land WHERE source='vworld' "
+                                   "AND sigungu_cd=? AND year=?", [code, year]).fetchone()[0]
+                if have:
+                    skipped += 1
+                    continue
+            page = 1
+            got = 0
+            while True:
+                params = {"ldCode": code, "numOfRows": str(per_page), "pageNo": str(page)}
+                if year is not None:
+                    params["stdrYear"] = str(year)
+                rows, msg = vworld_attr(params)
+                if not rows:
+                    if page == 1 and msg and "totalCount" not in msg:
+                        print(f"  {code} {year or '전체'}: {msg[:120]}")
+                    break
+                df, _ = normalize(pd.DataFrame(rows))
+                df = _complete(df, source="vworld")
+                got += db.upsert(con, "std_land", df)
+                if len(rows) < per_page:
+                    break
+                page += 1
+                polite_sleep(0.15)
+            total += got
+            print(f"  {code} {year or '전체'}: {got:,}행")
+            polite_sleep(0.15)
+    return {"rows": total, "skipped": skipped}
+
+
 # ── 탐침 ────────────────────────────────────────────────────────
 
 # 화성 향남 (계획관리 공장 지대) · 용인 처인 (평가서 표본이 많은 곳)
@@ -305,28 +396,33 @@ def probe() -> dict:
                                "sample": data[0] if data else None})
 
     print("\n2. 브이월드 getReferLandPriceAttr")
-    tries = [
-        ({"pnu": SAMPLE_PNU, "stdrYear": "2026"}, "pnu+연도"),
-        ({"pnu": SAMPLE_PNU}, "pnu"),
-        ({"ldCode": SAMPLE_LD[0], "stdrYear": "2026"}, "ldCode(법정동)+연도"),
-        ({"ldCode": SAMPLE_LD[0][:5], "stdrYear": "2026"}, "ldCode(시군구)+연도"),
-        ({"ldCode": SAMPLE_LD[0]}, "ldCode(법정동)"),
-        ({"stdrYear": "2026"}, "연도만"),
-    ]
     out["vworld"] = []
-    for params, label in tries:
-        rows, msg = vworld_attr(params)
+    # 어느 해까지 있는가 — 한 동리를 연도별로 센다.
+    years_have = {}
+    for y in range(2020, 2027):
+        rows, msg = vworld_attr({"ldCode": SAMPLE_LD[0], "stdrYear": str(y), "numOfRows": "1"})
+        years_have[y] = len(rows)
+        polite_sleep(0.2)
+    print(f"  연도별 (동리 {SAMPLE_LD[0]}, 1건 요청): {years_have}")
+    out["vworld_years"] = years_have
+    # 시군구 5자리로 한 번에 오는가 — totalCount 를 본다.
+    for params, label in [({"ldCode": SAMPLE_LD[0][:5], "numOfRows": "3"}, "시군구 5자리 · 연도 없이"),
+                          ({"ldCode": SAMPLE_LD[0][:5], "stdrYear": "2025", "numOfRows": "3"}, "시군구 5자리 · 2025"),
+                          ({"ldCode": SAMPLE_LD[1], "stdrYear": "2025", "numOfRows": "3"}, "용인 처인 동리 · 2025")]:
+        p = {"format": "json", "pageNo": "1", "domain": DOMAIN, **params}
+        resp = get_once(VWORLD_ATTR, p, timeout=30)
+        body = resp.text
+        tc = re.search(r'"totalCount"\s*:\s*"?(\d+)', body)
+        rows = _rows(json.loads(body)) if resp.status_code == 200 and body.lstrip().startswith("{") else []
+        print(f"  [{label}] HTTP {resp.status_code} · totalCount {tc.group(1) if tc else '?'} · 받은 {len(rows)}건")
         if rows:
-            fields = list(rows[0].keys())
-            mapping, unmatched = map_columns(fields)
-            print(f"  [{label}] {len(rows)}건 · 필드 {fields}")
-            print(f"     맞춘 것: {mapping} · 못 맞춘 것: {unmatched}")
-            print(f"     첫 행: {json.dumps(rows[0], ensure_ascii=False)[:500]}")
-            out["vworld"].append({"params": label, "n": len(rows), "fields": fields,
-                                  "sample": rows[0]})
-        else:
-            print(f"  [{label}] 없음 — {msg[:160]}")
-            out["vworld"].append({"params": label, "n": 0, "memo": msg[:200]})
+            mapping, unmatched = map_columns(list(rows[0].keys()))
+            print(f"     맞춘 것: {mapping}")
+            print(f"     못 맞춘 것: {unmatched}")
+            print(f"     첫 행: {json.dumps(rows[0], ensure_ascii=False)[:600]}")
+        out["vworld"].append({"params": label, "http": resp.status_code,
+                              "total": tc.group(1) if tc else None, "n": len(rows),
+                              "sample": rows[0] if rows else None})
         polite_sleep(0.3)
     return out
 

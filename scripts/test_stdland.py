@@ -44,13 +44,23 @@ check(un == ["알 수 없는 열"], f"못 맞춘 열을 이름으로 돌려준�
 
 print()
 print("2. 브이월드식 이름")
-cols2 = ["pnu", "ld_code", "stdr_year", "pblntf_pclnd", "lndcgr_code_nm", "lndpcl_ar",
-         "prpos_area_1_nm", "lad_use_sittn_nm", "road_side_code_nm", "tpgrph_hg_code_nm",
-         "tpgrph_frm_code_nm"]
+# 2026-09-11 탐침이 실제로 돌려준 이름들 — 코드 열과 이름 열이 나란히 온다.
+cols2 = ["tpgrphHgCodeNm", "stdrYear", "lndcgrCodeNm", "roadSideCodeNm", "pblntfPclnd",
+         "tpgrphHgCode", "ladUseSittnNm", "ladUseSittn", "tpgrphFrmCode", "lastUpdtDt",
+         "regstrSeCodeNm", "stdLandSn", "prposDstrcNm2", "prposDstrcNm1", "regstrSeCode",
+         "roadDstncCode", "lndpclAr", "tpgrphFrmCodeNm", "ldCode", "ldCodeNm", "prposArea1",
+         "prposAreaNm2", "prposArea2", "prposAreaNm1", "mnnmSlno", "lndcgrCode",
+         "roadDstncCodeNm", "pnu", "prposDstrc2", "cnflcRt", "prposDstrc1", "roadSideCode"]
 m2, un2 = S.map_columns(cols2)
-check(m2.get("stdr_year") == "year" and m2.get("pblntf_pclnd") == "price"
-      and m2.get("tpgrph_frm_code_nm") == "shape", "stdr_year→year · pblntf_pclnd→price · tpgrph_frm→shape")
-check(not un2, f"전부 맞는다 — 못 맞춘 것 {un2}")
+check(m2.get("stdrYear") == "year" and m2.get("pblntfPclnd") == "price", "stdrYear→year · pblntfPclnd→price")
+check(m2.get("tpgrphFrmCodeNm") == "shape" and "tpgrphFrmCode" not in m2,
+      "형상은 이름 열(…Nm)을 잡고 코드 열은 안 잡는다")
+check(m2.get("ldCode") == "ld_code" and m2.get("ldCodeNm") == "ld_name", "ldCode 와 ldCodeNm 을 가른다")
+check(m2.get("prposAreaNm1") == "land_use" and m2.get("prposAreaNm2") == "land_use2"
+      and "prposArea1" not in m2, "용도지역은 이름 열")
+check(m2.get("roadDstncCodeNm") == "road_dist" and m2.get("prposDstrcNm1") == "district"
+      and m2.get("cnflcRt") == "cnflc_rt" and m2.get("mnnmSlno") == "jibun"
+      and m2.get("stdLandSn") == "std_no", "도로거리·용도지구·저촉률·지번·일련번호")
 
 print()
 print("3. CSV → std_land (cp949, 숫자에 쉼표)")

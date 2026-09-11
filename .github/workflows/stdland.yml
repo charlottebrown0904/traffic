@@ -6,13 +6,14 @@
 #   probe   odcloud 15004246 · 브이월드 getReferLandPriceAttr 가 무엇을 주는지
 #   drive   드라이브 CSV 를 받아 std_land 에 적재 (파일이 링크 공유여야 한다)
 #   odcloud uddi 로 끝까지 넘겨 적재
+#   vworld  시군구별 속성 조회로 적재 (ldCode 5자리 · 연도)
 name: 표준지공시지가 (탐침 · 적재)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud"
+        description: "probe / drive / odcloud / vworld"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -23,6 +24,12 @@ on:
       max_pages:
         description: "odcloud 모드 — 쪽 수 상한 (비우면 전부)"
         default: ""
+      sido:
+        description: "vworld 모드 — 시도 코드 (쉼표). 전국은 비움"
+        default: "41"
+      years:
+        description: "vworld 모드 — 연도 (쉼표). 비우면 전체"
+        default: "2025,2026"
 
 concurrency:
   group: collect
@@ -56,18 +63,29 @@ jobs:
 
       - name: 탐침
         if: inputs.mode == 'probe'
-        run: python -m redt.cli probe-stdland 2>&1 | tee /tmp/stdland.log
+        run: |
+          set -o pipefail
+          python -m redt.cli probe-stdland 2>&1 | tee /tmp/stdland.log
 
       - name: 드라이브 CSV 적재
         if: inputs.mode == 'drive'
-        run: python -m redt.cli load-stdland --drive "${{ inputs.drive_file_id }}" 2>&1 | tee /tmp/stdland.log
+        run: |
+          set -o pipefail
+          python -m redt.cli load-stdland --drive "${{ inputs.drive_file_id }}" 2>&1 | tee /tmp/stdland.log
 
       - name: odcloud 적재
         if: inputs.mode == 'odcloud'
         run: |
+          set -o pipefail
           ARGS="--uddi ${{ inputs.uddi }}"
           if [ -n "${{ inputs.max_pages }}" ]; then ARGS="$ARGS --max-pages ${{ inputs.max_pages }}"; fi
           python -m redt.cli load-stdland $ARGS 2>&1 | tee /tmp/stdland.log
+
+      - name: 브이월드 적재
+        if: inputs.mode == 'vworld'
+        run: |
+          set -o pipefail
+          python -m redt.cli load-stdland --vworld "${{ inputs.sido }}" --years "${{ inputs.years }}" 2>&1 | tee /tmp/stdland.log
 
       - name: 받은 파일은 캐시에 안 남긴다
         if: inputs.mode == 'drive'

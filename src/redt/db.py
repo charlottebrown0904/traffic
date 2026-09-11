@@ -356,11 +356,15 @@ CREATE TABLE IF NOT EXISTS std_land (
     area_m2       DOUBLE,
     land_use      VARCHAR,
     land_use2     VARCHAR,
+    district      VARCHAR,               -- 용도지구 1
+    district2     VARCHAR,
     use_situation VARCHAR,
     surroundings  VARCHAR,               -- 주위환경
     road_side     VARCHAR,
+    road_dist     VARCHAR,               -- 도로거리 (비준표 항목)
     slope         VARCHAR,
     shape         VARCHAR,
+    cnflc_rt      VARCHAR,               -- 도시계획시설 저촉률
     notice_date   VARCHAR,
     lon           DOUBLE,
     lat           DOUBLE,
@@ -380,6 +384,11 @@ MIGRATIONS = [
     "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS geocode_level VARCHAR",
     # 예전에 담긴 칸은 전부 core 범위로 훑은 것이다. 빈 값을 그렇게 읽는다.
     "ALTER TABLE parcel_tile ADD COLUMN IF NOT EXISTS scope VARCHAR",
+    # 표준지 표는 2026-09-11 첫 적재 시도 뒤 열이 늘었다.
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS district VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS district2 VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS road_dist VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS cnflc_rt VARCHAR",
 ]
 
 
