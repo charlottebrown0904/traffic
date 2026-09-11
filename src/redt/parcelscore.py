@@ -40,6 +40,7 @@ import datetime
 
 from . import db
 from .usage import road_grade
+from .valuation import use_group
 
 # 또래가 이보다 적으면 백분위가 우연이 된다. 시군구 → 시도 → 전국으로
 # 물러난다. 어느 단계로 물러났는지는 화면이 말한다.
@@ -101,20 +102,29 @@ TRAFFIC_MIN_KM = 0.5
 AXES = [
     {"key": "road", "label": "도로",
      "desc": "접한 도로의 폭과 각지 여부. 차가 들어가느냐가 단가를 "
-             "+15.7% 가릅니다 (헤도닉 실측, 95% +12.3~+19.2%)."},
-    {"key": "traffic", "label": "교통",
+             "+15.7% 가릅니다 (헤도닉 실측, 95% +12.3~+19.2%). "
+             "지적상 접면이라 현황 도로·진입로와 다를 수 있습니다."},
+    {"key": "traffic", "label": "물류 교통",
      "desc": "10km 안 영업소의 화물 통행량을 거리 제곱으로 나눠 더한 값. "
-             "IC 까지의 거리가 아니라 실제로 몇 대가 지나가는지로 잽니다."},
+             "IC 까지의 거리가 아니라 실제로 몇 대가 지나가는지로 잽니다. "
+             "물류·공장 적성이지 '오른다' 는 뜻이 아닙니다."},
     {"key": "zoning", "label": "개발 여지",
      "desc": "용도지역이 허용하는 폭. 이 시군구 안에서 이 용도지역보다 "
              "여지가 좁은 땅이 몇 %인지."},
-    {"key": "price", "label": "가격 추세",
+    {"key": "price", "label": "시장 동향",
      "desc": "이 동네·이 용도지역의 실거래 단가가 최근 몇 해 동안 얼마나 "
              "올랐는지. 지금 비싼지 싼지가 아니라 **오르는 중인지**를 "
-             "봅니다. 전국의 다른 동네·용도들과 견준 백분위입니다."},
+             "봅니다. 전국의 다른 동네·용도들과 견준 백분위입니다. "
+             "땅의 성질이 아니라 시장의 자리입니다."},
     {"key": "land", "label": "모양·지세",
      "desc": "형상과 지세. 같은 면적이라도 자루형·급경사는 실제로 쓸 수 "
-             "있는 땅이 줄어듭니다."},
+             "있는 땅이 줄어듭니다. 임야는 평가서처럼 지세만 봅니다."},
+    # 여섯째 축 (docs/six-axes-method.md). urban-check 가 채택해야 실린다.
+    {"key": "urban", "label": "주변 이용",
+     "desc": "이 땅이 속한 법정동리에서 주거·상업·공업으로 쓰이는 땅의 "
+             "면적 비율. 토지적성평가의 도시용지비율과 같은 정의이고, "
+             "같은 시군 안 동리들과 견줍니다. 높으면 전용 압력, 낮으면 "
+             "외딴 곳 — 좋고 나쁨의 방향이 없습니다."},
 ]
 
 
@@ -140,9 +150,16 @@ def zone_grade(text) -> int | None:
     return _grade_of(ZONE_LADDER, text)
 
 
-def land_grade(shape, slope) -> float | None:
-    """모양·지세를 한 축으로. 둘 중 하나만 있으면 그것만 쓴다."""
+def land_grade(shape, slope, ug=None) -> float | None:
+    """모양·지세를 한 축으로. 둘 중 하나만 있으면 그것만 쓴다.
+
+    **임야는 지세만 본다** (요구사항 2026-09-10, docs/radar-and-current-value.md
+    §2-6). 평가서의 임야지대 항목표에는 획지(형상)가 없다 — 임야에서
+    형상 반은 잡음이다. 화면(app.js parcelAxes)도 같은 규칙을 쓴다.
+    """
     a, b = shape_grade(shape), slope_grade(slope)
+    if ug == "임야":
+        a = None
     got = [g for g in (a, b) if g is not None]
     return sum(got) / len(got) if got else None
 
@@ -177,8 +194,11 @@ def _quantiles(values: list[float]) -> list[float]:
     return out
 
 
-def build(groups: list[tuple[str, str]]) -> dict:
+def build(groups: list[tuple[str, str]], urban: dict | None = None) -> dict:
     """또래 분포를 만든다.
+
+    urban 은 analyze.urban.for_web() 의 결과다. **검증(urban-check)을
+    통과했을 때만** 넘긴다 — 여기서는 붙이기만 하고 판단하지 않는다.
 
     groups 는 (묶음이름, LIKE조건) 목록 — webexport.LANDPRICE_GROUPS 와
     같은 것을 받는다. 화면의 용도지역 고르기와 같은 묶음을 써야
@@ -192,7 +212,8 @@ def build(groups: list[tuple[str, str]]) -> dict:
         rows = con.execute(f"""
             SELECT t.sigungu_cd,
                    CASE {case} ELSE NULL END AS grp,
-                   pc.road_side, pc.shape, pc.slope, pc.official_price
+                   pc.road_side, pc.shape, pc.slope, pc.official_price,
+                   pc.jimok, pc.use_situation
             FROM trade t
             JOIN trade_parcel tp ON tp.trade_id = t.trade_id
             JOIN parcel pc ON pc.pnu = tp.pnu
@@ -254,9 +275,12 @@ def build(groups: list[tuple[str, str]]) -> dict:
             )
             SELECT t.sigungu_cd,
                    CASE {case} ELSE NULL END AS grp,
-                   coalesce(g.grav, 0) AS grav
+                   coalesce(g.grav, 0) AS grav,
+                   pc.jimok, pc.use_situation
             FROM trade t
             LEFT JOIN g ON g.trade_id = t.trade_id
+            LEFT JOIN trade_parcel tp ON tp.trade_id = t.trade_id
+            LEFT JOIN parcel pc ON pc.pnu = tp.pnu
             WHERE t.kind = 'land' AND t.lat IS NOT NULL
               AND NOT coalesce(t.is_cancelled, FALSE)
               AND t.sigungu_cd IS NOT NULL
@@ -279,34 +303,48 @@ def build(groups: list[tuple[str, str]]) -> dict:
         return bag.setdefault(key, {"road": {}, "land": {}, "price": [],
                                     "traffic": [], "n": 0})
 
-    def add(key: str, r) -> None:
+    def add(key: str, r, ug=None) -> None:
         s = slot(key)
         s["n"] += 1
         g = road_grade(r.road_side)
         if g is not None:
             s["road"][g] = s["road"].get(g, 0) + 1
-        lg = land_grade(r.shape, r.slope)
+        lg = land_grade(r.shape, r.slope, ug)
         if lg is not None:
             k = int(round(lg))
             s["land"][k] = s["land"].get(k, 0) + 1
         if r.official_price and r.official_price > 0:
             s["price"].append(float(r.official_price))
 
+    # 또래 열쇠 (요구사항 2026-09-10, docs/radar-and-current-value.md §2-1).
+    #
+    # 평가서는 같은 용도지역 안에서도 임야·농지·대지의 표준지를 따로
+    # 고른다. 자연녹지 임야의 도로접면을 자연녹지 대지 거래와 견주면
+    # 임야는 전부 하위로 찍힌다. 그래서 **지목군 단을 앞에 둔다**:
+    #   시군구|용도|지목군 → 시도|용도|지목군 → 전국|용도|지목군
+    #   → 시군구|용도 → 시도|용도 → 전국|용도
+    # 지목군이 없는 거래(필지가 안 붙은 것)는 뒤의 세 단에만 들어간다.
+    def keys_for(code: str, grp: str, ug) -> list[str]:
+        out = []
+        if ug:
+            out += [f"{code}|{grp}|{ug}", f"{code[:2]}|{grp}|{ug}", f"*|{grp}|{ug}"]
+        out += [f"{code}|{grp}", f"{code[:2]}|{grp}", f"*|{grp}"]
+        return out
+
     for r in rows.itertuples(index=False):
         if not r.grp:
             continue
         code = str(r.sigungu_cd)
-        # 시군구 · 시도 · 전국 세 단계를 함께 채운다. 또래가 모자라면
-        # 화면이 위로 물러난다.
-        add(f"{code}|{r.grp}", r)
-        add(f"{code[:2]}|{r.grp}", r)
-        add(f"*|{r.grp}", r)
+        ug = use_group(r.jimok, r.use_situation)
+        for key in keys_for(code, r.grp, ug):
+            add(key, r, ug)
 
     for r in traffic.itertuples(index=False):
         if not r.grp:
             continue
         code = str(r.sigungu_cd)
-        for key in (f"{code}|{r.grp}", f"{code[:2]}|{r.grp}", f"*|{r.grp}"):
+        ug = use_group(r.jimok, r.use_situation)
+        for key in keys_for(code, r.grp, ug):
             slot(key)["traffic"].append(float(r.grav))
 
     # ── 가격 추세 ────────────────────────────────────────────
@@ -341,7 +379,8 @@ def build(groups: list[tuple[str, str]]) -> dict:
     # 모아 전국 분포를 만듭니다 — 시도·전국 열쇠까지 섞으면 같은 땅이
     # 여러 번 세어져 분포가 가운데로 쏠립니다.
     trend_q = _quantiles([v for k, v in trends.items()
-                          if not k.startswith("*|") and len(k.split("|")[0]) > 2])
+                          if not k.startswith("*|") and len(k.split("|")[0]) > 2
+                          and k.count("|") == 1])
 
     for key, s in bag.items():
         if s["n"] < MIN_PEER and not s["traffic"]:
@@ -390,4 +429,6 @@ def build(groups: list[tuple[str, str]]) -> dict:
         "trend_q": trend_q,
         "trend_years": TREND_YEARS,
         "zone_pct": zone_pct,
+        # 여섯째 축. 없으면 화면이 다섯 축을 그린다.
+        "urban": urban,
     }

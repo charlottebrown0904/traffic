@@ -4290,7 +4290,7 @@ function wireLandPrice() {
  * 숫자로 뭉개면 그 사실이 사라진다. 레이더는 "무엇이 강하고 무엇이
  * 약한가" 만 말한다.
  *
- * 그래서 다섯 축을 전부 **또래 안의 백분위**로 통일한다. 단위가 같아지고
+ * 그래서 축을 전부 **또래 안의 백분위**로 통일한다 (다섯, 주변 이용이 검증되면 여섯). 단위가 같아지고
  * (전부 %), 넓이를 점수로 안 쓰므로 축 순서도 해롭지 않다. 또래는
  * 같은 시군구·같은 용도지역에서 실제로 거래된 땅이다 — 전국 대비로 재면
  * 시골 땅은 전부 찌그러진 별이 되어 아무것도 못 읽는다. */
@@ -4377,15 +4377,42 @@ function pickTrend(sigunguCd, group) {
   return null;
 }
 
-function pickPeer(sigunguCd, group) {
+/* 지목군 — 또래 열쇠의 앞 단 (요구사항 2026-09-10). 평가서는 같은
+ * 용도지역 안에서도 임야·농지·대지의 표준지를 따로 고른다. 규칙은
+ * valuation.use_group 과 같아야 한다 — 어긋나면 화면이 딴 또래를 찾는다. */
+function useGroupOf(jimok, use) {
+  const j = String(jimok || '').trim();
+  if (j === '임야') return '임야';
+  if (['전', '답', '과수원', '목장용지'].includes(j)) return '전·답';
+  if (j === '대') return '대';
+  if (['공장용지', '도로', '잡종지', '창고용지', '주차장'].includes(j)) return '공장·도로';
+  const t = String(use || '') + ' ' + j;
+  const table = [
+    ['임야', ['임야', '자연림', '토지임야', '임']],
+    ['전·답', ['전', '답', '과수', '묵', '농', '목장']],
+    ['대', ['대', '주거', '주택', '나지', '상업']],
+    ['공장·도로', ['공장', '공업', '도로', '잡종', '창고', '주차']],
+  ];
+  const hit = table.find(([, keys]) => keys.some((k) => t.indexOf(k) >= 0));
+  return hit ? hit[0] : null;
+}
+
+function pickPeer(sigunguCd, group, ug) {
   const st = parcelStats;
   if (!st || !group) return null;
   const min = st.min_peer || 30;
-  const tries = [
+  const sido = String(sigunguCd).slice(0, 2);
+  // 지목군 단이 앞이다: 시군구|용도|지목군 → 시도|… → 전국|… → 시군구|용도 → …
+  const tries = ug ? [
+    { key: `${sigunguCd}|${group}|${ug}`, level: `같은 시군구 · ${ug}` },
+    { key: `${sido}|${group}|${ug}`, level: `같은 시·도 · ${ug}` },
+    { key: `*|${group}|${ug}`, level: `전국 · ${ug}` },
+  ] : [];
+  tries.push(
     { key: `${sigunguCd}|${group}`, level: '같은 시군구' },
-    { key: `${String(sigunguCd).slice(0, 2)}|${group}`, level: '같은 시·도' },
+    { key: `${sido}|${group}`, level: '같은 시·도' },
     { key: `*|${group}`, level: '전국' },
-  ];
+  );
   for (const t of tries) {
     const p = st.peers[t.key];
     if (p && p.n >= min) return { ...p, level: t.level, group };
@@ -4414,15 +4441,17 @@ function trafficGravity(lat, lon) {
   return { grav: sum, near };
 }
 
-/* 필지 하나 → 다섯 축. 값이 없는 축은 **비워 둔다** (0 이 아니다) —
+/* 필지 하나 → 축들. 값이 없는 축은 **비워 둔다** (0 이 아니다) —
  * 조사가 안 된 것과 나쁜 것은 다르다. */
-function parcelAxes(parcel, at) {
+function parcelAxes(parcel, at, zones) {
   const st = parcelStats;
   if (!st) return null;
   const code = String(parcel.pnu || '').slice(0, 5);
   const group = parcelGroup(parcel.land_use);
-  const peer = pickPeer(code, group);
-  const out = { peer, group, axes: [] };
+  const ug = useGroupOf(parcel.jimok, parcel.use_situation);
+  const peer = pickPeer(code, group, ug);
+  const zoneNames = (zones || []).map((z) => String((z && z.label) || z || ''));
+  const out = { peer, group, ug, axes: [] };
 
   const grade = (table, text) => {
     if (!text) return null;
@@ -4441,7 +4470,7 @@ function parcelAxes(parcel, at) {
   // 2) 교통
   const tg = trafficGravity(at[0], at[1]);
   out.axes.push({
-    key: 'traffic', label: '교통',
+    key: 'traffic', label: '물류 교통',
     pct: peer ? pctFromQuantiles(tg.grav, peer.traffic) : null,
     raw: tg.near
       ? `${tg.near.name} ${tg.near.km.toFixed(1)}km · 화물 ${Math.round(tg.near.freight).toLocaleString('ko-KR')}대/일`
@@ -4450,12 +4479,20 @@ function parcelAxes(parcel, at) {
 
   // 3) 개발 여지 — **또래가 아니라 시군구 안에서** 잰다. 또래는 용도지역
   //    으로 묶여 있어서 그 안에서 재면 늘 같은 값이 나온다.
-  const zg = grade(st.zone_ladder, parcel.land_use);
+  let zg = grade(st.zone_ladder, parcel.land_use);
+  // 농업진흥구역·개발제한구역이 겹치면 한 단 아래 (요구사항 2026-09-10,
+  // docs/radar-and-current-value.md §2-5). 평가서도 표준지를 그 구역
+  // 안에서 따로 고른다. 사다리의 분모(시군구 거래)는 용도지역만 알아서
+  // 이 한 단은 대상 필지에만 적용된다 — 그 사실을 raw 에 적는다.
+  const tight = ['농업진흥구역', '개발제한구역'].find((n) =>
+    zoneNames.some((z) => z.indexOf(n) >= 0)
+    || String(parcel.land_use2 || '').indexOf(n) >= 0);
+  if (zg !== null && zg > 0 && tight) zg -= 1;
   const zp = (st.zone_pct || {})[code];
   out.axes.push({
     key: 'zoning', label: '개발 여지',
     pct: (zp && zg !== null) ? zp[zg] : null,
-    raw: parcel.land_use || '용도 미상',
+    raw: (parcel.land_use || '용도 미상') + (tight ? ` · ${tight} (한 단 아래)` : ''),
   });
 
   // 4) 가격 추세 (요구사항 2026-09-10 — '가격 수준' 을 바꿉니다).
@@ -4473,7 +4510,7 @@ function parcelAxes(parcel, at) {
   const moNote = [mo && mo.span ? `최근 ${mo.span}년` : null,
                   mo && mo.from ? mo.from : null].filter(Boolean).join(' · ');
   out.axes.push({
-    key: 'price', label: '가격 추세',
+    key: 'price', label: '시장 동향',
     pct: (mo && (st.trend_q || []).length)
       ? pctFromQuantiles(mo.trend, st.trend_q) : null,
     raw: mo
@@ -4483,15 +4520,36 @@ function parcelAxes(parcel, at) {
   });
 
   // 5) 모양·지세
-  const sg = grade(st.shape_grade, parcel.shape);
+  // 임야는 지세만 (parcelscore.land_grade 와 같은 규칙) — 평가서의
+  // 임야지대 항목표에 형상이 없다.
+  const sg = ug === '임야' ? null : grade(st.shape_grade, parcel.shape);
   const lg = grade(st.slope_grade, parcel.slope);
   const got = [sg, lg].filter((g) => g !== null);
   const land = got.length ? Math.round(got.reduce((a, b) => a + b, 0) / got.length) : null;
   out.axes.push({
     key: 'land', label: '모양·지세',
     pct: (peer && land !== null) ? peer.land[land] : null,
-    raw: [parcel.shape, parcel.slope].filter(Boolean).join(' · ') || '조사 안 됨',
+    raw: (ug === '임야' ? [parcel.slope, '임야는 지세만'] : [parcel.shape, parcel.slope])
+      .filter(Boolean).join(' · ') || '조사 안 됨',
   });
+
+  // 6) 주변 이용 — **검증을 통과했을 때만** 내보내기가 st.urban 을 싣는다
+  //    (analyze/urban.py). 없으면 다섯 축이다. 값은 법정동리(PNU 앞
+  //    10자리)의 도시용지 면적 비율이고, 같은 시군 안 동리들의 분위로
+  //    읽는다 — 토지적성평가가 하는 방식 그대로다.
+  if (st.urban && st.urban.umd) {
+    const umd = String(parcel.pnu || '').slice(0, 10);
+    const v = st.urban.umd[umd];
+    const q = (st.urban.q || {})[code] || (st.urban.q_sido || {})[code.slice(0, 2)] || null;
+    const from = (st.urban.q || {})[code] ? null : '시·도 기준';
+    out.axes.push({
+      key: 'urban', label: '주변 이용',
+      pct: (typeof v === 'number' && q) ? pctFromQuantiles(v, q) : null,
+      raw: typeof v === 'number'
+        ? `도시용지 ${Math.round(v * 100)}% (법정동리${from ? ` · ${from}` : ''})`
+        : '동리 자료 없음',
+    });
+  }
   return out;
 }
 
@@ -4543,7 +4601,7 @@ function radarSvg(axes) {
       font-size="10.5" fill="var(--muted)">${escapeHtml(a.label)}</text>`;
   }).join('');
   return `<svg class="radar" viewBox="0 0 168 160" width="168" height="160"
-    role="img" aria-label="필지 다섯 축 진단">${rings}${spokes}${poly}${dots}${labels}</svg>`;
+    role="img" aria-label="필지 진단 레이더">${rings}${spokes}${poly}${dots}${labels}</svg>`;
 }
 
 /* 필지의 기본 정보를 표로 (요구사항 2026-09-10 — 부동산플래닛 참조).
@@ -4642,7 +4700,7 @@ function parcelZones(zones) {
     + '없습니다. 실제 건축 전에는 토지이음에서 확인하세요.</p>';
 }
 
-/* 다섯 축이 각각 무엇을 재는지 (요구사항 2026-09-10).
+/* 축이 각각 무엇을 재는지 (요구사항 2026-09-10).
  *
  * "5개 항목이 어떤 의미인지 간략하게 도표 아래에 주석으로 표기".
  * 축 이름만으로는 '개발 여지' 가 무엇을 견준 것인지 알 수 없습니다.
@@ -4652,20 +4710,29 @@ function parcelZones(zones) {
  * 가격은 높다고 좋은 것도 낮다고 좋은 것도 아닙니다. 그것을 안 적으면
  * 다섯 축을 같은 방향으로 읽게 됩니다.
  */
-const AXIS_NOTES = [
-  ['도로', '차가 들어올 수 있는가. 맹지에서 광대로까지 사다리로 매겨 또래와 견줍니다.'],
-  ['교통', '10km 안 영업소의 화물(2·3·4·5종) 통행량을 거리로 나눠 더한 값입니다.'],
-  ['개발 여지', '용도지역의 건폐율·용적률 사다리입니다. 같은 시군구 안에서 견줍니다.'],
-  ['가격 추세', '이 동네·용도지역의 실거래 단가가 최근 몇 해 얼마나 올랐는지(연평균)입니다. '
-    + '지금 비싼지가 아니라 <strong>오르는 중인지</strong>를 봅니다. 전국의 다른 동네·용도와 견줍니다.'],
-  ['모양·지세', '필지 형상과 경사입니다. 반듯하고 평평할수록 높습니다.'],
-];
+const AXIS_NOTES = {
+  road: ['도로', '차가 들어올 수 있는가. 맹지에서 광대로까지 사다리로 매겨 또래와 견줍니다. '
+    + '<strong>지적상 접면</strong>이라 현황 도로·진입로와 다를 수 있습니다.'],
+  traffic: ['물류 교통', '10km 안 영업소의 화물(2·3·4·5종) 통행량을 거리로 나눠 더한 값입니다. '
+    + '물류·공장 적성이지, 그래서 오른다는 뜻이 아닙니다.'],
+  zoning: ['개발 여지', '용도지역의 건폐율·용적률 사다리입니다. 같은 시군구 안에서 견줍니다. '
+    + '농업진흥구역·개발제한구역이 겹치면 한 단 아래로 봅니다.'],
+  price: ['시장 동향', '이 동네·용도지역의 실거래 단가가 최근 몇 해 얼마나 올랐는지(연평균)입니다. '
+    + '지금 비싼지가 아니라 <strong>오르는 중인지</strong>를 봅니다. 전국의 다른 동네·용도와 견줍니다. '
+    + '땅의 성질이 아니라 시장의 자리입니다.'],
+  land: ['모양·지세', '필지 형상과 경사입니다. 반듯하고 평평할수록 높습니다. 임야는 평가서처럼 지세만 봅니다.'],
+  urban: ['주변 이용', '이 땅이 속한 법정동리에서 주거·상업·공업으로 쓰이는 땅의 면적 비율입니다. '
+    + '같은 시군 안 동리들과 견줍니다. 높으면 전용 압력, 낮으면 외딴 곳 — '
+    + '<strong>좋고 나쁨의 방향이 없습니다.</strong>'],
+};
 
-function axisNotes() {
-  return '<details class="pc-axis-help"><summary>다섯 축이 무엇을 재는가</summary>'
-    + '<dl>' + AXIS_NOTES.map(([k, v]) =>
-      `<dt>${k}</dt><dd>${v}</dd>`).join('') + '</dl>'
-    + '<p>모두 <strong>같은 또래</strong>(같은 시군구·같은 용도지역의 거래)와 '
+function axisNotes(axes) {
+  const keys = (axes || []).map((a) => a.key).filter((k) => AXIS_NOTES[k]);
+  const n = keys.length === 6 ? '여섯' : '다섯';
+  return `<details class="pc-axis-help"><summary>${n} 축이 무엇을 재는가</summary>`
+    + '<dl>' + keys.map((k) => `<dt>${AXIS_NOTES[k][0]}</dt><dd>${AXIS_NOTES[k][1]}</dd>`).join('')
+    + '</dl>'
+    + '<p>모두 <strong>같은 또래</strong>(같은 시군구·같은 용도지역·같은 지목군의 거래)와 '
     + '견준 백분위입니다. 또래가 얇으면 시·도로 물러납니다.</p></details>';
 }
 
@@ -4703,6 +4770,292 @@ function valuePanel(key) {
     + '<p class="pcv-soon">곧 공개합니다.</p>';
 }
 
+/* ─────────── 현재 가치 — 공시지가기준법 2판 (표준지 방식) ───────────
+ *
+ * 감정평가에 관한 규칙 §14 의 순서 그대로다 (docs/radar-and-current-value.md):
+ *
+ *   토지단가 = 표준지공시지가 × 시점수정 × 지역요인 × 개별요인 × 그 밖의 요인
+ *
+ * 숫자는 여기 없다. 격차율 표·그 밖의 요인·특례는 valuation.json 이고
+ * 그 원본은 src/redt/valuation.py 다 — 표가 두 곳에 있으면 어긋난다.
+ * 여기는 산식과 표준지 고르기만 옮겼다.
+ *
+ * 표준지는 시군구 조각(stdland-NNNNN.json)으로 받는다. 조각이 없으면
+ * (아직 적재 전) 예전처럼 '곧 공개합니다' 만 보인다 — 값이 없는데
+ * 있는 척하지 않는다. 마디가 하나라도 비면 산출을 **보류**한다. */
+let valuationTables = null;
+const stdlandCache = {};
+
+/* 실패는 **기억하지 않는다.** 처음 누를 때 조각이 없었다고 그 세션 내내
+ * '곧 공개' 로 굳으면, 잠깐의 망 오류가 기능 하나를 통째로 끈다.
+ * 404 는 싸다. 성공만 담아 둔다. */
+async function loadValuationTables() {
+  if (valuationTables) return valuationTables;
+  try {
+    const r = await fetch('/app/data/valuation.json', { cache: 'no-cache' });
+    if (r.ok) valuationTables = await r.json();
+  } catch (e) { /* 없으면 현재 가치를 못 낸다. 나머지는 그대로. */ }
+  return valuationTables;
+}
+
+async function loadStdland(code) {
+  if (stdlandCache[code]) return stdlandCache[code];
+  try {
+    const r = await fetch(`/app/data/stdland-${code}.json`, { cache: 'no-cache' });
+    if (r.ok) stdlandCache[code] = await r.json();
+  } catch (e) { /* 조각이 없는 시군구 */ }
+  return stdlandCache[code] || null;
+}
+
+function zoneGroupOf(lu, T) {
+  const t = String(lu || '');
+  const hit = (T.zone_groups || []).find(([, keys]) => keys.some((k) => t.indexOf(k) >= 0));
+  return hit ? hit[0] : null;
+}
+
+function zoneKindOf(lu, jimok, use, T) {
+  const zg = zoneGroupOf(lu, T);
+  const ug = useGroupOf(jimok, use);
+  if (zg === '상업' && (ug === '대' || !ug)) return '상업지대';
+  if (zg === '공업' && (ug === '대' || ug === '공장·도로' || !ug)) return '공업지대';
+  const byUse = { '임야': '임야지대', '전·답': '농경지대', '대': '주택지대', '공장·도로': '공업지대' };
+  return byUse[ug] || (['관리', '녹지', '농림'].includes(zg) ? '농경지대' : '주택지대');
+}
+
+function idxOf(text, table) {
+  const t = String(text || '');
+  if (!t) return null;
+  const hit = (table || []).find(([k]) => t.indexOf(k) >= 0);
+  return hit ? hit[1] : null;
+}
+
+function roadIndexOf(text, T) {
+  if (!text) return null;
+  const t = String(text);
+  if (t.indexOf('지정되지') >= 0 || t.indexOf('미상') >= 0) return null;
+  let v = idxOf(t, T.road_index);
+  if (v === null && (t.indexOf('차선') >= 0 || t.indexOf('포장') >= 0)) v = 1.0;
+  if (v !== null && t.indexOf('각지') >= 0 && t.indexOf('맹지') < 0) v += T.road_corner_bonus || 0;
+  return v;
+}
+
+/* 표준지 조각의 짧은 열 이름을 필지와 같은 이름으로 편다. */
+function stdAsParcel(r) {
+  return { pnu: r.pnu, ld: r.ld, ld_name: r.nm, jibun: r.jb, year: r.y, price: r.pr,
+           jimok: r.jm, area_m2: r.ar, land_use: r.lu, land_use2: r.lu2, district: r.dz,
+           use_situation: r.us, road_side: r.rs, shape: r.sh, slope: r.sl,
+           lon: r.lon, lat: r.lat };
+}
+
+function zoneNamesOf(p, T) {
+  const keys = (T.must_match || []).concat(Object.keys(T.special || {}));
+  const texts = [p.land_use, p.land_use2, p.district]
+    .concat((p.zones || []).map((z) => (z && z.label) || z || ''))
+    .map((x) => String(x || '')).filter((x) => x && x.indexOf('지정되지') < 0);
+  const out = [];
+  texts.forEach((t) => keys.forEach((k) => { if (t.indexOf(k) >= 0 && !out.includes(k)) out.push(k); }));
+  return out;
+}
+
+function ratioOf(a, b) { return (a === null || b === null || a === undefined || b === undefined || !b) ? null : a / b; }
+
+function individualFactor(subject, std, T) {
+  const kind = zoneKindOf(subject.land_use, subject.jimok, subject.use_situation, T);
+  const items = [];
+  const warnings = [];
+  const add = (cond, mine, theirs, ratio, why) =>
+    items.push({ cond, subject: mine, std: theirs, ratio: ratio === null ? null : Math.round(ratio * 1000) / 1000, why });
+  const useTxt = String(subject.use_situation || '');
+  if (useTxt.indexOf('도로') >= 0 && (useTxt.indexOf('현황') >= 0 || subject.jimok === '도로')) {
+    const [r, why] = T.special['현황도로'];
+    add('기타(특례)', useTxt, std.use_situation, r, why);
+    return { kind, items, factor: r, warnings, special: '현황도로' };
+  }
+  let r = ratioOf(roadIndexOf(subject.road_side, T), roadIndexOf(std.road_side, T));
+  add('가로·접근 (도로접면)', subject.road_side, std.road_side, r, r === null ? '도로접면을 한쪽이라도 모른다' : null);
+  if (r === null) warnings.push('도로접면 미상 — 격차율에서 뺐다');
+  if (kind !== '임야지대') {
+    r = ratioOf(idxOf(subject.shape, T.shape_index), idxOf(std.shape, T.shape_index));
+    add('획지 (형상)', subject.shape, std.shape, r, r === null ? '형상을 한쪽이라도 모른다' : null);
+  }
+  const slopeTable = T.slope_index[kind] || T.slope_index['*'];
+  r = ratioOf(idxOf(subject.slope, slopeTable), idxOf(std.slope, slopeTable));
+  add('자연·획지 (지세)', subject.slope, std.slope, r, r === null ? '지세를 한쪽이라도 모른다' : null);
+  if (r === null) warnings.push('지세 미상 — 격차율에서 뺐다');
+  const rules = T.area_rules[kind];
+  if (rules && subject.area_m2 && std.area_m2) {
+    const q = Number(subject.area_m2) / Number(std.area_m2);
+    const rule = rules.find(([lo, hi]) => q >= lo && (hi === null || q < hi));
+    if (rule) add('획지 (면적)', `${Math.round(subject.area_m2).toLocaleString('ko-KR')}㎡`,
+                  `${Math.round(std.area_m2).toLocaleString('ko-KR')}㎡`, rule[2], rule[3] || '표준지의 0.5~3배 안');
+  }
+  const ugS = useGroupOf(subject.jimok, subject.use_situation);
+  const ugD = useGroupOf(std.jimok, std.use_situation);
+  if (ugS && ugD && ugS !== ugD) {
+    const m = T.use_mismatch[`${ugS}|${ugD}`];
+    add('행정·기타 (지목·이용상황)', ugS, ugD, m ? m[0] : null, m ? m[1] : '지목군이 다르다 — 표준지를 다시 고를 것');
+    if (!m) warnings.push(`지목군 불일치 ${ugS}/${ugD} — 표준지 재선정 권고`);
+  }
+  const zs = zoneNamesOf(subject, T);
+  const zd = zoneNamesOf(std, T);
+  (T.must_match || []).forEach((n) => {
+    if (zs.includes(n) === zd.includes(n)) return;
+    if ((T.std_known || []).includes(n)) warnings.push(`${n}이(가) 대상·표준지 한쪽에만 있다 — 표준지를 같은 구역에서 다시 고를 것`);
+    else if (zs.includes(n)) warnings.push(`대상이 ${n} 안인데 표준지 자료에는 그 구역 정보가 없어 같은지 확인하지 못했다`);
+  });
+  Object.entries(T.special || {}).forEach(([name, [ratio, why]]) => {
+    if (name === '현황도로') return;
+    if (zs.includes(name) && !zd.includes(name)) add('행정 (지구·구역)', name, '—', ratio, why);
+    else if (zd.includes(name) && !zs.includes(name) && name === '자연취락지구') add('행정 (지구·구역)', '—', name, 0.95, '표준지가 자연취락지구 (평가서 0.95)');
+  });
+  let factor = 1;
+  items.forEach((it) => { if (it.ratio !== null) factor *= it.ratio; });
+  return { kind, items, factor: Math.round(factor * 1000) / 1000, warnings, special: null };
+}
+
+/* 비교표준지 — 실무기준의 순서. 용도지역(세분까지)·구역은 거르고, 나머지는
+ * 벌점(거리 km 로 환산)이다. 좌표는 아직 없어 같은 법정동리(PNU 앞 10자리)
+ * 가 거리를 대신한다. */
+function pickStandard(subject, cands, T, top) {
+  const zg = zoneGroupOf(subject.land_use, T);
+  const ug = useGroupOf(subject.jimok, subject.use_situation);
+  const zs = zoneNamesOf(subject, T);
+  const umd = String(subject.pnu || '').slice(0, 10);
+  const rows = [];
+  cands.forEach((c) => {
+    if (zg && zoneGroupOf(c.land_use, T) !== zg) return;
+    if (subject.land_use && c.land_use && String(subject.land_use).slice(0, 4) !== String(c.land_use).slice(0, 4)) return;
+    const zc = zoneNamesOf(c, T);
+    if ((T.std_known || []).some((n) => zs.includes(n) !== zc.includes(n))) return;
+    let pen = 0; const why = [];
+    if (ug && useGroupOf(c.jimok, c.use_situation) !== ug) { pen += 0.5; why.push('지목군 다름'); }
+    const g1 = roadGradeOf(subject.road_side); const g2 = roadGradeOf(c.road_side);
+    if (g1 !== null && g2 !== null && g1 !== g2) { pen += 0.3 * Math.abs(g1 - g2); why.push(`도로접면 ${Math.abs(g1 - g2)}단 차`); }
+    if (subject.shape && c.shape && idxOf(subject.shape, T.shape_index) !== idxOf(c.shape, T.shape_index)) { pen += 0.2; why.push('형상 다름'); }
+    const s1 = idxOf(subject.slope, T.slope_index['*']); const s2 = idxOf(c.slope, T.slope_index['*']);
+    if (s1 !== null && s2 !== null && s1 !== s2) { pen += 0.3; why.push('지세 다름'); }
+    if (umd && String(c.ld || c.pnu || '').slice(0, 10) !== umd) { pen += 1.0; why.push('다른 읍면동'); }
+    let dist = null;
+    if (subject.lat != null && c.lat != null) dist = haversine(subject.lat, subject.lon, c.lat, c.lon);
+    rows.push({ ...c, distance_km: dist === null ? null : Math.round(dist * 1000) / 1000,
+                penalty: Math.round(pen * 100) / 100, score: Math.round(((dist || 0) + pen) * 1000) / 1000,
+                why: why.join(', ') || '조건 일치' });
+  });
+  rows.sort((a, b) => a.score - b.score);
+  return rows.slice(0, top || 3);
+}
+
+/* 시점수정 — 표준지 공시기준일(그해 1월 1일) → 오늘. 지가변동률이 아직
+ * 없어 또래 실거래 추세로 대신하고 평가서 관측 범위(0.98~1.03)로 누른다.
+ * 추세도 없으면 비운다 — 1.00 이 아니다. */
+function timeFactorOf(stdYear, trend, T) {
+  if (!stdYear) return { factor: null, source: '표준지 연도 미상' };
+  const base = new Date(stdYear, 0, 1); const now = new Date();
+  const months = Math.max(0, (now - base) / (30.44 * 24 * 3600 * 1000));
+  if (typeof trend !== 'number') return { factor: null, months, source: '자료 없음' };
+  const [lo, hi] = T.time_clamp || [0.98, 1.03];
+  const f = Math.min(hi, Math.max(lo, Math.pow(1 + trend, months / 12)));
+  return { factor: Math.round(f * 100000) / 100000, months: Math.round(months * 10) / 10,
+           source: '또래 실거래 추세로 대신함 (지가변동률 자료 없음)' };
+}
+
+function otherFactorOf(zg, ug, sido, T) {
+  const cell = (T.other || {})[`${zg}|${ug}`];
+  if (!cell) return { factor: null, basis: '자료 없음' };
+  const o = cell[sido] || cell['*'];
+  if (!o || !o.median) return { factor: null, basis: '자료 없음' };
+  return { factor: o.median, q1: o.q1, q3: o.q3, n: o.n,
+           basis: `${o.source} 기준 (n=${o.n}, ${o.level})` };
+}
+
+function roundDecided(x) {
+  const unit = x < 10000 ? 100 : (x < 1000000 ? 1000 : 10000);
+  return Math.round(x / unit) * unit;
+}
+
+function appraiseNow(subject, std, T, trend) {
+  const t = timeFactorOf(std.year, trend, T);
+  const ind = individualFactor(subject, std, T);
+  const zg = zoneGroupOf(subject.land_use, T);
+  const ug = useGroupOf(subject.jimok, subject.use_situation);
+  const other = otherFactorOf(zg, ug, String(subject.pnu || '').slice(0, 2), T);
+  const parts = { '표준지공시지가': std.price || null, '시점수정': t.factor, '지역요인': 1.0,
+                  '개별요인': ind.factor, '그 밖의 요인': other.factor };
+  const missing = Object.entries(parts).filter(([, v]) => v === null || v === undefined).map(([k]) => k);
+  let unit = null; let decided = null; let range = null; let total = null;
+  if (!missing.length) {
+    unit = std.price * t.factor * 1.0 * ind.factor * other.factor;
+    decided = roundDecided(unit);
+    if (subject.area_m2) total = decided * Number(subject.area_m2);
+    if (other.q1 && other.q3) range = [roundDecided(std.price * t.factor * ind.factor * other.q1),
+                                       roundDecided(std.price * t.factor * ind.factor * other.q3)];
+  }
+  return { std, time: t, individual: ind, other, parts, missing, unit_calc: unit, unit_decided: decided,
+           range, total_krw: total, warnings: ind.warnings };
+}
+
+function renderValuation(res, alts) {
+  const won = (v) => (v == null ? '—' : Math.round(v).toLocaleString('ko-KR'));
+  const e = escapeHtml;
+  const s = res.std;
+  const stdLabel = [s.ld_name, s.jibun ? `${s.jibun}` : null].filter(Boolean).join(' ')
+    || `표준지 ${String(s.pnu || '').slice(0, 10)}`;
+  const rows = [];
+  rows.push(['비교표준지', `${e(stdLabel)} · ${e([s.land_use, s.jimok || s.use_situation, s.road_side, s.shape, s.slope].filter(Boolean).join(' · '))}`
+    + ` · 공시 <b>${won(s.price)}원/㎡</b>${s.year ? ` (${s.year}.1.1)` : ''}`
+    + (s.distance_km != null ? ` · ${s.distance_km}km` : '') + (s.why ? ` <em>${e(s.why)}</em>` : '')]);
+  rows.push(['시점수정', res.time.factor == null ? `<em>자료 없음</em>` : `<b>${res.time.factor.toFixed(3)}</b> <span>${e(res.time.source)}${res.time.months ? ` · ${res.time.months}개월` : ''}</span>`]);
+  rows.push(['지역요인', '<b>1.000</b> <span>같은 인근지역에서 표준지를 골랐다 (평가서 41/41 이 1.00)</span>']);
+  const items = res.individual.items.map((it) =>
+    `<li>${e(it.cond)} — ${e(String(it.subject || '—'))} / ${e(String(it.std || '—'))} × <b>${it.ratio == null ? '—' : it.ratio.toFixed(3)}</b>${it.why ? ` <span>${e(it.why)}</span>` : ''}</li>`).join('');
+  rows.push(['개별요인', `<b>${res.individual.factor.toFixed(3)}</b> <span>[${e(res.individual.kind)}]</span><ul class="pcv-items">${items}</ul>`]);
+  rows.push(['그 밖의 요인', res.other.factor == null ? '<em>자료 없음</em>' : `<b>${res.other.factor}</b> <span>${e(res.other.basis)}</span>`]);
+  let bottom;
+  if (res.missing.length) {
+    bottom = `<p class="pcv-hold">산출 보류 — 비어 있는 마디: ${e(res.missing.join(', '))}. 1.00 으로 메우지 않습니다.</p>`;
+  } else {
+    const p = res.parts;
+    bottom = `<p class="pcv-calc">${won(p['표준지공시지가'])} × ${p['시점수정'].toFixed(3)} × 1.000 × ${p['개별요인'].toFixed(3)} × ${p['그 밖의 요인']} = ${won(res.unit_calc)}원/㎡</p>`
+      + `<p class="pcv-decided">결정단가 <b>${won(res.unit_decided)}원/㎡</b>`
+      + (res.range ? ` <span>(흔히 ${won(res.range[0])}~${won(res.range[1])})</span>` : '') + '</p>'
+      + (res.total_krw ? `<p class="pcv-total">총액 약 <b>${won(res.total_krw)}원</b></p>` : '');
+  }
+  const alt = (alts || []).length > 1
+    ? '<details class="pcv-alts"><summary>다른 표준지를 쓰면</summary><ul>'
+      + alts.slice(1).map((a) => `<li>${e([a.std.ld_name, a.std.jibun].filter(Boolean).join(' ') || a.std.pnu)} · ${e([a.std.land_use, a.std.jimok, a.std.road_side].filter(Boolean).join(' · '))} · 공시 ${won(a.std.price)} → `
+        + (a.unit_decided == null ? '보류' : `<b>${won(a.unit_decided)}원/㎡</b>`) + `</li>`).join('')
+      + '</ul></details>' : '';
+  const warn = res.warnings.length ? `<ul class="pcv-warn">${res.warnings.map((w) => `<li>${e(w)}</li>`).join('')}</ul>` : '';
+  return '<table class="pcv-table"><tbody>'
+    + rows.map(([k, v]) => `<tr><th>${e(k)}</th><td>${v}</td></tr>`).join('')
+    + '</tbody></table>' + bottom + warn + alt
+    + '<p class="pcv-note">공시지가기준법(감정평가에 관한 규칙 §14)의 다섯 마디를 공개 자료로 '
+    + '재현한 참고값입니다. 감정평가가 아니며, 그 밖의 요인은 감정평가서 표본에서 배운 값입니다.</p>';
+}
+
+/* 단추를 누르면 여기로 온다. 조각이 없으면 예전 글(곧 공개)로 둔다. */
+async function fillNowValue(box) {
+  const ctx = window.__parcel;
+  if (!ctx || !ctx.parcel) return;
+  const parcel = ctx.parcel;
+  const code = String(parcel.pnu || '').slice(0, 5);
+  const [T, chunk] = await Promise.all([loadValuationTables(), loadStdland(code)]);
+  if (!T || !chunk || !chunk.rows || !chunk.rows.length) return;
+  if (box.dataset.open !== 'now') return;
+  const subject = { ...parcel, zones: ctx.zones || [] };
+  const cands = chunk.rows.map(stdAsParcel);
+  const picked = pickStandard(subject, cands, T, 3);
+  if (!picked.length) {
+    box.innerHTML = `<h4>${VALUE_SERVICES.now.label}</h4>`
+      + '<p class="pcv-hold">같은 용도지역·구역의 표준지가 이 시군구 조각에 없어 산출을 보류합니다.</p>';
+    return;
+  }
+  const mo = pickTrend(code, parcelGroup(parcel.land_use));
+  const results = picked.map((std) => appraiseNow(subject, std, T, mo ? mo.trend : null));
+  box.innerHTML = `<h4>${VALUE_SERVICES.now.label} <span class="pcv-sub">공시지가기준법 · 표준지 ${chunk.n.toLocaleString('ko-KR')}필지 중 고름</span></h4>`
+    + renderValuation(results[0], results);
+}
+
 /* 카드는 누를 때마다 통째로 다시 그려진다. 그래서 단추에 직접 듣지
  * 않고 문서에 한 번만 건다 — 안 그러면 두 번째 필지부터 안 눌린다. */
 function wireValueButtons() {
@@ -4721,6 +5074,7 @@ function wireValueButtons() {
     box.dataset.open = key;
     box.hidden = false;
     box.innerHTML = valuePanel(key);
+    if (key === 'now') fillNowValue(box);
   });
 }
 
@@ -4742,7 +5096,7 @@ function parcelCard(parcel, diag, at, addr, zones) {
     + (py ? ` <em>(${won(py)}평)</em>` : '') + '</div>'
     + (diag ? radarSvg(diag.axes) : '')
     + (rows ? `<table class="pc-axes"><tbody>${rows}</tbody></table>` : '')
-    + (diag ? axisNotes() : '')
+    + (diag ? axisNotes(diag.axes) : '')
     + valueButtons()
     + '<h4 class="pc-sub">토지 정보</h4>'
     + parcelFacts(parcel, zones)
@@ -4754,7 +5108,7 @@ function parcelCard(parcel, diag, at, addr, zones) {
     // **합산하지 않는다**는 것을 화면에도 적는다. 이것이 이 제품이
     // 땅박사와 갈리는 지점이고, 적어 두지 않으면 사람은 넓이를 점수로
     // 읽는다.
-    + '<p class="pc-note">다섯 축을 더해 하나의 점수로 만들지 않습니다. '
+    + '<p class="pc-note">축을 더해 하나의 점수로 만들지 않습니다. '
     + '같은 땅이 창고에는 좋고 주택에는 나쁠 수 있어서, 그 차이가 '
     + '점수 하나로 뭉개지면 사라집니다.</p>'
     + eumLink(parcel)
@@ -4860,7 +5214,7 @@ async function askParcel(latlng) {
     return;
   }
   drawParcelShape(res.geom);
-  const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng]) : null;
+  const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng], res.zones || []) : null;
   detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng],
                         res.addr, res.zones || []));
   window.__parcel = { parcel, diag, geom: res.geom || null,

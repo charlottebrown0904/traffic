@@ -131,3 +131,9 @@ subject   대상 토지의 값       comp  비교표준지의 값       ratio  �
    달라서, 실물을 보기 전에 만들면 헛짓이 됩니다.
 3. 검산(`산식 곱 ≈ 평가액`)이 몇 %나 맞는지 보고합니다.
 4. 맞으면 나머지를 다 읽고, 배율 회귀를 붙여 '현재 가치' 단추를 켭니다.
+
+## 검토 결과
+
+2026-09-10 에 52건을 읽고 산출식·변수표·배율표를 냈습니다 →
+[`appraisal-review.md`](appraisal-review.md). 한 건씩 뽑은 값과 살펴본
+파일 목록은 [`data/appraisal/ledger.tsv`](../data/appraisal/ledger.tsv).

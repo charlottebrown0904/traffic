@@ -279,7 +279,7 @@ CREATE TABLE IF NOT EXISTS parcel_tile (
 -- ## 원본은 저장소에 두지 않는다
 --
 -- 감정평가서에는 소유자·채무자 이름이 적혀 있다. 이 저장소는 **공개**다.
--- 원본 PDF 는 data/raw/appraisal/ (gitignore 됨) 에만 두고, 이 표에는
+-- 원본 PDF 는 구글 드라이브(개인 계정)에만 두고, 이 표에는
 -- 사람 이름이 들어가는 칸을 아예 만들지 않는다.
 CREATE TABLE IF NOT EXISTS appraisal (
     appraisal_id  VARCHAR PRIMARY KEY,  -- 사건번호-물건번호-일련
@@ -338,6 +338,47 @@ CREATE TABLE IF NOT EXISTS appraisal_factor (
     ratio        DOUBLE,    -- 격차율 (1.00 = 같음)
     PRIMARY KEY (appraisal_id, group_nm, item_nm)
 );
+
+-- 표준지공시지가 (collect/stdland). '현재 가치' 2판의 첫 마디.
+-- 원천 셋(파일·odcloud·브이월드)을 같은 열로 접는다. 사람 이름은 없다.
+CREATE TABLE IF NOT EXISTS std_land (
+    std_id        VARCHAR PRIMARY KEY,   -- pnu-연도 (pnu 가 없으면 법정동코드-지번-연도)
+    pnu           VARCHAR,
+    ld_code       VARCHAR,               -- 법정동코드 10자리
+    ld_name       VARCHAR,
+    special       VARCHAR,               -- 특수지 구분 (일반/산)
+    jibun         VARCHAR,
+    std_no        VARCHAR,               -- 표준지 일련번호
+    year          INTEGER,               -- 기준연도
+    month         VARCHAR,
+    price         DOUBLE,                -- 공시지가 원/㎡
+    jimok         VARCHAR,
+    area_m2       DOUBLE,
+    land_use      VARCHAR,
+    land_use2     VARCHAR,
+    district      VARCHAR,               -- 용도지구 1
+    district2     VARCHAR,
+    use_situation VARCHAR,
+    surroundings  VARCHAR,               -- 주위환경
+    road_side     VARCHAR,
+    road_dist     VARCHAR,               -- 도로거리 (비준표 항목)
+    slope         VARCHAR,
+    shape         VARCHAR,
+    cnflc_rt      VARCHAR,               -- 도시계획시설 저촉률
+    notice_date   VARCHAR,
+    lon           DOUBLE,
+    lat           DOUBLE,
+    sigungu_cd    VARCHAR,
+    source        VARCHAR,               -- file / odcloud / vworld
+    -- 원천의 코드 열. 이름이 빈 행을 코드로 채우고, 코드표를 배우는 재료.
+    land_use_code  VARCHAR,
+    land_use2_code VARCHAR,
+    use_code       VARCHAR,
+    road_side_code VARCHAR,
+    road_dist_code VARCHAR,
+    slope_code     VARCHAR,
+    shape_code     VARCHAR
+);
 """
 
 
@@ -351,6 +392,18 @@ MIGRATIONS = [
     "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS geocode_level VARCHAR",
     # 예전에 담긴 칸은 전부 core 범위로 훑은 것이다. 빈 값을 그렇게 읽는다.
     "ALTER TABLE parcel_tile ADD COLUMN IF NOT EXISTS scope VARCHAR",
+    # 표준지 표는 2026-09-11 첫 적재 시도 뒤 열이 늘었다.
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS district VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS district2 VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS road_dist VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS cnflc_rt VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS land_use_code VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS land_use2_code VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS use_code VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS road_side_code VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS road_dist_code VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS slope_code VARCHAR",
+    "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS shape_code VARCHAR",
 ]
 
 

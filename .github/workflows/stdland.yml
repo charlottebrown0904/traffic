@@ -7,13 +7,19 @@
 #   drive   드라이브 CSV 를 받아 std_land 에 적재 (파일이 링크 공유여야 한다)
 #   odcloud uddi 로 끝까지 넘겨 적재
 #   vworld  시군구별 속성 조회로 적재 (ldCode 5자리 · 연도)
+#   value-test  현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다
+#   law-probe   국가법령정보센터 자치법규 API 탐침 (조례 한 건, LAW_OC 필요)
+#   law         전국 도시계획조례 → data/ordinance/ 관심 조문 (브랜치에 커밋)
+#
+# 비공개 감정평가 인자 DB(Supabase)는 SUPABASE_URL · SUPABASE_SERVICE_KEY 로
+# 읽는다. 없으면 '평가선례 자료 없음' 으로 돈다 — 값을 지어내지 않는다.
 name: 표준지공시지가 (탐침 · 적재)
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld"
+        description: "probe / drive / odcloud / vworld / value-test / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -25,11 +31,23 @@ on:
         description: "odcloud 모드 — 쪽 수 상한 (비우면 전부)"
         default: ""
       sido:
-        description: "vworld 모드 — 시도 코드 (쉼표). 전국은 비움"
+        description: "vworld 모드 — 시도 코드 (쉼표). 전국은 all (비우면 기본값이 들어간다)"
         default: "41"
       years:
         description: "vworld 모드 — 연도 (쉼표). 비우면 전체"
         default: "2025,2026"
+      sigungu:
+        description: "value-test 모드 — 시군구 코드 5자리"
+        default: "41550"
+      zone:
+        description: "value-test 모드 — 용도지역 조각"
+        default: "계획관리"
+      n:
+        description: "value-test 모드 — 임의로 뽑을 거래 수"
+        default: "5"
+      query:
+        description: "law 모드 — 조례 검색어"
+        default: "도시계획 조례"
 
 concurrency:
   group: collect
@@ -43,8 +61,13 @@ jobs:
       PYTHONPATH: src
       REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
       REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      LAW_OC: ${{ secrets.LAW_OC }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0     # law 모드가 rebase 로 커밋한다
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -71,7 +94,9 @@ jobs:
         if: inputs.mode == 'drive'
         run: |
           set -o pipefail
-          python -m redt.cli load-stdland --drive "${{ inputs.drive_file_id }}" 2>&1 | tee /tmp/stdland.log
+          # 파일에 기준연도 열이 없다 — years 의 마지막 값(예: 2026)을 쓴다.
+          YEARS="${{ inputs.years }}"; YEAR="${YEARS##*,}"
+          python -m redt.cli load-stdland --drive "${{ inputs.drive_file_id }}" --year "$YEAR" 2>&1 | tee /tmp/stdland.log
 
       - name: odcloud 적재
         if: inputs.mode == 'odcloud'
@@ -87,12 +112,49 @@ jobs:
           set -o pipefail
           python -m redt.cli load-stdland --vworld "${{ inputs.sido }}" --years "${{ inputs.years }}" 2>&1 | tee /tmp/stdland.log
 
+      - name: 현재 가치 검증 (실거래 대입)
+        if: inputs.mode == 'value-test'
+        run: |
+          set -o pipefail
+          python -m redt.cli value-test --sigungu "${{ inputs.sigungu }}" --zone "${{ inputs.zone }}" --n "${{ inputs.n }}" 2>&1 | tee /tmp/stdland.log
+
+      - name: 자치법규 API 탐침
+        if: inputs.mode == 'law-probe'
+        run: |
+          set -o pipefail
+          python -m redt.cli probe-law --query "${{ inputs.query }}" 2>&1 | tee /tmp/stdland.log
+
+      - name: 도시계획조례 적재
+        if: inputs.mode == 'law'
+        run: |
+          set -o pipefail
+          python -m redt.cli load-ordinances --query "${{ inputs.query }}" 2>&1 | tee /tmp/stdland.log
+
+      - name: 조례 조문 커밋
+        if: inputs.mode == 'law'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/ordinance
+          if git diff --cached --quiet; then
+            echo "바뀐 조문이 없습니다 — 커밋 생략"
+            exit 0
+          fi
+          git commit -m "data: 도시계획조례 관심 조문 (run ${{ github.run_number }})"
+          BRANCH="${{ github.ref_name }}"
+          for i in 1 2 3 4; do
+            git pull --rebase --autostash origin "$BRANCH" \
+              && git push origin "HEAD:$BRANCH" && exit 0
+            sleep $((2 ** i))
+          done
+          exit 1
+
       - name: 받은 파일은 캐시에 안 남긴다
         if: inputs.mode == 'drive'
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -110,6 +172,24 @@ jobs:
             cat /tmp/stdland.log 2>/dev/null || echo "(로그 없음)"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 검증 결과 첨부
+        if: always() && inputs.mode == 'value-test'
+        uses: actions/upload-artifact@v4
+        with:
+          name: value-test
+          path: data/processed/value_test.json
+          if-no-files-found: ignore
+
+      - name: 조례 탐침 결과 첨부
+        if: always() && inputs.mode == 'law-probe'
+        uses: actions/upload-artifact@v4
+        with:
+          name: law-probe
+          path: |
+            data/processed/law_probe.json
+            data/processed/ordinance/probe-*.json
+          if-no-files-found: ignore
 
       - name: 탐침 결과 첨부
         if: always() && inputs.mode == 'probe'

@@ -40,7 +40,8 @@ class ApiError(RuntimeError):
 
 
 # 중계기가 키를 끼워 넣으므로, 이쪽에서 보낸 키 자리는 지우고 보낸다.
-_KEY_PARAMS = ("serviceKey", "key", "apiKey", "authKey", "accessKey")
+# OC 는 국가법령정보센터의 가입 아이디 — 키처럼 다룬다 (collect/law.py).
+_KEY_PARAMS = ("serviceKey", "key", "apiKey", "authKey", "accessKey", "OC")
 
 
 def _via_relay(url: str, params: dict) -> tuple[str, dict, dict]:
@@ -78,6 +79,8 @@ RELAYED_HOSTS = {
     "www.vworld.kr",
     "data.ex.co.kr",
     "kosis.kr",
+    # 자치법규(조례) Open API — 시군 도시계획조례의 건폐율·용적률·개발행위 기준.
+    "www.law.go.kr",
 }
 
 

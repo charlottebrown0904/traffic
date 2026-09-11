@@ -46,13 +46,16 @@ const ALLOW = {
   // 그러면 호출 측이 키를 들고 있어야 한다 — 키는 중계기에만 둔다는 원칙과
   // 어긋난다. env 를 지정하면 STRIP 이 들어온 키를 지우고 우리 것으로 덮는다.
   "kosis.kr":        { param: "apiKey",     env: "KOSIS_KEY" },
+  // 국가법령정보센터 Open API (자치법규 조례). OC 는 가입 아이디인데 키처럼
+  // 다룬다 — 호출 측이 들고 있지 않게 중계기가 끼워 넣는다.
+  "www.law.go.kr":   { param: "OC",         env: "LAW_OC" },
 };
 
 // 브이월드 콘솔에 등록된 서비스 주소. 환경변수(VWORLD_REFERER)가 있으면
 // 그것이 이긴다 — 주소가 또 바뀔 때 코드를 안 고치기 위해서다.
 const DEFAULT_REFERER = "https://toji.fyi/";
 
-const STRIP = ["serviceKey", "key", "apiKey", "authKey", "accessKey"];
+const STRIP = ["serviceKey", "key", "apiKey", "authKey", "accessKey", "OC"];
 const TIMEOUT_MS = 25_000;
 
 function deny(res, code, message) {

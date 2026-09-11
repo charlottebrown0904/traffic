@@ -146,8 +146,19 @@ check(zp[5] > zp[1], f"계획관리(5)가 농림(1)보다 위 — {zp[5]} vs {zp
 print()
 print("4. 점수를 만들지 않는다")
 blob = json.dumps(got, ensure_ascii=False)
-# 축이 다섯이고, 어디에도 '총점'·'등급' 같은 단일 값이 없어야 한다.
-check(len(got["axes"]) == 5, f"축이 다섯 — {[a['key'] for a in got['axes']]}")
+# 축은 여섯(설명)이고, 어디에도 '총점'·'등급' 같은 단일 값이 없어야 한다.
+# 여섯째(주변 이용)는 설명만 있고 **자료는 검증을 통과했을 때만** 실린다.
+check(len(got["axes"]) == 6, f"축이 여섯 — {[a['key'] for a in got['axes']]}")
+check(got.get("urban") is None, "주변 이용 자료는 검증 전이라 비어 있다 (urban=None)")
+check(ps.build([("계획관리", "계획관리")], urban={"umd": {}, "q": {}})["urban"] is not None,
+      "검증을 통과해 넘기면 그대로 싣는다")
+# 또래 열쇠에 지목군 단이 앞선다 (2026-09-10). 검사 필지는 전부 지목 '전'.
+check("41550|계획관리|전·답" in peers, "지목군 열쇠 — 시군구|용도|전·답")
+check(peers["41550|계획관리|전·답"]["n"] == 40, "지목군 또래도 40건")
+check("41550|계획관리|임야" not in peers, "없는 지목군은 만들지 않는다")
+# 임야는 지세만 본다.
+check(ps.land_grade("자루형", "평지", "임야") == 5, "임야는 형상을 무시하고 지세만")
+check(ps.land_grade("자루형", "평지") == 2.5, "농지는 둘의 평균")
 check(not any(k in got for k in ("score", "total", "grade", "rank")),
       "합산 점수를 안 낸다 (있으면 땅박사가 되고 우리는 환경 자료가 없다)")
 check(all("desc" in a and len(a["desc"]) > 10 for a in got["axes"]),

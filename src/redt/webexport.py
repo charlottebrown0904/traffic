@@ -275,6 +275,59 @@ def _finite(obj):
     return obj
 
 
+def _stdland_files() -> None:
+    """std_land → stdland-{시군구}.json (가장 최근 해) + valuation.json (격차율 표).
+
+    좌표는 아직 없다(브이월드 속성 조회에 없음). 화면은 같은 법정동리
+    (PNU 앞 10자리)를 먼저 보고 그다음 시군구 안에서 고른다.
+    """
+    from . import valuation as V
+    with db.connect(read_only=True) as con:
+        if not con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name='std_land'"
+                           ).fetchone()[0]:
+            return
+        n = con.execute("SELECT count(*) FROM std_land").fetchone()[0]
+        if not n:
+            return
+        df = con.execute("""
+            WITH latest AS (
+                SELECT pnu, max(year) AS year FROM std_land
+                WHERE price > 0 AND pnu IS NOT NULL GROUP BY pnu
+            )
+            SELECT s.pnu, s.ld_code, s.ld_name, s.jibun, s.year, s.price, s.jimok, s.area_m2,
+                   s.land_use, s.land_use2, s.district, s.use_situation, s.road_side, s.shape,
+                   s.slope, s.sigungu_cd, s.lon, s.lat
+            FROM std_land s JOIN latest l ON l.pnu = s.pnu AND l.year = s.year
+        """).fetchdf()
+    keep = set()
+    total = 0
+    # 빈 문자열은 값이 아니다 — 브이월드가 '' 로 준 용도지역2 가 그대로
+    # 실리면 화면이 그것을 이름으로 읽는다.
+    for c in df.columns:
+        if df[c].dtype == object:
+            df[c] = df[c].where(df[c].astype(str).str.strip() != "", None)
+    for code, g in df.groupby("sigungu_cd"):
+        rows = []
+        for r in g.itertuples(index=False):
+            rows.append({"pnu": r.pnu, "ld": r.ld_code, "nm": r.ld_name, "jb": r.jibun,
+                         "y": int(r.year) if r.year == r.year else None,
+                         "pr": r.price, "jm": r.jimok, "ar": r.area_m2, "lu": r.land_use,
+                         "lu2": r.land_use2, "dz": r.district, "us": r.use_situation,
+                         "rs": r.road_side, "sh": r.shape, "sl": r.slope,
+                         "lon": r.lon, "lat": r.lat})
+        fname = f"stdland-{code}.json"
+        _write(fname, {"sigungu": str(code), "n": len(rows), "rows": rows})
+        keep.add(fname)
+        total += len(rows)
+    for stale in WEB_DATA.glob("stdland-*.json"):
+        if stale.name not in keep:
+            stale.unlink()
+    _write("valuation.json", V.tables_for_web())
+    years = sorted(int(y) for y in df["year"].dropna().unique())
+    print(f"  표준지 {total:,}필지 · 시군구 조각 {len(keep)}개 · 연도 {years[:1]}~{years[-1:]}"
+          f" · 격차율 표 valuation.json")
+
+
 def _write(name: str, payload) -> Path:
     WEB_DATA.mkdir(parents=True, exist_ok=True)
     path = WEB_DATA / name
@@ -1749,6 +1802,13 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
                 print(f"  낡은 명부 조각 삭제: {stale.name}")
     _write("landprice.json", landprice)
 
+    # 표준지공시지가 — '현재 가치' 2판의 첫 마디. std_land 가 있을 때만
+    # 시군구별로 낸다. 화면은 필지의 시군구 조각 하나만 받는다.
+    try:
+        _stdland_files()
+    except Exception as exc:                       # noqa: BLE001
+        print(f"  ⚠ 표준지 조각을 못 만들었습니다: {exc}")
+
     # 필지 진단(레이더)의 또래 분포. 요구사항(2026-09-08):
     # "해당 필지를 클릭하면 스파이더 차트를 통해 여러가지 인자들을 분석".
     #
@@ -1757,8 +1817,15 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
     # 전원주택에는 C급인데, 하나의 숫자로 뭉개면 그 사실이 사라진다.
     try:
         from .parcelscore import build as _peer_build
+        from .analyze import urban as _urban
+        # 여섯째 축은 검증(urban-check)이 채택했을 때만 실린다.
+        with db.connect(read_only=True) as _con:
+            _u = _urban.for_web(_con) if _urban.adopted() else None
+        if _u is None:
+            print("  주변 이용 축: urban_check.json 이 '채택' 이 아니라 싣지 않습니다")
         _write("parcelstats.json",
-               _peer_build([(name, like) for name, like, _k in LANDPRICE_GROUPS]))
+               _peer_build([(name, like) for name, like, _k in LANDPRICE_GROUPS],
+                           urban=_u))
     except Exception as exc:                       # noqa: BLE001
         # 조인 표가 없는 실행(캐시가 비었을 때)에서도 나머지는 나가야 한다.
         print(f"  ⚠ 필지 진단 또래 분포를 못 만들었습니다: {exc}")

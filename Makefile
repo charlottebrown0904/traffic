@@ -56,6 +56,11 @@ test: test-server
 	$(PY) scripts/test_landchar_scope.py
 	$(PY) scripts/test_landprice.py
 	$(PY) scripts/test_parcelscore.py
+	$(PY) scripts/test_valuation.py
+	$(PY) scripts/test_appraisal_db.py
+	$(PY) scripts/test_law.py
+	$(PY) scripts/test_urban.py
+	$(PY) scripts/test_stdland.py
 	$(PY) scripts/test_analysis.py
 	node scripts/test_palette.js
 	node scripts/test_board.js
