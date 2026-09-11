@@ -185,7 +185,7 @@ def cmd_load_stdland(args):
             print(f"  std_land 에 {info['rows']:,}행 / 전체 {info['total']:,}")
             if info["unmatched"]:
                 print(f"  못 맞춘 열: {info['unmatched']}")
-        elif args.vworld:
+        elif args.vworld is not None:
             # 전국 시군구 코드는 discover-sigungu 가 훑어 둔 목록에서 (권역 설정과 무관).
             found = yaml.safe_load((ROOT / "config" / "sigungu_codes.yaml").read_text(encoding="utf-8")) or {}
             prefixes = tuple(p.strip() for p in args.vworld.split(",") if p.strip()) or ("",)
