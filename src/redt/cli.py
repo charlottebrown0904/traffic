@@ -2652,7 +2652,7 @@ def main(argv=None):
     p.add_argument("--query", default="안성시 도시계획 조례")
     p.set_defaults(func=cmd_probe_law)
     p = sub.add_parser("load-ordinances", help="전국 도시계획조례 → data/ordinance/ (관심 조문만)")
-    p.add_argument("--query", default="도시계획 조례")
+    p.add_argument("--query", default="", help="쉼표로 여럿 · 비우면 law.QUERIES")
     p.add_argument("--limit", type=int, default=None, help="처음 n건만 (시험용)")
     p.set_defaults(func=cmd_load_ordinances)
 

@@ -48,7 +48,10 @@ const ALLOW = {
   "kosis.kr":        { param: "apiKey",     env: "KOSIS_KEY" },
   // 국가법령정보센터 Open API (자치법규 조례). OC 는 가입 아이디인데 키처럼
   // 다룬다 — 호출 측이 들고 있지 않게 중계기가 끼워 넣는다.
-  "www.law.go.kr":   { param: "OC",         env: "LAW_OC",
+  // keepClient: 호출 측이 OC 를 실어 보냈으면 그것을 살린다. 법제처 본문(DRF)은
+  // 등록 IP 가 없는 우리 계정으로는 거부되고 공개 견본 계정(OC=test)으로는
+  // 열린다(run 30). 자리표(__via_relay__)나 빈 값이면 LAW_OC 를 끼운다.
+  "www.law.go.kr":   { param: "OC",         env: "LAW_OC", keepClient: true,
                        referer: () => process.env.LAW_REFERER || DEFAULT_REFERER },
 };
 
@@ -120,8 +123,11 @@ module.exports = async function handler(req, res) {
     secret = process.env[rule.env];
     if (!secret) return deny(res, 500, `${rule.env} 이 설정되지 않았습니다`);
     // 호출 측이 실수로 키 비슷한 것을 넣어 보냈어도 우리 것으로 덮어쓴다.
+    const given = target.searchParams.get(rule.param);
     for (const name of STRIP) target.searchParams.delete(name);
-    target.searchParams.set(rule.param, secret);
+    if (!(rule.keepClient && given && given !== "__via_relay__")) {
+      target.searchParams.set(rule.param, secret);
+    }
   }
 
   const stop = new AbortController();

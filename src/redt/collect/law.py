@@ -324,13 +324,87 @@ def articles(payload) -> list[dict]:
     return found
 
 
+def flat_text(x) -> str:
+    """조문 사전 안의 문자열을 순서대로 다 잇는다 — 항·호 속 문장까지.
+    건폐율 수치는 대개 항·호에 있어 조문내용만 보면 놓친다."""
+    parts: list[str] = []
+
+    def walk(v):
+        if isinstance(v, dict):
+            for k, w in v.items():
+                if k in ("조문번호", "조문여부", "조문키", "조문시행일자", "조문변경여부"):
+                    continue
+                walk(w)
+        elif isinstance(v, list):
+            for w in v:
+                walk(w)
+        elif isinstance(v, (str, int)) and str(v).strip():
+            t = re.sub(r"\s+", " ", str(v)).strip()
+            if not parts or t not in parts[-1]:
+                parts.append(t)
+    walk(x)
+    return " ".join(parts)
+
+
+def art_no(raw: str) -> str:
+    """조문번호 → 사람 표기. '000100'→제1조, '005802'→제58조의2, '58'→제58조."""
+    raw = str(raw or "").strip()
+    if re.fullmatch(r"\d{6}", raw):
+        jo, ui = int(raw[:4]), int(raw[4:])
+        return f"제{jo}조" + (f"의{ui}" if ui else "")
+    if re.fullmatch(r"\d+", raw):
+        return f"제{int(raw)}조"
+    return raw
+
+
 def relevant(payload) -> list[dict]:
     out = []
     for a in articles(payload):
-        text = " ".join(str(v) for v in a.values() if isinstance(v, (str, int)))
+        text = flat_text(a)
         if any(k in text for k in KEYWORDS):
-            out.append({"no": _pick(a, "조문번호", "조번호"), "title": _pick(a, "조문제목"),
-                        "text": _pick(a, "조문내용")[:6000]})
+            no = _pick(a, "조문번호", "조번호")
+            out.append({"no": no, "label": art_no(no), "title": _pick(a, "조문제목"), "text": text[:8000]})
+    return out
+
+
+def html_articles(html: str) -> list[dict]:
+    """웹 본문(ordinInfoR.do)의 HTML 을 조문으로 자른다 — XML 이 안 올 때의 예비."""
+    text = re.sub(r"<[^>]+>", " ", re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html))
+    text = re.sub(r"\s+", " ", text.replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
+    chunks = re.split(r"(?=제\d+조(?:의\d+)?\s*\()", text)
+    out = []
+    for c in chunks:
+        m = re.match(r"제(\d+)조(?:의(\d+))?\s*\(([^)]*)\)", c)
+        if not m:
+            continue
+        no = f"{int(m.group(1)):04d}{int(m.group(2) or 0):02d}"
+        out.append({"조문번호": no, "조문제목": m.group(3).strip(), "조문내용": c.strip()})
+    return out
+
+
+ZONES = ("보전관리", "생산관리", "계획관리", "보전녹지", "생산녹지", "자연녹지", "농림", "자연환경보전")
+
+
+def _pct(text: str, zone: str) -> str:
+    m = re.search(zone + r"지역\s*[:：]?\s*(?:은|는)?\s*(\d{1,3})\s*(?:퍼센트|%|％)", text)
+    return m.group(1) if m else ""
+
+
+def summarize(rel: list[dict]) -> dict:
+    """관심 조문에서 숫자만 뽑는다 — 표 한 줄. 못 찾으면 빈칸(원문을 보라는 뜻)."""
+    out: dict = {}
+    bc = " ".join(a["text"] for a in rel if "건폐율" in a["title"] and "용적률" not in a["title"])
+    fa = " ".join(a["text"] for a in rel if "용적률" in a["title"])
+    dv = " ".join(a["text"] for a in rel if "개발행위" in a["title"] or "개발행위" in a["text"][:60])
+    for z in ZONES:
+        out[f"건폐율_{z}"] = _pct(bc, z)
+        out[f"용적률_{z}"] = _pct(fa, z)
+    m = re.search(r"경사도[^.。]{0,60}?(\d{1,2})\s*도", dv)
+    out["경사도_도"] = m.group(1) if m else ""
+    m = re.search(r"표고[^.。]{0,80}?(\d{2,4})\s*(?:미터|m|ｍ)", dv)
+    out["표고_m"] = m.group(1) if m else ""
+    m = re.search(r"(?:입목|임목)축적[^.。]{0,80}?(\d{2,3})\s*(?:퍼센트|%|％)", dv)
+    out["입목축적_pct"] = m.group(1) if m else ""
     return out
 
 
@@ -426,40 +500,136 @@ def _keys(payload) -> list[str]:
     return []
 
 
-def fetch(query: str = "도시계획 조례", limit: int | None = None) -> dict:
-    """목록을 받고 본문을 하나씩 받아 관심 조문만 data/ordinance/ 에 남긴다.
-    재개 가능 — 본문 원문이 RAW_DIR 에 있으면 다시 안 받는다."""
-    rows, why = list_all(query)
-    if why:
-        print(f"목록 실패: {why}")
-        return {"listed": 0, "fetched": 0, "why": why}
-    # 이름에 '도시계획 조례'·'도시계획조례' 가 든 것만 (시행규칙·다른 조례 제외)
-    want = [r for r in rows if re.sub(r"\s", "", r["_name"]).endswith("도시계획조례")]
-    print(f"목록 {len(rows)}건 → 도시계획조례 {len(want)}건")
+QUERIES = ("도시계획 조례", "도시계획조례", "군계획 조례", "도시·군계획 조례")
+NAME_RE = re.compile(r"(도시|군|도시·군)계획조례$")
+
+
+def portal_all(query: str, max_pages: int = 30, rows: int = 100) -> tuple[list[dict], str]:
+    """포털 목록을 끝까지 넘긴다 (run 29·30: 이 길이 통한다)."""
+    out: list[dict] = []
+    for page in range(1, max_pages + 1):
+        got, total, why = portal_list(query, page=page, rows=rows)
+        if why:
+            return out, why
+        out.extend(got)
+        if not got or len(out) >= total:
+            break
+        polite_sleep(0.3)
+    return out, ""
+
+
+def wanted(rows: list[dict]) -> list[dict]:
+    """도시계획조례(·군계획조례)만 — 시행규칙·다른 조례 제외. 같은 기관·이름은 최신 시행일 하나."""
+    best: dict[tuple, dict] = {}
+    for r in rows:
+        name = _pick(r, "자치법규명", "lawNm", "명")
+        if "시행규칙" in name or not NAME_RE.search(re.sub(r"\s", "", name)):
+            continue
+        org = _pick(r, "지자체기관명", "기관명", "org")
+        key = (org, re.sub(r"\s", "", name))
+        row = {**r, "_mst": _pick(r, "자치법규일련번호", "MST", "ordinSeq", "ID"), "_name": name, "_org": org,
+               "_eff": _pick(r, "시행일자"), "_pub": _pick(r, "공포일자")}
+        if key not in best or row["_eff"] > best[key]["_eff"]:
+            best[key] = row
+    return sorted(best.values(), key=lambda r: (r["_org"], r["_name"]))
+
+
+def body_xml(mst: str) -> tuple[dict | None, str]:
+    """DRF 본문 XML — 공개 견본 계정(OC=test)으로 러너에서 바로 (run 30: 71,215자·건폐율 있음).
+    안 되면 중계기로 같은 주소(중계기가 OC=test 를 살려 보내면 통한다). (payload, 오류)."""
+    import xml.etree.ElementTree as ET
+    params = {"target": "ordin", "MST": str(mst), "type": "XML"}
+    tries = (lambda: _direct(SERVICE, params, oc="test"),
+             lambda: get_once(SERVICE, {"OC": "test", **params}, timeout=40))
+    why = ""
+    for call in tries:
+        try:
+            r = call()
+        except Exception as e:                      # noqa: BLE001
+            why = f"{type(e).__name__}: {str(e)[:100]}"
+            continue
+        if r.status_code != 200:
+            why = f"HTTP {r.status_code}"
+            continue
+        try:
+            obj = _xml_obj(ET.fromstring(r.text))
+        except ET.ParseError:
+            why = "XML 아님: " + re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))[:120]
+            continue
+        if articles(obj):
+            return obj, ""
+        why = "조문 없음: " + re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))[:120]
+    return None, why
+
+
+def web_fragment(seq: str) -> tuple[str, str]:
+    """law.go.kr 본문 조각(ordinInfoR.do) — 중계기(서울)로. run 30: 276,547자·건폐율 있음."""
+    resp = get_once(WEB_HOST + "/LSW/ordinInfoR.do", {"OC": VIA_RELAY, "ordinSeq": str(seq), "chrClsCd": "010202"},
+                    timeout=40)
+    if resp.status_code != 200 or "제1조" not in resp.text:
+        return "", f"HTTP {resp.status_code} · {len(resp.text):,}자"
+    return resp.text, ""
+
+
+def slug_of(r: dict) -> str:
+    return re.sub(r"[^\w가-힣]+", "_", f"{r['_org']}_{r['_name']}").strip("_")
+
+
+def fetch(query: str = "", limit: int | None = None) -> dict:
+    """전국 도시계획조례 → data/ordinance/{기관_이름}.json (관심 조문) + index.json + summary.csv.
+    재개 가능 — 본문 원문(RAW_DIR/{mst}.json|.html)이 있으면 다시 안 받는다."""
+    import csv
+    queries = [q.strip() for q in (query or "").split(",") if q.strip()] or list(QUERIES)
+    rows: list[dict] = []
+    for q in queries:
+        got, why = portal_all(q)
+        print(f"목록 '{q}': {len(got)}건" + (f" — {why}" if why else ""))
+        rows.extend(got)
+    want = wanted(rows)
+    print(f"목록 합계 {len(rows)}건 → 도시계획조례 {len(want)}건 (기관별 최신 하나)")
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    fetched = 0
+    fetched = failed = 0
     index = []
     for r in want[:limit] if limit else want:
         mst = r["_mst"]
-        raw = RAW_DIR / f"{mst}.json"
-        if raw.exists():
-            payload = json.loads(raw.read_text(encoding="utf-8"))
+        raw_j, raw_h = RAW_DIR / f"{mst}.json", RAW_DIR / f"{mst}.html"
+        payload, source = None, ""
+        if raw_j.exists():
+            payload, source = json.loads(raw_j.read_text(encoding="utf-8")), "drf-xml"
+        elif raw_h.exists():
+            payload, source = {"조문": html_articles(raw_h.read_text(encoding="utf-8"))}, "web-html"
         else:
-            payload, why = body(mst)
-            if payload is None:
-                print(f"  {r['_org']} {r['_name']}: {why[:100]}")
-                polite_sleep(0.5)
-                continue
-            raw.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            payload, why = body_xml(mst)
+            if payload is not None:
+                source = "drf-xml"
+                raw_j.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")   # XML→dict 그대로
+            else:
+                html, why_h = web_fragment(mst)
+                if html:
+                    raw_h.write_text(html, encoding="utf-8")
+                    payload, source = {"조문": html_articles(html)}, "web-html"
+                else:
+                    failed += 1
+                    print(f"  ✗ {r['_org']} {r['_name']} (MST {mst}): XML {why[:80]} / 웹 {why_h}")
+                    polite_sleep(0.5)
+                    continue
             fetched += 1
             polite_sleep(0.4)
         rel = relevant(payload)
-        slug = re.sub(r"[^\w가-힣]+", "_", f"{r['_org']}_{r['_name']}").strip("_")
+        summ = summarize(rel)
+        slug = slug_of(r)
         (OUT_DIR / f"{slug}.json").write_text(json.dumps(
-            {"org": r["_org"], "name": r["_name"], "mst": mst, "articles": rel},
-            ensure_ascii=False, indent=1), encoding="utf-8")
-        index.append({"org": r["_org"], "name": r["_name"], "mst": mst, "n": len(rel), "file": f"{slug}.json"})
+            {"org": r["_org"], "name": r["_name"], "mst": mst, "effective": r["_eff"], "published": r["_pub"],
+             "source": source, "summary": summ, "articles": rel}, ensure_ascii=False, indent=1), encoding="utf-8")
+        index.append({"org": r["_org"], "name": r["_name"], "mst": mst, "effective": r["_eff"], "source": source,
+                      "n": len(rel), "file": f"{slug}.json", **summ})
     (OUT_DIR / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"본문 새로 받음 {fetched}건 · 관심 조문 파일 {len(index)}개 → {OUT_DIR}")
-    return {"listed": len(rows), "wanted": len(want), "fetched": fetched, "files": len(index)}
+    if index:
+        cols = list(index[0].keys())
+        with open(OUT_DIR / "summary.csv", "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            w.writerows(index)
+    print(f"본문 새로 받음 {fetched}건 · 실패 {failed}건 · 관심 조문 파일 {len(index)}개 → {OUT_DIR}")
+    return {"listed": len(rows), "wanted": len(want), "fetched": fetched, "failed": failed, "files": len(index)}
