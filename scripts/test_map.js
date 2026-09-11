@@ -787,8 +787,10 @@ const FAKE_LEAFLET = () => {
         },
       };
       // 승인된 회원으로 들어간다. 승인 관문 자체는 test_gate.js 가 본다.
-      window.SBUtil = { me: async () => ({ user: { id: 'u1' },
-        profile: { status: 'approved' } }) };
+      // 등급 (2026-09-11). 관문이 me() 의 답을 window.ME 에 둔다 — B(프리미엄)로
+      // 들어가고, C 로 바꿔 잠기는지는 아래 절에서 본다. 판단은 실제 /lib/access.js.
+      window.ME = { user: { id: 'u1' }, profile: { status: 'approved', grade: 'B' } };
+      window.SBUtil = { me: async () => window.ME };
     });
     await page.addInitScript(FAKE_LEAFLET);
     // 가짜 Leaflet 은 DOM 에 아무것도 안 넣는다. 태그를 읽으려면
@@ -3010,6 +3012,33 @@ const FAKE_LEAFLET = () => {
     // 붙어 '현재 가치준비 중' 처럼 보인다. 태그로 뜻이 서게 둔다.
     check('뱃지를 <em> 으로 달지 않는다',
           !/<em>준비 중<\/em>/.test(pc.html) && /pcv-tag/.test(pc.html));
+    // 프리미엄 잠금 (2026-09-11 지시). C 등급은 단추에 '프리미엄' 꼬리표가
+    // 붙고, 누르면 산출 대신 안내가 뜬다 — 결제 안내는 미확정이라 '준비 중'.
+    check('B 등급은 잠기지 않는다', !/pcv-lock/.test(pc.html) && !/is-locked/.test(pc.html));
+    await page.evaluate(() => { window.ME.profile.grade = 'C'; });
+    const pcC = await clickMap(37.304, 127.011);
+    check('C 등급은 단추에 프리미엄 꼬리표가 붙는다',
+          /pcv-lock/.test(pcC.html) && /<span class="pcv-tag pcv-lock">프리미엄<\/span>/.test(pcC.html),
+          (pcC.html.match(/pc-val-row[^>]*>[\s\S]{0,160}/) || ['없음'])[0]);
+    const lockBox = await page.evaluate(() => {
+      document.querySelector('.pc-val[data-val="now"]').click();
+      return document.getElementById('pc-val-box').innerHTML;
+    });
+    check('C 등급이 누르면 산출 대신 안내가 뜬다',
+          /프리미엄\(B 등급 이상\)/.test(lockBox) && /준비 중입니다/.test(lockBox) && /href="\/account"/.test(lockBox)
+          && !/공시지가기준법/.test(lockBox), lockBox.slice(0, 160));
+    check('안내에 지금 등급을 적는다', /C · 무료/.test(lockBox));
+    await page.evaluate(() => { window.ME.profile.grade = 'B'; window.ME.profile.grade_until = '2020-01-01'; });
+    const pcX = await clickMap(37.304, 127.011);
+    const lockX = await page.evaluate(() => {
+      document.querySelector('.pc-val[data-val="now"]').click();
+      return document.getElementById('pc-val-box').innerHTML;
+    });
+    check('B 인데 기간이 지나면 잠기고 그렇게 말한다',
+          /pcv-lock/.test(pcX.html) && /기간이 끝났습니다/.test(lockX), lockX.slice(0, 120));
+    await page.evaluate(() => { delete window.ME.profile.grade_until; window.ME.profile.grade = 'B'; });
+    await clickMap(37.304, 127.011);
+
     // 근거는 **아직 적지 않는다** — 그 설명이 곧 유료 전환의 열쇠라,
     // 값이 없는 지금 미리 풀면 살 이유를 먼저 소비해 버린다.
     // 저장소에 전국 표준지 조각이 실려 있으면(2026-09-11 부터) 이 시군구 조각도

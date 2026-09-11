@@ -60,6 +60,7 @@ test: test-server
 	$(PY) scripts/test_appraisal_db.py
 	$(PY) scripts/test_law.py
 	$(PY) scripts/test_zoning.py
+	$(PY) scripts/test_access.py
 	$(PY) scripts/test_urban.py
 	$(PY) scripts/test_stdland.py
 	$(PY) scripts/test_analysis.py

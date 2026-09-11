@@ -4821,12 +4821,38 @@ const VALUE_SERVICES = {
   future: { label: '미래 가치' },
 };
 
+/* 현재 가치·미래 가치는 **프리미엄**이다 (2026-09-11 지시). 등급은
+ * public/lib/access.js 가 판단하고, 프로필은 관문(gate.js)이 window.ME 에
+ * 둔다. 여기서 가리는 것은 편의다 — 자물쇠는 데이터베이스 쪽
+ * (supabase/migrations/0003_grade.sql) 이고, 숫자 원천을 API 뒤로 옮기는
+ * 일이 남아 있다 (docs/membership-grades.md). */
+function myAccess() {
+  const prof = window.ME && window.ME.profile;
+  if (typeof window.accessOf === 'function') return window.accessOf(prof);
+  return { grade: 'C', label: 'C · 무료', premium: false, expired: false, admin: false };
+}
+
 function valueButtons() {
-  return '<div class="pc-val-row">'
+  const acc = myAccess();
+  const tag = acc.premium ? '준비 중' : '프리미엄';
+  return `<div class="pc-val-row${acc.premium ? '' : ' is-locked'}">`
     + Object.entries(VALUE_SERVICES).map(([k, s]) =>
       `<button type="button" class="pc-val" data-val="${k}" aria-expanded="false">`
-      + `<b>${s.label}</b><span class="pcv-tag">준비 중</span></button>`).join('')
+      + `<b>${s.label}</b><span class="pcv-tag${acc.premium ? '' : ' pcv-lock'}">${tag}</span></button>`).join('')
     + '</div><div class="pc-val-box" id="pc-val-box" hidden></div>';
+}
+
+/* C 등급(무료)이 프리미엄을 눌렀을 때. 결제 안내 문구는 **아직 확정이
+ * 아니다** — 값을 지어내지 않고 '준비 중' 이라 적고 계정 화면으로 보낸다. */
+function premiumNotice(key, acc) {
+  const s = VALUE_SERVICES[key] || { label: '' };
+  const why = acc.expired
+    ? `프리미엄 기간이 끝났습니다${acc.until ? ` (${acc.until.toLocaleDateString('ko-KR')}까지)` : ''}.`
+    : '현재 가치·미래 가치는 프리미엄(B 등급 이상) 회원에게 열립니다.';
+  return `<h4>${s.label} <span class="pcv-sub">프리미엄</span></h4>`
+    + `<p class="pcv-lock-msg">${why} 지금 등급은 <b>${escapeHtml(acc.label)}</b> 입니다.</p>`
+    + '<p class="pcv-lock-msg">가입·결제 안내는 준비 중입니다. 그때까지는 관리자가 등급을 올려 드립니다 — '
+    + '<a href="/account">내 계정</a>에서 문의해 주세요.</p>';
 }
 
 function valuePanel(key) {
@@ -5152,6 +5178,11 @@ function wireValueButtons() {
     if (same) { box.hidden = true; box.dataset.open = ''; return; }
     box.dataset.open = key;
     box.hidden = false;
+    const acc = myAccess();
+    if (!acc.premium) {
+      box.innerHTML = premiumNotice(key, acc);
+      return;
+    }
     box.innerHTML = valuePanel(key);
     if (key === 'now') fillNowValue(box);
   });
