@@ -320,7 +320,14 @@ def cmd_value_test(args):
         zg, ug = V.zone_group(t["land_use"]), V.use_group(t["jimok"], t["use_situation"])
         led = V.ledger_other_factor(subject["sido"], subject["sigungu"], t["land_use"],
                                     t["jimok"], t["use_situation"])
-        tc = V.trade_cell(trade_cells, code, zg, ug)
+        # 그 밖의 요인은 표준지 공시지가를 시세 수준으로 올리는 배율이라
+        # **표준지의** 지목군 칸을 본다 (구거를 대 표준지로 평가하면서
+        # 전·답 배율을 곱하면 두 번 센다 — run 10). 표준지 지목군이 없으면
+        # 대상의 것, 그것도 없으면 합친 칸.
+        tc = None
+        if stds3:
+            ug_std = V.use_group(stds3[0].get("jimok"), stds3[0].get("use_situation"))
+            tc = V.trade_cell(trade_cells, code, zg, ug_std or ug)
         base = date(int(year_max), 1, 1)
         tf = V.time_factor(base, today, annual_trend=trend) if trend is not None else V.time_factor(base, today)
         actual = float(t["price_per_m2"])

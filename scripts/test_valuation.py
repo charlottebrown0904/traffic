@@ -152,15 +152,19 @@ with _db.connect() as con:
     yr = dt.date.today().year
     for i in range(12):
         jimok = "전" if i < 10 else "구거"
-        con.execute("INSERT INTO trade (trade_id, kind, sigungu_cd, deal_year, deal_month, price_per_m2, is_cancelled) "
-                    "VALUES (?, 'land', '41550', ?, 1, ?, FALSE)", [f"t{i}", yr, 100000 + i * 1000])
+        con.execute("INSERT INTO trade (trade_id, kind, sigungu_cd, deal_year, deal_month, price_per_m2, area_m2, is_cancelled) "
+                    "VALUES (?, 'land', '41550', ?, 1, ?, 900, FALSE)", [f"t{i}", yr, 100000 + i * 1000])
         con.execute("INSERT INTO trade_parcel VALUES (?, ?)", [f"t{i}", f"p{i}"])
-        con.execute("INSERT INTO parcel (pnu, sigungu_cd, jimok, land_use, official_price) VALUES (?, '41550', ?, '계획관리지역', 40000)",
+        con.execute("INSERT INTO parcel (pnu, sigungu_cd, jimok, land_use, official_price, area_m2) VALUES (?, '41550', ?, '계획관리지역', 40000, 1000)",
                     [f"p{i}", jimok])
+    # 거래면적이 필지면적과 동떨어진 건 — 옆 필지에 붙은 것. 칸에 안 들어간다.
+    con.execute("INSERT INTO trade (trade_id, kind, sigungu_cd, deal_year, deal_month, price_per_m2, area_m2, is_cancelled) "
+                "VALUES ('tx', 'land', '41550', ?, 1, 900000, 14, FALSE)", [yr])
+    con.execute("INSERT INTO trade_parcel VALUES ('tx', 'p0')")
     cells = V.trade_other_factor(con, [(n, likes[0]) for n, likes in V.ZONE_GROUPS])
 c1 = cells.get("41550|관리|전·답")
 c2 = cells.get("41550|관리|*")
-check(c1 and c1["n"] == 10 and 2.5 <= c1["median"] <= 2.8, f"지목군 칸 — {c1}")
+check(c1 and c1["n"] == 10 and 2.5 <= c1["median"] <= 2.8, f"지목군 칸 (면적 안 맞는 건은 뺀다) — {c1}")
 check(c2 and c2["n"] == 12 and c2["level"].endswith("합침"), f"지목군 합친 칸 — {c2}")
 check("41550|관리|None" not in cells and "41550|관리|?" not in cells, "지목군 없는 행이 제 칸을 만들지 않는다")
 check(V.trade_cell(cells, "41550", "관리", None) is c2 and V.trade_cell(cells, "41550", "관리", "전·답") is c1,

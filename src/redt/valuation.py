@@ -550,6 +550,9 @@ WITH r AS (
       AND NOT coalesce(t.is_cancelled, FALSE)
       AND t.price_per_m2 > 0 AND pc.official_price > 0
       AND t.deal_year >= {from_year}
+      -- 거래면적이 필지면적의 절반~두 배 밖이면 지번 지오코딩이 옆 필지에
+      -- 떨어진 것일 수 있다 — 그 필지의 공시지가로 나누면 배율이 엉뚱해진다.
+      AND t.area_m2 BETWEEN pc.area_m2 * 0.5 AND pc.area_m2 * 2.0
 )
 -- 지목군 칸과, 지목군을 합친 칸('*') 을 함께 낸다. 하천·구거·체육용지처럼
 -- 지목군이 없는 땅은 합친 칸으로 물러난다 (안성 검증 run 9: 27건 중 5건이
