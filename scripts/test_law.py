@@ -45,6 +45,7 @@ print("2. 목록 행의 열쇠")
 row = {"자치법규일련번호": "1611223", "자치법규명": "안성시 도시계획 조례", "지자체기관명": "경기도 안성시"}
 check(L._pick(row, "MST", "자치법규일련번호") == "1611223", "MST 가 없으면 일련번호")
 check(L._find_rows({"OrdinSearch": {"ordin": [row]}}) == [row], "중첩된 목록을 찾는다")
+check(L._find_rows({"OrdinSearch": {"totalCnt": "1", "law": row}}) == [row], "한 건짜리 목록(dict 하나)도 한 행이다")
 check(L._find_int({"OrdinSearch": {"totalCnt": "231"}}, ("totalCnt",)) == 231, "전체 건수")
 
 print()

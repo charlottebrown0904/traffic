@@ -194,10 +194,17 @@ def body(mst: str) -> tuple[dict | None, str]:
     return _call(SERVICE, {"MST": str(mst)})
 
 
+ROW_KEYS = ("자치법규일련번호", "자치법규명", "자치법규ID", "법령명한글", "법령ID", "MST")
+
+
 def _find_rows(payload) -> list[dict]:
+    """목록 행들. XML 을 dict 로 바꾸면 한 건짜리 목록은 list 가 아니라 dict 하나로
+    온다 (run 28: totalCnt 1 인데 0건으로 읽었다) — 행 열쇠가 든 dict 는 한 행이다."""
     if isinstance(payload, list):
         return [r for r in payload if isinstance(r, dict)]
     if isinstance(payload, dict):
+        if any(k in payload for k in ROW_KEYS):
+            return [payload]
         for v in payload.values():
             got = _find_rows(v)
             if got:
