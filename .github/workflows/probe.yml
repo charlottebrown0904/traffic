@@ -1,0 +1,40 @@
+# 탐침 스크립트를 러너에서 돌린다 (2026-09-11).
+#
+# 개발 컨테이너는 브이월드·공공 API 에 못 나간다. 서울 중계기를 거치는
+# 탐침(scripts/*_probe.py)은 러너에서만 돌 수 있어서, 지금까지는 sitecheck
+# 안에 절을 끼워 넣었다. 어느 스크립트든 돌릴 수 있게 한 자리로 뺀다.
+#
+# **로그에 값이 남지 않게** — 탐침은 응답 안의 key= 를 지우고 찍는다.
+name: 탐침 (러너에서 스크립트 하나)
+
+on:
+  workflow_dispatch:
+    inputs:
+      script:
+        description: "돌릴 스크립트 (scripts/ 아래)"
+        required: true
+        default: "scripts/pnu_probe.py"
+      env:
+        description: "환경변수 (KEY=값 을 공백으로 구분, 비워도 됨)"
+        default: ""
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE: https://toji.fyi
+      TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 돌린다
+        run: |
+          case "${{ inputs.script }}" in
+            scripts/*_probe.py) ;;
+            *) echo "::error::scripts/*_probe.py 만 돌립니다"; exit 1 ;;
+          esac
+          for kv in ${{ inputs.env }}; do export "$kv"; done
+          python3 "${{ inputs.script }}"
