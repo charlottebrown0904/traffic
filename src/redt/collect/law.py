@@ -30,8 +30,15 @@ SERVICE = "https://www.law.go.kr/DRF/lawService.do"
 # 같은 자료의 둘째 길 — 공공데이터포털 '법제처 국가법령정보 공유서비스'(15000115).
 # apis.data.go.kr 은 중계기가 DATA_GO_KR_KEY 를 끼워 주고, 법제처처럼 호출 IP 를
 # 등록하라고 하지 않는다 (run 23: law.go.kr 은 서울 중계기로도 "IP·도메인 등록" 거부).
-PORTAL_SEARCH = "https://apis.data.go.kr/1170000/law/lawSearchList.do"
+# 활용가이드(2022-10-19, 사용자 제공): 자치법규 목록은 law/ordinSearchList.do,
+# 파라미터는 serviceKey·target=ordin·query·numOfRows·pageNo, 응답은 XML 로
+# totalCnt·law[]{자치법규일련번호, 자치법규명, 자치법규ID, 자치법규상세링크(…MST=)}.
+# **본문 조회는 포털에 없다** — 상세링크가 law.go.kr DRF 를 가리키는데 그쪽은
+# 호출 IP 등록을 요구한다. 그래서 본문은 law.go.kr 의 웹 페이지(ordinInfoP.do)를
+# 중계기로 읽어 본다 (probe 가 잰다).
+PORTAL_SEARCH = "https://apis.data.go.kr/1170000/law/ordinSearchList.do"
 PORTAL_SERVICE = "https://apis.data.go.kr/1170000/law/lawService.do"
+WEB_ORDIN = "https://www.law.go.kr/LSW/ordinInfoP.do"
 RAW_DIR = PROCESSED / "ordinance"          # 본문 통째 (Actions 캐시에 남는다)
 OUT_DIR = ROOT / "data" / "ordinance"      # 뽑은 조문 (저장소에 커밋)
 
@@ -53,11 +60,12 @@ def _oc() -> str:
     return os.getenv("LAW_OC") or VIA_RELAY
 
 
-def _direct(url: str, params: dict):
-    """중계기를 거치지 않고 바로 부른다 — 러너 IP 로. 등록 도메인을 Referer 로 싣는다."""
+def _direct(url: str, params: dict, oc: str | None = None, timeout: int = 30):
+    """중계기를 거치지 않고 바로 부른다 — 러너 IP 로. 등록 도메인을 Referer 로 싣는다.
+    oc="test" 는 법제처 안내서의 공개 견본 계정 — 포털 상세링크가 이것을 쓴다."""
     import requests
-    oc = os.getenv("LAW_OC") or "test"
-    return requests.get(url, params={**params, "OC": oc}, timeout=30,
+    oc = oc or os.getenv("LAW_OC") or "test"
+    return requests.get(url, params={**params, "OC": oc}, timeout=timeout,
                         headers={"User-Agent": "Mozilla/5.0 redt-research", "Referer": REFERER})
 
 
@@ -101,7 +109,88 @@ def _xml_obj(node):
 
 
 def _portal_raw(url: str, params: dict, kind: str = "XML"):
-    return get_once(url, {"serviceKey": VIA_RELAY, "target": "ordin", "type": kind, **params}, timeout=40)
+    # 가이드의 파라미터만 보낸다 — type 같은 낯선 이름은 게이트웨이가 HTTP_ERROR 04 로 돌려보낸다.
+    return get_once(url, {"serviceKey": VIA_RELAY, "target": "ordin", **params}, timeout=40)
+
+
+def portal_list(query: str, page: int = 1, rows: int = 100) -> tuple[list[dict], int, str]:
+    """포털 자치법규 목록 한 쪽. (행들, totalCnt, 오류)."""
+    import xml.etree.ElementTree as ET
+    resp = _portal_raw(PORTAL_SEARCH, {"query": query, "numOfRows": str(rows), "pageNo": str(page)})
+    body = resp.text
+    if resp.status_code != 200:
+        return [], 0, f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", body[:200])
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return [], 0, "XML 아님: " + re.sub(r"\s+", " ", body)[:200]
+    obj = _xml_obj(root)
+    if isinstance(obj, dict) and "cmmMsgHeader" in obj:
+        return [], 0, json.dumps(obj["cmmMsgHeader"], ensure_ascii=False)[:200]
+    out = _find_rows(obj)
+    total = _find_int(obj, ("totalCnt",))
+    return out, total, ""
+
+
+def web_body(ordin_seq: str) -> tuple[str, str]:
+    """law.go.kr 웹 페이지의 본문 HTML — 중계기(서울)로. (html, 오류)."""
+    resp = get_once(WEB_ORDIN, {"OC": VIA_RELAY, "ordinSeq": str(ordin_seq), "chrClsCd": "010202"}, timeout=40)
+    if resp.status_code != 200:
+        return "", f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", resp.text[:160])
+    return resp.text, ""
+
+
+WEB_HOST = "https://www.law.go.kr"
+# 틀 페이지(ordinInfoP.do)는 본문을 하위 요청으로 실어 온다(run 29: 66,180자에
+# 건폐율 없음). 어느 주소인지 모르니 페이지 안의 .do 주소를 모아 차례로 재 본다.
+WEB_FIXED = ("/LSW/ordinInfoR.do", "/LSW/ordinLsInfoR.do", "/LSW/ordinInfoRP.do", "/LSW/ordinPrint.do")
+
+
+def web_candidates(seq: str, html: str) -> list[str]:
+    """틀 페이지 HTML 에서 본문을 실어 올 법한 .do 주소 — ordinSeq 를 채워 절대 주소로.
+    순서: 페이지에 있던 것(ordin·Info·Cntnts 가 이름에 든 것) → 고정 후보."""
+    seen: list[str] = []
+
+    def add(path: str, query: str = ""):
+        if not path.startswith("/"):
+            path = "/LSW/" + path
+        q = dict(re.findall(r"([\w]+)=([^&]*)", query))
+        q["ordinSeq"] = str(seq)
+        q.setdefault("chrClsCd", "010202")
+        url = WEB_HOST + path + "?" + "&".join(f"{k}={v}" for k, v in q.items() if not re.search(r"[<>{}'+]", v))
+        if url not in seen:
+            seen.append(url)
+
+    for m in re.finditer(r"""["'(=]\s*((?:https?://www\.law\.go\.kr)?/?[\w./-]*?/?[\w-]+\.do)(\?[^"'\s<>)]*)?""", html):
+        path = re.sub(r"^https?://www\.law\.go\.kr", "", m.group(1))
+        name = path.rsplit("/", 1)[-1]
+        if re.search(r"ordin|Info|Cntnts|cont|Jo", name) and not re.search(r"Search|List|Login|Popup|Ajax|Menu", name, re.I):
+            add(path, (m.group(2) or "").lstrip("?"))
+    for path in WEB_FIXED:
+        add(path)
+    return seen
+
+
+def web_scan(seq: str, html: str, limit: int = 8) -> list[dict]:
+    """후보를 차례로 받아 본다 — 어디에 조문(건폐율)이 있는지. 결과는 로그와 파일로."""
+    out = []
+    for i, url in enumerate(web_candidates(seq, html)[:limit]):
+        try:
+            resp = get_once(url, {"OC": VIA_RELAY}, timeout=40)
+            status, text = resp.status_code, resp.text
+        except Exception as e:                      # noqa: BLE001
+            status, text = 0, f"{type(e).__name__}: {str(e)[:120]}"
+        hit = "건폐율" in text
+        plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text))
+        out.append({"url": url, "status": status, "len": len(text), "has_gunpye": hit, "snippet": plain[:160]})
+        print(f"   후보 {i + 1}: {url.split('?')[0].rsplit('/', 1)[-1]} → HTTP {status} · {len(text):,}자 · 건폐율 {'있음' if hit else '없음'}")
+        if hit:
+            print("      " + plain[:200])
+        if text and status == 200:
+            RAW_DIR.mkdir(parents=True, exist_ok=True)
+            (RAW_DIR / f"probe-web-{seq}-{i + 1}.html").write_text(text, encoding="utf-8")
+        polite_sleep()
+    return out
 
 
 def _portal(url: str, params: dict) -> tuple[dict | list | None, str]:
@@ -159,10 +248,17 @@ def body(mst: str) -> tuple[dict | None, str]:
     return _call(SERVICE, {"MST": str(mst)})
 
 
+ROW_KEYS = ("자치법규일련번호", "자치법규명", "자치법규ID", "법령명한글", "법령ID", "MST")
+
+
 def _find_rows(payload) -> list[dict]:
+    """목록 행들. XML 을 dict 로 바꾸면 한 건짜리 목록은 list 가 아니라 dict 하나로
+    온다 (run 28: totalCnt 1 인데 0건으로 읽었다) — 행 열쇠가 든 dict 는 한 행이다."""
     if isinstance(payload, list):
         return [r for r in payload if isinstance(r, dict)]
     if isinstance(payload, dict):
+        if any(k in payload for k in ROW_KEYS):
+            return [payload]
         for v in payload.values():
             got = _find_rows(v)
             if got:
@@ -228,13 +324,88 @@ def articles(payload) -> list[dict]:
     return found
 
 
+def flat_text(x) -> str:
+    """조문 사전 안의 문자열을 순서대로 다 잇는다 — 항·호 속 문장까지.
+    건폐율 수치는 대개 항·호에 있어 조문내용만 보면 놓친다."""
+    parts: list[str] = []
+
+    def walk(v):
+        if isinstance(v, dict):
+            for k, w in v.items():
+                if k in ("조문번호", "조문여부", "조문키", "조문시행일자", "조문변경여부", "조문제목"):
+                    continue
+                walk(w)
+        elif isinstance(v, list):
+            for w in v:
+                walk(w)
+        elif isinstance(v, (str, int)) and str(v).strip():
+            t = re.sub(r"\s+", " ", str(v)).strip()
+            if not parts or t not in parts[-1]:
+                parts.append(t)
+    walk(x)
+    return " ".join(parts)
+
+
+def art_no(raw: str) -> str:
+    """조문번호 → 사람 표기. '000100'→제1조, '005802'→제58조의2, '58'→제58조."""
+    raw = str(raw or "").strip()
+    if re.fullmatch(r"\d{6}", raw):
+        jo, ui = int(raw[:4]), int(raw[4:])
+        return f"제{jo}조" + (f"의{ui}" if ui else "")
+    if re.fullmatch(r"\d+", raw):
+        return f"제{int(raw)}조"
+    return raw
+
+
 def relevant(payload) -> list[dict]:
     out = []
     for a in articles(payload):
-        text = " ".join(str(v) for v in a.values() if isinstance(v, (str, int)))
-        if any(k in text for k in KEYWORDS):
-            out.append({"no": _pick(a, "조문번호", "조번호"), "title": _pick(a, "조문제목"),
-                        "text": _pick(a, "조문내용")[:6000]})
+        text, title = flat_text(a), _pick(a, "조문제목")
+        if any(k in title + " " + text for k in KEYWORDS):
+            no = _pick(a, "조문번호", "조번호")
+            out.append({"no": no, "label": art_no(no), "title": title, "text": text[:8000]})
+    return out
+
+
+def html_articles(html: str) -> list[dict]:
+    """웹 본문(ordinInfoR.do)의 HTML 을 조문으로 자른다 — XML 이 안 올 때의 예비."""
+    text = re.sub(r"<[^>]+>", " ", re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", html))
+    text = re.sub(r"\s+", " ", text.replace("&nbsp;", " ").replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&"))
+    chunks = re.split(r"(?=제\d+조(?:의\d+)?\s*\()", text)
+    out = []
+    for c in chunks:
+        m = re.match(r"제(\d+)조(?:의(\d+))?\s*\(([^)]*)\)", c)
+        if not m:
+            continue
+        no = f"{int(m.group(1)):04d}{int(m.group(2) or 0):02d}"
+        out.append({"조문번호": no, "조문제목": m.group(3).strip(), "조문내용": c.strip()})
+    return out
+
+
+ZONES = ("보전관리", "생산관리", "계획관리", "보전녹지", "생산녹지", "자연녹지", "농림", "자연환경보전")
+
+
+def _pct(text: str, zone: str) -> str:
+    m = re.search(zone + r"지역\s*[:：]?\s*(?:은|는)?\s*(\d{1,3})\s*(?:퍼센트|%|％)", text)
+    return m.group(1) if m else ""
+
+
+def summarize(rel: list[dict]) -> dict:
+    """관심 조문에서 숫자만 뽑는다 — 표 한 줄. 못 찾으면 빈칸(원문을 보라는 뜻)."""
+    out: dict = {}
+    bc = " ".join(a["text"] for a in rel if "건폐율" in a["title"] and "용적률" not in a["title"])
+    fa = " ".join(a["text"] for a in rel if "용적률" in a["title"])
+    dv = " ".join(a["text"] for a in rel if "개발행위" in a["title"] or "개발행위" in a["text"][:60])
+    for z in ZONES:
+        out[f"건폐율_{z}"] = _pct(bc, z)
+        out[f"용적률_{z}"] = _pct(fa, z)
+    m = re.search(r"경사도[^.。]{0,60}?(\d{1,2})\s*도", dv)
+    out["경사도_도"] = m.group(1) if m else ""
+    m = re.search(r"표고[^.。]{0,80}?(\d{2,4})\s*(?:미터|m|ｍ)", dv)
+    out["표고_m"] = m.group(1) if m else ""
+    # 안성시 조례는 '입목축척' 으로 적혀 있다(오기) — 둘 다 받는다
+    m = re.search(r"(?:입목|임목)축[적척][^.。]{0,80}?(\d{2,3})\s*(?:퍼센트|%|％)", dv)
+    out["입목축적_pct"] = m.group(1) if m else ""
     return out
 
 
@@ -251,27 +422,45 @@ def probe(query: str = "안성시 도시계획 조례") -> dict:
     except Exception as e:                          # noqa: BLE001
         out["direct"] = {"error": f"{type(e).__name__}: {str(e)[:160]}"}
         print(f"직접 호출 실패: {out['direct']['error']}")
-    # 2) 공공데이터포털 길 — 어느 주소·형식이 통하는지 그대로 찍는다
-    out["portal"] = {}
-    base = PORTAL_SEARCH.rsplit("/", 1)[0]
-    oc = os.getenv("LAW_OC") or ""
-    combos = [
-        ("lawSearchList XML", f"{base}/lawSearchList.do", {"query": query, "display": "3"}),
-        ("lawSearchList XML +OC", f"{base}/lawSearchList.do", {"query": query, "display": "3", "OC": oc}),
-        ("lawSearch XML +OC", f"{base}/lawSearch.do", {"query": query, "display": "3", "OC": oc}),
-        ("lawSearchList XML target=law +OC", f"{base}/lawSearchList.do", {"query": "도로교통법", "display": "3", "OC": oc, "target": "law"}),
-        ("lawService XML +OC MST", f"{base}/lawService.do", {"OC": oc, "MST": "1611223"}),
-        ("ordinSearchList XML +OC", f"{base}/ordinSearchList.do", {"query": query, "display": "3", "OC": oc}),
-    ]
-    for label, url, p in combos:
-        try:
-            r = _portal_raw(url, p, "XML")
-            snip = re.sub(r"\s+", " ", r.text)[:220]
-            out["portal"][label] = {"status": r.status_code, "snippet": snip}
-            print(f"포털 {label}: HTTP {r.status_code} · {snip}")
-        except Exception as e:                      # noqa: BLE001
-            out["portal"][label] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
-            print(f"포털 {label}: 실패 {out['portal'][label]['error']}")
+    # 2) 공공데이터포털 목록 (가이드대로) → 첫 행의 일련번호로 law.go.kr 웹 본문
+    rows_p, total_p, why_p = portal_list(query, rows=5)
+    out["portal"] = {"n": len(rows_p), "total": total_p, "why": why_p,
+                     "keys": sorted(rows_p[0].keys()) if rows_p else []}
+    print(f"포털 목록: {len(rows_p)}건 / 전체 {total_p}" + (f" — {why_p}" if why_p else ""))
+    for r in rows_p[:5]:
+        print("  ", {k: str(v)[:80] for k, v in r.items()})
+    if rows_p:
+        seq = _pick(rows_p[0], "자치법규일련번호", "일련번호", "ID")
+        link = _pick(rows_p[0], "상세링크", "링크")
+        # 포털 상세링크는 OC=test(공개 견본 계정)로 법제처 DRF 를 가리킨다 — 그 계정이면
+        # IP 등록 없이 열리는지, 러너에서 바로 재 본다.
+        for kind in ("HTML", "XML"):
+            try:
+                r = _direct(SERVICE, {"target": "ordin", "MST": seq, "type": kind}, oc="test")
+                plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))
+                hit = "건폐율" in r.text
+                out[f"drf_test_{kind}"] = {"status": r.status_code, "len": len(r.text), "has_gunpye": hit, "snippet": plain[:200]}
+                print(f"DRF OC=test {kind} (MST={seq}): HTTP {r.status_code} · {len(r.text):,}자 · 건폐율 {'있음' if hit else '없음'} · {plain[:120]}")
+                if hit:
+                    RAW_DIR.mkdir(parents=True, exist_ok=True)
+                    (RAW_DIR / f"probe-drf-{seq}.{kind.lower()}").write_text(r.text, encoding="utf-8")
+            except Exception as e:                  # noqa: BLE001
+                out[f"drf_test_{kind}"] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+                print(f"DRF OC=test {kind} 실패: {out[f'drf_test_{kind}']['error']}")
+        if link:
+            print(f"상세링크: {link}")
+        html, why_w = web_body(seq)
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+        out["web"] = {"seq": seq, "why": why_w, "len": len(html), "has_gunpye": "건폐율" in html,
+                      "snippet": text[:300]}
+        print(f"웹 본문 (ordinSeq={seq}): {why_w or 'HTTP 200'} · {len(html):,}자 · 건폐율 {'있음' if '건폐율' in html else '없음'}")
+        print("   " + text[:300])
+        if html:
+            RAW_DIR.mkdir(parents=True, exist_ok=True)
+            (RAW_DIR / f"probe-web-{seq}.html").write_text(html, encoding="utf-8")
+            dos = sorted(set(re.findall(r"[\w./-]+\.do(?:\?[^\"'\s<>)]*)?", html)))
+            print(f"   틀 페이지 안의 .do 주소 {len(dos)}개: " + " · ".join(d[:70] for d in dos[:40]))
+            out["web_scan"] = web_scan(seq, html)
     # 3) 우리 경로 — 법제처(중계기) → 거부되면 포털
     rows, total, why = search(query, display=5)
     out["route"] = "portal" if use_portal() else ("relay" if _oc() == VIA_RELAY else "direct")
@@ -312,40 +501,193 @@ def _keys(payload) -> list[str]:
     return []
 
 
-def fetch(query: str = "도시계획 조례", limit: int | None = None) -> dict:
-    """목록을 받고 본문을 하나씩 받아 관심 조문만 data/ordinance/ 에 남긴다.
-    재개 가능 — 본문 원문이 RAW_DIR 에 있으면 다시 안 받는다."""
-    rows, why = list_all(query)
-    if why:
-        print(f"목록 실패: {why}")
-        return {"listed": 0, "fetched": 0, "why": why}
-    # 이름에 '도시계획 조례'·'도시계획조례' 가 든 것만 (시행규칙·다른 조례 제외)
-    want = [r for r in rows if re.sub(r"\s", "", r["_name"]).endswith("도시계획조례")]
-    print(f"목록 {len(rows)}건 → 도시계획조례 {len(want)}건")
+# '군계획 조례' 가 '도시·군계획 조례' 도 부분일치로 잡는다. '·' 를 검색어에 넣으면
+# 포털이 &middot; 로 바꿔 XML 이 깨진다(run 31).
+QUERIES = ("도시계획 조례", "도시계획조례", "군계획 조례")
+NAME_RE = re.compile(r"(도시|군|도시·군)계획조례$")
+
+
+def portal_all(query: str, max_pages: int = 30, rows: int = 100) -> tuple[list[dict], str]:
+    """포털 목록을 끝까지 넘긴다 (run 29·30: 이 길이 통한다)."""
+    out: list[dict] = []
+    for page in range(1, max_pages + 1):
+        got, total, why = portal_list(query, page=page, rows=rows)
+        if why:
+            return out, why
+        out.extend(got)
+        if not got or len(out) >= total:
+            break
+        polite_sleep(0.3)
+    return out, ""
+
+
+def wanted(rows: list[dict]) -> list[dict]:
+    """도시계획조례(·군계획조례)만 — 시행규칙·다른 조례·폐지분·옛 기관('구 전라남도') 제외.
+    같은 기관·이름은 최신 시행일 하나."""
+    best: dict[tuple, dict] = {}
+    for r in rows:
+        name = _pick(r, "자치법규명", "lawNm", "명")
+        if "시행규칙" in name or not NAME_RE.search(re.sub(r"\s", "", name)):
+            continue
+        if "폐지" in _pick(r, "제개정구분명"):
+            continue
+        org = _pick(r, "지자체기관명", "기관명", "org")
+        if org.startswith(("구 ", "구)", "(구)")):
+            continue
+        key = (org, re.sub(r"\s", "", name))
+        row = {**r, "_mst": _pick(r, "자치법규일련번호", "MST", "ordinSeq", "ID"), "_name": name, "_org": org,
+               "_eff": _pick(r, "시행일자"), "_pub": _pick(r, "공포일자")}
+        if key not in best or row["_eff"] > best[key]["_eff"]:
+            best[key] = row
+    return sorted(best.values(), key=lambda r: (r["_org"], r["_name"]))
+
+
+def body_xml(mst: str) -> tuple[dict | None, str]:
+    """DRF 본문 XML — 공개 견본 계정(OC=test)으로 러너에서 바로 (run 30: 71,215자·건폐율 있음).
+    안 되면 중계기로 같은 주소(중계기가 OC=test 를 살려 보내면 통한다). (payload, 오류)."""
+    import xml.etree.ElementTree as ET
+    params = {"target": "ordin", "MST": str(mst), "type": "XML"}
+    # 미국 러너의 직접 호출은 가끔 접속 자체가 막힌다(ConnectTimeout). 30초씩 기다리면
+    # 200건이 한 시간을 넘기므로(run 32) 짧게 끊고 중계기로 넘어간다.
+    tries = (lambda: _direct(SERVICE, params, oc="test", timeout=(6, 20)),
+             lambda: get_once(SERVICE, {"OC": "test", **params}, timeout=40))
+    why = ""
+    for call in tries:
+        try:
+            r = call()
+        except Exception as e:                      # noqa: BLE001
+            why = f"{type(e).__name__}: {str(e)[:100]}"
+            continue
+        if r.status_code != 200:
+            why = f"HTTP {r.status_code}"
+            continue
+        try:
+            obj = _xml_obj(ET.fromstring(r.text))
+        except ET.ParseError:
+            why = "XML 아님: " + re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))[:120]
+            continue
+        if articles(obj):
+            return obj, ""
+        why = "조문 없음: " + re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))[:120]
+    return None, why
+
+
+def web_fragment(seq: str) -> tuple[str, str]:
+    """law.go.kr 본문 조각(ordinInfoR.do) — 중계기(서울)로. run 30: 276,547자·건폐율 있음."""
+    resp = get_once(WEB_HOST + "/LSW/ordinInfoR.do", {"OC": VIA_RELAY, "ordinSeq": str(seq), "chrClsCd": "010202"},
+                    timeout=40)
+    if resp.status_code != 200 or "제1조" not in resp.text:
+        return "", f"HTTP {resp.status_code} · {len(resp.text):,}자"
+    return resp.text, ""
+
+
+def slug_of(r: dict) -> str:
+    return re.sub(r"[^\w가-힣]+", "_", f"{r['_org']}_{r['_name']}").strip("_")
+
+
+def fetch(query: str = "", limit: int | None = None) -> dict:
+    """전국 도시계획조례 → data/ordinance/{기관_이름}.json (관심 조문) + index.json + summary.csv.
+    재개 가능 — 본문 원문(RAW_DIR/{mst}.json|.html)이 있으면 다시 안 받는다."""
+    import csv
+    queries = [q.strip() for q in (query or "").split(",") if q.strip()] or list(QUERIES)
+    rows: list[dict] = []
+    for q in queries:
+        got, why = portal_all(q)
+        print(f"목록 '{q}': {len(got)}건" + (f" — {why}" if why else ""))
+        rows.extend(got)
+    want = wanted(rows)
+    print(f"목록 합계 {len(rows)}건 → 도시계획조례 {len(want)}건 (기관별 최신 하나)")
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    fetched = 0
+    import time
+    fetched = failed = 0
     index = []
-    for r in want[:limit] if limit else want:
+    t0 = time.time()
+    todo = want[:limit] if limit else want
+    for i, r in enumerate(todo, 1):
+        if i % 20 == 0:
+            print(f"  … {i}/{len(todo)} · {time.time() - t0:,.0f}초 · 새로 받음 {fetched} · 실패 {failed}", flush=True)
         mst = r["_mst"]
-        raw = RAW_DIR / f"{mst}.json"
-        if raw.exists():
-            payload = json.loads(raw.read_text(encoding="utf-8"))
+        raw_j, raw_h = RAW_DIR / f"{mst}.json", RAW_DIR / f"{mst}.html"
+        payload, source = None, ""
+        if raw_j.exists():
+            payload, source = json.loads(raw_j.read_text(encoding="utf-8")), "drf-xml"
+        elif raw_h.exists():
+            payload, source = {"조문": html_articles(raw_h.read_text(encoding="utf-8"))}, "web-html"
         else:
-            payload, why = body(mst)
-            if payload is None:
-                print(f"  {r['_org']} {r['_name']}: {why[:100]}")
-                polite_sleep(0.5)
-                continue
-            raw.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            payload, why = body_xml(mst)
+            if payload is not None:
+                source = "drf-xml"
+                raw_j.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")   # XML→dict 그대로
+            else:
+                html, why_h = web_fragment(mst)
+                if html:
+                    raw_h.write_text(html, encoding="utf-8")
+                    payload, source = {"조문": html_articles(html)}, "web-html"
+                else:
+                    failed += 1
+                    print(f"  ✗ {r['_org']} {r['_name']} (MST {mst}): XML {why[:80]} / 웹 {why_h}")
+                    polite_sleep(0.5)
+                    continue
             fetched += 1
             polite_sleep(0.4)
         rel = relevant(payload)
-        slug = re.sub(r"[^\w가-힣]+", "_", f"{r['_org']}_{r['_name']}").strip("_")
+        summ = summarize(rel)
+        slug = slug_of(r)
         (OUT_DIR / f"{slug}.json").write_text(json.dumps(
-            {"org": r["_org"], "name": r["_name"], "mst": mst, "articles": rel},
-            ensure_ascii=False, indent=1), encoding="utf-8")
-        index.append({"org": r["_org"], "name": r["_name"], "mst": mst, "n": len(rel), "file": f"{slug}.json"})
+            {"org": r["_org"], "name": r["_name"], "mst": mst, "effective": r["_eff"], "published": r["_pub"],
+             "source": source, "summary": summ, "articles": rel}, ensure_ascii=False, indent=1), encoding="utf-8")
+        index.append({"org": r["_org"], "name": r["_name"], "mst": mst, "effective": r["_eff"], "source": source,
+                      "n": len(rel), "file": f"{slug}.json", **summ})
     (OUT_DIR / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"본문 새로 받음 {fetched}건 · 관심 조문 파일 {len(index)}개 → {OUT_DIR}")
-    return {"listed": len(rows), "wanted": len(want), "fetched": fetched, "files": len(index)}
+    if index:
+        cols = list(index[0].keys())
+        with open(OUT_DIR / "summary.csv", "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=cols)
+            w.writeheader()
+            w.writerows(index)
+    print(f"본문 새로 받음 {fetched}건 · 실패 {failed}건 · 관심 조문 파일 {len(index)}개 → {OUT_DIR}")
+    return {"listed": len(rows), "wanted": len(want), "fetched": fetched, "failed": failed, "files": len(index)}
+
+
+def sido_of(org: str) -> str:
+    """'경기도 안성시' → 경기도, '강원특별자치도' → 강원특별자치도, '세종특별자치시' → 그대로."""
+    return (org or "").split()[0] if org else "기타"
+
+
+def bundle(out_dir: Path | None = None) -> list[Path]:
+    """드라이브에 올릴 꼴 — 시도별 마크다운(관심 조문 전문) + 전국 요약표.
+    JSON 250개를 그대로 올리면 휴대폰에서 못 읽는다."""
+    out_dir = out_dir or (OUT_DIR / "bundle")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    index = json.loads((OUT_DIR / "index.json").read_text(encoding="utf-8"))
+    by: dict[str, list[dict]] = {}
+    for row in index:
+        by.setdefault(sido_of(row["org"]), []).append(row)
+    written = []
+    for sido, rows in sorted(by.items()):
+        lines = [f"# {sido} 도시계획조례 — 관심 조문 (건폐율·용적률·개발행위허가 기준)", "",
+                 f"출처: 국가법령정보센터(law.go.kr) 자치법규 · 받은 날 {__import__('datetime').date.today()}", "",
+                 "| 기관 | 조례 | 시행일 | 건폐율 계획관리 | 생산관리 | 보전관리 | 자연녹지 | 용적률 계획관리 | 경사도 | 표고 | 입목축적 |",
+                 "|---|---|---|---|---|---|---|---|---|---|---|"]
+        for r in rows:
+            lines.append(f"| {r['org']} | {r['name']} | {r['effective']} | {r['건폐율_계획관리']} | {r['건폐율_생산관리']} | "
+                         f"{r['건폐율_보전관리']} | {r['건폐율_자연녹지']} | {r['용적률_계획관리']} | {r['경사도_도']} | "
+                         f"{r['표고_m']} | {r['입목축적_pct']} |")
+        lines += ["", "빈칸은 조문에서 숫자를 자동으로 못 찾은 것 — 아래 원문을 보라.", ""]
+        for r in rows:
+            doc = json.loads((OUT_DIR / r["file"]).read_text(encoding="utf-8"))
+            lines += [f"## {r['org']} — {r['name']} (시행 {r['effective']} · MST {r['mst']})", ""]
+            for a in doc["articles"]:
+                text = a["text"]
+                if a["title"] and text.startswith(a["title"] + " "):     # 예전 산출은 제목을 되풀이했다
+                    text = text[len(a["title"]) + 1:]
+                lines += [f"### {a['label']}({a['title']})", "", text, ""]
+        path = out_dir / f"{sido}_도시계획조례_관심조문.md"
+        path.write_text("\n".join(lines), encoding="utf-8")
+        written.append(path)
+    if (OUT_DIR / "summary.csv").exists():
+        dst = out_dir / "전국_도시계획조례_요약.csv"
+        dst.write_bytes((OUT_DIR / "summary.csv").read_bytes())
+        written.append(dst)
+    return written

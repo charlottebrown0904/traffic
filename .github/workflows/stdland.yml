@@ -46,8 +46,15 @@ on:
         description: "value-test 모드 — 임의로 뽑을 거래 수"
         default: "5"
       query:
-        description: "law 모드 — 조례 검색어"
-        default: "도시계획 조례"
+        description: "law 모드 — 조례 검색어 (쉼표로 여럿 · 비우면 도시계획/군계획 조례 묶음)"
+        default: ""
+      limit:
+        description: "law 모드 — 처음 n건만 (시험용 · 비우면 전부)"
+        default: ""
+
+# law 모드가 data/ordinance 를 브랜치에 커밋한다 (run 31: 없으면 403).
+permissions:
+  contents: write
 
 concurrency:
   group: collect
@@ -128,7 +135,8 @@ jobs:
         if: inputs.mode == 'law'
         run: |
           set -o pipefail
-          python -m redt.cli load-ordinances --query "${{ inputs.query }}" 2>&1 | tee /tmp/stdland.log
+          python -m redt.cli load-ordinances --query "${{ inputs.query }}" \
+            ${{ inputs.limit && format('--limit {0}', inputs.limit) || '' }} 2>&1 | tee /tmp/stdland.log
 
       - name: 조례 조문 커밋
         if: inputs.mode == 'law'
@@ -189,6 +197,7 @@ jobs:
           path: |
             data/processed/law_probe.json
             data/processed/ordinance/probe-*.json
+            data/processed/ordinance/probe-web-*.html
           if-no-files-found: ignore
 
       - name: 탐침 결과 첨부
