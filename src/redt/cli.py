@@ -253,6 +253,22 @@ def cmd_ordinance_bundle(args):
         print(f"{path.stat().st_size:>9,}  {path.name}")
 
 
+def cmd_zoning_limits(args):
+    """C1 — 시행령 상한 + 시군구 조례 값 → config/zoning_limits.yaml · 화면용 JSON."""
+    from . import zoning
+    built = zoning.build()
+    y, w = zoning.write(built)
+    n = len(built["sigungu"])
+    lv = sum(1 for o in built["sigungu"].values() if o["level"] == "sigungu")
+    print(f"시군구 {n}곳에 조례를 붙였습니다 (시군 조례 {lv} · 광역시·도 조례 {n - lv})"
+          f" · 못 붙임 {len(built['missing'])} · 범위 밖이라 버림 {len(built['dropped'])}")
+    for m in built["missing"]:
+        print("  못 붙임:", m)
+    for d in built["dropped"]:
+        print("  버림:", d)
+    print(f"→ {y.relative_to(zoning.ROOT)} · {w.relative_to(zoning.ROOT)}")
+
+
 def cmd_value_test(args):
     """현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다.
 
@@ -2664,6 +2680,8 @@ def main(argv=None):
     p.set_defaults(func=cmd_load_ordinances)
     p = sub.add_parser("ordinance-bundle", help="data/ordinance → 시도별 md + 요약 csv (드라이브용)")
     p.set_defaults(func=cmd_ordinance_bundle)
+    p = sub.add_parser("zoning-limits", help="C1 — 시행령 상한 + 조례 값 → config/zoning_limits.yaml · zoning-limits.json")
+    p.set_defaults(func=cmd_zoning_limits)
 
     p = sub.add_parser("value-test",
                        help="현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다")
