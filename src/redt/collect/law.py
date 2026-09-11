@@ -500,7 +500,9 @@ def _keys(payload) -> list[str]:
     return []
 
 
-QUERIES = ("도시계획 조례", "도시계획조례", "군계획 조례", "도시·군계획 조례")
+# '군계획 조례' 가 '도시·군계획 조례' 도 부분일치로 잡는다. '·' 를 검색어에 넣으면
+# 포털이 &middot; 로 바꿔 XML 이 깨진다(run 31).
+QUERIES = ("도시계획 조례", "도시계획조례", "군계획 조례")
 NAME_RE = re.compile(r"(도시|군|도시·군)계획조례$")
 
 
@@ -519,13 +521,18 @@ def portal_all(query: str, max_pages: int = 30, rows: int = 100) -> tuple[list[d
 
 
 def wanted(rows: list[dict]) -> list[dict]:
-    """도시계획조례(·군계획조례)만 — 시행규칙·다른 조례 제외. 같은 기관·이름은 최신 시행일 하나."""
+    """도시계획조례(·군계획조례)만 — 시행규칙·다른 조례·폐지분·옛 기관('구 전라남도') 제외.
+    같은 기관·이름은 최신 시행일 하나."""
     best: dict[tuple, dict] = {}
     for r in rows:
         name = _pick(r, "자치법규명", "lawNm", "명")
         if "시행규칙" in name or not NAME_RE.search(re.sub(r"\s", "", name)):
             continue
+        if "폐지" in _pick(r, "제개정구분명"):
+            continue
         org = _pick(r, "지자체기관명", "기관명", "org")
+        if org.startswith("구 ") or org.startswith("구)"):
+            continue
         key = (org, re.sub(r"\s", "", name))
         row = {**r, "_mst": _pick(r, "자치법규일련번호", "MST", "ordinSeq", "ID"), "_name": name, "_org": org,
                "_eff": _pick(r, "시행일자"), "_pub": _pick(r, "공포일자")}

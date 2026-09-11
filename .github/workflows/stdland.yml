@@ -52,6 +52,10 @@ on:
         description: "law 모드 — 처음 n건만 (시험용 · 비우면 전부)"
         default: ""
 
+# law 모드가 data/ordinance 를 브랜치에 커밋한다 (run 31: 없으면 403).
+permissions:
+  contents: write
+
 concurrency:
   group: collect
   cancel-in-progress: false
