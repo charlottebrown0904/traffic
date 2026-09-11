@@ -1,0 +1,41 @@
+# Vercel 배포 일괄 삭제 — 저장 한도(Hobby 10GB)를 넘겨 배포가 멈췄을 때.
+#
+# 미리보기는 전부, production 은 최근 keep 개만 남긴다. 지금 toji.fyi 가
+# 가리키는 배포는 남긴다. 토큰은 시크릿 VERCEL_TOKEN 에서만 온다
+# (Vercel → Account Settings → Tokens, 만료 짧게).
+name: Vercel 배포 정리
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "1 이면 지울 목록만 찍고 안 지운다"
+        default: "1"
+      keep:
+        description: "남길 production 배포 수 (최근 것부터)"
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      KEEP_PRODUCTION: ${{ inputs.keep }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 정리
+        run: |
+          set -o pipefail
+          python scripts/vercel_cleanup.py 2>&1 | tee /tmp/cleanup.log
+      - name: 실행 요약
+        if: always()
+        run: |
+          { echo "## Vercel 배포 정리 (dry_run=${{ inputs.dry_run }})"; echo; echo '```'; cat /tmp/cleanup.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
