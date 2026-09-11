@@ -4903,12 +4903,19 @@ async function loadValuationTables() {
   return valuationTables;
 }
 
+/* 표준지 조각은 CDN(config.js stdlandBase)에서 먼저, 안 되면 같은 자리에서.
+ * 배포 크기 때문이다 — 138MB 를 배포마다 실으면 저장 한도가 난다. */
 async function loadStdland(code) {
   if (stdlandCache[code]) return stdlandCache[code];
-  try {
-    const r = await fetch(`/app/data/stdland-${code}.json`, { cache: 'no-cache' });
-    if (r.ok) stdlandCache[code] = await r.json();
-  } catch (e) { /* 조각이 없는 시군구 */ }
+  const base = String((window.REDT_CONFIG || {}).stdlandBase || '').replace(/\/$/, '');
+  const local = `/app/data/stdland-${code}.json`;
+  const urls = base ? [`${base}/stdland-${code}.json`, local] : [local];
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { cache: 'no-cache' });
+      if (r.ok) { stdlandCache[code] = await r.json(); break; }
+    } catch (e) { /* 다음 자리 */ }
+  }
   return stdlandCache[code] || null;
 }
 

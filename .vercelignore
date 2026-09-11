@@ -9,3 +9,7 @@
 /data/
 /Makefile
 /requirements.txt
+
+# 표준지 조각(138MB)은 배포에 싣지 않는다 — 배포마다 사본이 쌓여 Hobby 저장 한도
+# 10GB 를 넘겼다(2026-09-11). 화면은 jsDelivr(공개 저장소)에서 받는다 — config.js stdlandBase.
+/public/app/data/stdland-*.json

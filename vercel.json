@@ -45,5 +45,10 @@
         }
       ]
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "claude/real-estate-traffic-correlation-liujkh": false
+    }
+  }
 }

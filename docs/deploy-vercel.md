@@ -184,3 +184,28 @@ git add public/app/data && git commit -m "데이터 갱신" && git push
 3. `public/app/config.js` 에서 `homeUrl` 을 `null` 로 — 앱의 **← 홈으로** 버튼이 사라집니다
 
 이 셋이면 `/` 가 바로 앱이 됩니다. 앱을 옮기지 않으므로 `/app` 링크도 계속 삽니다.
+
+---
+
+## 저장 한도 — 배포가 조용히 멈춘 날 (2026-09-11)
+
+증상: main 에 합쳐도 production 이 안 올라가고, 나중엔 브랜치 미리보기도 안 생겼다.
+Usage 화면: **Deployment Storage 20.88 GB / 10 GB**. 배포 하나가 194MB(표준지 조각
+138MB 포함)인데 브랜치 push 마다 미리보기가 생겨 사본이 쌓였다. Hobby 는 한도를
+넘기면 새 배포를 받지 않는다.
+
+한 일:
+- 표준지 조각은 배포에서 뺐다(`.vercelignore`). 화면은 공개 저장소를 그대로 내어 주는
+  jsDelivr(`config.js stdlandBase`)에서 받고, 실패하면 같은 자리로 되돌아간다.
+  jsDelivr 는 `@main` 을 최대 12시간 캐시한다 — 조각을 새로 내보낸 직후엔 옛 것이
+  잠시 보일 수 있다.
+- 작업 브랜치는 미리보기 배포를 만들지 않는다(`vercel.json git.deploymentEnabled`).
+  main 만 배포된다. 검사: `scripts/test_deploy_size.py`.
+
+계정 주인이 할 것 (한 번):
+1. Vercel → toji-gogo → **Deployments** → 오래된 것부터 ⋯ → **Delete**. 10GB 아래로
+   내려가야 새 배포를 받는다 (약 60개를 지워야 한다 — 미리보기부터).
+2. 또는 Settings → General → **Deployment Retention** 이 보이면 Preview/Errored/
+   Canceled 를 가장 짧게 두면 저절로 지워진다.
+3. 지운 뒤 main 이 자동으로 안 올라가면 Settings → Git → Deploy Hooks 로 main 훅을
+   만들어 URL 을 한 번 연다.
