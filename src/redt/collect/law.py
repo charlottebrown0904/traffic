@@ -403,7 +403,8 @@ def summarize(rel: list[dict]) -> dict:
     out["경사도_도"] = m.group(1) if m else ""
     m = re.search(r"표고[^.。]{0,80}?(\d{2,4})\s*(?:미터|m|ｍ)", dv)
     out["표고_m"] = m.group(1) if m else ""
-    m = re.search(r"(?:입목|임목)축적[^.。]{0,80}?(\d{2,3})\s*(?:퍼센트|%|％)", dv)
+    # 안성시 조례는 '입목축척' 으로 적혀 있다(오기) — 둘 다 받는다
+    m = re.search(r"(?:입목|임목)축[적척][^.。]{0,80}?(\d{2,3})\s*(?:퍼센트|%|％)", dv)
     out["입목축적_pct"] = m.group(1) if m else ""
     return out
 

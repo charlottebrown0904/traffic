@@ -88,6 +88,8 @@ check(ha[1]["조문제목"] == "개발행위허가의 기준" and "script" not i
 summ = L.summarize(L.relevant({"조문": ha}))
 check(summ["건폐율_계획관리"] == "40" and summ["경사도_도"] == "20" and summ["표고_m"] == "200"
       and summ["입목축적_pct"] == "150" and summ["용적률_계획관리"] == "", f"요약 숫자 {summ}")
+check(L.summarize([{"title": "개발행위허가의 기준", "text": "대상토지의 입목축척이 시 평균 입목축척의 150퍼센트 미만"}])["입목축적_pct"] == "150",
+      "'입목축척'(오기)도 읽는다")
 
 print()
 print("2-4. 목록 고르기 — 도시계획조례만 · 기관별 최신 하나")
