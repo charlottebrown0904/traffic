@@ -575,7 +575,7 @@ def trade_other_factor(con, groups: list[tuple[str, str]], years: int = 3) -> di
     groups 는 (용도지역군 이름, LIKE 조각) 목록이다. SQL 은 parcelscore.build
     와 같은 표·같은 조인을 쓴다. 러너에서 돌았다 (2026-09-11 안성 검증).
     """
-    case = " ".join(f"WHEN t.land_use LIKE '%{like}%' THEN '{name}'" for name, like in groups)
+    case = " ".join(f"WHEN coalesce(pc.land_use, t.land_use) LIKE '%{like}%' THEN '{name}'" for name, like in groups)
     from_year = dt.date.today().year - years
     df = con.execute(TRADE_OTHER_SQL.format(zone_case=case, from_year=from_year)).fetchdf()
     out = {}
