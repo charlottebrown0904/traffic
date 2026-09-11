@@ -53,11 +53,11 @@ cols2 = ["tpgrphHgCodeNm", "stdrYear", "lndcgrCodeNm", "roadSideCodeNm", "pblntf
          "roadDstncCodeNm", "pnu", "prposDstrc2", "cnflcRt", "prposDstrc1", "roadSideCode"]
 m2, un2 = S.map_columns(cols2)
 check(m2.get("stdrYear") == "year" and m2.get("pblntfPclnd") == "price", "stdrYear→year · pblntfPclnd→price")
-check(m2.get("tpgrphFrmCodeNm") == "shape" and "tpgrphFrmCode" not in m2,
-      "형상은 이름 열(…Nm)을 잡고 코드 열은 안 잡는다")
+check(m2.get("tpgrphFrmCodeNm") == "shape" and m2.get("tpgrphFrmCode") == "shape_code",
+      "형상은 이름 열(…Nm)이 shape, 코드 열은 shape_code")
 check(m2.get("ldCode") == "ld_code" and m2.get("ldCodeNm") == "ld_name", "ldCode 와 ldCodeNm 을 가른다")
 check(m2.get("prposAreaNm1") == "land_use" and m2.get("prposAreaNm2") == "land_use2"
-      and "prposArea1" not in m2, "용도지역은 이름 열")
+      and m2.get("prposArea1") == "land_use_code", "용도지역은 이름 열이 land_use, 코드 열은 land_use_code")
 check(m2.get("roadDstncCodeNm") == "road_dist" and m2.get("prposDstrcNm1") == "district"
       and m2.get("cnflcRt") == "cnflc_rt" and m2.get("mnnmSlno") == "jibun"
       and m2.get("stdLandSn") == "std_no", "도로거리·용도지구·저촉률·지번·일련번호")
