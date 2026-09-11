@@ -68,6 +68,14 @@ COLUMNS = {
     "slope":         ("지형높이", "지세", "tpgrphhgcodenm", "tpgrph_hg_code_nm", "tpgrph_hg", "고저"),
     "shape":         ("지형형상", "형상", "tpgrphfrmcodenm", "tpgrph_frm_code_nm", "tpgrph_frm"),
     "cnflc_rt":      ("저촉률", "cnflcrt", "cnflc_rt"),
+    # 코드 열. 이름 열이 빈 행이 있어(2026-09-11 탐침) 코드로 이름을 채운다.
+    "land_use_code": ("prposarea1",),
+    "land_use2_code": ("prposarea2",),
+    "use_code":      ("ladusesittn",),
+    "road_side_code": ("roadsidecode",),
+    "road_dist_code": ("roaddstnccode",),
+    "slope_code":    ("tpgrphhgcode",),
+    "shape_code":    ("tpgrphfrmcode",),
     "notice_date":   ("공시일자", "pblntf_de", "고시일자", "lastupdtdt"),
     "lon":           ("경도", "lon", "x좌표", "x"),
     "lat":           ("위도", "lat", "y좌표", "y"),
@@ -131,6 +139,11 @@ def normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     if "ld_code" not in out.columns and "pnu" in out.columns:
         out["ld_code"] = out["pnu"].str.slice(0, 10)
     out["sigungu_cd"] = out["ld_code"].astype(str).str.slice(0, 5) if "ld_code" in out.columns else None
+    # 브이월드는 빈 값을 "" 로 준다. 빈 문자열은 값이 아니다.
+    for c in out.columns:
+        if out[c].dtype == object:
+            out[c] = out[c].where(out[c].astype(str).str.strip() != "", None)
+    out = learn_and_fill(out)
     out = out.dropna(subset=["price"]) if "price" in out.columns else out
     return out, unmatched
 
@@ -201,7 +214,63 @@ def load_csv(con, path: str, chunk: int = 200_000) -> dict:
 STD_COLS = ["pnu", "ld_code", "ld_name", "special", "jibun", "std_no", "year", "month",
             "price", "jimok", "area_m2", "land_use", "land_use2", "district", "district2",
             "use_situation", "surroundings", "road_side", "road_dist", "slope", "shape",
-            "cnflc_rt", "notice_date", "lon", "lat", "sigungu_cd", "source"]
+            "cnflc_rt", "notice_date", "lon", "lat", "sigungu_cd", "source",
+            "land_use_code", "land_use2_code", "use_code", "road_side_code",
+            "road_dist_code", "slope_code", "shape_code"]
+
+# 코드 열 ↔ 이름 열. 같은 행에 둘 다 있으면 코드표를 배우고, 이름이 빈
+# 행은 배운 코드표로 채운다. 코드표는 추측하지 않는다 — 자료가 준
+# 짝에서만 배우고, 못 배운 코드는 빈 채로 둔다.
+CODE_PAIRS = {
+    "land_use_code": "land_use", "land_use2_code": "land_use2", "use_code": "use_situation",
+    "road_side_code": "road_side", "road_dist_code": "road_dist",
+    "slope_code": "slope", "shape_code": "shape",
+}
+_CODEBOOK: dict[str, dict[str, str]] = {}
+
+
+def _codebook_path():
+    from ..config import PROCESSED
+    return PROCESSED / "stdland_codes.json"
+
+
+def load_codebook() -> dict:
+    global _CODEBOOK
+    if not _CODEBOOK:
+        try:
+            _CODEBOOK = json.loads(_codebook_path().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _CODEBOOK = {}
+    return _CODEBOOK
+
+
+def save_codebook() -> None:
+    try:
+        _codebook_path().parent.mkdir(parents=True, exist_ok=True)
+        _codebook_path().write_text(json.dumps(_CODEBOOK, ensure_ascii=False, indent=1),
+                                    encoding="utf-8")
+    except OSError:
+        pass
+
+
+def learn_and_fill(df: pd.DataFrame) -> pd.DataFrame:
+    """코드·이름 짝에서 코드표를 배우고 빈 이름을 채운다."""
+    book = load_codebook()
+    for code_col, name_col in CODE_PAIRS.items():
+        if code_col not in df.columns:
+            continue
+        if name_col not in df.columns:
+            df[name_col] = None
+        code = df[code_col].astype(str).str.strip()
+        name = df[name_col].astype(str).str.strip()
+        both = (code != "") & (code != "None") & (code != "nan") & (name != "") & (name != "None") & (name != "nan")
+        table = book.setdefault(code_col, {})
+        for c, n in zip(code[both], name[both]):
+            table.setdefault(c, n)
+        blank = ~both & (code != "") & (code != "None") & (code != "nan")
+        if blank.any() and table:
+            df.loc[blank, name_col] = code[blank].map(table).where(code[blank].map(table).notna(), None)
+    return df
 
 
 def _complete(rows: pd.DataFrame, source: str = "file") -> pd.DataFrame:
@@ -281,6 +350,7 @@ def fetch_odcloud(con, uddi: str, per_page: int = 1000, max_pages: int | None = 
         rows, unmatched = normalize(pd.DataFrame(data))
         rows = _complete(rows, source="odcloud")
         got += db.upsert(con, "std_land", rows)
+        save_codebook()
         if page % 20 == 0:
             print(f"    {page}/{pages}쪽 · {got:,}행")
         polite_sleep(0.2)
@@ -360,6 +430,7 @@ def fetch_vworld(con, sigungu_codes: list[str], years: list[int] | None = None,
             total += got
             print(f"  {code} {year or '전체'}: {got:,}행")
             polite_sleep(0.15)
+    save_codebook()
     return {"rows": total, "skipped": skipped}
 
 

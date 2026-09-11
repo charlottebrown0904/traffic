@@ -94,6 +94,29 @@ with db.connect() as con:
 check(n2 == 2, "다시 넣어도 늘지 않는다 (std_id 열쇠)")
 
 print()
+print("4-0. 빈 이름을 코드표로 채운다 (같은 응답 안의 짝에서 배운다)")
+S._CODEBOOK.clear()
+S._codebook_path = lambda: tmp / "codes.json"
+rows_v = pd.DataFrame([
+    {"pnu": "1", "ldCode": "4146125025", "stdrYear": "2025", "pblntfPclnd": "100",
+     "tpgrphHgCode": "03", "tpgrphHgCodeNm": "완경사", "tpgrphFrmCode": "05", "tpgrphFrmCodeNm": "부정형",
+     "roadSideCode": "12", "roadSideCodeNm": "맹지", "prposArea1": "43", "prposAreaNm1": "자연녹지지역"},
+    {"pnu": "2", "ldCode": "4146125025", "stdrYear": "2025", "pblntfPclnd": "200",
+     "tpgrphHgCode": "03", "tpgrphHgCodeNm": "", "tpgrphFrmCode": "05", "tpgrphFrmCodeNm": "",
+     "roadSideCode": "12", "roadSideCodeNm": "", "prposArea1": "43", "prposAreaNm1": ""},
+    {"pnu": "3", "ldCode": "4146125025", "stdrYear": "2025", "pblntfPclnd": "300",
+     "tpgrphHgCode": "09", "tpgrphHgCodeNm": "", "tpgrphFrmCode": "05", "tpgrphFrmCodeNm": "",
+     "roadSideCode": "12", "roadSideCodeNm": "", "prposArea1": "43", "prposAreaNm1": ""},
+])
+nv, _ = S.normalize(rows_v)
+r2 = nv[nv["pnu"] == "2"].iloc[0]
+r3 = nv[nv["pnu"] == "3"].iloc[0]
+check(r2["slope"] == "완경사" and r2["shape"] == "부정형" and r2["road_side"] == "맹지"
+      and r2["land_use"] == "자연녹지지역", "빈 이름을 같은 코드의 이름으로 채운다")
+check(r3["slope"] is None or pd.isna(r3["slope"]), "못 배운 코드(09)는 비운 채 둔다 — 추측하지 않는다")
+check(S._CODEBOOK["slope_code"]["03"] == "완경사", "코드표가 남는다")
+
+print()
 print("4. 브이월드 응답 꼴에서 행을 찾는다")
 rows = S._rows({"referLandPrices": {"field": [{"pnu": "1", "pblntfPclnd": "100"}]}})
 check(rows and rows[0]["pnu"] == "1", "중첩된 목록을 찾는다")
