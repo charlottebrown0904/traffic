@@ -1700,13 +1700,20 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
    요구사항(2026-09-09 2차). 값보다 **작고 흐리게** 둔다 — 이
    화면의 주인공은 땅값이고, 조회수는 곁들이는 숫자다. 값과 같은
    무게로 적으면 눈이 어디를 봐야 할지 모른다. */
+/* 조회 배지 (요구사항 2026-09-11): 태그 **아래에 조금 겹쳐서** 따로.
+   호갱노노의 그 알약이다. 태그의 흐름에서 빼서(absolute) 카드 크기를
+   안 바꾸고, 반투명 검정이라 어느 색 태그 위에서도 읽힌다. */
+.lp-card { position: relative; overflow: visible; }
 .lp-card s {
-  text-decoration: none;
-  font-size: 8.5px; font-weight: 500; opacity: .8;
-  margin-top: 1px; letter-spacing: -.01em;
+  position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%);
+  text-decoration: none; white-space: nowrap;
+  font-size: 8.5px; font-weight: 600; letter-spacing: -.01em; line-height: 1.5;
+  padding: 0 6px; border-radius: 999px;
+  background: rgba(20, 16, 12, .78); color: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
 }
 
-/* 주간 1등 별표. 시·군 안에서 하나뿐이라 눈에 띄어야 하지만,
+/* 24시간 누적 1등 별표 — 화면에 하나뿐이라 눈에 띄어야 하지만,
    이름을 밀어내면 안 된다. */
 .lp-card b mark {
   background: none; color: #FFD874;

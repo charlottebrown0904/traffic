@@ -95,7 +95,18 @@ check(html.index("/lib/access.js") < html.index("/app/gate.js"), "access.js 가 
 check("if (!acc.premium) {\n      box.innerHTML = premiumNotice(key, acc);\n      return;\n    }" in app,
       "프리미엄이 아니면 산출 대신 안내")
 check("준비 중입니다" in app and "결제" in app, "결제 안내는 '준비 중' 이라 적는다 (문구 미확정)")
-check('rpc("set_grade"' in acct and "renderGrades" in acct and "acc.admin" in acct, "계정 화면: 관리자만 등급 변경 목록")
+check('rpc("set_grade"' in acct and "renderMembers" in acct and "if (acc.admin) renderMembers" in acct,
+      "계정 화면: 관리자에게만 회원 목록 (등급 변경 포함)")
+check("approved_at" in acct and "메일 복사" in acct and "CSV" in acct and "data-sort" in acct,
+      "회원 목록: 신청일·가입일 · 메일 복사 · CSV · 정렬·필터")
+access_js = (ROOT / "public" / "lib" / "access.js").read_text(encoding="utf-8")
+check("A: 'VIP', B: '프리미엄', C: '일반'" in access_js and "VIP" in acct and "무료" not in acct,
+      "등급 이름: A→VIP · B→프리미엄 · C→일반")
+sql6 = (ROOT / "supabase" / "migrations" / "0006_views_24h_approved_at.sql").read_text(encoding="utf-8")
+check("add column if not exists approved_at" in sql6 and "create trigger profile_stamp" in sql6,
+      "가입(승인)일은 트리거가 찍는다")
+check("hour < now() - interval '24 hours'" in sql6 and "n24 bigint" in sql6,
+      "조회수는 시간 칸 24시간 굴림 · 옛 칸은 지운다")
 check("/lib/access.js" in acct_html, "계정 화면도 같은 판단을 쓴다")
 
 print()

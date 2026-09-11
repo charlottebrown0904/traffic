@@ -86,3 +86,36 @@
 .link-del:hover{color:var(--block)}
 .link-del:disabled{opacity:.5; cursor:default}
 .empty{padding:3rem 1rem; text-align:center; color:var(--faint)}
+
+/* 관리자 회원 목록 (2026-09-11). 카드가 26rem 이면 표가 찌그러진다 —
+   관리자에게는 넓힌다. 표 글꼴·선은 /guide/style.css 의 table 을 쓴다. */
+.auth-card.wide{max-width:64rem}
+.mtool{display:flex; flex-direction:column; gap:.5rem; margin:.25rem 0 .75rem}
+.mtool-row{display:flex; gap:.4rem; flex-wrap:wrap; align-items:center}
+.mtool-row select, .mtool-row input{
+  padding:.45rem .6rem; font:inherit; font-size:.9rem; border:1px solid var(--border-strong);
+  border-radius:8px; background:var(--surface); color:var(--ink)
+}
+.mtool-row input[type=search]{min-width:11rem; flex:1 1 11rem}
+.chips{display:flex; gap:.35rem; flex-wrap:wrap}
+.chip{
+  padding:.3rem .7rem; border-radius:999px; font:inherit; font-size:.85rem; cursor:pointer;
+  border:1px solid var(--border-strong); background:var(--surface); color:var(--muted)
+}
+.chip.on{background:var(--accent-soft); color:var(--accent); border-color:var(--accent)}
+.btn.sm{padding:.4rem .75rem; font-size:.85rem; border-radius:7px}
+.mtable{min-width:52rem; font-size:.86rem}
+.mtable td, .mtable th{padding:.5rem .5rem; vertical-align:middle}
+.mtable .th{background:none; border:0; padding:0; font:inherit; font-weight:inherit; color:inherit; cursor:pointer}
+.mtable .th:hover{color:var(--accent)}
+.mtable .nowrap{white-space:nowrap}
+.mtable .mono{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.8rem; word-break:break-all}
+.mtable select, .mtable input[type=date]{
+  padding:.3rem .4rem; font:inherit; font-size:.82rem; border:1px solid var(--border-strong);
+  border-radius:6px; background:var(--surface); color:var(--ink)
+}
+.st{display:inline-block; padding:.1rem .5rem; border-radius:5px; font-size:.78rem; white-space:nowrap}
+.st-pending{background:var(--warn-soft); color:var(--warn)}
+.st-approved{background:var(--ok-soft); color:var(--ok)}
+.st-rejected{background:var(--block-soft); color:var(--block)}
+.note-in{color:var(--faint); font-weight:400}

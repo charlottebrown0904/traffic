@@ -3917,6 +3917,9 @@ window.__drawLandPrice = () => drawLandPrice();
 // 번거롭다. 부를 구멍을 하나 낸다.
 window.__drawCadastral = () => drawCadastral();
 window.__cadTileList = () => cadTileList();
+// 조회 배지·별표 검사가 안을 들여다볼 구멍.
+window.__viewersPeek = () => ({ star: viewers.star, open: lpOpenPk, pending: lpPending,
+  stat: [...viewers.stat].map(([k, v]) => [k, v.n24]) });
 // 차종을 바꾸면 경계가 따라 내려가는지 검사가 볼 수 있게. 화면에서는
 // 차종 칸을 눌러 도는 길과 같은 함수다.
 window.state = state;
@@ -3971,7 +3974,7 @@ function drawLandPriceInner(have) {
           + ` style="background:${fill}">`
           // 주간 1등 별표는 **시·군 안에서** 뽑는다 (요구사항:
           // 전국 제외). 이름 앞에 붙는다.
-          + `<b>${viewerStar(it, level.key)}${escapeHtml(short)}`
+          + `<b>${viewerStar(it)}${escapeHtml(short)}`
           // 읍·면·동과 리에는 인구가 **없다**. 우리가 가진 인구는 KOSIS
           // 시군구 단위가 전부다. 그 자리에 시군구 인구를 적으면 리 하나가
           // 20만인 것처럼 읽히므로, 없으면 아무것도 안 적는다.
@@ -4902,7 +4905,7 @@ const VALUE_SERVICES = {
 function myAccess() {
   const prof = window.ME && window.ME.profile;
   if (typeof window.accessOf === 'function') return window.accessOf(prof);
-  return { grade: 'C', label: 'C · 무료', premium: false, expired: false, admin: false };
+  return { grade: 'C', label: '일반', premium: false, expired: false, admin: false };
 }
 
 function valueButtons() {
@@ -4921,7 +4924,7 @@ function premiumNotice(key, acc) {
   const s = VALUE_SERVICES[key] || { label: '' };
   const why = acc.expired
     ? `프리미엄 기간이 끝났습니다${acc.until ? ` (${acc.until.toLocaleDateString('ko-KR')}까지)` : ''}.`
-    : '현재 가치·미래 가치는 프리미엄(B 등급 이상) 회원에게 열립니다.';
+    : '현재 가치·미래 가치는 프리미엄 등급 이상 회원에게 열립니다.';
   return `<h4>${s.label} <span class="pcv-sub">프리미엄</span></h4>`
     + `<p class="pcv-lock-msg">${why} 지금 등급은 <b>${escapeHtml(acc.label)}</b> 입니다.</p>`
     + '<p class="pcv-lock-msg">가입·결제 안내는 준비 중입니다. 그때까지는 관리자가 등급을 올려 드립니다 — '
@@ -6110,11 +6113,13 @@ setTimeout(viewersOnMove, 3000);
 
 
 /* ══════════════════════════════════════════════════════════════════
-   지역 태그 셋째 줄 — 지금 N / 오늘 M명, 그리고 주간 1등 별표
+   지역 태그 조회 배지 — 24시간 누적 'N명 조회 중', 그리고 화면 1등 별표
 
-   요구사항(2026-09-09, 2차):
-     "지역 테그 하단에 (세번째 줄에) 지금 xx / 오늘 yy명 추가"
-     "일주일 누적 1등에게 지역앞에 별표 (시, 군 단위 전국 제외)"
+   요구사항(2026-09-09, 2차 → 2026-09-11 개정):
+     "누적으로 조회하는 사람 수 실시간 추가 (XX명 조회 중) — 호갱노노처럼
+      태그 아래에 조금 겹쳐서 따로 표시"
+     "24시간 동안 보는 사람 누적 (1시간마다 옛 한 시간 누적을 삭제)"
+     "화면에 보이는 지역 태그에서 24시간 누적 제일 많은 곳 별표 (10명 미만 제외)"
 
    그래서 **세는 단위가 태그 하나**다. 두계리와 두계리가 속한 계룡시는
    서로 다른 열쇠를 갖는다.
@@ -6156,9 +6161,9 @@ const viewers = {
   pk: '',            // 내가 가운데 둔 태그
   ch: null,
   timer: 0,
-  live: new Map(),   // 태그 열쇠 → 지금 보는 사람 수
-  stat: new Map(),   // 태그 열쇠 → { today, week }
-  star: new Map(),   // 시군구 코드 → 주간 1등 태그 열쇠
+  live: new Map(),   // 태그 열쇠 → 지금 보는 사람 수 (Presence)
+  stat: new Map(),   // 태그 열쇠 → { n24 } 24시간 누적
+  star: null,        // 화면에서 24시간 누적 1등인 태그 열쇠 (10명 미만이면 없음)
   asked: '',         // 마지막으로 통계를 물어본 열쇠 묶음
   seen: new Set(),   // 이번 방문에 이미 센 태그 (새로고침해야 다시 센다)
   sent: '',          // 마지막으로 채널에 실은 태그 (같으면 다시 안 싣는다)
@@ -6196,26 +6201,24 @@ function viewerCenterTag(items) {
 /* 태그 셋째 줄. 아무 숫자도 없으면 **줄 자체를 안 만든다** — 새로
    생긴 동네마다 '지금 0 / 오늘 0명' 이 붙으면 그것만 눈에 띈다. */
 function viewerLine(pk) {
-  // 요구사항(2026-09-09 3차): "누적 XX 명 / 오늘 XX명 말고 그냥
-  // XX 명 조회중 으로 간단하게".
+  // 요구사항(2026-09-11): "누적으로 조회하는 사람 수 실시간 추가 (XX명
+  // 조회 중) — 호갱노노처럼 태그 아래에 조금 겹쳐서 따로 표시. 24시간
+  // 동안 본 사람 누적 (1시간마다 옛 한 시간을 뺀다)".
   //
-  // 맞는 지적이다. 태그는 이미 이름·값·조회 세 줄인데 셋째 줄에 숫자가
-  // 둘이면 그 줄부터 읽기를 포기하게 된다. **지금 몇 명이 보고 있는가**
-  // 하나면 족하다 — 그것이 이 줄을 단 이유였다.
-  //
-  // 오늘·이번 주 숫자는 그대로 받아 둔다. 주간 1등 별표가 그 값으로
-  // 뽑히고(viewersRankStars), 화면에서 뺐다고 세는 것까지 뺄 일은 아니다.
-  const live = viewers.live.get(pk) || 0;
-  if (!live) return '';
-  return `<s>${live}명 조회중</s>`;
+  // 그래서 숫자는 **24시간 굴림 누적**이다 (place_view 시간 칸의 합).
+  // 사람 수에 가깝게 하려고 한 방문에서 태그 하나는 한 번만 센다
+  // (viewersBump 의 seen). '실시간' 은 Presence 가 맡는다 — 같은 시·군을
+  // 보는 누군가가 태그를 가운데 두면 sync 가 오고, 그때 통계를 다시
+  // 묻는다 (viewersChannel). 0 이면 배지 자체를 안 만든다.
+  const n = (viewers.stat.get(pk) || {}).n24 || 0;
+  if (!n) return '';
+  return `<s>${n}명 조회 중</s>`;
 }
 
-/* 주간 1등인가. **시·군 안에서만 뽑는다** (요구사항: 전국 제외).
-   그리고 읍·면·동/리 태그에만 붙인다 — 시·도 태그에 별을 달면
-   '전국 1등' 이 되어 버린다. */
-function viewerStar(it, levelKey) {
-  if (levelKey !== 'umd' && levelKey !== 'ri') return '';
-  return viewers.star.get(it.sg) === it.pk ? '<mark>★</mark>' : '';
+/* 별표 — **화면에 보이는 태그 중** 24시간 누적 1등, 단 10명 미만이면
+   없음 (요구사항 2026-09-11). 하나뿐이다. */
+function viewerStar(it) {
+  return viewers.star && viewers.star === it.pk ? '<mark>★</mark>' : '';
 }
 
 /* 지도가 멎으면 그때. 끄는 동안 채널을 갈아치우면 지나온 시군구마다
@@ -6284,6 +6287,11 @@ async function viewersChannel(sg) {
       if (m.p) live.set(m.p, (live.get(m.p) || 0) + 1);
     });
     viewers.live = live;
+    // 누군가 새로 왔다 — 24시간 누적이 바뀌었을 수 있다. 다시 묻는다
+    // ('실시간'). 같은 화면 지문은 viewersStats 가 걸러 주므로 asked 를 비운다.
+    viewers.asked = '';
+    viewersStats((viewers.items || []).map((x) => x.pk).filter(Boolean).slice(0, VIEW_MAX_KEYS))
+      .then(() => { if (viewers.ch === ch) drawLandPrice(); });
     drawLandPrice();
   });
   // **subscribe 보다 먼저 세워 둔다.** 붙었다는 신호가 곧바로 오면
@@ -6320,18 +6328,9 @@ async function viewersBump(pk) {
   try {
     const { data, error } = await window.SB.rpc('bump_place_view', { k: pk });
     if (error) throw error;
-    const st = viewers.stat.get(pk) || { today: 0, week: 0 };
-    // 되돌아온 값이 **오늘** 수다. 주간 수가 아니다.
-    //
-    // 처음에 week 를 'st.week + (data - st.today)' 로 올렸는데, 통계가
-    // 아직 안 왔으면 st.today 가 0이라 week 가 오늘 수만큼 통째로
-    // 뛰었다. 그러면 그 태그가 주간 1등이 되어 **별표가 엉뚱한 곳에
-    // 붙는다** (검사에서 명암리 대신 사송리에 붙었다).
-    //
-    // 주간은 오늘을 품으므로 한 번 본 만큼만 올리되, 오늘보다 작을
-    // 수는 없다.
-    const today = Number(data) || st.today + 1;
-    viewers.stat.set(pk, { today, week: Math.max(st.week + 1, today) });
+    // 되돌아온 값이 이 태그의 **24시간 누적**이다.
+    const st = viewers.stat.get(pk) || { n24: 0 };
+    viewers.stat.set(pk, { n24: Number(data) || st.n24 + 1 });
     viewersRankStars();
     drawLandPrice();
   } catch (err) {
@@ -6351,7 +6350,7 @@ async function viewersStats(keys) {
     // **화면에 있는 열쇠만 지우고 다시 채운다.** 통째로 비우면 방금
     // 올린 내 숫자가 사라졌다 되살아나 깜빡인다.
     (data || []).forEach((r) => viewers.stat.set(String(r.place_key),
-      { today: Number(r.today) || 0, week: Number(r.week) || 0 }));
+      { n24: Number(r.n24) || 0 }));
     keys.forEach((k) => {
       if (!(data || []).some((r) => String(r.place_key) === k)
           && !viewers.seen.has(k)) viewers.stat.delete(k);
@@ -6362,17 +6361,17 @@ async function viewersStats(keys) {
   }
 }
 
-/* 시·군 안에서 주간 1등을 뽑는다. **0 은 1등이 아니다** — 아무도 안
-   본 시골 면에 별이 붙으면 별의 뜻이 사라진다. */
+/* 화면에 보이는 태그 중 24시간 누적 1등에 별 하나. **10명 미만이면 별이
+   없다** (요구사항 2026-09-11) — 셋이 본 시골 면에 별이 붙으면 별의 뜻이
+   사라진다. */
+const VIEW_STAR_MIN = 10;
 function viewersRankStars() {
-  const best = new Map();
-  const items = viewers.items || [];
-  items.forEach((it) => {
-    if (!it.pk || !it.sg || !it.pk.startsWith('u:')) return;
-    const w = (viewers.stat.get(it.pk) || {}).week || 0;
-    if (w <= 0) return;
-    const cur = best.get(it.sg);
-    if (!cur || w > cur.w) best.set(it.sg, { w, pk: it.pk });
+  let best = null;
+  (viewers.items || []).forEach((it) => {
+    if (!it.pk) return;
+    const n = (viewers.stat.get(it.pk) || {}).n24 || 0;
+    if (n < VIEW_STAR_MIN) return;
+    if (!best || n > best.n) best = { n, pk: it.pk };
   });
-  viewers.star = new Map([...best].map(([sg, o]) => [sg, o.pk]));
+  viewers.star = best ? best.pk : null;
 }

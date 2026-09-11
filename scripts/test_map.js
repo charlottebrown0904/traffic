@@ -762,18 +762,24 @@ const FAKE_LEAFLET = () => {
           window.SB.__log.rpc.push({ fn, args });
           if (fn === 'place_view_stats') {
             const keys = args.keys || [];
-            // 주간 값을 **겹치지 않게** 내려준다 (keys.length - i). 같은
+            // 24시간 누적을 **겹치지 않게** 내려준다 (keys.length - i). 같은
             // 값이 둘이면 '1등이 누구인가' 를 검사가 못 정한다.
             // 그리고 짝수 번째만 준다 — 숫자가 없는 태그도 있어야
-            // '줄을 안 만든다' 는 규칙을 볼 수 있다.
+            // '배지를 안 만든다' 는 규칙을 볼 수 있다. __statsCap 으로
+            // 값을 눌러 '10명 미만이면 별 없음' 을 본다.
+            const cap = window.__statsCap || Infinity;
+            // 내가 올린(bump) 태그는 진짜 서버라면 반드시 통계에 있다 —
+            // 짝수 규칙과 무관하게 넣어 준다.
+            const bumped = new Set(window.SB.__log.rpc
+              .filter((x) => x.fn === 'bump_place_view').map((x) => x.args.k));
             return Promise.resolve({
               data: keys.map((k, i) => ({
-                place_key: k, today: i + 1, week: keys.length - i,
-              })).filter((_x, i) => i % 2 === 0),
+                place_key: k, n24: Math.min(cap, 1000 - i),
+              })).filter((x, i) => i % 2 === 0 || bumped.has(x.place_key)),
               error: null,
             });
           }
-          // bump 는 **오늘** 수를 돌려준다 (주간이 아니다).
+          // bump 는 그 태그의 **24시간 누적**을 돌려준다.
           if (fn === 'bump_place_view') {
             return Promise.resolve({ data: 1, error: null });
           }
@@ -2645,7 +2651,7 @@ const FAKE_LEAFLET = () => {
           note.text.slice(0, 60));
 
     console.log();
-    console.log('9-F. 태그 셋째 줄 — 지금 N / 오늘 M명 · 주간 1등 별표');
+    console.log('9-F. 태그 조회 배지 — 24시간 누적 N명 조회 중 · 화면 1등 별표');
     /* 요구사항(2026-09-09 2차). 급소는 '숫자가 나오나' 가 아니라 셋이다.
 
          (1) 세는 단위가 **태그 하나**인가 (시군구가 아니라)
@@ -2705,7 +2711,7 @@ const FAKE_LEAFLET = () => {
     check('가운데 둔 태그 하나만 올린다',
           bumps.length === 1 && /^u:\d{5}:/.test(bumps[0].args.k),
           JSON.stringify(bumps));
-    check('보이는 태그의 오늘·이번 주를 한 번에 묻는다',
+    check('보이는 태그의 24시간 누적을 한 번에 묻는다',
           vw1.rpc.some((x) => x.fn === 'place_view_stats'
                               && Array.isArray(x.args.keys)
                               && x.args.keys.length > 1),
@@ -2720,24 +2726,27 @@ const FAKE_LEAFLET = () => {
     check('나가는 값에 좌표도 이메일도 없다',
           !/"lat"|"lon"|@|"u1"/.test(vwPriv), vwPriv.slice(0, 80));
 
-    // 오늘·지금이 **그 태그 줄에** 적힌다.
+    // 24시간 누적이 **배지로** 적힌다 (요구사항 2026-09-11: 'XX명 조회 중',
+    // 태그 아래 겹쳐서). 누군가 새로 오면(Presence sync) 통계를 다시 묻는다.
     const vw2 = await page.evaluate(async () => {
       const rec = window.SB.__log.channels[0];
       const mine = window.SB.__log.tracked[window.SB.__log.tracked.length - 1].p;
+      const before = window.SB.__log.rpc.filter((x) => x.fn === 'place_view_stats').length;
       // 나 말고 둘이 더 같은 태그를 가운데 두었다.
       rec.state = { a: [{ p: mine }], b: [{ p: mine }], c: [{ p: mine }] };
       rec.handlers.forEach((h) => h());
-      await new Promise((r) => setTimeout(r, 200));
-      // **내가 표시를 심은 태그**를 찾아야 한다. 첫 번째 <s> 태그를
-      // 집으면 남의 카드를 보고 통과·실패를 말하게 된다.
-      const card = window.__cards().find((h) => /3명 조회중/.test(h));
-      return { mine, text: card || window.__cards().join(' | ') };
+      await new Promise((r) => setTimeout(r, 300));
+      const after = window.SB.__log.rpc.filter((x) => x.fn === 'place_view_stats').length;
+      const cards = window.__cards();
+      return { mine, before, after,
+               badges: cards.filter((h) => /<s>\d+명 조회 중<\/s>/.test(h)).length,
+               old: cards.filter((h) => /조회중|오늘|지금/.test(h)).length,
+               sample: (cards.find((h) => /<s>/.test(h)) || '').slice(0, 200) };
     });
-    // 요구사항(2026-09-09 3차): "그냥 XX 명 조회중 으로 간단하게".
-    // 셋째 줄에 숫자가 둘이면 그 줄부터 읽기를 포기한다.
-    check('셋째 줄에 몇 명이 보고 있는지만 적는다',
-          /<s>3명 조회중<\/s>/.test(vw2.text)
-          && !/오늘|지금/.test(vw2.text), vw2.text);
+    check('배지는 "N명 조회 중" 하나뿐이다 (오늘·지금 없음)',
+          vw2.badges > 0 && vw2.old === 0, vw2.sample);
+    check('누가 새로 오면 24시간 누적을 다시 묻는다 (실시간)',
+          vw2.after > vw2.before, `${vw2.before} → ${vw2.after}`);
 
     // 아무 숫자도 없는 태그에는 **줄을 안 만든다.** 새로 생긴 동네마다
     // '지금 0 / 오늘 0명' 이 붙으면 그것만 눈에 띈다.
@@ -2745,7 +2754,7 @@ const FAKE_LEAFLET = () => {
       const cards = window.__cards();
       return { all: cards.length, lines: cards.filter((h) => /<s>/.test(h)).length };
     });
-    check('숫자가 없는 태그에는 줄이 없다', vw3.lines < vw3.all,
+    check('숫자가 없는 태그에는 배지가 없다', vw3.lines < vw3.all,
           `태그 ${vw3.all}개 중 줄 ${vw3.lines}개`);
 
     // 열린 말풍선이 **지도가 움직여도 살아 있어야 한다.**
@@ -2844,33 +2853,49 @@ const FAKE_LEAFLET = () => {
     check('다시 누르면 열린다', drag.afterTap);
 
 
-    // 별표 — **시·군 안에서** 하나. 전국 1등을 달면 전국에 별이
-    // 하나뿐이라 아무 데서도 안 보인다.
-    const vw5 = await page.evaluate(() => {
-      const keys = (window.SB.__log.rpc
-        .filter((x) => x.fn === 'place_view_stats').pop() || { args: {} }).args.keys || [];
-      // 가짜 RPC 는 week = keys.length - i 를 짝수 번째에만 준다.
-      // 그러니 시·군마다 **짝수 번째 중 가장 앞선 것**이 1등이다.
-      const items = (window.__lp.items || []);
-      const want = new Map();
-      keys.forEach((k, i) => {
-        if (i % 2) return;
-        const it = items.find((x) => x.pk === k);
-        if (!it || want.has(it.sg)) return;
-        want.set(it.sg, it.name);
-      });
-      const starred = window.__cards()
+    // 별표 — **화면에 보이는 태그 중** 24시간 누적 1등 하나. 10명 미만이면
+    // 없다 (요구사항 2026-09-11).
+    const vw5 = await page.evaluate(async () => {
+      // 앞 절이 말풍선을 열어 둔 채 끝났다. 열려 있는 동안은 다시 안
+      // 그리므로(drawLandPrice 의 잠금) 지도의 popupclose 로 먼저 닫는다.
+      const closeAll = async () => {
+        (window.__map.groups || []).flatMap((g) => g._items)
+          .filter((m) => m && m.__popupOpen && m.closePopup).forEach((m) => m.closePopup());
+        (((window.__mapOn || {}).popupclose) || []).forEach((f) =>
+          f({ popup: { options: { className: 'lp-pop' } } }));
+        await new Promise((r) => setTimeout(r, 100));
+      };
+      await closeAll();
+      const stars = () => window.__cards()
         .filter((h) => /<mark>/.test(h))
         .map((h) => (h.match(/<mark>★<\/mark>([^<]*)/) || [])[1] || '');
-      return { want: [...want.values()], starred, sgs: want.size };
+      const keys = (window.SB.__log.rpc
+        .filter((x) => x.fn === 'place_view_stats').pop() || { args: {} }).args.keys || [];
+      // 가짜 RPC 는 n24 = 1000 - i 를 짝수 번째에만 준다 → 1등은 keys[0].
+      const items = (window.__lp.items || []);
+      const top = items.find((x) => x.pk === keys[0]);
+      const withMany = { keys: keys.length, starred: stars(),
+                         want: top ? String(top.name).split(' ').pop() : '' };
+      // 값을 9 로 누르면 별이 없어야 한다. **지금 붙어 있는** 채널(마지막)의
+      // sync 를 흉내낸다 — 옛 채널의 손잡이는 옮긴 뒤라 조용히 무시된다.
+      window.__statsCap = 9;
+      const chs = window.SB.__log.channels;
+      const rec = chs[chs.length - 1];
+      const before = window.SB.__log.rpc.filter((x) => x.fn === 'place_view_stats').length;
+      rec.handlers.forEach((h) => h());
+      await new Promise((r) => setTimeout(r, 400));
+      await closeAll();                        // 사이에 무엇이 열렸어도 밀린 그리기를 갚는다
+      const asked = window.SB.__log.rpc.filter((x) => x.fn === 'place_view_stats').length - before;
+      const capped = stars();
+      delete window.__statsCap;
+      return { withMany, capped, asked, channels: chs.length, peek: window.__viewersPeek() };
     });
-    check('별표가 시·군마다 하나씩 붙는다',
-          vw5.starred.length === vw5.sgs && vw5.sgs > 0,
-          `시·군 ${vw5.sgs}곳 · 별 ${vw5.starred.length}개`);
-    check('별표는 주간 1등에게 간다',
-          vw5.starred.length > 0 && vw5.starred.every((t) =>
-            vw5.want.some((w) => w.split(' ').pop() === t.replace(/[0-9.만]*$/, ''))),
-          `별 ${vw5.starred.join(', ')} vs 1등 ${vw5.want.join(', ')}`);
+    check('별표는 화면에 하나 — 24시간 누적 1등에게',
+          vw5.withMany.keys > 1 && vw5.withMany.starred.length === 1
+          && vw5.withMany.starred[0].replace(/[0-9.만]*$/, '') === vw5.withMany.want,
+          `열쇠 ${vw5.withMany.keys}개 · 별 ${vw5.withMany.starred.join(', ')} vs 1등 ${vw5.withMany.want}`);
+    check('10명 미만이면 별이 없다', vw5.asked > 0 && vw5.capped.length === 0,
+          `별 ${vw5.capped.length}개 · 다시 물음 ${vw5.asked}번 · 별 열쇠 ${vw5.peek.star} · 열린 말풍선 ${vw5.peek.open}`);
 
     await page.evaluate(() => { window.__zoom = 7; window.__center = null; });
 
@@ -3029,10 +3054,10 @@ const FAKE_LEAFLET = () => {
       document.querySelector('.pc-val[data-val="now"]').click();
       return document.getElementById('pc-val-box').innerHTML;
     });
-    check('C 등급이 누르면 산출 대신 안내가 뜬다',
-          /프리미엄\(B 등급 이상\)/.test(lockBox) && /준비 중입니다/.test(lockBox) && /href="\/account"/.test(lockBox)
+    check('일반 등급이 누르면 산출 대신 안내가 뜬다',
+          /프리미엄 등급 이상/.test(lockBox) && /준비 중입니다/.test(lockBox) && /href="\/account"/.test(lockBox)
           && !/공시지가기준법/.test(lockBox), lockBox.slice(0, 160));
-    check('안내에 지금 등급을 적는다', /C · 무료/.test(lockBox));
+    check('안내에 지금 등급을 이름으로 적는다 (일반)', /지금 등급은 <b>일반<\/b>/.test(lockBox));
     await page.evaluate(() => { window.ME.profile.grade = 'B'; window.ME.profile.grade_until = '2020-01-01'; });
     const pcX = await clickMap(37.304, 127.011);
     const lockX = await page.evaluate(() => {

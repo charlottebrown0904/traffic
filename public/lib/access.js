@@ -1,14 +1,17 @@
 /* 회원 등급 → 무엇을 볼 수 있나. 한 곳에서만 정한다 (지도·계정 화면이 같이 쓴다).
  *
- *   admin  모든 권한 (등급 변경 포함)
- *   A      제한 없음
- *   B      유료 프리미엄 — grade_until 이 있으면 그날까지
- *   C      무료 — 프리미엄(현재 가치·미래 가치)은 안내만
+ *   admin  관리자 — 모든 권한 (등급 변경 포함)
+ *   A      VIP — 제한 없음
+ *   B      프리미엄 (유료) — grade_until 이 있으면 그날까지
+ *   C      일반 — 프리미엄(현재 가치·미래 가치)은 안내만
+ *
+ * 이름은 2026-09-11 지시로 A→VIP · B→프리미엄 · C→일반. 코드값(A·B·C)은
+ * 데이터베이스와 같아 그대로 둔다.
  *
  * 같은 규칙이 데이터베이스에도 있다 (supabase/migrations/0003_grade.sql
  * premium_ok). 여기는 화면용 판단이지 자물쇠가 아니다. */
 (function () {
-  var LABEL = { admin: '관리자', A: 'A · 제한 없음', B: 'B · 프리미엄', C: 'C · 무료' };
+  var LABEL = { admin: '관리자', A: 'VIP', B: '프리미엄', C: '일반' };
   window.accessOf = function (profile) {
     var p = profile || {};
     var grade = p.grade || 'C';
