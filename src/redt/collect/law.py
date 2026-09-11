@@ -35,17 +35,25 @@ KEYWORDS = ("건폐율", "용적률", "개발행위허가", "경사도", "임목
             "성장관리", "자연취락", "개발진흥")
 
 
+REFERER = "https://toji.fyi/"   # open.law.go.kr 에 등록한 서비스 주소 — 검증에 쓰일 수 있다
+
+
 def _oc() -> str:
+    """중계기가 켜져 있으면 늘 중계기로 (서울 IP · 중계기가 LAW_OC 를 끼운다).
+    법제처는 호출 서버의 IP·도메인을 등록분과 견주므로(run 22 응답) 미국 러너의
+    직접 호출은 통하지 않을 가능성이 크다."""
+    from ..config import relay
+    if relay().enabled:
+        return VIA_RELAY
     return os.getenv("LAW_OC") or VIA_RELAY
 
 
 def _direct(url: str, params: dict):
-    """중계기를 거치지 않고 바로 부른다 — 미국 러너에서 law.go.kr 이 열리는지를
-    이것이 잰다. 중계기(main 배포분)가 아직 www.law.go.kr 을 모를 때의 우회이기도 하다."""
+    """중계기를 거치지 않고 바로 부른다 — 러너 IP 로. 등록 도메인을 Referer 로 싣는다."""
     import requests
     oc = os.getenv("LAW_OC") or "test"
     return requests.get(url, params={**params, "OC": oc}, timeout=30,
-                        headers={"User-Agent": "Mozilla/5.0 redt-research"})
+                        headers={"User-Agent": "Mozilla/5.0 redt-research", "Referer": REFERER})
 
 
 def _call(url: str, params: dict) -> tuple[dict | list | None, str]:
@@ -61,9 +69,13 @@ def _call(url: str, params: dict) -> tuple[dict | list | None, str]:
     if resp.status_code != 200:
         return None, f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", body[:200])
     try:
-        return json.loads(body), ""
+        payload = json.loads(body)
     except ValueError:
         return None, "JSON 아님: " + re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))[:240]
+    # 법제처는 오류도 200 으로 준다: {"result": "사용자 정보 검증에 실패하였습니다.", "msg": …}
+    if isinstance(payload, dict) and "msg" in payload and not _find_rows(payload):
+        return None, f"{payload.get('result', '')} {payload.get('msg', '')}"[:240]
+    return payload, ""
 
 
 def search(query: str, page: int = 1, display: int = 100) -> tuple[list[dict], int, str]:
@@ -172,8 +184,10 @@ def probe(query: str = "안성시 도시계획 조례") -> dict:
     except Exception as e:                          # noqa: BLE001
         out["direct"] = {"error": f"{type(e).__name__}: {str(e)[:160]}"}
         print(f"직접 호출 실패: {out['direct']['error']}")
-    # 2) 우리 경로 (중계기 → 안 되면 직접)
+    # 2) 우리 경로 — 중계기(서울) 우선, 거부되면 직접
     rows, total, why = search(query, display=5)
+    out["route"] = "relay" if _oc() == VIA_RELAY else "direct"
+    print(f"경로 {out['route']}: {len(rows)}건" + (f" — {why}" if why else ""))
     out["search"] = {"n": len(rows), "total": total, "why": why,
                      "keys": sorted(rows[0].keys()) if rows else []}
     print(f"목록: {len(rows)}건 / 전체 {total}" + (f" — {why}" if why else ""))

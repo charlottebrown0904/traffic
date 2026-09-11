@@ -48,7 +48,8 @@ const ALLOW = {
   "kosis.kr":        { param: "apiKey",     env: "KOSIS_KEY" },
   // 국가법령정보센터 Open API (자치법규 조례). OC 는 가입 아이디인데 키처럼
   // 다룬다 — 호출 측이 들고 있지 않게 중계기가 끼워 넣는다.
-  "www.law.go.kr":   { param: "OC",         env: "LAW_OC" },
+  "www.law.go.kr":   { param: "OC",         env: "LAW_OC",
+                       referer: () => process.env.LAW_REFERER || DEFAULT_REFERER },
 };
 
 // 브이월드 콘솔에 등록된 서비스 주소. 환경변수(VWORLD_REFERER)가 있으면
