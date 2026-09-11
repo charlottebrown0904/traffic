@@ -20,8 +20,8 @@ jobs:
           probe https://toji.fyi/version.txt; cat /tmp/body; echo
           probe https://toji.fyi/app/data/zoning-limits.json
           probe https://toji.fyi/lib/access.js
-          probe "https://toji.fyi/app/data/stdland-41550.json"   # 배포에서 뺐으니 404 가 정상
-          echo "== CDN (표준지 조각)"
-          probe https://cdn.jsdelivr.net/gh/charlottebrown0904/traffic@main/public/app/data/stdland-41550.json
-          head -c 160 /tmp/body; echo
-          probe https://cdn.jsdelivr.net/gh/charlottebrown0904/traffic@main/public/app/data/stdland-50110.json
+          probe "https://toji.fyi/app/data/stdland-41550.json"   # 프리미엄 — 공개 배포에 없으니 404 가 정상
+          probe "https://toji.fyi/app/data/valuation.json"        # 같음
+          echo "== 프리미엄 버킷 — 익명은 거부돼야 한다 (400/401/403)"
+          probe https://caykbxvnebpifcduqjre.supabase.co/storage/v1/object/premium/valuation.json
+          probe https://caykbxvnebpifcduqjre.supabase.co/storage/v1/object/premium/stdland-41550.json
