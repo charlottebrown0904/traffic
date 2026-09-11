@@ -2949,6 +2949,8 @@ const FAKE_LEAFLET = () => {
           /ordinInfoP\.do\?ordinSeq=2102141[^>]*>수원시 도시계획 조례</.test(pc.html)
           && /시행 2025-12-31/.test(pc.html));
     check('개발 한도 칸이 가이드(법령과 조례)로 이어진다', /href="\/guide\/law"/.test(pc.html));
+    check('개발 한도는 건축 제한처럼 늘 펼쳐져 있다 (접이식 아님)',
+          /<section class="pc-limits"><h4 class="pc-sub">개발 한도/.test(pc.html) && !/<details class="pc-limits"/.test(pc.html));
 
     // 건축 제한 (요구사항 2026-09-10). 레이더는 안 건드리고 아래에
     // 따로 적는다 — 규제의 무게를 숫자로 환산하면 그 환산율 자체가

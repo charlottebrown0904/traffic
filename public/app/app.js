@@ -4780,7 +4780,8 @@ function parcelLimits(parcel, Z) {
       + (ord.eff ? ` <em>(시행 ${e(String(ord.eff).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))})</em>` : '')
       + (ref[1] === 'sido' ? ' <em>· 자치구·행정시는 광역시·도 조례를 따릅니다</em>' : '')
     : '<em>이 시군구 조례는 아직 못 받았습니다 — 시행령 상한만 적었습니다</em>';
-  return '<details class="pc-limits"><summary>개발 한도 <em>건폐율·용적률·개발행위 문턱</em></summary>'
+  // 건축 제한처럼 **늘 펼쳐 둔다** (지시 2026-09-11). 접어 두면 있는 줄 모른다.
+  return '<section class="pc-limits"><h4 class="pc-sub">개발 한도 <em>건폐율·용적률·개발행위 문턱</em></h4>'
     + '<table class="pc-facts"><tbody>'
     + rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')
     + '</tbody></table>'
@@ -4788,7 +4789,7 @@ function parcelLimits(parcel, Z) {
     + '<p class="pc-limits-note">조례의 첫 값입니다. 완화·강화 단서(성장관리계획구역·기존 공장 등)는 '
     + '원문 조문에 있고, 지구·구역이 걸리면 그쪽이 먼저입니다. '
     + '<a href="/guide/law" target="_blank" rel="noopener">누가 정하나 · 내 시·군 조례 →</a></p>'
-    + '</details>';
+    + '</section>';
 }
 
 /* 카드 머리의 주소 (요구사항 2026-09-10).

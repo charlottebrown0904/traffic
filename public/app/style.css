@@ -1211,14 +1211,10 @@ body.picking .leaflet-container{cursor:crosshair}
 .pc-facts td { padding: 3px 0; color: var(--ink); }
 .pc-facts em { font-style: normal; color: var(--muted); }
 
-/* 개발 한도 (C4). 토지 정보 표 아래 접이식 — 늘 읽는 값이 아니라 지을
-   때 확인하는 값이고, 폰에서 카드가 길어지면 정작 축이 밀려난다. */
+/* 개발 한도 (C4). 토지 정보 표 아래, 건축 제한과 같은 제목 꼴로 늘 펼쳐
+   둔다 (지시 2026-09-11 — 접이식이었는데 있는 줄 모르게 됐다). */
 .pc-limits { margin: .35rem 0 0; font-size: 12.5px; }
-.pc-limits summary {
-  cursor: pointer; padding: .2rem 0; font-weight: 600; font-size: 12px;
-  color: var(--muted);
-}
-.pc-limits summary em { font-style: normal; font-weight: 400; margin-left: .3rem; }
+.pc-limits .pc-sub em { font-style: normal; font-weight: 400; margin-left: .3rem; color: var(--muted); }
 .pc-limits .pc-facts { margin-top: .2rem; }
 .pc-limits td b { font-weight: 600; }
 .pc-limits-src { margin: .3rem 0 0; font-size: 11.5px; color: var(--muted); }
