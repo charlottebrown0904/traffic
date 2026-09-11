@@ -4894,28 +4894,38 @@ async function loadZoningLimits() {
 /* 실패는 **기억하지 않는다.** 처음 누를 때 조각이 없었다고 그 세션 내내
  * '곧 공개' 로 굳으면, 잠깐의 망 오류가 기능 하나를 통째로 끈다.
  * 404 는 싸다. 성공만 담아 둔다. */
+/* 프리미엄 자료 (격차율 표 · 표준지 조각) — Supabase 비공개 버킷 'premium' 에서
+ * 로그인 토큰으로 받는다. 버킷 정책이 premium_ok() 를 묻는다 — 이것이 자물쇠다.
+ * 로그인 클라이언트가 없을 때(로컬 개발·검사)만 같은 자리의 파일로 물러난다.
+ * 실패는 기억하지 않는다 — 잠깐의 망 오류가 세션 내내 기능을 끄면 안 된다. */
+async function premiumFetch(name) {
+  const sb = window.SB;
+  if (sb && sb.storage && typeof sb.storage.from === 'function') {
+    try {
+      const { data, error } = await sb.storage.from('premium').download(name);
+      if (error || !data) return null;
+      return JSON.parse(await data.text());
+    } catch (e) { return null; }
+  }
+  try {
+    const r = await fetch(`/app/data/${name}`, { cache: 'no-cache' });
+    return r.ok ? await r.json() : null;
+  } catch (e) { return null; }
+}
+
 async function loadValuationTables() {
   if (valuationTables) return valuationTables;
-  try {
-    const r = await fetch('/app/data/valuation.json', { cache: 'no-cache' });
-    if (r.ok) valuationTables = await r.json();
-  } catch (e) { /* 없으면 현재 가치를 못 낸다. 나머지는 그대로. */ }
+  const t = await premiumFetch('valuation.json');
+  if (t) valuationTables = t;
   return valuationTables;
 }
 
-/* 표준지 조각은 CDN(config.js stdlandBase)에서 먼저, 안 되면 같은 자리에서.
- * 배포 크기 때문이다 — 138MB 를 배포마다 실으면 저장 한도가 난다. */
+/* 표준지 조각도 프리미엄 버킷에서. (2026-09-11 낮에 잠깐 CDN 을 썼다 — 배포
+ * 크기 때문이었는데, 공개 CDN 은 자물쇠가 아니라서 버킷으로 옮겼다.) */
 async function loadStdland(code) {
   if (stdlandCache[code]) return stdlandCache[code];
-  const base = String((window.REDT_CONFIG || {}).stdlandBase || '').replace(/\/$/, '');
-  const local = `/app/data/stdland-${code}.json`;
-  const urls = base ? [`${base}/stdland-${code}.json`, local] : [local];
-  for (const url of urls) {
-    try {
-      const r = await fetch(url, { cache: 'no-cache' });
-      if (r.ok) { stdlandCache[code] = await r.json(); break; }
-    } catch (e) { /* 다음 자리 */ }
-  }
+  const chunk = await premiumFetch(`stdland-${code}.json`);
+  if (chunk) stdlandCache[code] = chunk;
   return stdlandCache[code] || null;
 }
 

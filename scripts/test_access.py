@@ -82,6 +82,21 @@ check('rpc("set_grade"' in acct and "renderGrades" in acct and "acc.admin" in ac
 check("/lib/access.js" in acct_html, "계정 화면도 같은 판단을 쓴다")
 
 print()
+print("4. 진짜 자물쇠 — 숫자 원천은 비공개 버킷에서만")
+sql4 = (ROOT / "supabase" / "migrations" / "0004_premium_storage.sql").read_text(encoding="utf-8")
+check("values ('premium', 'premium', false" in sql4 and "bucket_id = 'premium' and public.premium_ok()" in sql4
+      and "to authenticated" in sql4, "버킷은 비공개 · 읽기 정책은 로그인 + premium_ok")
+check("sb.storage.from('premium').download(name)" in app and "premiumFetch('valuation.json')" in app
+      and "premiumFetch(`stdland-${code}.json`)" in app, "앱은 격차율 표·표준지 조각을 버킷에서 받는다")
+wx = (ROOT / "src" / "redt" / "webexport.py").read_text(encoding="utf-8")
+check('_write("valuation.json"' not in wx and '_pwrite("valuation.json"' in wx and "PS.sync()" in wx,
+      "내보내기는 public/ 에 안 쓰고 버킷에 올린다")
+cfg = (ROOT / "public" / "app" / "config.js").read_text(encoding="utf-8")
+check("stdlandBase" not in cfg and "jsdelivr" not in cfg, "공개 CDN 주소가 없다")
+ps = (ROOT / "src" / "redt" / "premium_store.py").read_text(encoding="utf-8")
+check('os.environ["SUPABASE_SERVICE_KEY"]' in ps and "x-upsert" in ps, "올리기는 service key 로만 · 덮어쓰기")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건:")
     for f in fail:

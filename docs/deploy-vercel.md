@@ -195,10 +195,9 @@ Usage 화면: **Deployment Storage 20.88 GB / 10 GB**. 배포 하나가 194MB(�
 넘기면 새 배포를 받지 않는다.
 
 한 일:
-- 표준지 조각은 배포에서 뺐다(`.vercelignore`). 화면은 공개 저장소를 그대로 내어 주는
-  jsDelivr(`config.js stdlandBase`)에서 받고, 실패하면 같은 자리로 되돌아간다.
-  jsDelivr 는 `@main` 을 최대 12시간 캐시한다 — 조각을 새로 내보낸 직후엔 옛 것이
-  잠시 보일 수 있다.
+- 표준지 조각은 배포에서 뺐다. 같은 날 오후에 jsDelivr(공개 CDN) 대신 **Supabase
+  비공개 버킷 `premium`** 으로 옮겼다 — 프리미엄 자료라 공개 CDN 은 자물쇠가 아니었다
+  (docs/membership-grades.md §3). 저장소에서도 지웠다.
 - 작업 브랜치는 미리보기 배포를 만들지 않는다(`vercel.json git.deploymentEnabled`).
   main 만 배포된다. 검사: `scripts/test_deploy_size.py`.
 

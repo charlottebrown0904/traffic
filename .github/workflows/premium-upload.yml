@@ -1,0 +1,43 @@
+# 프리미엄 파일(격차율 표·표준지 조각)을 Supabase 비공개 버킷 'premium' 에 올린다.
+# 평소에는 urban-check 의 export-web 이 스스로 올린다. 이것은 처음 채울 때·
+# 손으로 다시 올릴 때 쓴다. 키는 시크릿에서만 온다.
+name: 프리미엄 자료 올리기
+
+on:
+  workflow_dispatch:
+    inputs:
+      src:
+        description: "올릴 폴더 (처음엔 저장소에 남은 public/app/data, 이후엔 비우면 data/processed/premium)"
+        default: "public/app/data"
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: src
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 올리기
+        run: |
+          set -o pipefail
+          python -m redt.cli premium-upload ${{ inputs.src && format('--src {0}', inputs.src) || '' }} 2>&1 | tee /tmp/up.log
+      - name: 익명은 못 받는지 확인
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' "${SUPABASE_URL%/}/storage/v1/object/premium/valuation.json")
+          echo "익명 GET valuation.json → HTTP $code (400/401/403 이어야 한다)"
+          case "$code" in 400|401|403|404) ;; *) echo "::error::익명이 받아 갔습니다"; exit 1;; esac
+      - name: 실행 요약
+        if: always()
+        run: |
+          { echo "## 프리미엄 자료 올리기"; echo; echo '```'; cat /tmp/up.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

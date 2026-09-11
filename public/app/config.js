@@ -8,12 +8,8 @@ window.REDT_CONFIG = {
     ? '/api' : '',
   // 프로모션 페이지 주소. 프로모션을 없애면 null 로 바꾸면 '홈으로' 가 사라진다.
   homeUrl: '/',
-  // 표준지 조각(stdland-NNNNN.json, 252개 138MB)은 Vercel 에 싣지 않는다.
-  // 배포마다 전체 사본이 저장돼 Hobby 저장 한도(10GB)를 넘겼다(2026-09-11:
-  // 20.88GB, 배포가 멈춤). 공개 저장소의 파일을 jsDelivr 가 그대로 내어 주므로
-  // 거기서 받는다. 로컬은 같은 자리에서. 실패하면 앱이 같은 자리로 되돌아간다.
-  stdlandBase: location.hostname === 'localhost' || location.hostname === '127.0.0.1'
-    ? '' : 'https://cdn.jsdelivr.net/gh/charlottebrown0904/traffic@main/public/app/data',
+  // 표준지 조각·격차율 표는 프리미엄 자료라 Supabase 비공개 버킷에서 온다
+  // (app.js premiumFetch). 여기엔 주소가 없다 — 로그인 클라이언트가 안다.
 };
 
 /* 브이월드 인증키는 **여기에 두지 않습니다.**

@@ -278,6 +278,10 @@ def _finite(obj):
 def _stdland_files() -> None:
     """std_land → stdland-{시군구}.json (가장 최근 해) + valuation.json (격차율 표).
 
+    **프리미엄 자료다** (2026-09-11). public/ 에 쓰지 않고 data/processed/premium 에
+    쓴 뒤 Supabase 비공개 버킷에 올린다 — 내려받기는 등급이 정한다
+    (premium_store · docs/membership-grades.md §4).
+
     좌표는 아직 없다(브이월드 속성 조회에 없음). 화면은 같은 법정동리
     (PNU 앞 10자리)를 먼저 보고 그다음 시군구 안에서 고른다.
     """
@@ -299,6 +303,15 @@ def _stdland_files() -> None:
                    s.slope, s.sigungu_cd, s.lon, s.lat
             FROM std_land s JOIN latest l ON l.pnu = s.pnu AND l.year = s.year
         """).fetchdf()
+    from . import premium_store as PS
+    PS.PREMIUM_DIR.mkdir(parents=True, exist_ok=True)
+
+    def _pwrite(name: str, payload) -> Path:
+        path = PS.PREMIUM_DIR / name
+        path.write_text(json.dumps(_finite(payload), ensure_ascii=False, separators=(",", ":"), allow_nan=False),
+                        encoding="utf-8")
+        return path
+
     keep = set()
     total = 0
     # 빈 문자열은 값이 아니다 — 브이월드가 '' 로 준 용도지역2 가 그대로
@@ -322,16 +335,18 @@ def _stdland_files() -> None:
             # 빈 칸은 싣지 않는다 — 전국 60만 필지라 null 열쇠만으로도 수 MB 다.
             rows.append({k: v for k, v in row.items() if v is not None and v == v})
         fname = f"stdland-{code}.json"
-        _write(fname, {"sigungu": str(code), "n": len(rows), "rows": rows})
+        _pwrite(fname, {"sigungu": str(code), "n": len(rows), "rows": rows})
         keep.add(fname)
         total += len(rows)
-    for stale in WEB_DATA.glob("stdland-*.json"):
-        if stale.name not in keep:
-            stale.unlink()
-    _write("valuation.json", V.tables_for_web())
+    for stale in list(PS.PREMIUM_DIR.glob("stdland-*.json")) + list(WEB_DATA.glob("stdland-*.json")):
+        if stale.name not in keep or stale.parent == WEB_DATA:
+            stale.unlink()                          # public/ 에 남은 옛 조각도 걷는다
+    _pwrite("valuation.json", V.tables_for_web())
+    (WEB_DATA / "valuation.json").unlink(missing_ok=True)
     years = sorted(int(y) for y in df["year"].dropna().unique())
     print(f"  표준지 {total:,}필지 · 시군구 조각 {len(keep)}개 · 연도 {years[:1]}~{years[-1:]}"
-          f" · 격차율 표 valuation.json")
+          f" · 격차율 표 valuation.json → {PS.PREMIUM_DIR.relative_to(ROOT)} (프리미엄)")
+    PS.sync()
 
 
 def _write(name: str, payload) -> Path:

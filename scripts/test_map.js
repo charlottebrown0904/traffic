@@ -3039,6 +3039,23 @@ const FAKE_LEAFLET = () => {
     await page.evaluate(() => { delete window.ME.profile.grade_until; window.ME.profile.grade = 'B'; });
     await clickMap(37.304, 127.011);
 
+    // 프리미엄 자료는 로그인 클라이언트의 비공개 버킷에서 온다 (2026-09-11 A 단계).
+    // 버킷이 거부하면(등급 밖·토큰 없음) 정적 파일로 물러나지 않고 보류한다.
+    const bucket = await page.evaluate(async () => {
+      const log = [];
+      window.SB.storage = { from: (b) => ({ download: async (name) => { log.push(b + '/' + name);
+        return { data: null, error: { message: 'new row violates row-level security policy' } }; } }) };
+      document.querySelector('.pc-val[data-val="now"]').click();
+      await new Promise((ok) => setTimeout(ok, 300));
+      const html = document.getElementById('pc-val-box').innerHTML;
+      delete window.SB.storage;
+      document.querySelector('.pc-val[data-val="now"]').click();   // 닫기
+      return { log, html };
+    });
+    check('격차율 표를 버킷 premium 에서 찾는다', bucket.log[0] === 'premium/valuation.json', bucket.log.join(','));
+    check('버킷이 거부하면 숫자 없이 보류한다',
+          /곧 공개합니다/.test(bucket.html) && !/원\/㎡/.test(bucket.html), bucket.html.slice(0, 80));
+
     // 근거는 **아직 적지 않는다** — 그 설명이 곧 유료 전환의 열쇠라,
     // 값이 없는 지금 미리 풀면 살 이유를 먼저 소비해 버린다.
     // 저장소에 전국 표준지 조각이 실려 있으면(2026-09-11 부터) 이 시군구 조각도

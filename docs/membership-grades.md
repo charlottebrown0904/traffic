@@ -32,21 +32,27 @@
 
 - **자물쇠**: 본인이 REST 로 자기 `grade`·`status` 를 못 바꾼다(트리거). 등급 변경은
   관리자만, 기록이 남는다. 서버 코드는 `select premium_ok()` 하나로 판정한다.
-- **편의**: 지도의 가림. 현재 가치의 숫자 원천(`/app/data/valuation.json`, 표준지 조각
-  `stdland-*.json`)은 아직 **정적 파일**이라 주소를 알면 받을 수 있다. 화면 코드도
-  공개 저장소에 있다. 그래서 지금 뼈대는 '보이는 것을 정리한 것' 이지 유료 자료를
-  잠근 것이 아니다.
+- **자물쇠 (A 단계, 2026-09-11)**: 현재 가치의 숫자 원천 — 격차율 표
+  `valuation.json` 과 표준지 조각 `stdland-NNNNN.json` 252개 — 은 Supabase
+  **비공개 버킷 `premium`** 에만 있다 (`supabase/migrations/0004_premium_storage.sql`).
+  내려받기 정책이 `authenticated and premium_ok()` 라 C 등급·기간 만료·로그인
+  없음은 버킷이 거부한다. 화면(`app.js premiumFetch`)은 로그인 토큰으로 받고,
+  거부되면 숫자 없이 '곧 공개' 로 보류한다. 공개 저장소·Vercel·CDN 에는 두 파일이
+  없다. 올리기는 러너의 service_role 키로만 (`premium_store.sync`, export-web 이
+  스스로 올린다; 손으로는 `프리미엄 자료 올리기` 워크플로).
+- **편의**: 지도의 가림(단추 꼬리표·안내). 화면 코드는 공개 저장소에 있지만 산식만
+  있고 표는 없다.
+- **남은 구멍**: 깃 역사에는 2026-09-11 이전 커밋의 파일이 남아 있다. 저장소를
+  비공개로 돌리거나 역사를 지워야 완전히 닫힌다 — 표는 매달 바뀌므로 옛 사본의
+  값어치는 줄어든다.
 
-## 4. 다음 — 진짜 자물쇠
+## 4. 다음
 
-1. 격차율 표(`valuation.json`)와 표준지 조각을 `public/` 밖으로 옮기고, Vercel 함수
-   (`api/premium.js`)가 브라우저의 Supabase 토큰을 받아 `premium_ok()` 로 확인한 뒤
-   내어 준다. 앱은 그 주소로 바꾼다. 표준지 조각은 시군구별 최대 1.7MB 라 함수로
-   내보내도 된다.
-2. 결제: 확정되면 `grade_log` 에 결제 건을 잇고, 결제 웹훅이 `set_grade(B, until)` 을
+1. 결제: 확정되면 `grade_log` 에 결제 건을 잇고, 결제 웹훅이 `set_grade(B, until)` 을
    부른다. 안내 문구(`premiumNotice`)를 그때 확정 문구로 바꾼다.
-3. 미래 가치 산출이 붙으면 같은 문에서 걸린다 — `VALUE_SERVICES` 두 단추가 한
-   `wireValueButtons` 를 지나므로 따로 할 일은 없다.
+2. 미래 가치 산출이 붙으면 같은 문에서 걸린다 — `VALUE_SERVICES` 두 단추가 한
+   `wireValueButtons` 를 지나고, 자료는 같은 버킷에 두면 된다.
+3. 저장소 비공개 전환 여부 (위 '남은 구멍').
 
 ## 5. 관리자가 하는 법 (휴대폰)
 

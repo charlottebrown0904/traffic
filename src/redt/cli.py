@@ -253,6 +253,14 @@ def cmd_ordinance_bundle(args):
         print(f"{path.stat().st_size:>9,}  {path.name}")
 
 
+def cmd_premium_upload(args):
+    """프리미엄 파일(격차율 표·표준지 조각)을 Supabase 비공개 버킷에 올린다."""
+    from pathlib import Path
+    from . import premium_store as PS
+    src = Path(args.src) if args.src else PS.PREMIUM_DIR
+    print(PS.sync(src))
+
+
 def cmd_zoning_limits(args):
     """C1 — 시행령 상한 + 시군구 조례 값 → config/zoning_limits.yaml · 화면용 JSON."""
     from . import zoning
@@ -2682,6 +2690,9 @@ def main(argv=None):
     p.set_defaults(func=cmd_ordinance_bundle)
     p = sub.add_parser("zoning-limits", help="C1 — 시행령 상한 + 조례 값 → config/zoning_limits.yaml · zoning-limits.json")
     p.set_defaults(func=cmd_zoning_limits)
+    p = sub.add_parser("premium-upload", help="프리미엄 파일 → Supabase 비공개 버킷 premium")
+    p.add_argument("--src", default=None, help="올릴 폴더 (기본 data/processed/premium)")
+    p.set_defaults(func=cmd_premium_upload)
 
     p = sub.add_parser("value-test",
                        help="현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다")
