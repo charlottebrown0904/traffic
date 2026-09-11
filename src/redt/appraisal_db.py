@@ -36,12 +36,36 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 PRIVATE_LEDGER = ROOT / "data" / "private" / "ledger.tsv"
 PAGE = 1000
+# 프로젝트 주소는 비밀이 아니다 (브라우저에도 실린다). 시크릿 SUPABASE_URL 에
+# 키를 넣는 실수가 있어(run 15: 주소 자리에 sb_publishable_… 가 들어왔다)
+# 주소가 주소꼴이 아니면 이것을 쓴다.
+DEFAULT_URL = "https://caykbxvnebpifcduqjre.supabase.co"
+
+
+def base_url() -> str:
+    raw = (os.environ.get("SUPABASE_URL") or "").strip().rstrip("/")
+    if not raw or raw.startswith(("sb_", "eyJ")) or "." not in raw:
+        return DEFAULT_URL
+    if not raw.startswith(("http://", "https://")):
+        raw = "https://" + raw
+    return raw
+
+
+def key_kind() -> str:
+    k = os.environ.get("SUPABASE_SERVICE_KEY", "")
+    if k.startswith("sb_publishable_") or k.startswith("sb_p"):
+        return "publishable"
+    if k.startswith("sb_secret_"):
+        return "secret"
+    if k.startswith("eyJ"):
+        return "legacy-jwt"
+    return "unknown"
 
 _cache: dict[str, list[dict]] = {}
 
 
 def configured() -> bool:
-    return bool(os.environ.get("SUPABASE_URL")) and bool(os.environ.get("SUPABASE_SERVICE_KEY"))
+    return bool(os.environ.get("SUPABASE_SERVICE_KEY"))
 
 
 def source() -> str:
@@ -61,10 +85,10 @@ def _headers() -> dict:
 def _rest(table: str, select: str = "*") -> list[dict]:
     """PostgREST 로 표 하나를 끝까지 읽는다 (Range 로 쪽을 넘긴다)."""
     import requests
-    base = os.environ["SUPABASE_URL"].strip().rstrip("/")
-    # 시크릿에 호스트만 넣는 일이 있다 (2026-09-11 run 12: 'No scheme supplied').
-    if not base.startswith(("http://", "https://")):
-        base = "https://" + base
+    base = base_url()
+    if key_kind() == "publishable":
+        raise RuntimeError("SUPABASE_SERVICE_KEY 에 publishable 키가 들어 있습니다 — RLS 때문에 아무것도 못 읽습니다. "
+                           "service_role(eyJ…) 또는 sb_secret_… 키여야 합니다")
     out: list[dict] = []
     start = 0
     while True:
@@ -74,7 +98,7 @@ def _rest(table: str, select: str = "*") -> list[dict]:
         r = requests.get(f"{base}/rest/v1/{table}", params={"select": select},
                          headers=h, timeout=30)
         if r.status_code not in (200, 206):
-            raise RuntimeError(f"supabase {table}: HTTP {r.status_code} {r.text[:200]}")
+            raise RuntimeError(f"supabase {table}: HTTP {r.status_code} {r.text[:200]} (키 종류: {key_kind()})")
         rows = r.json()
         out.extend(rows)
         if len(rows) < PAGE:

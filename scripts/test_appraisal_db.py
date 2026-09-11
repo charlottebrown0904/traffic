@@ -42,6 +42,24 @@ check(A.load_cases() == [] and A.load_factors() == [], "cases·factors 둘 다 [
 check(A.source() == "none", f"source() = {A.source()}")
 
 print()
+print("1-1. 시크릿에 키를 넣는 실수를 견딘다")
+os.environ["SUPABASE_URL"] = "sb_publishable_abc"
+check(A.base_url() == A.DEFAULT_URL, "주소 자리에 키가 오면 프로젝트 기본 주소")
+os.environ["SUPABASE_URL"] = "caykbxvnebpifcduqjre.supabase.co"
+check(A.base_url() == "https://caykbxvnebpifcduqjre.supabase.co", "스킴이 없으면 https 를 붙인다")
+os.environ.pop("SUPABASE_URL", None)
+check(A.base_url() == A.DEFAULT_URL, "비어 있으면 기본 주소")
+os.environ["SUPABASE_SERVICE_KEY"] = "sb_publishable_abc"
+check(A.key_kind() == "publishable", "publishable 키를 알아본다")
+try:
+    A._rest("appraisal_case")
+    check(False, "publishable 키로는 읽지 않는다")
+except RuntimeError as e:
+    check("publishable" in str(e), "publishable 키면 이유를 말하고 멈춘다")
+os.environ.pop("SUPABASE_SERVICE_KEY", None)
+A.clear_cache()
+
+print()
 print("2. 손 사본이 있으면 읽는다")
 (tmp / "ledger.tsv").write_text("file_id\tsido\tsigungu\tf_other\n"
                                 "abc\t경기\t안성시\t2.3\n", encoding="utf-8")

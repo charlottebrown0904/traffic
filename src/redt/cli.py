@@ -266,10 +266,15 @@ def cmd_value_test(args):
     code, zone = args.sigungu, args.zone
     today = date.today()
     with db.connect(read_only=True) as con:
-        year_max = con.execute("SELECT max(year) FROM std_land WHERE sigungu_cd LIKE ?",
-                               [code + "%"]).fetchone()[0]
-        if not year_max:
+        # 가장 최근 연도 — 다만 그 해가 반쪽이면(run 15: 2026 이 3필지) 그 전 해로.
+        years = con.execute("SELECT year, count(*) FROM std_land WHERE sigungu_cd LIKE ? "
+                            "GROUP BY year ORDER BY year DESC", [code + "%"]).fetchall()
+        if not years:
             sys.exit(f"std_land 에 {code} 표준지가 없습니다. load-stdland --vworld 를 먼저.")
+        fullest = max(n for _, n in years)
+        year_max = next((y for y, n in years if n >= fullest * 0.5), years[0][0])
+        if year_max != years[0][0]:
+            print(f"  {years[0][0]}년 표준지는 {years[0][1]}필지뿐이라 {year_max}년({dict(years)[year_max]}필지)을 씁니다")
         stds = con.execute("SELECT * FROM std_land WHERE sigungu_cd LIKE ? AND year=?",
                            [code + "%", int(year_max)]).fetchdf()
         cands = []
