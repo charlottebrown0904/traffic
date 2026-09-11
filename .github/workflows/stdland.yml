@@ -94,7 +94,9 @@ jobs:
         if: inputs.mode == 'drive'
         run: |
           set -o pipefail
-          python -m redt.cli load-stdland --drive "${{ inputs.drive_file_id }}" 2>&1 | tee /tmp/stdland.log
+          # 파일에 기준연도 열이 없다 — years 의 마지막 값(예: 2026)을 쓴다.
+          YEARS="${{ inputs.years }}"; YEAR="${YEARS##*,}"
+          python -m redt.cli load-stdland --drive "${{ inputs.drive_file_id }}" --year "$YEAR" 2>&1 | tee /tmp/stdland.log
 
       - name: odcloud 적재
         if: inputs.mode == 'odcloud'

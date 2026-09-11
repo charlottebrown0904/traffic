@@ -30,6 +30,7 @@ from __future__ import annotations
 import csv
 import os
 import statistics
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -60,7 +61,10 @@ def _headers() -> dict:
 def _rest(table: str, select: str = "*") -> list[dict]:
     """PostgREST 로 표 하나를 끝까지 읽는다 (Range 로 쪽을 넘긴다)."""
     import requests
-    base = os.environ["SUPABASE_URL"].rstrip("/")
+    base = os.environ["SUPABASE_URL"].strip().rstrip("/")
+    # 시크릿에 호스트만 넣는 일이 있다 (2026-09-11 run 12: 'No scheme supplied').
+    if not base.startswith(("http://", "https://")):
+        base = "https://" + base
     out: list[dict] = []
     start = 0
     while True:
@@ -90,7 +94,12 @@ def load_cases() -> list[dict]:
         return _cache["cases"]
     rows: list[dict] = []
     if configured():
-        rows = normalize(_rest("appraisal_case"))
+        try:
+            rows = normalize(_rest("appraisal_case"))
+        except Exception as e:                      # noqa: BLE001 — 원장 없이도 산출은 돈다
+            print(f"  ! 비공개 원장을 못 읽었습니다 ({type(e).__name__}: {str(e)[:120]}) — 평가선례 갈래 없이 갑니다",
+                  file=sys.stderr)
+            rows = []
     elif PRIVATE_LEDGER.exists():
         with open(PRIVATE_LEDGER, encoding="utf-8") as f:
             rows = list(csv.DictReader(f, delimiter="\t"))
@@ -102,7 +111,12 @@ def load_factors() -> list[dict]:
     """조건별 격차율 행. 파일 사본에는 없다 (Supabase 에서만)."""
     if "factors" in _cache:
         return _cache["factors"]
-    rows = normalize(_rest("appraisal_factor")) if configured() else []
+    rows = []
+    if configured():
+        try:
+            rows = normalize(_rest("appraisal_factor"))
+        except Exception as e:                      # noqa: BLE001
+            print(f"  ! appraisal_factor 를 못 읽었습니다 ({type(e).__name__})", file=sys.stderr)
     _cache["factors"] = rows
     return rows
 

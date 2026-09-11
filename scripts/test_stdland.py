@@ -94,6 +94,27 @@ with db.connect() as con:
 check(n2 == 2, "다시 넣어도 늘지 않는다 (std_id 열쇠)")
 
 print()
+print("3-1. 2026 파일 머리글 — 연도 열이 없고 PNU 가 빈 행이 있다 (run 13 에서 std_id 가 전부 비었다)")
+cols26 = ['시군구', '읍면동리', '본번지', '부번지', '시도명', '시군구명', '소재지', '일련번호', '공시지가', '지목', '면적',
+          '용도지역1', '용도지역2', '용도지구1', '이용상황', '주위환경', '도로교통', '도로거리', '지세', '형상',
+          '토지대장번호(PNU)', '지번구분', '전년지가', '방위']
+r1 = ['41550', '25021', '0674', '0000', '경기도', '안성시', '경기도 안성시 공도읍 양기리 674', '12', '272000', '공장용지',
+      '3840', '계획관리지역', '', '', '공업용', '농촌지대', '소로한면', '', '평지', '사다리형', '4155025021106740000', '1', '250000', '']
+r2 = ['41550', '25021', '0012', '0003', '경기도', '안성시', '경기도 안성시 공도읍 양기리 산12-3', '13', '18000', '임야',
+      '9000', '계획관리지역', '', '', '자연림', '농촌지대', '맹지', '', '완경사', '부정형', '', '2', '17000', '']
+csv26 = tmp / "국토교통부_표준지공시지가_20260101.csv"
+pd.DataFrame([dict(zip(cols26, r1)), dict(zip(cols26, r2))]).to_csv(csv26, index=False, encoding="cp949")
+with db.connect() as con:
+    info26 = S.load_csv(con, str(csv26), chunk=10)
+    got = con.execute("SELECT pnu, ld_code, jibun, year, std_id FROM std_land WHERE sigungu_cd = '41550' ORDER BY pnu").fetchall()
+check(info26["rows"] == 2 and len(got) == 2, f"두 행이 들어간다 — {info26['rows']} · {got}")
+check(got and got[0][3] == 2026, "연도를 파일 이름(20260101)에서 읽는다")
+check(got and got[1][0] == "4155025021200120003" and got[1][2] == "산 12-3",
+      f"빈 PNU 를 조각으로 만들고 지번은 '산 12-3' — {got[1][:3] if got else None}")
+check(got and got[0][2] == "674" and got[0][1] == "4155025021", f"본번만 있으면 '674' · 법정동 10자리 — {got[0][:3] if got else None}")
+check(all(g[4] and "None" not in g[4] and "<NA>" not in g[4] for g in got), f"std_id 가 비지 않는다 — {[g[4] for g in got]}")
+
+print()
 print("4-0. 빈 이름을 코드표로 채운다 (같은 응답 안의 짝에서 배운다)")
 S._CODEBOOK.clear()
 S._codebook_path = lambda: tmp / "codes.json"

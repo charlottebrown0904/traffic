@@ -51,6 +51,14 @@ COLUMNS = {
     "ld_name":       ("법정동명", "ld_code_nm", "ldcodenm", "법정동 명", "소재지"),
     "special":       ("특수지구분", "regstrsecodenm", "regstr_se_code_nm", "대장구분"),
     "jibun":         ("지번", "mnnmslno", "lnm", "본번"),
+    # 2026 파일(국토교통부_표준지공시지가_20260101.csv)의 조각 열. PNU 가 빈 행이
+    # 있어 이것으로 PNU 를 만든다: 시군구5 + 읍면동리5 + 지번구분1 + 본번4 + 부번4.
+    "sgg_code":      ("시군구",),
+    "umd_code":      ("읍면동리",),
+    "bun":           ("본번지",),
+    "ji":            ("부번지",),
+    "jibun_kind":    ("지번구분",),
+    "prev_price":    ("전년지가",),
     "std_no":        ("표준지일련번호", "stdlandsn", "일련번호", "refer_land_no", "stdland_no"),
     "year":          ("기준연도", "기준년도", "stdr_year", "stdryear", "공시연도"),
     "month":         ("기준월", "stdr_mt", "stdrmt"),
@@ -129,9 +137,31 @@ def normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
             out[c] = pd.to_numeric(out[c].astype(str).str.replace(",", ""), errors="coerce")
     if "year" in out.columns:
         out["year"] = pd.to_numeric(out["year"], errors="coerce").astype("Int64")
-    for c in ("pnu", "ld_code", "jibun", "std_no"):
+    for c in ("pnu", "ld_code", "jibun", "std_no", "sgg_code", "umd_code", "bun", "ji", "jibun_kind"):
         if c in out.columns:
-            out[c] = out[c].astype(str).str.strip().replace({"nan": None, "None": None})
+            out[c] = out[c].astype(str).str.strip().replace({"nan": None, "None": None, "<NA>": None})
+    # 2026 파일: 조각 열로 법정동코드·PNU·지번을 만든다 (PNU 가 빈 행이 있다).
+    if {"sgg_code", "umd_code"} <= set(out.columns):
+        ld = out["sgg_code"].fillna("").str.zfill(5) + out["umd_code"].fillna("").str.zfill(5)
+        ld = ld.where(ld.str.len() == 10, None)
+        if "ld_code" not in out.columns:
+            out["ld_code"] = ld
+        else:
+            out["ld_code"] = out["ld_code"].fillna(ld)
+        if {"bun", "ji"} <= set(out.columns):
+            kind = out["jibun_kind"].fillna("1") if "jibun_kind" in out.columns else "1"
+            bun = out["bun"].fillna("0").str.zfill(4)
+            ji = out["ji"].fillna("0").str.zfill(4)
+            made = ld + kind + bun + ji
+            made = made.where(made.str.len() == 19, None)
+            if "pnu" not in out.columns:
+                out["pnu"] = made
+            else:
+                out["pnu"] = out["pnu"].fillna(made)
+            jb = bun.str.lstrip("0").replace("", "0") + "-" + ji.str.lstrip("0").replace("", "0")
+            jb = jb.str.replace(r"-0$", "", regex=True)
+            jb = jb.where(kind.astype(str) != "2", "산 " + jb)
+            out["jibun"] = jb
     # PNU 가 없고 법정동코드+지번이 있으면 앞 10자리만이라도 채운다 —
     # 화면은 법정동리(앞 10자리)로 후보 표준지를 고른다.
     if "pnu" not in out.columns and "ld_code" in out.columns:
@@ -185,11 +215,22 @@ def read_csv_any(path: str, nrows: int | None = None) -> pd.DataFrame:
     raise last  # type: ignore[misc]
 
 
-def load_csv(con, path: str, chunk: int = 200_000) -> dict:
-    """CSV → std_land. 168MB 라 통째로 안 읽고 조각으로 넣는다."""
+def load_csv(con, path: str, chunk: int = 200_000, year: int | None = None) -> dict:
+    """CSV → std_land. 168MB 라 통째로 안 읽고 조각으로 넣는다.
+
+    year: 파일에 기준연도 열이 없을 때 (2026 파일이 그렇다) 쓸 연도.
+    파일 이름에 20260101 처럼 날짜가 있으면 거기서 읽는다."""
     from .. import db
     head = read_csv_any(path, nrows=5)
     mapping, unmatched = map_columns(list(head.columns))
+    if year is None and "year" not in mapping.values():
+        m = re.search(r"(20\d{2})[01]\d[0-3]\d", str(path))
+        if m:
+            year = int(m.group(1))
+    if "year" not in mapping.values():
+        if year is None:
+            raise ValueError("파일에 기준연도 열이 없습니다 — year 를 주세요 (예: 2026)")
+        print(f"  기준연도 열이 없어 {year} 으로 넣습니다")
     print(f"  열 {len(head.columns)}개 중 {len(mapping)}개를 맞췄습니다")
     for src, ours in mapping.items():
         print(f"    {src!s:24s} → {ours}")
@@ -206,6 +247,8 @@ def load_csv(con, path: str, chunk: int = 200_000) -> dict:
             continue
     for part in pd.read_csv(path, encoding=enc, dtype=str, chunksize=chunk, low_memory=False):
         rows, _ = normalize(part)
+        if "year" not in rows.columns or rows["year"].isna().all():
+            rows["year"] = year
         rows = _complete(rows)
         total += db.upsert(con, "std_land", rows)
     return {"rows": total, "mapped": mapping, "unmatched": unmatched, "encoding": enc}
@@ -279,9 +322,16 @@ def _complete(rows: pd.DataFrame, source: str = "file") -> pd.DataFrame:
             rows[c] = None
     rows["source"] = source
     # 열쇠. PNU 가 없으면 법정동코드+지번+연도로 만든다.
-    key = rows["pnu"].where(rows["pnu"].notna() & (rows["pnu"].astype(str) != "None"),
-                            rows["ld_code"].astype(str) + "-" + rows["jibun"].astype(str))
-    rows["std_id"] = key.astype(str) + "-" + rows["year"].astype(str)
+    #
+    # pandas 3 은 빈 값을 문자열로 바꿔도 <NA> 로 두고, <NA> 와 이어 붙이면
+    # 통째로 <NA> 가 된다. 2026 파일에는 연도 열이 없어 std_id 가 전부 비었고
+    # NOT NULL 에 걸렸다 (run 13). 그래서 빈 값은 먼저 글자로 메운다.
+    def txt(col, empty=""):
+        return rows[col].astype("object").where(rows[col].notna(), empty).astype(str)
+    pnu = txt("pnu").replace({"None": "", "nan": "", "<NA>": ""})
+    fallback = txt("ld_code") + "-" + txt("jibun")
+    key = pnu.where(pnu != "", fallback)
+    rows["std_id"] = key + "-" + txt("year", "0")
     return rows[["std_id"] + STD_COLS]
 
 

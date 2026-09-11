@@ -175,10 +175,10 @@ def cmd_load_stdland(args):
             dest = str(PROCESSED / "stdland.csv")
             n = stdland.drive_download(args.drive, dest)
             print(f"  드라이브에서 {n / 1e6:,.1f}MB 받음 → {dest}")
-            info = stdland.load_csv(con, dest)
+            info = stdland.load_csv(con, dest, year=args.year)
             print(f"  std_land 에 {info['rows']:,}행 (인코딩 {info['encoding']})")
         elif args.csv:
-            info = stdland.load_csv(con, args.csv)
+            info = stdland.load_csv(con, args.csv, year=args.year)
             print(f"  std_land 에 {info['rows']:,}행 (인코딩 {info['encoding']})")
         elif args.uddi:
             info = stdland.fetch_odcloud(con, args.uddi, max_pages=args.max_pages)
@@ -2631,6 +2631,7 @@ def main(argv=None):
     p.add_argument("--max-pages", type=int, default=None)
     p.add_argument("--vworld", help="브이월드 속성 조회로 받을 시도 코드 (쉼표, 예: 41,43 · 전국은 all)")
     p.add_argument("--years", default="", help="브이월드 — 받을 연도 (쉼표). 비우면 전체 연도")
+    p.add_argument("--year", type=int, default=None, help="파일 — 기준연도 열이 없을 때 (2026 파일)")
     p.set_defaults(func=cmd_load_stdland)
 
     p = sub.add_parser("urban-check",
