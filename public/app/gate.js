@@ -23,7 +23,7 @@
     var s = document.createElement("script");
     // 캐시 무효화용 꼬리표. 이것이 없으면 style.css·app.js 를 고쳐도
     // 이미 받아 둔 브라우저에는 영영 안 간다 — 화면이 반만 바뀐다.
-    s.src = "/app/app.js?v=20260911d";
+    s.src = "/app/app.js?v=20260911e";
     document.body.appendChild(s);
   }
 

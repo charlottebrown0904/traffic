@@ -3315,6 +3315,34 @@ const FAKE_LEAFLET = () => {
     check('배율 16 아래에서는 안 그린다 (선이 빠지느니 안 그린다)',
           cadZoom === 0, `${cadZoom}개`);
 
+    // 넓은 화면 (PC). 한 번에 열두 칸만 부르되, 한 칸이 오면 다음 칸을
+    // 이어 불러 **화면 전체**를 채워야 한다 (2026-09-11 지시: PC 에서
+    // 확대하면 필지 구획이 절반만 뜬다). 안성 언저리 서른 칸 남짓.
+    const cadWide = await page.evaluate(async () => {
+      window.__zoom = 16;
+      window.__bbox = [37.000, 127.250, 37.024, 127.300];
+      const want = window.__cadTileList().map(([z, x, y]) => `${z}/${x}/${y}`);
+      window.__drawCadastral();
+      const t0 = Date.now();
+      let drawn = 0;
+      while (Date.now() - t0 < 6000) {
+        await new Promise((ok) => setTimeout(ok, 100));
+        drawn = (window.__map.groups || [])
+          .flatMap((g) => g._items || [])
+          .flatMap((g) => (g && g._items) || [g])
+          .filter((g) => g && g.__opts && g.__opts.pane === 'cadastralPane').length;
+        if (drawn >= want.length) break;
+      }
+      window.__bbox = null;
+      return { want: want.length, drawn, first: want.slice(0, 3) };
+    });
+    check('넓은 화면은 열두 칸이 넘는다 (검사가 뜻이 있으려면)', cadWide.want > 12 && cadWide.want <= 120, `${cadWide.want}칸`);
+    check('열두 칸 뒤도 이어 받아 화면 전체를 채운다', cadWide.drawn >= cadWide.want, `${cadWide.drawn}/${cadWide.want}`);
+    check('가운데 칸부터 부른다', (() => {
+      const w = cadWide.first.map((k) => k.split('/').map(Number));
+      return w.length === 3 && Math.abs(w[0][1] - w[1][1]) + Math.abs(w[0][2] - w[1][2]) <= 2;
+    })(), cadWide.first.join(' '));
+
     // 껐다 켜는 것이 실제로 먹는가. 그리고 그 선택을 기억하는가.
     const cadOff = await page.evaluate(() => {
       const box = document.getElementById('cadastral-bg');

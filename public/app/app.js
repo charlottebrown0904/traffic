@@ -2255,9 +2255,20 @@ function addZoningLayer() {
  * 나간다. 받은 칸은 여기서도 들고 있어 되돌아올 때 다시 안 부른다.
  */
 const cadTiles = new Map();      // 'z/x/y' → L.GeoJSON (그린 것)
-const cadAsked = new Set();      // 부르는 중이거나 이미 부른 칸
-// 한 번에 이보다 많은 칸은 안 부른다. 화면이 넓어도 폰이 버티게.
+const cadAsked = new Set();      // 부르는 중인 칸
+const cadFailed = new Map();     // 'z/x/y' → 실패 시각. 잠시 뒤 다시 묻는다.
+const CAD_RETRY_MS = 30_000;
+// **동시에** 이보다 많은 칸은 안 부른다. 화면이 넓어도 폰이 버티게.
+//
+// 한 칸이 오면 다음 칸을 부른다 (fetchCadTile 의 finally). 전에는 한 번
+// 부르고 끝이라 **넓은 화면의 오른쪽 절반이 비었다** — PC 에서 z16 은
+// 칸이 서른 개 남짓인데 열두 개만 받고 다음 movend 까지 멈춰 있었다.
+// 폰은 열두 개 안이라 안 보였다 (2026-09-11 지시).
 const CAD_MAX_TILES = 12;
+// 화면 하나가 이보다 많은 칸이면 아예 안 그린다 — 창이 아직 안 잡혔거나
+// 지도가 세계 전체를 내놓는 순간을 걸러내는 값이다. 큰 모니터(2560px)
+// 의 z16 이 일흔 칸쯤이라 그 위로 잡는다.
+const CAD_MAX_VIEW = 120;
 
 function addCadastralLayer() {
   cadastralLayer = L.layerGroup();
@@ -2282,7 +2293,7 @@ function cadTileList() {
   // **넓으면 통째로 그만둔다.** 화면 하나는 배율과 무관하게 칸 몇 개다.
   // 그보다 넓은 경계가 오면(창이 아직 안 잡혔거나 지도가 세계 전체를
   // 내놓는 순간) 두 겹 반복이 수십억 바퀴를 돈다 — 화면이 멎는다.
-  if ((x2 - x1 + 1) * (y2 - y1 + 1) > 64) return [];
+  if ((x2 - x1 + 1) * (y2 - y1 + 1) > CAD_MAX_VIEW) return [];
   const out = [];
   for (let x = x1; x <= x2; x += 1) {
     for (let y = y1; y <= y2; y += 1) {
@@ -2290,6 +2301,11 @@ function cadTileList() {
       out.push([z, x, y]);
     }
   }
+  // 가운데부터. 열두 개씩 받으므로 왼쪽 위부터 채우면 사람이 보는
+  // 한복판이 마지막에 온다.
+  const cx = (x1 + x2) / 2; const cy = (y1 + y2) / 2;
+  out.sort((a, b) => (Math.abs(a[1] - cx) + Math.abs(a[2] - cy))
+                   - (Math.abs(b[1] - cx) + Math.abs(b[2] - cy)));
   return out;
 }
 
@@ -2307,12 +2323,12 @@ function drawCadastral() {
   for (const [key, layer] of cadTiles) {
     if (!keep.has(key)) { cadastralLayer.removeLayer(layer); cadTiles.delete(key); }
   }
-  let asked = 0;
+  const now = Date.now();
   for (const [z, x, y] of want) {
     const key = `${z}/${x}/${y}`;
     if (cadTiles.has(key) || cadAsked.has(key)) continue;
-    if (asked >= CAD_MAX_TILES) break;
-    asked += 1;
+    if (now - (cadFailed.get(key) || 0) < CAD_RETRY_MS) continue;
+    if (cadAsked.size >= CAD_MAX_TILES) break;
     cadAsked.add(key);
     fetchCadTile(z, x, y, key);
   }
@@ -2322,9 +2338,20 @@ function drawCadastral() {
 // 더 오래 막힌다. 지도를 움직이는 것 자체는 그대로 된다 — 선만 잠깐
 // 안 깔린다.
 let cadPausedUntil = 0;
+let cadResumeTimer = null;
 
 function fetchCadTile(z, x, y, key) {
-  if (Date.now() < cadPausedUntil) return;
+  if (Date.now() < cadPausedUntil) {
+    // 쉬는 동안은 '부르는 중' 으로 남기지 않는다 — 남기면 그 칸은 배율을
+    // 바꾸기 전까지 영영 안 온다. 쉬는 시간이 끝나면 한 번 다시 돈다.
+    cadAsked.delete(key);
+    if (!cadResumeTimer) {
+      cadResumeTimer = setTimeout(() => { cadResumeTimer = null; drawCadastral(); },
+                                  Math.max(0, cadPausedUntil - Date.now()) + 50);
+    }
+    return;
+  }
+  let ok = false;
   fetch(`/api/tile?mode=parcels&z=${z}&x=${x}&y=${y}`)
     .then((r) => {
       if (r.status === 429) {
@@ -2332,6 +2359,7 @@ function fetchCadTile(z, x, y, key) {
         cadPausedUntil = Date.now() + wait * 1000;
         return null;
       }
+      if (r.ok) ok = true;
       return r.ok ? r.json() : null;
     })
     .then((d) => {
@@ -2359,7 +2387,13 @@ function fetchCadTile(z, x, y, key) {
       cadTiles.set(key, layer);
     })
     .catch(() => { /* 한 칸이 안 와도 나머지는 그린다. */ })
-    .finally(() => { cadAsked.delete(key); });
+    .finally(() => {
+      cadAsked.delete(key);
+      if (!ok) cadFailed.set(key, Date.now());
+      // 자리가 났다 — 남은 칸을 이어서 부른다. 이것이 없으면 열두 칸
+      // 뒤가 다음 움직임까지 빈다.
+      if (state.cadastral && cadastralLayer) drawCadastral();
+    });
 }
 
 function toggleCadastral(on) {
@@ -3882,6 +3916,7 @@ window.__drawLandPrice = () => drawLandPrice();
 // 경계선은 화면을 움직여야 도는데, 검사에서는 그것을 흉내내기가
 // 번거롭다. 부를 구멍을 하나 낸다.
 window.__drawCadastral = () => drawCadastral();
+window.__cadTileList = () => cadTileList();
 // 차종을 바꾸면 경계가 따라 내려가는지 검사가 볼 수 있게. 화면에서는
 // 차종 칸을 눌러 도는 길과 같은 함수다.
 window.state = state;
