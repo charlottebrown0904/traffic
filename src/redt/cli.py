@@ -282,6 +282,10 @@ def cmd_value_test(args):
               AND t.sigungu_cd = ? AND pc.land_use LIKE ?
               AND t.price_per_m2 > 0 AND pc.official_price > 0
               AND (t.deal_year * 12 + t.deal_month) >= ?
+              -- 거래면적이 필지면적의 절반~두 배 밖이면 지번 지오코딩이 옆 필지에
+              -- 떨어진 것일 수 있다 (run 7: 14㎡ 거래가 254㎡ 필지에 붙었다).
+              AND t.area_m2 BETWEEN pc.area_m2 * 0.5 AND pc.area_m2 * 2.0
+            QUALIFY row_number() OVER (PARTITION BY pc.pnu ORDER BY t.deal_year DESC, t.deal_month DESC) = 1
             """, [code, f"%{zone}%", ym - args.months]).fetchdf()
         # 시점수정 — 같은 시군구·용도지역군의 최근 12개월 중앙단가 ÷ 그 전 12개월.
         tr = con.execute("""
@@ -297,7 +301,7 @@ def cmd_value_test(args):
         trade_cells = V.trade_other_factor(con, groups)
 
     print(f"표준지 {len(cands):,}필지 ({int(year_max)}년) · 후보 거래 {len(rows):,}건"
-          f" (최근 {args.months}개월 · {zone} · 필지 붙은 것)")
+          f" (최근 {args.months}개월 · {zone} · 필지 붙은 것 · 필지당 한 건 · 면적 맞는 것)")
     print(f"원장: {appraisal_db.source()} · 평가서 {len(V.load_ledger())}건"
           f" · 또래 추세 {'—' if trend is None else f'{trend:+.1%}/년'}"
           f" (최근 12개월 중앙 {recent and round(recent):,} ÷ 그 전 {before and round(before):,})")

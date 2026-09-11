@@ -132,6 +132,14 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: 검증 결과 첨부
+        if: always() && inputs.mode == 'value-test'
+        uses: actions/upload-artifact@v4
+        with:
+          name: value-test
+          path: data/processed/value_test.json
+          if-no-files-found: ignore
+
       - name: 탐침 결과 첨부
         if: always() && inputs.mode == 'probe'
         uses: actions/upload-artifact@v4
