@@ -303,6 +303,13 @@ def _stdland_files() -> None:
                    s.slope, s.sigungu_cd, s.lon, s.lat
             FROM std_land s JOIN latest l ON l.pnu = s.pnu AND l.year = s.year
         """).fetchdf()
+        # 거래사례 기준 그 밖의 요인 — 같은 DB 에서 (실거래 ÷ 개별공시지가, 최근 3년).
+        # 표가 없거나 비어 있으면 빈 사전 — 화면은 평가선례만 쓴다.
+        try:
+            trade_cells = V.trade_other_factor(con, [(name, likes[0]) for name, likes in V.ZONE_GROUPS])
+        except Exception as e:                      # noqa: BLE001
+            print(f"  ! 거래사례 그 밖의 요인을 못 만들었습니다 ({type(e).__name__}: {str(e)[:100]})")
+            trade_cells = {}
     from . import premium_store as PS
     PS.PREMIUM_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -341,11 +348,11 @@ def _stdland_files() -> None:
     for stale in list(PS.PREMIUM_DIR.glob("stdland-*.json")) + list(WEB_DATA.glob("stdland-*.json")):
         if stale.name not in keep or stale.parent == WEB_DATA:
             stale.unlink()                          # public/ 에 남은 옛 조각도 걷는다
-    _pwrite("valuation.json", V.tables_for_web())
+    _pwrite("valuation.json", V.tables_for_web(trade=trade_cells))
     (WEB_DATA / "valuation.json").unlink(missing_ok=True)
     years = sorted(int(y) for y in df["year"].dropna().unique())
     print(f"  표준지 {total:,}필지 · 시군구 조각 {len(keep)}개 · 연도 {years[:1]}~{years[-1:]}"
-          f" · 격차율 표 valuation.json → {PS.PREMIUM_DIR.relative_to(ROOT)} (프리미엄)")
+          f" · 격차율 표 valuation.json (거래사례 칸 {len(trade_cells):,}개) → {PS.PREMIUM_DIR.relative_to(ROOT)} (프리미엄)")
     PS.sync()
 
 

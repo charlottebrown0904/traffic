@@ -3162,6 +3162,26 @@ const FAKE_LEAFLET = () => {
     check('결정단가를 자리수 규칙으로 낸다 (446,000원/㎡)', /446,000원\/㎡/.test(vcalc),
           (vcalc.match(/결정단가[^<]*<b>[^<]*/) || ['없음'])[0]);
     check('범위(그 밖의 요인 사분위)를 함께 적는다', /흔히 [0-9,]+~[0-9,]+/.test(vtxt));
+    // 그 밖의 요인 두 갈래 (2026-09-11 F). 표는 위와 같고 거래사례 칸만 더한다.
+    const of = await page.evaluate((T) => {
+      const T2 = { ...T, trade: { '41111|관리|전·답': { median: 2.0, q1: 1.5, q3: 2.6, n: 40, source: '거래사례', level: '시군구' },
+                                 '41111|관리|*': { median: 1.8, q1: 1.4, q3: 2.2, n: 90, source: '거래사례', level: '시군구 · 지목군 합침' } } };
+      const subj = { pnu: '4111110300100010000', land_use: '계획관리지역', jimok: '전', use_situation: '전' };
+      const std = { jimok: '전', use_situation: '전' };
+      const both = window.__otherFactorOf(subj, std, T2);
+      // 대상은 구거(지목군 없음), 표준지는 대 → '대' 칸을 봐야 한다 (원장엔 관리|대 가 없어 자료 없음이 맞다)
+      const gugeo = window.__otherFactorOf({ ...subj, jimok: '구거', use_situation: '구거' }, { jimok: '대', use_situation: '대' }, T);
+      const ledgerOnly = window.__otherFactorOf(subj, std, T);
+      const star = window.__otherFactorOf({ ...subj, jimok: '구거', use_situation: '구거' }, { jimok: '구거' }, T2);
+      return { both, gugeo, ledgerOnly, star };
+    }, VAL);
+    check('평가선례 2.32(n=5)와 거래사례 2.0(n=40)을 건수 가중 기하평균으로 합친다 → 2.04',
+          of.both.factor === 2.04 && /건수 가중 기하평균/.test(of.both.basis) && of.both.q1 === 1.5 && of.both.q3 === 2.6,
+          JSON.stringify(of.both));
+    check('거래사례가 없으면 평가선례 값 그대로 (2.32)', of.ledgerOnly.factor === 2.32);
+    check('칸은 표준지의 지목군으로 고른다 (구거 대상 · 대 표준지 → 전·답 배율을 안 쓴다)',
+          of.gugeo.factor === null, JSON.stringify(of.gugeo));
+    check('지목군이 없으면 지목군 합친 거래사례 칸으로 물러난다 (1.8)', of.star.factor === 1.8, JSON.stringify(of.star));
     check('총액도 적는다 (1,653㎡)', /총액 약/.test(vcalc));
     check('농업진흥은 표준지 자료에 없어 확인 못 했다고 적는다', /확인하지 못했다/.test(vcalc));
     check('다른 표준지를 쓰면 얼마인지도 보인다', /다른 표준지를 쓰면/.test(vcalc) && /대쌍령리 7/.test(vcalc));

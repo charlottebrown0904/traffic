@@ -5081,14 +5081,55 @@ function timeFactorOf(stdYear, trend, T) {
            source: '또래 실거래 추세로 대신함 (지가변동률 자료 없음)' };
 }
 
-function otherFactorOf(zg, ug, sido, T) {
-  const cell = (T.other || {})[`${zg}|${ug}`];
-  if (!cell) return { factor: null, basis: '자료 없음' };
-  const o = cell[sido] || cell['*'];
-  if (!o || !o.median) return { factor: null, basis: '자료 없음' };
-  return { factor: o.median, q1: o.q1, q3: o.q3, n: o.n,
-           basis: `${o.source} 기준 (n=${o.n}, ${o.level})` };
+/* 그 밖의 요인 — 두 갈래를 합친다 (src/redt/valuation.py decide_other 와 같은 규칙).
+ *
+ *   평가선례  T.other['용도지역군|지목군'][시도 코드 | '*']   (비공개 원장의 집계)
+ *   거래사례  T.trade['시군구|용도지역군|지목군' | '…|*']     (실거래 ÷ 개별공시지가, 3년)
+ *
+ * 칸의 지목군은 **표준지의** 지목군이다 (2026-09-11 안성 검증의 교훈: 구거 대상에
+ * 대 표준지를 골라 놓고 전·답 배율을 곱하면 틀린다 — 배율은 표준지에 곱하는
+ * 것이므로 표준지가 무엇인지가 칸을 정한다). 표준지 칸이 없으면 대상의 지목군,
+ * 그다음 지목군 합친 칸.
+ *
+ * 둘 다 있으면 건수로 가중한 기하평균(건수는 30에서 자른다) — 거래사례가 수십 건이면
+ * 그쪽이 이기고 평가선례 셋뿐이면 거의 안 움직인다. 범위는 있는 쪽의 사분위 중
+ * 넓은 쪽. */
+function otherFactorOf(subject, std, T) {
+  const zg = zoneGroupOf(subject.land_use, T);
+  if (!zg) return { factor: null, basis: '자료 없음 (용도지역군 없음)', sources: [] };
+  const stdUg = useGroupOf(std.jimok, std.use_situation);
+  const subjUg = useGroupOf(subject.jimok, subject.use_situation);
+  const sido = String(subject.pnu || '').slice(0, 2);
+  const code = String(subject.pnu || '').slice(0, 5);
+  const ugs = [...new Set([stdUg, subjUg].filter(Boolean))];
+  let ledger = null;
+  for (const ug of ugs) {
+    const cell = (T.other || {})[`${zg}|${ug}`];
+    const o = cell && (cell[sido] || cell['*']);
+    if (o && o.median) { ledger = { ...o, ug }; break; }
+  }
+  let trade = null;
+  for (const key of [...ugs.map((ug) => `${code}|${zg}|${ug}`), `${code}|${zg}|*`]) {
+    const o = (T.trade || {})[key];
+    if (o && o.median) { trade = o; break; }
+  }
+  const have = [ledger, trade].filter(Boolean);
+  if (!have.length) return { factor: null, basis: '자료 없음', sources: [] };
+  if (have.length === 1) {
+    const o = have[0];
+    return { factor: o.median, q1: o.q1, q3: o.q3, n: o.n, sources: have,
+             basis: `${o.source} 기준 (n=${o.n}, ${o.level})` };
+  }
+  const w = have.map((o) => Math.min(Number(o.n), 30));
+  const lg = have.reduce((acc, o, i) => acc + w[i] * Math.log(o.median), 0) / w.reduce((a, b) => a + b, 0);
+  const f = Math.round(Math.exp(lg) * 100) / 100;
+  const q1 = Math.min(...have.map((o) => o.q1 || f));
+  const q3 = Math.max(...have.map((o) => o.q3 || f));
+  return { factor: f, q1: Math.round(q1 * 100) / 100, q3: Math.round(q3 * 100) / 100,
+           n: have.reduce((a, o) => a + Number(o.n), 0), sources: have,
+           basis: have.map((o) => `${o.source} ${Number(o.median).toFixed(2)} (n=${o.n})`).join(' · ') + ' → 건수 가중 기하평균' };
 }
+window.__otherFactorOf = otherFactorOf;      // 검사(test_map.js)가 표와 함께 부른다
 
 function roundDecided(x) {
   const unit = x < 10000 ? 100 : (x < 1000000 ? 1000 : 10000);
@@ -5098,9 +5139,7 @@ function roundDecided(x) {
 function appraiseNow(subject, std, T, trend) {
   const t = timeFactorOf(std.year, trend, T);
   const ind = individualFactor(subject, std, T);
-  const zg = zoneGroupOf(subject.land_use, T);
-  const ug = useGroupOf(subject.jimok, subject.use_situation);
-  const other = otherFactorOf(zg, ug, String(subject.pnu || '').slice(0, 2), T);
+  const other = otherFactorOf(subject, std, T);
   const parts = { '표준지공시지가': std.price || null, '시점수정': t.factor, '지역요인': 1.0,
                   '개별요인': ind.factor, '그 밖의 요인': other.factor };
   const missing = Object.entries(parts).filter(([, v]) => v === null || v === undefined).map(([k]) => k);

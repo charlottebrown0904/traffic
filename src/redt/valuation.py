@@ -754,7 +754,9 @@ SIDO_NAMES = {"11": "서울", "26": "부산", "27": "대구", "28": "인천", "2
               "46": "전남", "47": "경북", "48": "경남", "50": "제주", "51": "강원", "52": "전북"}
 
 
-def tables_for_web() -> dict:
+def tables_for_web(trade: dict | None = None) -> dict:
+    """화면용 표. trade 는 trade_other_factor() 의 거래사례 칸 — 내보내기(webexport)가
+    DB 를 열어 넘긴다. 없으면 빈 사전이고 화면은 평가선례만 쓴다."""
     rows = load_ledger()
     zones = [z for z, _ in ZONE_GROUPS]
     uses = [u for u, _ in USE_GROUPS]
@@ -776,6 +778,11 @@ def tables_for_web() -> dict:
         "area_rules": {k: [[lo, (None if hi == math.inf else hi), r, why] for lo, hi, r, why in v]
                        for k, v in AREA_RULES.items()},
         "other": other,
+        # 거래사례 갈래 — 열쇠 '시군구|용도지역군|지목군' (지목군 합친 칸은 '*'). 화면은
+        # 표준지의 지목군 칸 → 대상의 지목군 칸 → 합친 칸 순으로 찾고, 평가선례와
+        # 건수 가중 기하평균으로 합친다 (decide_other 와 같은 규칙).
+        "trade": trade or {},
+        "trade_years": 3,
         "time_clamp": [0.98, 1.03],
         "zone_groups": ZONE_GROUPS, "use_groups": USE_GROUPS,
         "ledger_n": len(rows),
