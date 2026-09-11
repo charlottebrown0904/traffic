@@ -6,6 +6,8 @@
 name: Vercel 배포 정리
 
 on:
+  schedule:
+    - cron: "0 18 * * 0"      # 매주 일요일 03:00 KST — 지시(2026-09-11) "정리 가끔 확인해서 알아서"
   workflow_dispatch:
     inputs:
       dry_run:
@@ -24,8 +26,9 @@ jobs:
     timeout-minutes: 30
     env:
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-      DRY_RUN: ${{ inputs.dry_run }}
-      KEEP_PRODUCTION: ${{ inputs.keep }}
+      # 예약 실행은 입력이 비어 온다 — 그때는 실제로 지우고 production 2개를 남긴다.
+      DRY_RUN: ${{ inputs.dry_run || '0' }}
+      KEEP_PRODUCTION: ${{ inputs.keep || '2' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
