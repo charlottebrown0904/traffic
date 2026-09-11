@@ -338,6 +338,35 @@ CREATE TABLE IF NOT EXISTS appraisal_factor (
     ratio        DOUBLE,    -- 격차율 (1.00 = 같음)
     PRIMARY KEY (appraisal_id, group_nm, item_nm)
 );
+
+-- 표준지공시지가 (collect/stdland). '현재 가치' 2판의 첫 마디.
+-- 원천 셋(파일·odcloud·브이월드)을 같은 열로 접는다. 사람 이름은 없다.
+CREATE TABLE IF NOT EXISTS std_land (
+    std_id        VARCHAR PRIMARY KEY,   -- pnu-연도 (pnu 가 없으면 법정동코드-지번-연도)
+    pnu           VARCHAR,
+    ld_code       VARCHAR,               -- 법정동코드 10자리
+    ld_name       VARCHAR,
+    special       VARCHAR,               -- 특수지 구분 (일반/산)
+    jibun         VARCHAR,
+    std_no        VARCHAR,               -- 표준지 일련번호
+    year          INTEGER,               -- 기준연도
+    month         VARCHAR,
+    price         DOUBLE,                -- 공시지가 원/㎡
+    jimok         VARCHAR,
+    area_m2       DOUBLE,
+    land_use      VARCHAR,
+    land_use2     VARCHAR,
+    use_situation VARCHAR,
+    surroundings  VARCHAR,               -- 주위환경
+    road_side     VARCHAR,
+    slope         VARCHAR,
+    shape         VARCHAR,
+    notice_date   VARCHAR,
+    lon           DOUBLE,
+    lat           DOUBLE,
+    sigungu_cd    VARCHAR,
+    source        VARCHAR                -- file / odcloud / vworld
+);
 """
 
 

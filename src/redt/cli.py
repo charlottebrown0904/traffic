@@ -157,6 +157,39 @@ def cmd_probe_landprice(args):
     landprice.probe()
 
 
+def cmd_probe_stdland(args):
+    """표준지공시지가 원천 탐침 — odcloud 15004246 · 브이월드 getReferLandPriceAttr."""
+    from .collect import stdland
+    result = stdland.probe()
+    out = PROCESSED / "stdland_probe.json"
+    PROCESSED.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    print(f"\n→ {out}")
+
+
+def cmd_load_stdland(args):
+    """표준지공시지가 적재 — 드라이브 CSV 또는 odcloud."""
+    from .collect import stdland
+    with db.connect() as con:
+        if args.drive:
+            dest = str(PROCESSED / "stdland.csv")
+            n = stdland.drive_download(args.drive, dest)
+            print(f"  드라이브에서 {n / 1e6:,.1f}MB 받음 → {dest}")
+            info = stdland.load_csv(con, dest)
+            print(f"  std_land 에 {info['rows']:,}행 (인코딩 {info['encoding']})")
+        elif args.csv:
+            info = stdland.load_csv(con, args.csv)
+            print(f"  std_land 에 {info['rows']:,}행 (인코딩 {info['encoding']})")
+        elif args.uddi:
+            info = stdland.fetch_odcloud(con, args.uddi, max_pages=args.max_pages)
+            print(f"  std_land 에 {info['rows']:,}행 / 전체 {info['total']:,}")
+            if info["unmatched"]:
+                print(f"  못 맞춘 열: {info['unmatched']}")
+        else:
+            sys.exit("--drive <파일ID> · --csv <경로> · --uddi <uddi:…> 중 하나가 필요합니다")
+        stdland.describe(con)
+
+
 def cmd_urban_check(args):
     """여섯째 축 '주변 이용' — 법정동리 도시용지 비율을 헤도닉으로 검증한다."""
     from .analyze import urban
@@ -2388,6 +2421,16 @@ def main(argv=None):
     sub.add_parser("probe-landprice",
                    help="표준지공시지가 API 탐침 — 좌표·연도·용도지역이 오는지"
                    ).set_defaults(func=cmd_probe_landprice)
+
+    sub.add_parser("probe-stdland",
+                   help="표준지공시지가 원천 탐침 (odcloud 15004246 · 브이월드 ReferLandPrice)"
+                   ).set_defaults(func=cmd_probe_stdland)
+    p = sub.add_parser("load-stdland", help="표준지공시지가 적재 → std_land")
+    p.add_argument("--drive", help="구글 드라이브 파일 ID (링크가 있는 모든 사용자로 열린 것)")
+    p.add_argument("--csv", help="로컬 CSV 경로")
+    p.add_argument("--uddi", help="odcloud uddi (probe-stdland 이 찾은 것)")
+    p.add_argument("--max-pages", type=int, default=None)
+    p.set_defaults(func=cmd_load_stdland)
 
     p = sub.add_parser("urban-check",
                        help="여섯째 축 '주변 이용' 검증 — 도시용지 비율 헤도닉")
