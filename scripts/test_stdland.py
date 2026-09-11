@@ -100,8 +100,8 @@ cols26 = ['시군구', '읍면동리', '본번지', '부번지', '시도명', '�
           '토지대장번호(PNU)', '지번구분', '전년지가', '방위']
 r1 = ['41550', '25021', '0674', '0000', '경기도', '안성시', '경기도 안성시 공도읍 양기리 674', '12', '272000', '공장용지',
       '3840', '계획관리지역', '', '', '공업용', '농촌지대', '소로한면', '', '평지', '사다리형', '4155025021106740000', '1', '250000', '']
-r2 = ['41550', '25021', '0012', '0003', '경기도', '안성시', '경기도 안성시 공도읍 양기리 산12-3', '13', '18000', '임야',
-      '9000', '계획관리지역', '', '', '자연림', '농촌지대', '맹지', '', '완경사', '부정형', '', '2', '17000', '']
+r2 = ['41550', '25021', '12', '3', '경기도', '안성시', '경기도 안성시 공도읍 양기리 산12-3', '13', '18000', '임야',
+      '9000', '계획관리지역', '', '', '자연림', '농촌지대', '맹지', '', '완경사', '부정형', '1.11101E+18', '2', '17000', '']
 csv26 = tmp / "국토교통부_표준지공시지가_20260101.csv"
 pd.DataFrame([dict(zip(cols26, r1)), dict(zip(cols26, r2))]).to_csv(csv26, index=False, encoding="cp949")
 with db.connect() as con:
@@ -110,7 +110,7 @@ with db.connect() as con:
 check(info26["rows"] == 2 and len(got) == 2, f"두 행이 들어간다 — {info26['rows']} · {got}")
 check(got and got[0][3] == 2026, "연도를 파일 이름(20260101)에서 읽는다")
 check(got and got[1][0] == "4155025021200120003" and got[1][2] == "산 12-3",
-      f"빈 PNU 를 조각으로 만들고 지번은 '산 12-3' — {got[1][:3] if got else None}")
+      f"뭉개진 PNU(1.11101E+18)는 버리고 조각으로 만든다, 본번 '12' 도 네 자리로 — {got[1][:3] if got else None}")
 check(got and got[0][2] == "674" and got[0][1] == "4155025021", f"본번만 있으면 '674' · 법정동 10자리 — {got[0][:3] if got else None}")
 check(all(g[4] and "None" not in g[4] and "<NA>" not in g[4] for g in got), f"std_id 가 비지 않는다 — {[g[4] for g in got]}")
 
@@ -119,19 +119,19 @@ print("4-0. 빈 이름을 코드표로 채운다 (같은 응답 안의 짝에서
 S._CODEBOOK.clear()
 S._codebook_path = lambda: tmp / "codes.json"
 rows_v = pd.DataFrame([
-    {"pnu": "1", "ldCode": "4146125025", "stdrYear": "2025", "pblntfPclnd": "100",
+    {"pnu": "4146125025100000001", "ldCode": "4146125025", "stdrYear": "2025", "pblntfPclnd": "100",
      "tpgrphHgCode": "03", "tpgrphHgCodeNm": "완경사", "tpgrphFrmCode": "05", "tpgrphFrmCodeNm": "부정형",
      "roadSideCode": "12", "roadSideCodeNm": "맹지", "prposArea1": "43", "prposAreaNm1": "자연녹지지역"},
-    {"pnu": "2", "ldCode": "4146125025", "stdrYear": "2025", "pblntfPclnd": "200",
+    {"pnu": "4146125025100000002", "ldCode": "4146125025", "stdrYear": "2025", "pblntfPclnd": "200",
      "tpgrphHgCode": "03", "tpgrphHgCodeNm": "", "tpgrphFrmCode": "05", "tpgrphFrmCodeNm": "",
      "roadSideCode": "12", "roadSideCodeNm": "", "prposArea1": "43", "prposAreaNm1": ""},
-    {"pnu": "3", "ldCode": "4146125025", "stdrYear": "2025", "pblntfPclnd": "300",
+    {"pnu": "4146125025100000003", "ldCode": "4146125025", "stdrYear": "2025", "pblntfPclnd": "300",
      "tpgrphHgCode": "09", "tpgrphHgCodeNm": "", "tpgrphFrmCode": "05", "tpgrphFrmCodeNm": "",
      "roadSideCode": "12", "roadSideCodeNm": "", "prposArea1": "43", "prposAreaNm1": ""},
 ])
 nv, _ = S.normalize(rows_v)
-r2 = nv[nv["pnu"] == "2"].iloc[0]
-r3 = nv[nv["pnu"] == "3"].iloc[0]
+r2 = nv[nv["pnu"] == "4146125025100000002"].iloc[0]
+r3 = nv[nv["pnu"] == "4146125025100000003"].iloc[0]
 check(r2["slope"] == "완경사" and r2["shape"] == "부정형" and r2["road_side"] == "맹지"
       and r2["land_use"] == "자연녹지지역", "빈 이름을 같은 코드의 이름으로 채운다")
 check(r3["slope"] is None or pd.isna(r3["slope"]), "못 배운 코드(09)는 비운 채 둔다 — 추측하지 않는다")

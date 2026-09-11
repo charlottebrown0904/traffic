@@ -140,6 +140,10 @@ def normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     for c in ("pnu", "ld_code", "jibun", "std_no", "sgg_code", "umd_code", "bun", "ji", "jibun_kind"):
         if c in out.columns:
             out[c] = out[c].astype(str).str.strip().replace({"nan": None, "None": None, "<NA>": None})
+    # PNU 는 19자리여야 한다. 2026 파일은 엑셀을 거쳐 '1.11101E+18' 로 뭉개져
+    # 있었다 (run 16: 한 시군구가 한 열쇠로 겹쳤다). 19자리가 아니면 없는 것.
+    if "pnu" in out.columns:
+        out["pnu"] = out["pnu"].where(out["pnu"].astype(str).str.fullmatch(r"\d{19}"), None)
     # 2026 파일: 조각 열로 법정동코드·PNU·지번을 만든다 (PNU 가 빈 행이 있다).
     if {"sgg_code", "umd_code"} <= set(out.columns):
         ld = out["sgg_code"].fillna("").str.zfill(5) + out["umd_code"].fillna("").str.zfill(5)
