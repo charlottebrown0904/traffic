@@ -2946,6 +2946,7 @@ const FAKE_LEAFLET = () => {
     check('근거 조례에 원문 링크를 단다',
           /ordinInfoP\.do\?ordinSeq=2102141[^>]*>수원시 도시계획 조례</.test(pc.html)
           && /시행 2025-12-31/.test(pc.html));
+    check('개발 한도 칸이 가이드(법령과 조례)로 이어진다', /href="\/guide\/law"/.test(pc.html));
 
     // 건축 제한 (요구사항 2026-09-10). 레이더는 안 건드리고 아래에
     // 따로 적는다 — 규제의 무게를 숫자로 환산하면 그 환산율 자체가
@@ -4050,6 +4051,59 @@ const FAKE_LEAFLET = () => {
           `${await page2.evaluate(() => (window.__tradeStyles || []).length)}개`));
 
       await page2.close();
+    }
+
+    // 가이드 05 · 법령과 조례 (E, 2026-09-11). 같은 조례 표를 읽어 시·군을 고르게 한다.
+    {
+      const pg = await browser.newPage({ viewport: { width: 420, height: 900 } });
+      await pg.route('**/app/data/zoning-limits.json*', (r) => r.fulfill({
+        status: 200, contentType: 'application/json',
+        body: JSON.stringify({
+          generated: '2026-09-11',
+          law: { '계획관리': { bcr_max: 40, far_min: 50, far_max: 100 }, '자연녹지': { bcr_max: 20, far_min: 50, far_max: 100 } },
+          ord: { '2102141': { name: '수원시 도시계획 조례', org: '경기도 수원시', eff: '20251231',
+                              url: 'https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2102141',
+                              bcr: { '자연녹지': 20 }, far: { '자연녹지': 100 }, slope: 10, elev: 100 },
+                 '2121099': { name: '안성시 도시계획 조례', org: '경기도 안성시', eff: '20260410',
+                              url: 'https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2121099',
+                              bcr: { '계획관리': 40 }, far: { '계획관리': 100 }, slope: 25, forest: 150 },
+                 '2149501': { name: '서울특별시 도시계획 조례', org: '서울특별시', eff: '20260713',
+                              url: 'https://www.law.go.kr/LSW/ordinInfoP.do?ordinSeq=2149501',
+                              bcr: { '자연녹지': 20 }, far: { '자연녹지': 50 } } },
+          sg: { '41111': ['2102141', 'sigungu'], '41550': ['2121099', 'sigungu'], '11110': ['2149501', 'sido'] },
+        }),
+      }));
+      await pg.goto(`${BASE}/guide/law.html`, { waitUntil: 'domcontentloaded' });
+      await pg.waitForFunction(() => /안성시 도시계획 조례/.test(document.getElementById('f-out').innerHTML), null, { timeout: 8000 })
+        .catch(() => {});
+      const g1 = await pg.evaluate(() => ({
+        law: document.getElementById('law-table').innerHTML,
+        sido: document.getElementById('f-sido').value,
+        out: document.getElementById('f-out').innerHTML,
+        stats: document.getElementById('f-stats').textContent,
+        sidos: [...document.getElementById('f-sido').options].map((o) => o.value),
+        scrollW: document.documentElement.scrollWidth, innerW: window.innerWidth,
+      }));
+      check('시행령 상한 표를 자료에서 채운다 (계획관리 40% · 50~100%)',
+            /계획관리지역<\/th><td class="num">40%<\/td><td class="num">50~100%/.test(g1.law), g1.law.slice(0, 160));
+      check('안성시부터 보여 준다 (경기도 · 안성시 도시계획 조례 · 원문 링크)',
+            g1.sido === '경기도' && /안성시 도시계획 조례/.test(g1.out) && /ordinSeq=2121099/.test(g1.out) && /시행 2026-04-10/.test(g1.out),
+            g1.out.slice(0, 200));
+      check('안성 값: 계획관리 40%·100%, 경사 25°, 입목 150%, 표고는 숫자 기준 없음',
+            /계획관리<\/th><td class="num">40%<\/td><td class="num">100%/.test(g1.out)
+            && /25° 미만/.test(g1.out) && /150% 미만/.test(g1.out) && /표고<\/th><td><span class="muted">조문에 숫자 기준 없음/.test(g1.out));
+      check('시·도 목록은 기관명 첫 낱말로 묶인다', g1.sidos.length === 2 && g1.sidos.includes('서울특별시'), g1.sidos.join(','));
+      check('요약 통계를 적는다 (조례 3건 · 경사도 2 · 가장 흔한 값)',
+            /조례 3건/.test(g1.stats) && /경사도 기준 있음 2/.test(g1.stats), g1.stats);
+      check('전화 너비에서 가로로 안 넘친다', g1.scrollW <= g1.innerW, `${g1.scrollW} > ${g1.innerW}`);
+      await pg.selectOption('#f-sido', '서울특별시');
+      await pg.waitForFunction(() => /서울특별시 도시계획 조례/.test(document.getElementById('f-out').innerHTML), null, { timeout: 4000 })
+        .catch(() => {});
+      const g2 = await pg.evaluate(() => document.getElementById('f-out').innerHTML);
+      check('시·도를 바꾸면 그 조례로 (서울 자연녹지 20%·50% · 경사 기준 없음)',
+            /서울특별시 도시계획 조례/.test(g2) && /자연녹지<\/th><td class="num">20%<\/td><td class="num">50%/.test(g2)
+            && /경사도<\/th><td><span class="muted">조문에 숫자 기준 없음/.test(g2), g2.slice(0, 200));
+      await pg.close();
     }
   } finally {
     await browser.close();

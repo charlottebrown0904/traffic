@@ -4715,7 +4715,8 @@ function parcelLimits(parcel, Z) {
     + '</tbody></table>'
     + `<p class="pc-limits-src">근거: ${basis}</p>`
     + '<p class="pc-limits-note">조례의 첫 값입니다. 완화·강화 단서(성장관리계획구역·기존 공장 등)는 '
-    + '원문 조문에 있고, 지구·구역이 걸리면 그쪽이 먼저입니다.</p>'
+    + '원문 조문에 있고, 지구·구역이 걸리면 그쪽이 먼저입니다. '
+    + '<a href="/guide/law" target="_blank" rel="noopener">누가 정하나 · 내 시·군 조례 →</a></p>'
     + '</details>';
 }
 
