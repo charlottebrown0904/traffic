@@ -306,8 +306,10 @@ def _stdland_files() -> None:
     # 2026 파일은 없는 값을 '지정되지않음' 이라는 글자로 준다 — 이름이 아니다.
     NOT_A_VALUE = {"", "지정되지않음", "해당없음", "없음", "-"}
     for c in df.columns:
-        if df[c].dtype == object:
-            df[c] = df[c].where(~df[c].astype(str).str.strip().isin(NOT_A_VALUE), None)
+        # pandas 3 은 글자 열이 object 가 아니라 'str' 이다 — dtype == object 로
+        # 걸면 한 열도 안 걸려 '지정되지않음' 이 그대로 나갔다 (run 6).
+        if pd.api.types.is_string_dtype(df[c]) or df[c].dtype == object:
+            df[c] = df[c].astype("object").where(~df[c].astype(str).str.strip().isin(NOT_A_VALUE), None)
     for code, g in df.groupby("sigungu_cd"):
         rows = []
         for r in g.itertuples(index=False):
