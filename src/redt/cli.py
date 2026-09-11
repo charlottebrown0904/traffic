@@ -320,7 +320,7 @@ def cmd_value_test(args):
         zg, ug = V.zone_group(t["land_use"]), V.use_group(t["jimok"], t["use_situation"])
         led = V.ledger_other_factor(subject["sido"], subject["sigungu"], t["land_use"],
                                     t["jimok"], t["use_situation"])
-        tc = trade_cells.get(f"{code}|{zg}|{ug}")
+        tc = V.trade_cell(trade_cells, code, zg, ug)
         base = date(int(year_max), 1, 1)
         tf = V.time_factor(base, today, annual_trend=trend) if trend is not None else V.time_factor(base, today)
         actual = float(t["price_per_m2"])
@@ -349,6 +349,7 @@ def cmd_value_test(args):
             line.append(f"{label} {u:,.0f} (실거래/산출 {actual / u:.2f})" if u else f"{label} 보류")
         print("   ▶ " + " · ".join(line))
         out.append({"trade_id": t["trade_id"], "pnu": t["pnu"], "deal": f"{t['deal_year']}-{int(t['deal_month']):02d}",
+                    "ug": ug, "jimok": t["jimok"],
                     "actual": actual, "official": t["official_price"], "std": stds3[0].get("label"),
                     "std_price": stds3[0].get("price"), "time": tf.get("factor"),
                     "indiv": r0["individual"]["factor"],
@@ -360,9 +361,21 @@ def cmd_value_test(args):
                         if not o.get("hold") and o["unit"].get(label))
         if ratios:
             mid = ratios[len(ratios) // 2]
-            print(f"실거래 ÷ 산출 [{label}]  중앙 {mid:.2f} · 범위 {ratios[0]:.2f}~{ratios[-1]:.2f} · n={len(ratios)}")
+            in30 = sum(1 for x in ratios if 0.7 <= x <= 1.4)
+            in2x = sum(1 for x in ratios if 0.5 <= x <= 2.0)
+            print(f"실거래 ÷ 산출 [{label}]  중앙 {mid:.2f} · 범위 {ratios[0]:.2f}~{ratios[-1]:.2f}"
+                  f" · n={len(ratios)} · ±30% 안 {in30} · 2배 안 {in2x}")
         else:
             print(f"실거래 ÷ 산출 [{label}]  산출된 건 없음")
+    # 지목군별 — 어느 칸의 그 밖의 요인이 실거래와 어긋나는지가 다음에 손댈 곳.
+    by_ug: dict = {}
+    for o in out:
+        if o.get("hold") or not o["unit"].get("결정"):
+            continue
+        by_ug.setdefault(o.get("ug") or "(없음)", []).append(o["actual"] / o["unit"]["결정"])
+    for ug_name, rs in sorted(by_ug.items(), key=lambda kv: -len(kv[1])):
+        rs.sort()
+        print(f"   {ug_name:<6s} n={len(rs):>2d} 중앙 {rs[len(rs) // 2]:.2f} ({rs[0]:.2f}~{rs[-1]:.2f})")
     if appraisal_db.configured():
         fs = appraisal_db.factor_summary()
         if fs:

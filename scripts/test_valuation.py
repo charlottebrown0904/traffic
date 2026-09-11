@@ -141,6 +141,33 @@ check(V.round_decided(371234) == 371000 and V.round_decided(6487) == 6500
       and V.round_decided(1543210) == 1540000, "결정단가 자리수 — 원장 44건의 규칙")
 
 print()
+print("9. 거래사례 기준 그 밖의 요인 — 작은 DB 에서 SQL 이 돈다")
+import tempfile                                     # noqa: E402
+_tmp = pathlib.Path(tempfile.mkdtemp())
+from redt import config as _cfg                     # noqa: E402
+_cfg.DB_PATH = _tmp / "t.duckdb"
+from redt import db as _db                          # noqa: E402
+_db.DB_PATH = _tmp / "t.duckdb"
+with _db.connect() as con:
+    yr = dt.date.today().year
+    for i in range(12):
+        jimok = "전" if i < 10 else "구거"
+        con.execute("INSERT INTO trade (trade_id, kind, sigungu_cd, deal_year, deal_month, price_per_m2, is_cancelled) "
+                    "VALUES (?, 'land', '41550', ?, 1, ?, FALSE)", [f"t{i}", yr, 100000 + i * 1000])
+        con.execute("INSERT INTO trade_parcel VALUES (?, ?)", [f"t{i}", f"p{i}"])
+        con.execute("INSERT INTO parcel (pnu, sigungu_cd, jimok, land_use, official_price) VALUES (?, '41550', ?, '계획관리지역', 40000)",
+                    [f"p{i}", jimok])
+    cells = V.trade_other_factor(con, [(n, likes[0]) for n, likes in V.ZONE_GROUPS])
+c1 = cells.get("41550|관리|전·답")
+c2 = cells.get("41550|관리|*")
+check(c1 and c1["n"] == 10 and 2.5 <= c1["median"] <= 2.8, f"지목군 칸 — {c1}")
+check(c2 and c2["n"] == 12 and c2["level"].endswith("합침"), f"지목군 합친 칸 — {c2}")
+check("41550|관리|None" not in cells and "41550|관리|?" not in cells, "지목군 없는 행이 제 칸을 만들지 않는다")
+check(V.trade_cell(cells, "41550", "관리", None) is c2 and V.trade_cell(cells, "41550", "관리", "전·답") is c1,
+      "trade_cell: 지목군 칸 → 합친 칸")
+check(V.trade_cell(cells, "41550", None, None) is None, "용도지역군이 없으면 None")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건:")
     for f in fail:

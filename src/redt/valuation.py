@@ -551,25 +551,29 @@ WITH r AS (
       AND t.price_per_m2 > 0 AND pc.official_price > 0
       AND t.deal_year >= {from_year}
 )
-SELECT sigungu_cd, zg, ug,
+-- 지목군 칸과, 지목군을 합친 칸('*') 을 함께 낸다. 하천·구거·체육용지처럼
+-- 지목군이 없는 땅은 합친 칸으로 물러난다 (안성 검증 run 9: 27건 중 5건이
+-- 이것 때문에 보류였다).
+SELECT sigungu_cd, zg,
+       CASE WHEN grouping(ug) = 1 THEN '*' ELSE ug END AS ug,
        count(*) AS n,
        quantile_cont(ratio, 0.5) AS median,
        quantile_cont(ratio, 0.25) AS q1,
        quantile_cont(ratio, 0.75) AS q3
 FROM r
-WHERE zg IS NOT NULL AND ug IS NOT NULL
+WHERE zg IS NOT NULL
   AND ratio BETWEEN 0.3 AND 20
-GROUP BY 1, 2, 3
-HAVING count(*) >= 10
+GROUP BY GROUPING SETS ((sigungu_cd, zg, ug), (sigungu_cd, zg))
+HAVING count(*) >= 10 AND (grouping(ug) = 1 OR ug IS NOT NULL)
 """
 
 
 def trade_other_factor(con, groups: list[tuple[str, str]], years: int = 3) -> dict:
     """거래사례 기준 그 밖의 요인을 (시군구|용도지역군|지목군) 열쇠로 만든다.
+    지목군을 합친 칸은 (시군구|용도지역군|*).
 
-    groups 는 (용도지역군 이름, LIKE 조각) 목록이다. **이 저장소의
-    실행 환경에는 DB 가 없어 여기서 돌려 보지 못했다** — SQL 은
-    parcelscore.build 와 같은 표·같은 조인을 쓴다.
+    groups 는 (용도지역군 이름, LIKE 조각) 목록이다. SQL 은 parcelscore.build
+    와 같은 표·같은 조인을 쓴다. 러너에서 돌았다 (2026-09-11 안성 검증).
     """
     case = " ".join(f"WHEN t.land_use LIKE '%{like}%' THEN '{name}'" for name, like in groups)
     from_year = dt.date.today().year - years
@@ -579,8 +583,16 @@ def trade_other_factor(con, groups: list[tuple[str, str]], years: int = 3) -> di
         out[f"{r.sigungu_cd}|{r.zg}|{r.ug}"] = {
             "median": round(float(r.median), 2), "q1": round(float(r.q1), 2),
             "q3": round(float(r.q3), 2), "n": int(r.n), "source": "거래사례",
+            "level": "시군구" if r.ug != "*" else "시군구 · 지목군 합침",
         }
     return out
+
+
+def trade_cell(cells: dict, sigungu_cd: str, zg: str | None, ug: str | None) -> dict | None:
+    """지목군 칸 → 지목군 합친 칸 순으로 찾는다."""
+    if not zg:
+        return None
+    return cells.get(f"{sigungu_cd}|{zg}|{ug}") or cells.get(f"{sigungu_cd}|{zg}|*")
 
 
 def decide_other(ledger: dict | None, trade: dict | None) -> dict:
