@@ -27,6 +27,11 @@ from .http import get_once, polite_sleep
 
 SEARCH = "https://www.law.go.kr/DRF/lawSearch.do"
 SERVICE = "https://www.law.go.kr/DRF/lawService.do"
+# 같은 자료의 둘째 길 — 공공데이터포털 '법제처 국가법령정보 공유서비스'(15000115).
+# apis.data.go.kr 은 중계기가 DATA_GO_KR_KEY 를 끼워 주고, 법제처처럼 호출 IP 를
+# 등록하라고 하지 않는다 (run 23: law.go.kr 은 서울 중계기로도 "IP·도메인 등록" 거부).
+PORTAL_SEARCH = "https://apis.data.go.kr/1170000/law/lawSearchList.do"
+PORTAL_SERVICE = "https://apis.data.go.kr/1170000/law/lawService.do"
 RAW_DIR = PROCESSED / "ordinance"          # 본문 통째 (Actions 캐시에 남는다)
 OUT_DIR = ROOT / "data" / "ordinance"      # 뽑은 조문 (저장소에 커밋)
 
@@ -35,17 +40,25 @@ KEYWORDS = ("건폐율", "용적률", "개발행위허가", "경사도", "임목
             "성장관리", "자연취락", "개발진흥")
 
 
+REFERER = "https://toji.fyi/"   # open.law.go.kr 에 등록한 서비스 주소 — 검증에 쓰일 수 있다
+
+
 def _oc() -> str:
+    """중계기가 켜져 있으면 늘 중계기로 (서울 IP · 중계기가 LAW_OC 를 끼운다).
+    법제처는 호출 서버의 IP·도메인을 등록분과 견주므로(run 22 응답) 미국 러너의
+    직접 호출은 통하지 않을 가능성이 크다."""
+    from ..config import relay
+    if relay().enabled:
+        return VIA_RELAY
     return os.getenv("LAW_OC") or VIA_RELAY
 
 
 def _direct(url: str, params: dict):
-    """중계기를 거치지 않고 바로 부른다 — 미국 러너에서 law.go.kr 이 열리는지를
-    이것이 잰다. 중계기(main 배포분)가 아직 www.law.go.kr 을 모를 때의 우회이기도 하다."""
+    """중계기를 거치지 않고 바로 부른다 — 러너 IP 로. 등록 도메인을 Referer 로 싣는다."""
     import requests
     oc = os.getenv("LAW_OC") or "test"
     return requests.get(url, params={**params, "OC": oc}, timeout=30,
-                        headers={"User-Agent": "Mozilla/5.0 redt-research"})
+                        headers={"User-Agent": "Mozilla/5.0 redt-research", "Referer": REFERER})
 
 
 def _call(url: str, params: dict) -> tuple[dict | list | None, str]:
@@ -61,14 +74,78 @@ def _call(url: str, params: dict) -> tuple[dict | list | None, str]:
     if resp.status_code != 200:
         return None, f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", body[:200])
     try:
-        return json.loads(body), ""
+        payload = json.loads(body)
     except ValueError:
         return None, "JSON 아님: " + re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))[:240]
+    # 법제처는 오류도 200 으로 준다: {"result": "사용자 정보 검증에 실패하였습니다.", "msg": …}
+    if isinstance(payload, dict) and "msg" in payload and not _find_rows(payload):
+        return None, f"{payload.get('result', '')} {payload.get('msg', '')}"[:240]
+    return payload, ""
+
+
+def _xml_obj(node):
+    """XML 을 dict/list 로 — 조문 걷기(articles)가 JSON 과 같은 길을 타게."""
+    kids = list(node)
+    if not kids:
+        return (node.text or "").strip()
+    out: dict = {}
+    for k in kids:
+        v = _xml_obj(k)
+        if k.tag in out:
+            if not isinstance(out[k.tag], list):
+                out[k.tag] = [out[k.tag]]
+            out[k.tag].append(v)
+        else:
+            out[k.tag] = v
+    return out
+
+
+def _portal_raw(url: str, params: dict, kind: str = "XML"):
+    return get_once(url, {"serviceKey": VIA_RELAY, "target": "ordin", "type": kind, **params}, timeout=40)
+
+
+def _portal(url: str, params: dict) -> tuple[dict | list | None, str]:
+    """공공데이터포털 길. serviceKey 는 중계기가 끼운다. 포털은 XML 이 기본이다
+    (run 25: type=JSON 은 게이트웨이가 HTTP_ERROR 04 로 돌려보냈다). XML 을 dict 로 바꾼다."""
+    import xml.etree.ElementTree as ET
+    resp = _portal_raw(url, params, "XML")
+    body = resp.text
+    if resp.status_code != 200:
+        return None, f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", body[:200])
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        try:
+            payload = _xml_obj(ET.fromstring(body))
+        except ET.ParseError:
+            return None, "JSON/XML 아님: " + re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", body))[:240]
+    text = json.dumps(payload, ensure_ascii=False)[:300]
+    if not _find_rows(payload) and not articles(payload):
+        return None, "행 없음: " + text
+    return payload, ""
+
+
+_ROUTE = {"portal": False}
+
+
+def use_portal() -> bool:
+    return _ROUTE["portal"] or os.getenv("LAW_ROUTE") == "portal"
 
 
 def search(query: str, page: int = 1, display: int = 100) -> tuple[list[dict], int, str]:
     """목록 한 쪽. (행들, 전체 건수, 오류)."""
-    payload, why = _call(SEARCH, {"query": query, "display": str(display), "page": str(page)})
+    params = {"query": query, "display": str(display), "page": str(page)}
+    if use_portal():
+        payload, why = _portal(PORTAL_SEARCH, params)
+    else:
+        payload, why = _call(SEARCH, params)
+        if payload is None and "검증에 실패" in why:
+            # 법제처가 호출 IP 를 거부하면 포털 길로 갈아탄다 (이 실행 동안 계속).
+            payload, why2 = _portal(PORTAL_SEARCH, params)
+            if payload is not None:
+                _ROUTE["portal"] = True
+            else:
+                why = f"{why} / 포털: {why2}"
     if payload is None:
         return [], 0, why
     rows = _find_rows(payload)
@@ -77,6 +154,8 @@ def search(query: str, page: int = 1, display: int = 100) -> tuple[list[dict], i
 
 
 def body(mst: str) -> tuple[dict | None, str]:
+    if use_portal():
+        return _portal(PORTAL_SERVICE, {"MST": str(mst)})
     return _call(SERVICE, {"MST": str(mst)})
 
 
@@ -172,8 +251,27 @@ def probe(query: str = "안성시 도시계획 조례") -> dict:
     except Exception as e:                          # noqa: BLE001
         out["direct"] = {"error": f"{type(e).__name__}: {str(e)[:160]}"}
         print(f"직접 호출 실패: {out['direct']['error']}")
-    # 2) 우리 경로 (중계기 → 안 되면 직접)
+    # 2) 공공데이터포털 길 — 어느 주소·형식이 통하는지 그대로 찍는다
+    out["portal"] = {}
+    for label, url, kind in (("lawSearchList XML", PORTAL_SEARCH, "XML"),
+                             ("lawSearchList JSON", PORTAL_SEARCH, "JSON"),
+                             ("ordinSearchList XML", PORTAL_SEARCH.replace("lawSearchList", "ordinSearchList"), "XML"),
+                             ("lawSearchList XML target=law", PORTAL_SEARCH, "XML")):
+        try:
+            p = {"query": query, "display": "3"}
+            if label.endswith("target=law"):
+                p["target"] = "law"
+            r = _portal_raw(url, p, kind)
+            snip = re.sub(r"\s+", " ", r.text)[:220]
+            out["portal"][label] = {"status": r.status_code, "snippet": snip}
+            print(f"포털 {label}: HTTP {r.status_code} · {snip}")
+        except Exception as e:                      # noqa: BLE001
+            out["portal"][label] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+            print(f"포털 {label}: 실패 {out['portal'][label]['error']}")
+    # 3) 우리 경로 — 법제처(중계기) → 거부되면 포털
     rows, total, why = search(query, display=5)
+    out["route"] = "portal" if use_portal() else ("relay" if _oc() == VIA_RELAY else "direct")
+    print(f"경로 {out['route']}: {len(rows)}건" + (f" — {why}" if why else ""))
     out["search"] = {"n": len(rows), "total": total, "why": why,
                      "keys": sorted(rows[0].keys()) if rows else []}
     print(f"목록: {len(rows)}건 / 전체 {total}" + (f" — {why}" if why else ""))

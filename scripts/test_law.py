@@ -48,10 +48,19 @@ check(L._find_rows({"OrdinSearch": {"ordin": [row]}}) == [row], "중첩된 목�
 check(L._find_int({"OrdinSearch": {"totalCnt": "231"}}, ("totalCnt",)) == 231, "전체 건수")
 
 print()
+print("2-1. 포털 길의 XML 을 조문 걷기가 읽는다")
+import xml.etree.ElementTree as ET                 # noqa: E402
+xml = ET.fromstring("<response><body><items><item><조문번호>58</조문번호><조문제목>건폐율</조문제목>"
+                    "<조문내용>계획관리지역 40퍼센트</조문내용></item><item><조문번호>1</조문번호>"
+                    "<조문제목>목적</조문제목><조문내용>…</조문내용></item></items></body></response>")
+obj = L._xml_obj(xml)
+check(len(L.articles(obj)) == 2 and L.relevant(obj)[0]["no"] == "58", "XML → dict → 조문 2개 · 관심 1개")
+
+print()
 print("3. 중계기와 클라이언트가 짝이다")
 relay = (ROOT / "api" / "relay.js").read_text(encoding="utf-8")
 http = (ROOT / "src" / "redt" / "collect" / "http.py").read_text(encoding="utf-8")
-check('"www.law.go.kr":   { param: "OC",         env: "LAW_OC" }' in relay, "중계기가 OC 를 끼워 넣는다")
+check('"www.law.go.kr":   { param: "OC",         env: "LAW_OC",' in relay, "중계기가 OC 를 끼워 넣는다")
 check('"OC"' in relay.split("const STRIP")[1].split("\n")[0], "들어온 OC 는 지운다 (STRIP)")
 check('"www.law.go.kr"' in http.split("RELAYED_HOSTS = {")[1].split("}")[0], "클라이언트가 중계기로 보낸다")
 check('"OC"' in http.split("_KEY_PARAMS = ")[1].split("\n")[0], "OC 를 키 자리로 다룬다")

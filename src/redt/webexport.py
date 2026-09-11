@@ -303,18 +303,24 @@ def _stdland_files() -> None:
     total = 0
     # 빈 문자열은 값이 아니다 — 브이월드가 '' 로 준 용도지역2 가 그대로
     # 실리면 화면이 그것을 이름으로 읽는다.
+    # 2026 파일은 없는 값을 '지정되지않음' 이라는 글자로 준다 — 이름이 아니다.
+    NOT_A_VALUE = {"", "지정되지않음", "해당없음", "없음", "-"}
     for c in df.columns:
-        if df[c].dtype == object:
-            df[c] = df[c].where(df[c].astype(str).str.strip() != "", None)
+        # pandas 3 은 글자 열이 object 가 아니라 'str' 이다 — dtype == object 로
+        # 걸면 한 열도 안 걸려 '지정되지않음' 이 그대로 나갔다 (run 6).
+        if pd.api.types.is_string_dtype(df[c]) or df[c].dtype == object:
+            df[c] = df[c].astype("object").where(~df[c].astype(str).str.strip().isin(NOT_A_VALUE), None)
     for code, g in df.groupby("sigungu_cd"):
         rows = []
         for r in g.itertuples(index=False):
-            rows.append({"pnu": r.pnu, "ld": r.ld_code, "nm": r.ld_name, "jb": r.jibun,
-                         "y": int(r.year) if r.year == r.year else None,
-                         "pr": r.price, "jm": r.jimok, "ar": r.area_m2, "lu": r.land_use,
-                         "lu2": r.land_use2, "dz": r.district, "us": r.use_situation,
-                         "rs": r.road_side, "sh": r.shape, "sl": r.slope,
-                         "lon": r.lon, "lat": r.lat})
+            row = {"pnu": r.pnu, "ld": r.ld_code, "nm": r.ld_name, "jb": r.jibun,
+                   "y": int(r.year) if r.year == r.year else None,
+                   "pr": r.price, "jm": r.jimok, "ar": r.area_m2, "lu": r.land_use,
+                   "lu2": r.land_use2, "dz": r.district, "us": r.use_situation,
+                   "rs": r.road_side, "sh": r.shape, "sl": r.slope,
+                   "lon": r.lon, "lat": r.lat}
+            # 빈 칸은 싣지 않는다 — 전국 60만 필지라 null 열쇠만으로도 수 MB 다.
+            rows.append({k: v for k, v in row.items() if v is not None and v == v})
         fname = f"stdland-{code}.json"
         _write(fname, {"sigungu": str(code), "n": len(rows), "rows": rows})
         keep.add(fname)

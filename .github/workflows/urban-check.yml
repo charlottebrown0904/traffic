@@ -21,6 +21,10 @@ on:
         description: "채택이면 export-web 까지 돌려 화면 데이터를 커밋"
         type: boolean
         default: false
+      skip_check:
+        description: "검증을 건너뛰고 (지난 채택 결과 그대로) 내보내기만"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -36,6 +40,8 @@ jobs:
     timeout-minutes: 60
     env:
       PYTHONPATH: src
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,13 +70,14 @@ jobs:
           python -m redt.cli status
 
       - name: 검증
+        if: ${{ !inputs.skip_check }}
         run: |
           ARGS="--sample ${{ inputs.sample }}"
           if [ -n "${{ inputs.since }}" ]; then ARGS="$ARGS --since ${{ inputs.since }}"; fi
           python -m redt.cli urban-check $ARGS 2>&1 | tee /tmp/urban.log
 
       - name: 결과 보관 (다음 export-web 이 읽는다)
-        if: always()
+        if: ${{ (!inputs.skip_check) && (always()) }}
         uses: actions/cache/save@v4
         with:
           path: |
