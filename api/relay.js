@@ -56,7 +56,9 @@ const ALLOW = {
 // 그것이 이긴다 — 주소가 또 바뀔 때 코드를 안 고치기 위해서다.
 const DEFAULT_REFERER = "https://toji.fyi/";
 
-const STRIP = ["serviceKey", "key", "apiKey", "authKey", "accessKey", "OC"];
+// OC 는 지우지 않는다 — 포털(apis.data.go.kr)이 법제처로 넘길 때 OC 를 같이 요구할 수
+// 있고, law.go.kr 은 rule.param 이 OC 라 set() 이 덮어쓴다.
+const STRIP = ["serviceKey", "key", "apiKey", "authKey", "accessKey"];
 const TIMEOUT_MS = 25_000;
 
 function deny(res, code, message) {

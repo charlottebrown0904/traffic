@@ -61,9 +61,9 @@ print("3. 중계기와 클라이언트가 짝이다")
 relay = (ROOT / "api" / "relay.js").read_text(encoding="utf-8")
 http = (ROOT / "src" / "redt" / "collect" / "http.py").read_text(encoding="utf-8")
 check('"www.law.go.kr":   { param: "OC",         env: "LAW_OC",' in relay, "중계기가 OC 를 끼워 넣는다")
-check('"OC"' in relay.split("const STRIP")[1].split("\n")[0], "들어온 OC 는 지운다 (STRIP)")
+check('"OC"' not in relay.split("const STRIP")[1].split("\n")[0], "들어온 OC 는 지우지 않는다 (포털이 법제처로 넘긴다)")
 check('"www.law.go.kr"' in http.split("RELAYED_HOSTS = {")[1].split("}")[0], "클라이언트가 중계기로 보낸다")
-check('"OC"' in http.split("_KEY_PARAMS = ")[1].split("\n")[0], "OC 를 키 자리로 다룬다")
+check('"OC"' not in http.split("_KEY_PARAMS = ")[1].split("\n")[0], "OC 는 중계기로 실어 보낸다")
 
 print()
 if fail:
