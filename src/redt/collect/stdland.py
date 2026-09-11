@@ -158,6 +158,10 @@ def normalize(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
                 out["pnu"] = made
             else:
                 out["pnu"] = out["pnu"].fillna(made)
+            # PNU 도 못 만들면 조각을 그대로 이어 열쇠로 쓴다 — 지번만으로 열쇠를
+            # 만들면 전국이 한 지번으로 겹친다 (run 14: 60만 행이 2,370 행으로 줄었다).
+            out["_key"] = (out["sgg_code"].fillna("") + "|" + out["umd_code"].fillna("") + "|"
+                           + kind.astype(str) + "|" + bun + "|" + ji)
             jb = bun.str.lstrip("0").replace("", "0") + "-" + ji.str.lstrip("0").replace("", "0")
             jb = jb.str.replace(r"-0$", "", regex=True)
             jb = jb.where(kind.astype(str) != "2", "산 " + jb)
@@ -231,6 +235,13 @@ def load_csv(con, path: str, chunk: int = 200_000, year: int | None = None) -> d
         if year is None:
             raise ValueError("파일에 기준연도 열이 없습니다 — year 를 주세요 (예: 2026)")
         print(f"  기준연도 열이 없어 {year} 으로 넣습니다")
+    # 무엇이 들어 있는지 눈으로 — 열 이름만 맞고 값이 딴것인 일이 있다.
+    show = [c for c in head.columns if mapping.get(c) in ("pnu", "ld_code", "sgg_code", "umd_code",
+                                                            "bun", "ji", "jibun_kind", "jibun", "year", "price")]
+    if show:
+        print("  첫 세 행:")
+        for _, r in head[show].head(3).iterrows():
+            print("    " + " · ".join(f"{c}={str(r[c])[:22]}" for c in show))
     print(f"  열 {len(head.columns)}개 중 {len(mapping)}개를 맞췄습니다")
     for src, ours in mapping.items():
         print(f"    {src!s:24s} → {ours}")
@@ -245,12 +256,23 @@ def load_csv(con, path: str, chunk: int = 200_000, year: int | None = None) -> d
             break
         except UnicodeDecodeError:
             continue
+    # 파일은 그 연도의 전체다 — 지난번에 잘못 들어간 행이 남지 않게 먼저 비운다.
+    if year is not None:
+        gone = con.execute("SELECT count(*) FROM std_land WHERE source='file' AND year=?", [int(year)]).fetchone()[0]
+        if gone:
+            con.execute("DELETE FROM std_land WHERE source='file' AND year=?", [int(year)])
+            print(f"  예전 파일 적재분 {gone:,}행을 비웠습니다")
+    empty_pnu = 0
     for part in pd.read_csv(path, encoding=enc, dtype=str, chunksize=chunk, low_memory=False):
         rows, _ = normalize(part)
         if "year" not in rows.columns or rows["year"].isna().all():
             rows["year"] = year
+        if "pnu" in rows.columns:
+            empty_pnu += int(rows["pnu"].isna().sum())
         rows = _complete(rows)
         total += db.upsert(con, "std_land", rows)
+    if empty_pnu:
+        print(f"  PNU 가 빈 행 {empty_pnu:,} (조각으로 만들었거나 조각 열쇠로 넣음)")
     return {"rows": total, "mapped": mapping, "unmatched": unmatched, "encoding": enc}
 
 
@@ -329,9 +351,12 @@ def _complete(rows: pd.DataFrame, source: str = "file") -> pd.DataFrame:
     def txt(col, empty=""):
         return rows[col].astype("object").where(rows[col].notna(), empty).astype(str)
     pnu = txt("pnu").replace({"None": "", "nan": "", "<NA>": ""})
-    fallback = txt("ld_code") + "-" + txt("jibun")
+    fallback = txt("_key") if "_key" in rows.columns else txt("ld_code") + "-" + txt("jibun")
     key = pnu.where(pnu != "", fallback)
     rows["std_id"] = key + "-" + txt("year", "0")
+    dup = rows["std_id"].duplicated().sum()
+    if dup:
+        print(f"  ! 열쇠가 겹치는 행 {dup:,} — 마지막 것만 남는다")
     return rows[["std_id"] + STD_COLS]
 
 
