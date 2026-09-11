@@ -120,11 +120,7 @@ def for_web(con) -> dict:
             "definition": "법정동리 안 주거·상업·공업 이용상황 필지의 면적 비율 (농지·임야 대비)"}
 
 
-def _sample(con, since_year: int, limit: int) -> pd.DataFrame:
-    return con.execute(f"""
-        SELECT t.trade_id, t.sigungu_cd, t.deal_year, t.price_per_m2, t.land_use,
-               pc.pnu, pc.jimok, pc.use_situation, pc.road_side, pc.shape, pc.slope,
-               pc.area_m2
+_ELIGIBLE_WHERE = """
         FROM trade t
         JOIN trade_parcel tp ON tp.trade_id = t.trade_id
         JOIN parcel pc ON pc.pnu = tp.pnu
@@ -132,6 +128,22 @@ def _sample(con, since_year: int, limit: int) -> pd.DataFrame:
           AND NOT coalesce(t.is_cancelled, FALSE)
           AND t.price_per_m2 > 0 AND pc.area_m2 > 0
           AND t.deal_year >= {since_year}
+"""
+
+
+def eligible(con, since_year: int) -> int:
+    """표본 상한을 걸기 전, 조건에 드는 거래 수. 표본이 상한보다 적게
+    나오면 이 수가 이유를 말한다 — 조인이 얇은지, 연도가 좁은지."""
+    return int(con.execute("SELECT count(*) " + _ELIGIBLE_WHERE.format(since_year=since_year))
+               .fetchone()[0])
+
+
+def _sample(con, since_year: int, limit: int) -> pd.DataFrame:
+    return con.execute(f"""
+        SELECT t.trade_id, t.sigungu_cd, t.deal_year, t.price_per_m2, t.land_use,
+               pc.pnu, pc.jimok, pc.use_situation, pc.road_side, pc.shape, pc.slope,
+               pc.area_m2
+        {_ELIGIBLE_WHERE.format(since_year=since_year)}
         USING SAMPLE {limit} ROWS
     """).fetchdf()
 
@@ -142,11 +154,15 @@ def check(con, since_year: int | None = None, limit: int = 150_000) -> dict:
 
     since_year = since_year or dt.date.today().year - 5
     share = umd_share(con)[["umd", "urban_area", "urban_cnt", "n"]]
+    n_eligible = eligible(con, since_year)
     df = _sample(con, since_year, limit)
     if df.empty:
-        return {"adopted": False, "reason": "표본 없음 — 필지가 붙은 거래가 없다", "n": 0}
+        return {"adopted": False, "reason": "표본 없음 — 필지가 붙은 거래가 없다", "n": 0,
+                "eligible": n_eligible}
+    n_sampled = int(len(df))
     df["umd"] = df["pnu"].str.slice(0, 10)
     df = df.merge(share, on="umd", how="inner")
+    n_with_share = int(len(df))
     df["grp"] = df["land_use"].map(zone_group)
     df["ug"] = [use_group(j, u) for j, u in zip(df["jimok"], df["use_situation"])]
     df["road_g"] = df["road_side"].map(road_grade)
@@ -176,36 +192,52 @@ def check(con, since_year: int | None = None, limit: int = 150_000) -> dict:
                 "r2": round(float(m.rsquared), 3)}
 
     national = fit(df)
+    # 시도별. 문턱(MIN_SIDO_N) 아래도 **적되 세지는 않는다** — 한 시도만
+    # 문턱을 넘으면 '부호 일치 100%' 가 사실상 검사가 아니라는 것을
+    # 읽는 사람이 알아야 한다.
     by_sido = {}
     for code, g in df.groupby("sido"):
-        if len(g) >= MIN_SIDO_N:
-            by_sido[str(code)] = fit(g)
-    agree = [v for v in by_sido.values() if v["coef"] > 0]
-    agree_ratio = len(agree) / len(by_sido) if by_sido else 0.0
+        if len(g) >= 1000:
+            by_sido[str(code)] = {**fit(g), "counted": bool(len(g) >= MIN_SIDO_N)}
+    counted = {k: v for k, v in by_sido.items() if v["counted"]}
+    agree = [v for v in counted.values() if v["coef"] > 0]
+    agree_ratio = len(agree) / len(counted) if counted else 0.0
+    agree_all = (sum(1 for v in by_sido.values() if v["coef"] > 0) / len(by_sido)
+                 if by_sido else 0.0)
 
     # 통제 없이 본 원값도 남긴다 — 통제가 얼마나 먹었는지 보이도록.
     raw_corr = float(np.corrcoef(df["urban10"], df["lp"])[0, 1])
 
     adopted = (national["effect_pct"] / 100 >= MIN_EFFECT and national["p"] < MAX_P
-               and (not by_sido or agree_ratio >= MIN_SIDO_AGREE))
+               and (not counted or agree_ratio >= MIN_SIDO_AGREE))
     reasons = []
     if national["effect_pct"] / 100 < MIN_EFFECT:
         reasons.append(f"효과 {national['effect_pct']}% < {MIN_EFFECT * 100:.0f}%")
     if national["p"] >= MAX_P:
         reasons.append(f"p {national['p']} ≥ {MAX_P}")
-    if by_sido and agree_ratio < MIN_SIDO_AGREE:
+    if counted and agree_ratio < MIN_SIDO_AGREE:
         reasons.append(f"시도 부호 일치 {agree_ratio:.0%} < {MIN_SIDO_AGREE:.0%}")
+    caveats = []
+    if len(counted) < 2:
+        caveats.append(f"문턱({MIN_SIDO_N}건)을 넘는 시도가 {len(counted)}곳뿐 — 시도 일치 검사는 사실상 안 된 것")
+    if n_sampled < limit and n_eligible <= limit:
+        caveats.append(f"조건에 드는 거래가 {n_eligible:,}건이라 상한({limit:,})보다 적다")
     return {
         "adopted": bool(adopted),
         "reason": "채택 — 세 문턱을 다 넘었다" if adopted else " · ".join(reasons),
         "checked_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "since_year": since_year,
         "n": int(len(df)),
+        "counts": {"eligible": n_eligible, "sampled": n_sampled,
+                   "with_share": n_with_share, "used": int(len(df))},
+        "caveats": caveats,
         "umd_with_share": int(share.shape[0]),
         "raw_corr": round(raw_corr, 4),
         "national": national,
         "by_sido": by_sido,
         "sido_agree": round(agree_ratio, 3),
+        "sido_counted": len(counted),
+        "sido_agree_all": round(agree_all, 3),
         "thresholds": {"min_effect_per_10pp": MIN_EFFECT, "max_p": MAX_P,
                        "min_sido_agree": MIN_SIDO_AGREE, "min_sido_n": MIN_SIDO_N},
         "formula": "log(단가) ~ 도시용지비율×10 + 도로접면 + 형상 + 지세 + 용도지역군 + 지목군"
@@ -240,7 +272,16 @@ def report(result: dict) -> str:
         lines.append(f"  전국  n={n['n']:,}  도시용지 10%p 당 {n['effect_pct']:+.2f}%"
                      f"  (se {n['se']}, p {n['p']}, R² {n['r2']})  통제 전 상관 {result['raw_corr']}")
         lines.append(f"  법정동리 {result['umd_with_share']:,}곳 · {result['since_year']}년 이후 표본")
+        c = result.get("counts") or {}
+        if c:
+            lines.append(f"  거래 조건에 듦 {c['eligible']:,} → 표본 {c['sampled']:,}"
+                         f" → 동리 비율 붙음 {c['with_share']:,} → 회귀 {c['used']:,}")
         for code, v in sorted(result.get("by_sido", {}).items()):
-            lines.append(f"  시도 {code}  n={v['n']:,}  {v['effect_pct']:+.2f}%  p {v['p']}")
-        lines.append(f"  시도 부호 일치 {result['sido_agree']:.0%}")
+            tag = "" if v.get("counted", True) else "  (문턱 미만 · 참고)"
+            lines.append(f"  시도 {code}  n={v['n']:,}  {v['effect_pct']:+.2f}%  p {v['p']}{tag}")
+        lines.append(f"  시도 부호 일치 {result['sido_agree']:.0%}"
+                     f" (문턱 넘는 시도 {result.get('sido_counted', '?')}곳"
+                     f" · 참고 포함 {result.get('sido_agree_all', 0):.0%})")
+        for w in result.get("caveats") or []:
+            lines.append(f"  ! {w}")
     return "\n".join(lines)
