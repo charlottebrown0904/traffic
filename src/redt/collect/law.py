@@ -60,10 +60,11 @@ def _oc() -> str:
     return os.getenv("LAW_OC") or VIA_RELAY
 
 
-def _direct(url: str, params: dict):
-    """중계기를 거치지 않고 바로 부른다 — 러너 IP 로. 등록 도메인을 Referer 로 싣는다."""
+def _direct(url: str, params: dict, oc: str | None = None):
+    """중계기를 거치지 않고 바로 부른다 — 러너 IP 로. 등록 도메인을 Referer 로 싣는다.
+    oc="test" 는 법제처 안내서의 공개 견본 계정 — 포털 상세링크가 이것을 쓴다."""
     import requests
-    oc = os.getenv("LAW_OC") or "test"
+    oc = oc or os.getenv("LAW_OC") or "test"
     return requests.get(url, params={**params, "OC": oc}, timeout=30,
                         headers={"User-Agent": "Mozilla/5.0 redt-research", "Referer": REFERER})
 
@@ -137,6 +138,59 @@ def web_body(ordin_seq: str) -> tuple[str, str]:
     if resp.status_code != 200:
         return "", f"HTTP {resp.status_code} " + re.sub(r"\s+", " ", resp.text[:160])
     return resp.text, ""
+
+
+WEB_HOST = "https://www.law.go.kr"
+# 틀 페이지(ordinInfoP.do)는 본문을 하위 요청으로 실어 온다(run 29: 66,180자에
+# 건폐율 없음). 어느 주소인지 모르니 페이지 안의 .do 주소를 모아 차례로 재 본다.
+WEB_FIXED = ("/LSW/ordinInfoR.do", "/LSW/ordinLsInfoR.do", "/LSW/ordinInfoRP.do", "/LSW/ordinPrint.do")
+
+
+def web_candidates(seq: str, html: str) -> list[str]:
+    """틀 페이지 HTML 에서 본문을 실어 올 법한 .do 주소 — ordinSeq 를 채워 절대 주소로.
+    순서: 페이지에 있던 것(ordin·Info·Cntnts 가 이름에 든 것) → 고정 후보."""
+    seen: list[str] = []
+
+    def add(path: str, query: str = ""):
+        if not path.startswith("/"):
+            path = "/LSW/" + path
+        q = dict(re.findall(r"([\w]+)=([^&]*)", query))
+        q["ordinSeq"] = str(seq)
+        q.setdefault("chrClsCd", "010202")
+        url = WEB_HOST + path + "?" + "&".join(f"{k}={v}" for k, v in q.items() if not re.search(r"[<>{}'+]", v))
+        if url not in seen:
+            seen.append(url)
+
+    for m in re.finditer(r"""["'(=]\s*((?:https?://www\.law\.go\.kr)?/?[\w./-]*?/?[\w-]+\.do)(\?[^"'\s<>)]*)?""", html):
+        path = re.sub(r"^https?://www\.law\.go\.kr", "", m.group(1))
+        name = path.rsplit("/", 1)[-1]
+        if re.search(r"ordin|Info|Cntnts|cont|Jo", name) and not re.search(r"Search|List|Login|Popup|Ajax|Menu", name, re.I):
+            add(path, (m.group(2) or "").lstrip("?"))
+    for path in WEB_FIXED:
+        add(path)
+    return seen
+
+
+def web_scan(seq: str, html: str, limit: int = 8) -> list[dict]:
+    """후보를 차례로 받아 본다 — 어디에 조문(건폐율)이 있는지. 결과는 로그와 파일로."""
+    out = []
+    for i, url in enumerate(web_candidates(seq, html)[:limit]):
+        try:
+            resp = get_once(url, {"OC": VIA_RELAY}, timeout=40)
+            status, text = resp.status_code, resp.text
+        except Exception as e:                      # noqa: BLE001
+            status, text = 0, f"{type(e).__name__}: {str(e)[:120]}"
+        hit = "건폐율" in text
+        plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text))
+        out.append({"url": url, "status": status, "len": len(text), "has_gunpye": hit, "snippet": plain[:160]})
+        print(f"   후보 {i + 1}: {url.split('?')[0].rsplit('/', 1)[-1]} → HTTP {status} · {len(text):,}자 · 건폐율 {'있음' if hit else '없음'}")
+        if hit:
+            print("      " + plain[:200])
+        if text and status == 200:
+            RAW_DIR.mkdir(parents=True, exist_ok=True)
+            (RAW_DIR / f"probe-web-{seq}-{i + 1}.html").write_text(text, encoding="utf-8")
+        polite_sleep()
+    return out
 
 
 def _portal(url: str, params: dict) -> tuple[dict | list | None, str]:
@@ -299,9 +353,27 @@ def probe(query: str = "안성시 도시계획 조례") -> dict:
                      "keys": sorted(rows_p[0].keys()) if rows_p else []}
     print(f"포털 목록: {len(rows_p)}건 / 전체 {total_p}" + (f" — {why_p}" if why_p else ""))
     for r in rows_p[:5]:
-        print("  ", {k: str(v)[:50] for k, v in list(r.items())[:8]})
+        print("  ", {k: str(v)[:80] for k, v in r.items()})
     if rows_p:
         seq = _pick(rows_p[0], "자치법규일련번호", "일련번호", "ID")
+        link = _pick(rows_p[0], "상세링크", "링크")
+        # 포털 상세링크는 OC=test(공개 견본 계정)로 법제처 DRF 를 가리킨다 — 그 계정이면
+        # IP 등록 없이 열리는지, 러너에서 바로 재 본다.
+        for kind in ("HTML", "XML"):
+            try:
+                r = _direct(SERVICE, {"target": "ordin", "MST": seq, "type": kind}, oc="test")
+                plain = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", r.text))
+                hit = "건폐율" in r.text
+                out[f"drf_test_{kind}"] = {"status": r.status_code, "len": len(r.text), "has_gunpye": hit, "snippet": plain[:200]}
+                print(f"DRF OC=test {kind} (MST={seq}): HTTP {r.status_code} · {len(r.text):,}자 · 건폐율 {'있음' if hit else '없음'} · {plain[:120]}")
+                if hit:
+                    RAW_DIR.mkdir(parents=True, exist_ok=True)
+                    (RAW_DIR / f"probe-drf-{seq}.{kind.lower()}").write_text(r.text, encoding="utf-8")
+            except Exception as e:                  # noqa: BLE001
+                out[f"drf_test_{kind}"] = {"error": f"{type(e).__name__}: {str(e)[:120]}"}
+                print(f"DRF OC=test {kind} 실패: {out[f'drf_test_{kind}']['error']}")
+        if link:
+            print(f"상세링크: {link}")
         html, why_w = web_body(seq)
         text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
         out["web"] = {"seq": seq, "why": why_w, "len": len(html), "has_gunpye": "건폐율" in html,
@@ -311,6 +383,9 @@ def probe(query: str = "안성시 도시계획 조례") -> dict:
         if html:
             RAW_DIR.mkdir(parents=True, exist_ok=True)
             (RAW_DIR / f"probe-web-{seq}.html").write_text(html, encoding="utf-8")
+            dos = sorted(set(re.findall(r"[\w./-]+\.do(?:\?[^\"'\s<>)]*)?", html)))
+            print(f"   틀 페이지 안의 .do 주소 {len(dos)}개: " + " · ".join(d[:70] for d in dos[:40]))
+            out["web_scan"] = web_scan(seq, html)
     # 3) 우리 경로 — 법제처(중계기) → 거부되면 포털
     rows, total, why = search(query, display=5)
     out["route"] = "portal" if use_portal() else ("relay" if _oc() == VIA_RELAY else "direct")

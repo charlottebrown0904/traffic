@@ -58,6 +58,18 @@ obj = L._xml_obj(xml)
 check(len(L.articles(obj)) == 2 and L.relevant(obj)[0]["no"] == "58", "XML → dict → 조문 2개 · 관심 1개")
 
 print()
+print("2-2. 틀 페이지에서 본문 하위 주소를 찾는다")
+frame = ('<script>$("#c").load("/LSW/ordinInfoR.do?ordinSeq=2121099&chrClsCd=010202");'
+         ' url: "ordinJoCntntsP.do?ordinSeq=" + seq, a="/LSW/ordinSearchList.do?q=1"; b="/LSW/lsLoginP.do"</script>'
+         '<iframe src="https://www.law.go.kr/LSW/ordinInfoR.do?ordinSeq=2121099"></iframe>')
+cands = L.web_candidates("2121099", frame)
+check(cands[0] == "https://www.law.go.kr/LSW/ordinInfoR.do?ordinSeq=2121099&chrClsCd=010202",
+      "페이지에 있던 주소가 먼저 · ordinSeq 를 채운다")
+check(any("ordinJoCntntsP.do?ordinSeq=2121099" in c for c in cands), "상대 주소는 /LSW/ 아래로 · JS 이어붙임은 버린다")
+check(not any("Search" in c or "Login" in c for c in cands), "검색·로그인 주소는 뺀다")
+check(len(cands) == len(set(cands)) and all(f in "".join(cands) for f in L.WEB_FIXED), "중복 없음 · 고정 후보 포함")
+
+print()
 print("3. 중계기와 클라이언트가 짝이다")
 relay = (ROOT / "api" / "relay.js").read_text(encoding="utf-8")
 http = (ROOT / "src" / "redt" / "collect" / "http.py").read_text(encoding="utf-8")
