@@ -67,6 +67,8 @@
 .adm-kpi span { font-size: .78rem; color: var(--muted); }
 
 .adm-miss { color: var(--faint); font-style: normal; }
+/* 최소 표본을 못 넘은 칸. 없는 것(—)과 다르다 — 있지만 못 쓰는 것이다. */
+.adm-thin { color: var(--warn); font-style: normal; }
 
 @media (max-width: 34rem) {
   .adm-card > summary { grid-template-columns: 1.6rem 1fr; padding: .8rem .85rem; }

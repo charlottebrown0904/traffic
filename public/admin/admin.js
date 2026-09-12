@@ -91,6 +91,17 @@
     }).catch(function (e) { return { error: String(e && e.message || e) }; });
   }
 
+  /* 부족한 칸 집계 (0010). 원장 두 표는 그대로 잠겨 있고 집계만 나온다 —
+     appraisal_coverage() 안에서 is_admin() 을 다시 본다. */
+  function getCoverage() {
+    var sb = window.SB;
+    if (!sb) return Promise.resolve({ error: '로그인 연결이 없습니다' });
+    return sb.rpc('appraisal_coverage').then(function (res) {
+      if (res.error) return { error: res.error.message || '집계를 못 받았습니다' };
+      return res.data || {};
+    }).catch(function (e) { return { error: String(e && e.message || e) }; });
+  }
+
   /* ── 카드 ────────────────────────────────────────────────────
      [묶음, 제목, 간략 내용, 자세히(ctx → HTML)] */
   var CARDS = [
@@ -427,6 +438,84 @@
           + '그래서 중앙값이 1.00 으로 몰립니다 — 분포를 볼 때는 1 미만·1 초과 칸을 보십시오.</div>';
       }],
 
+    ['감정평가서', '부족한 칸 — 용도지역군 × 지목군 24칸 중 몇 칸이 서는가',
+      '그 밖의 요인은 이 24칸에서 옵니다. 세 건이 안 되는 칸은 값을 내지 않고 한 단계 물러납니다. 어느 칸이 비었는지가 곧 다음에 무엇을 구해야 하는지입니다.',
+      function (c) {
+        var v = c.cover || {};
+        if (v.error) return '<div class="adm-block">칸 집계를 못 받았습니다 — ' + E(v.error) + '</div>';
+        var grid = v.grid || [];
+        var ZG = ['관리', '녹지', '농림', '주거', '상업', '공업'];
+        var UG = ['임야', '전·답', '대', '공장·도로'];
+        var at = {};
+        grid.forEach(function (r) { at[r.zg + '|' + r.ug] = r; });
+        var cellTxt = function (r) {
+          if (!r) return '—';
+          var n = r.n || 0;
+          if (!n) return '<b class="adm-miss">0</b>';
+          return (r.ready ? '<b>' + N(n) + '</b>' : '<b class="adm-thin">' + N(n) + '</b>');
+        };
+        var rows = ZG.map(function (zg) {
+          return [E(zg)].concat(UG.map(function (ug) { return cellTxt(at[zg + '|' + ug]); }));
+        });
+        var zero = grid.filter(function (r) { return !r.n; });
+        var thin = grid.filter(function (r) { return r.n && !r.ready; });
+        var thinUse = (v.land_use || []).filter(function (r) { return r.n < 10 && r.v !== '(빈칸)'; });
+        var thinJimok = (v.jimok || []).filter(function (r) { return r.n < 5 && r.v !== '(빈칸)'; });
+        var sb = v.std_blank || {};
+        return kpi([
+          ['원장 건수', N(v.total)],
+          ['그 밖의 요인이 있는 건', N(v.with_other)],
+          ['쓸 수 있는 칸 (' + N(v.min_cell) + '건 이상)', N(v.cells_ready) + ' / 24'],
+          ['빈 칸', N(zero.length)],
+        ])
+          + '<h4>24칸 — 진한 숫자는 쓸 수 있는 칸, 주의색은 물러나는 칸, 0 은 빈 칸</h4>'
+          + table(['용도지역군 ＼ 지목군'].concat(UG), rows, { num: [1, 2, 3, 4] })
+          + '<h4>아예 없는 칸 ' + N(zero.length) + '개</h4>'
+          + (zero.length
+            ? '<p>' + zero.map(function (r) { return E(r.zg) + '×' + E(r.ug); }).join(' · ') + '</p>'
+            : '<p>없습니다.</p>')
+          + '<h4>있지만 ' + N(v.min_cell) + '건이 안 되는 칸 ' + N(thin.length) + '개</h4>'
+          + (thin.length
+            ? table(['용도지역군', '지목군', '건수', '더 필요한 건수'],
+                thin.map(function (r) {
+                  return [E(r.zg), E(r.ug), N(r.n), N(v.min_cell - r.n)];
+                }), { num: [2, 3] })
+            : '<p>없습니다.</p>')
+          + '<h4>지역 깊이 — 칸이 서도 대개 전국값으로 물러납니다</h4>'
+          + table(['용도지역군', '지목군', '전국', '시·도 칸', '시군구 칸'],
+            grid.filter(function (r) { return r.ready; })
+              .sort(function (a, b) { return b.n - a.n; })
+              .map(function (r) {
+                return [E(r.zg), E(r.ug), N(r.n), N(r.sido_ready), N(r.sgg_ready)];
+              }), { num: [2, 3, 4] })
+          + '<p>산출은 같은 시군구를 먼저 찾습니다. 그 칸이 ' + N(v.min_cell)
+          + '건을 넘는 곳의 개수가 오른쪽 두 열입니다 — 0 이면 그 조합은 항상 전국값입니다.</p>'
+          + '<h4>원문 이름으로 본 얇은 곳</h4>'
+          + '<p><b>용도지역 (10건 미만)</b> — '
+          + (thinUse.length ? thinUse.map(function (r) { return E(r.v) + ' ' + N(r.n); }).join(' · ') : '없습니다')
+          + '</p>'
+          + '<p><b>지목 (5건 미만)</b> — '
+          + (thinJimok.length ? thinJimok.map(function (r) { return E(r.v) + ' ' + N(r.n); }).join(' · ') : '없습니다')
+          + '</p>'
+          + '<h4>숫자보다 급한 것 — 표준지 칸이 빈 행</h4>'
+          + kpi([
+            ['표준지 지목이 빈 건', N(sb.jimok)],
+            ['그중 그 밖의 요인이 있는 건', N(sb.jimok_with_other)],
+            ['표준지 용도지역이 빈 건', N(sb.land_use)],
+            ['그 밖의 요인 자체가 빈 건', N(sb.no_other)],
+          ])
+          + '<div class="adm-note">그 밖의 요인은 <b>비교표준지</b> 기준 배율입니다. 표준지 지목이 비면 칸 열쇠가 '
+          + '대상 필지 지목으로 물러나므로, 대상이 임야·표준지가 전인 평가서가 임야 칸에 섞여 들어갑니다. '
+          + '1차 판독분을 다시 읽어 표준지 칸을 채우는 것이, 새 평가서를 그만큼 더 넣는 것보다 칸의 정확도를 더 올립니다.</div>'
+          + '<h4>시·도 분포</h4>'
+          + table(['시·도', '건수', '시군구 수'],
+            (v.by_sido || []).map(function (r) { return [E(r.sido), N(r.n), N(r.sgg)]; }), { num: [1, 2] })
+          + '<p>여기 없는 시·도는 한 건도 없는 곳입니다. 그 지역 필지는 시·도 단계를 건너뛰고 전국값으로 갑니다.</p>'
+          + '<div class="adm-note">칸 열쇠는 <code>appr_zone_group()</code> · <code>appr_use_group()</code> 한 곳에서 옵니다 '
+          + '(0010). <code>src/redt/valuation.py</code> 의 <code>zone_group</code> · <code>use_group</code> 과 같은 규칙이라, '
+          + '한쪽만 고치면 화면과 산출이 어긋납니다. 문서: <code>docs/appraisal-coverage.md</code></div>';
+      }],
+
     ['감정평가서', '보완 계획 — 다음에 무엇을 모아야 하나',
       '빈 칸과 얇은 칸을 메우는 순서입니다. 칸 하나에 최소 세 건, 쓸 만하려면 열 건이 목표입니다.',
       function (c) {
@@ -455,10 +544,13 @@
           + N(sgg.covered) + '건이 그 칸에 듭니다). 시·도 값으로 물러나는 건이 아직 많습니다. '
           + '같은 조건에서도 시·도를 바꾸면 값이 0.6~1.7배까지 달라지므로, 시군구 칸을 채우는 것이 정확도를 가장 크게 올립니다.</p>'
           + '<h4>5. 모아야 하는 것의 우선순위</h4>'
-          + '<ol><li>도시 대지(주거·상업) — 표본이 가장 얇습니다</li>'
-          + '<li>공장용지·창고용지 — 우리 기준 물건인데 건수가 적습니다</li>'
-          + '<li>경기·충청 밖 — 시·도 칸을 세우려면 시·도마다 3건 이상</li>'
-          + '<li>같은 시군구 안의 서로 다른 용도지역 — 시군구 칸을 세우는 데 직접 쓰입니다</li></ol>'
+          + '<p>순서는 위 <b>부족한 칸</b> 카드의 실측을 따릅니다 — 우리가 보는 땅(계획관리·생산관리·자연녹지 × 공장·창고)부터입니다.</p>'
+          + '<ol><li><b>자연녹지 × 공장용지·창고용지·잡종지</b> — 빈 칸인데 우리 주 타깃과 정면으로 겹칩니다</li>'
+          + '<li><b>계획관리 × 공장용지</b> — 칸은 서지만 수도권 한 시군구뿐입니다. 충남·충북·경북·경남 것</li>'
+          + '<li><b>공업지역(준공업·일반공업) 전 지목</b> — 공장 투자자가 가장 먼저 누르는 용도지역인데 사실상 없습니다</li>'
+          + '<li><b>생산관리</b> — 우리가 쓰는 세 용도지역 중 가장 얇습니다</li>'
+          + '<li>같은 시군구 안의 서로 다른 용도지역 — 시군구 칸을 세우는 데 직접 쓰입니다</li>'
+          + '<li>대전·세종·전남 — 한 건도 없어 시·도 단계를 건너뜁니다</li></ol>'
           + '<div class="adm-note">판독 규칙에 사람 이름·연락처를 적지 않게 못 박아 두었습니다. 원장 표에는 이름 칸이 아예 없고, '
           + '원본 PDF 는 저장소에 두지 않습니다(드라이브에만).</div>';
       }],
@@ -591,7 +683,9 @@
       getJSON('/app/data/zoning-limits.json'),
       getPremium('valuation.json'),
       getStats(),
+      getCoverage(),
     ]);
-    render({ meta: got[0], verdicts: got[1], zoning: got[2], val: got[3], stats: got[4], acc: acc });
+    render({ meta: got[0], verdicts: got[1], zoning: got[2], val: got[3], stats: got[4],
+             cover: got[5], acc: acc });
   })();
 })();
