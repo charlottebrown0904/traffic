@@ -1,0 +1,36 @@
+# 토지가격비준표를 기계가 받을 수 있는지 본다 (한국부동산원 열람 서비스).
+#
+# 사람이 화면에서 229 시군구를 하나씩 누르지 않으려면, 먼저 어떤 요청
+# 하나로 표가 나오는지 알아야 한다. 이 워크플로가 그것을 본다.
+name: 비준표 탐침
+
+on:
+  workflow_dispatch:
+    inputs:
+      sido:
+        description: "시도 코드 (기본 41 경기)"
+        required: false
+        default: "41"
+      sgg:
+        description: "시군구 코드 (기본 41550 안성시)"
+        required: false
+        default: "41550"
+      year:
+        description: "연도"
+        required: false
+        default: "2025"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          python scripts/reb_probe.py \
+            --sido "${{ inputs.sido }}" \
+            --sgg "${{ inputs.sgg }}" \
+            --year "${{ inputs.year }}"
