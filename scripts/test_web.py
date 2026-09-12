@@ -281,7 +281,7 @@ check('id="can"' in _land and "할 수 있는 것" in _land, "'할 수 있는 �
 check('id="only"' in _land, "'여기서만' 칸이 있다")
 
 _shots = re.findall(r'src="(/brand/shots/[^"]+)"', _land)
-check(len(_shots) == 6, f"캡쳐를 여섯 장 싣는다 — {len(_shots)}장")
+check(len(_shots) == 7, f"캡쳐를 일곱 장 싣는다 — {len(_shots)}장")
 _total = 0
 for _rel in _shots:
     _f = PUBLIC / _rel.lstrip("/")
@@ -289,7 +289,7 @@ for _rel in _shots:
     check(_ok, f"{_rel} 파일이 있다")
     if _ok:
         _total += _f.stat().st_size
-check(_total <= 500 * 1024, f"캡쳐 여섯 장이 500KB 안이다 — {_total // 1024}KB")
+check(_total <= 480 * 1024, f"캡쳐 일곱 장이 480KB 안이다 — {_total // 1024}KB")
 
 # 그림마다 alt 가 있어야 한다. 화면을 못 보는 사람에게 '무엇을 할 수
 # 있는가' 가 통째로 사라지면 이 칸은 절반만 있는 것이다.

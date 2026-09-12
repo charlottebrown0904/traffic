@@ -46,6 +46,12 @@ function chromiumPath() {
   return undefined;
 }
 
+/* **사람이 찍어 보낸 캡쳐는 덮어쓰지 않는다.** 이 상자는 타일 서버로 나갈
+   수 없어 배경 지도가 없는 그림밖에 못 만든다 — 배경이 살아 있는 그림이
+   이미 있으면 그쪽이 낫다. 여기 적힌 이름의 .webp 가 있으면 건너뛴다.
+   다시 찍고 싶으면 그 파일을 지우고 돌리면 된다. */
+const HUMAN = new Set(['map', 'region', 'cadastral']);
+
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'public', 'brand', 'shots');
 const PORT = 8311;
@@ -181,6 +187,10 @@ async function main() {
     page.on('pageerror', (e) => errs.push(String(e)));
 
     const shoot = async (name, target, note) => {
+      if (HUMAN.has(name) && fs.existsSync(path.join(OUT, `${name}.webp`))) {
+        console.log(`  · ${name}.webp — 사람이 찍은 것을 그대로 둡니다 (배경 지도)`);
+        return;
+      }
       const el = typeof target === 'string' ? await page.$(target) : target;
       if (!el) { console.log(`  ✗ ${name} — 찍을 것이 없습니다 (${target})`); return; }
       const file = path.join(OUT, `${name}.png`);

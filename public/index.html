@@ -118,6 +118,8 @@ ol.can-list p{font-size:14.5px;color:var(--muted);margin-bottom:12px}
 }
 .can-shot img{display:block;width:100%;height:auto}
 .can-shot.is-tall{max-width:360px}
+/* 사람이 찍어 보낸 전국 지도는 517px 이다. 늘리면 흐려지므로 제 크기까지만. */
+.can-shot.is-mid{max-width:520px}
 /* 산출표는 뒤쪽을 안 싣는다 (회원 화면의 몫). 그림 자체를 고치는 대신
    아래를 부드럽게 덮고 무엇이 더 있는지 적는다. */
 .can-shot.is-peek{position:relative}
@@ -294,9 +296,9 @@ section a{color:var(--accent);text-underline-offset:2px}
         <h3>전국을 한 화면에</h3>
         <p>고속도로 영업소 561곳과 그 주변 실거래가를 함께 놓고 봅니다.
            2006년부터 2025년까지, 시·도에서 리까지 축척을 따라 값이 갈립니다.</p>
-        <figure class="can-shot">
-          <img src="/brand/shots/map.webp" width="1100" height="797" loading="lazy"
-               alt="전국 지도에 고속도로 영업소 561곳이 점으로, 시·도별 평당가가 값 태그로 표시된 화면">
+        <figure class="can-shot is-mid">
+          <img src="/brand/shots/map.webp" width="517" height="602" loading="lazy"
+               alt="전국 지도 위에 시·도별 평당가 태그가 붙은 화면. 경기도 95.5만원/평, 대구 54.2만원/평처럼 시·도마다 값이 적혀 있다">
         </figure>
       </li>
 
@@ -323,8 +325,8 @@ section a{color:var(--accent);text-underline-offset:2px}
               있는지가 보입니다.</dd>
         </dl>
         <figure class="can-shot">
-          <img src="/brand/shots/region.webp" width="1100" height="797" loading="lazy"
-               alt="평택 주변을 확대한 지도. 읍·면·동과 리마다 이름·평당가 태그와 조회 인원 배지가 붙어 있다">
+          <img src="/brand/shots/region.webp" width="820" height="769" loading="lazy"
+               alt="이천 주변을 확대한 지도. 읍·면·동과 리마다 이름과 평당가 태그가 붙고, 몇 곳에는 조회 인원 배지가 달려 있다">
         </figure>
       </li>
 
@@ -352,9 +354,14 @@ section a{color:var(--accent);text-underline-offset:2px}
 
       <li>
         <h3>필지 한 곳을 여섯 축으로<span class="can-only">여기서만</span></h3>
-        <p>지도에서 땅을 누르면 도로·물류 교통·개발 여지·시장 동향·모양·지세·주변 이용을
+        <p>지적편집도를 깔면 필지 경계가 그대로 보입니다. 땅을 누르면
+           도로·물류 교통·개발 여지·시장 동향·모양·지세·주변 이용을
            <strong>또래 필지와 견줘</strong> 백분위로 보여 줍니다. 지목·용도지역·도로조건·형상·지세와
            그 시·군 조례의 건폐율·용적률 한도까지 한 카드에 있습니다.</p>
+        <figure class="can-shot">
+          <img src="/brand/shots/cadastral.webp" width="820" height="655" loading="lazy"
+               alt="지적편집도를 깐 지도. 필지 경계선이 촘촘히 보이고 그 위에 동별 평당가 태그가 떠 있다">
+        </figure>
         <figure class="can-shot is-tall">
           <img src="/brand/shots/parcel.webp" width="736" height="940" loading="lazy"
                alt="필지 카드. 여섯 축 레이더와 축별 백분위, 도로조건·형상·지세가 표로 정리돼 있다">
