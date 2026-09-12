@@ -687,12 +687,14 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 
 /* ── 홈으로 / 오프라인 안내 ── */
+/* 홈은 아이콘 하나 (2026-09-12 지적). 글자를 빼고 정사각 단추로. */
 .home-link{
-  display:inline-flex; align-items:center; gap:.35rem;
-  font-size:.82rem; font-weight:500; color:var(--muted); text-decoration:none;
-  padding:.35rem .7rem; border-radius:.4rem; border:1px solid var(--border-strong);
-  white-space:nowrap;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:2.1rem; height:2.1rem; flex:0 0 auto;
+  color:var(--muted); text-decoration:none;
+  border-radius:.45rem; border:1px solid var(--border-strong);
 }
+.home-link svg{display:block}
 .home-link:hover{background:var(--surface-2); color:var(--ink)}
 .home-link:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
 
@@ -791,9 +793,33 @@ body.picking .leaflet-container{cursor:crosshair}
     background:none; border:none; font-family:inherit; cursor:pointer;
   }
 
+  /* 필지 상세는 **지도 위로 올라오는 시트** (2026-09-12 지적).
+     예전에는 지도 아래에 붙어 있었다. 지도가 화면의 74%를 먹고 그 위에서
+     손가락을 대면 Leaflet 이 지도를 끌기 때문에, 아래에 있는 자세한 내용까지
+     내려갈 방법이 사실상 없었다 — 보고된 그대로다.
+
+     이제 화면 아래에 붙어 올라오고 **자기 안에서 스크롤**한다.
+     overscroll-behavior:contain 이 없으면 시트 끝에서 계속 밀 때 그 힘이
+     지도로 넘어가 지도가 움직인다. */
   .detail{
-    flex:1 1 auto; width:100%; overflow:visible;
-    border-left:none; border-top:1px solid var(--border);
+    position:fixed; left:0; right:0; bottom:0; z-index:600;
+    flex:none; width:100%;
+    max-height:82dvh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain;
+    padding:1.35rem .95rem 2.5rem;
+    background:var(--surface);
+    border:1px solid var(--border); border-bottom:0;
+    border-radius:16px 16px 0 0;
+    box-shadow:0 -10px 30px -14px rgba(0,0,0,.45);
+  }
+  /* 손잡이 — 아래에서 올라온 칸이라는 표시. 위에 붙어 따라 내려온다. */
+  .detail::before{
+    content:''; position:sticky; top:0; z-index:1; display:block;
+    width:2.75rem; height:.25rem; margin:-.55rem auto .7rem;
+    border-radius:999px; background:var(--border-strong);
+  }
+  .detail-close{
+    top:.45rem; right:.55rem; width:2.1rem; height:2.1rem; font-size:1.15rem;
   }
   .detail-empty{padding-top:.5rem; text-align:center}
 
@@ -1802,6 +1828,13 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .pcv-lock-msg a.pcv-cta { color: var(--on-accent); }
 .pcv-cta:hover { filter: brightness(1.08); }
 .pcv-note a { color: var(--accent); }
+/* 면책 — 미래 가치는 판단이라 책임의 경계를 분명히 적는다 (2026-09-12). */
+.pcv-legal {
+  margin: .6rem 0 0; padding: .55rem .7rem; border-radius: .4rem;
+  font-size: 11.5px; line-height: 1.6; color: var(--muted);
+  background: var(--warn-soft); border-left: 3px solid var(--warn);
+}
+.pcv-legal b { color: var(--ink); }
 .pcv-note { margin: .5rem 0 0; font-size: 11px; color: var(--muted); }
 
 /* 검색칸 너비는 좁은 화면에서 한 줄 전체다. 이 규칙이 #find-q 의 42vw

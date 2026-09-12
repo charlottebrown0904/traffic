@@ -40,16 +40,30 @@ const window = {{}}; globalThis.window = window;
 {(ROOT / 'public' / 'lib' / 'access.js').read_text(encoding='utf-8')}
 const cases = {json.dumps(cases)};
 const out = {{}};
-for (const [k, p] of Object.entries(cases)) {{ const a = window.accessOf(p); out[k] = {{ premium: a.premium, expired: a.expired, admin: a.admin, grade: a.grade }}; }}
+for (const [k, p] of Object.entries(cases)) {{ const a = window.accessOf(p); out[k] = {{ premium: a.premium, expired: a.expired, admin: a.admin, grade: a.grade, approved: a.approved }}; }}
 console.log(JSON.stringify(out));
 """
 res = subprocess.run(["node", "-e", js], capture_output=True, text=True)
 out = json.loads(res.stdout.strip() or "{}")
 check(out["admin"]["premium"] and out["A"]["premium"] and out["B"]["premium"] and out["B_live"]["premium"],
       "admin·A·B(기한 없음·기한 안) 은 프리미엄", res.stderr[:200])
-check(not out["B_expired"]["premium"] and out["B_expired"]["expired"], "B 기한 지나면 아니다 · expired 표시")
-check(not out["C"]["premium"] and not out["none"]["premium"] and out["none"]["grade"] == "C", "C 와 등급 없음은 아니다 (기본 C)")
+# 2026-09-12 방향 전환: 등급 장벽을 뺐다. 승인이 유일한 문턱이다 —
+# 호갱노노·밸류맵처럼 광고·매물로 가고, 사람을 모으는 것이 먼저라는 판단.
+# 등급 칸은 남겨 둔다(다시 잠글 수 있어야 하고 관리자 화면이 쓴다).
+check(out["C"]["premium"] and out["none"]["premium"] and out["none"]["grade"] == "C",
+      "승인되면 C(손님)·등급 없음도 열린다 (가입하면 전면 무료)")
+check(out["B_expired"]["premium"] and out["B_expired"]["expired"],
+      "B 기한이 지나도 열린다 — expired 는 표시로만 남는다")
 check(not out["A_pending"]["premium"], "승인 전이면 등급이 높아도 아니다")
+check(out["A_pending"]["approved"] is False and out["C"]["approved"] is True,
+      "accessOf 가 승인 여부를 함께 알려준다 (화면이 무슨 말을 할지 정한다)")
+sql9 = (ROOT / "supabase" / "migrations" / "0009_open_to_members.sql").read_text(encoding="utf-8")
+# 주석에는 되돌리는 법으로 옛 조건이 적혀 있다. 함수 본문만 본다.
+_body9 = sql9[sql9.index("create or replace function public.premium_ok"):]
+check("status = 'approved'" in _body9 and "grade" not in _body9,
+      "데이터베이스도 같다 — premium_ok() 가 승인만 본다 (0009)")
+check("public = false" not in sql9 and "storage.buckets" not in sql9,
+      "버킷은 여전히 비공개다 (0009 가 건드리지 않는다)")
 check(out["admin"]["admin"] and out["role_admin"]["admin"] and not out["A"]["admin"], "admin 판정은 grade 나 role 로")
 
 print()

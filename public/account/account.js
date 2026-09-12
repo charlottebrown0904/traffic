@@ -272,9 +272,13 @@
       " · 등급 <b>" + window.SBUtil.esc(acc.label) + "</b>" +
       (acc.until ? " (" + acc.until.toLocaleDateString("ko-KR") + "까지)" : "") +
       (acc.expired ? " · 기간 만료" : "") + "</div>" +
+      // 2026-09-12: 등급 장벽을 뺐다. 승인된 회원이면 전부 열린다.
       (ok && !acc.premium
-        ? '<div class="note block" style="margin-bottom:1rem">현재 가치·미래 가치는 VIP·회원 등급에게 열립니다. ' +
-          "가입·결제 안내는 준비 중이며, 그때까지는 관리자가 등급을 올려 드립니다.</div>" : "") +
+        ? '<div class="note block" style="margin-bottom:1rem">현재 가치·미래 가치가 지금 열려 있지 않습니다. ' +
+          "관리자에게 문의해 주세요.</div>" : "") +
+      (ok && acc.premium
+        ? '<div class="note ok" style="margin-bottom:1rem">현재 가치·미래 가치가 열려 있습니다. ' +
+          "등급과 무관하게 무료입니다.</div>" : "") +
       (ok ? "" :
         '<div class="note block" style="margin-bottom:1rem">' +
         (status === "rejected"

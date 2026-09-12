@@ -4938,20 +4938,42 @@ function premiumNotice(key, acc) {
       + '<p class="pcv-lock-msg"><a class="pcv-cta" href="/account?next=%2Fapp">무료 회원 가입</a></p>'
       + '<p class="pcv-lock-msg">구글·카카오 계정으로 가입하시면 됩니다.</p>';
   }
+  /* 2026-09-12 방향 전환으로 등급 문턱이 없어졌다. 로그인한 사람이 여기
+     오는 경우는 **아직 승인 전**이거나(가입 직후), 나중에 다시 잠갔을
+     때뿐이다. 그러니 '등급을 올려 달라' 가 아니라 승인을 말해야 한다. */
+  if (!acc.approved) {
+    return head
+      + `<p class="pcv-lock-msg">가입 승인을 기다리고 있습니다. 승인되면 ${s.label}가 바로 열립니다.</p>`
+      + '<p class="pcv-lock-msg">승인은 무료이고 등급을 따지지 않습니다 — '
+      + '<a href="/account">내 계정</a>에서 상태를 볼 수 있습니다.</p>';
+  }
   const why = acc.expired
     ? `이용 기간이 끝났습니다${acc.until ? ` (${acc.until.toLocaleDateString('ko-KR')}까지)` : ''}.`
-    : `${s.label}는 VIP·회원 등급에게 열립니다.`;
+    : `${s.label}는 지금 열려 있지 않습니다.`;
   return head
     + `<p class="pcv-lock-msg">${why} 지금 등급은 <b>${escapeHtml(acc.label)}</b> 입니다.</p>`
     + '<p class="pcv-lock-msg">등급은 관리자가 올려 드립니다 — '
     + '<a href="/account">내 계정</a>에서 문의해 주세요.</p>';
 }
 
+/* 미래 가치는 **판단**이다 (2026-09-12 회의). 현재 가치는 규칙이 정한
+ * 순서를 따라가는 계산이지만, 미래 가치는 '이 땅이 앞으로 오를 것인가' 를
+ * 우리가 판단해 내놓는 숫자다. 그 숫자를 보고 산 사람이 손해를 보면 책임을
+ * 묻는 일이 생긴다. 그래서 값을 내기 전에 면책을 붙여 둔다 — 값이 나온
+ * 뒤에 붙이면 앞말과 어긋난다. */
+const FUTURE_DISCLAIMER =
+  '<p class="pcv-legal"><b>미래 가치는 예측이 아니라 참고 지표입니다.</b> '
+  + '과거 실거래·교통량·개발 사건 자료로 만든 통계이며, 앞으로의 가격을 '
+  + '약속하거나 보장하지 않습니다. 투자 판단과 그 결과는 이용자 본인의 '
+  + '것이고, 저희는 그 결과에 책임지지 않습니다. 감정평가·투자자문이 '
+  + '아닙니다.</p>';
+
 function valuePanel(key) {
   const s = VALUE_SERVICES[key];
   if (!s) return '';
   return `<h4>${s.label}</h4>`
-    + '<p class="pcv-soon">곧 공개합니다.</p>';
+    + '<p class="pcv-soon">곧 공개합니다.</p>'
+    + (key === 'future' ? FUTURE_DISCLAIMER : '');
 }
 
 /* ─────────── 현재 가치 — 공시지가기준법 2판 (표준지 방식) ───────────

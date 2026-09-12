@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/lib/theme.css?v=20260912a">
 <script src="/lib/theme.js?v=20260912a"></script>
 <script src="/lib/adminnav.js?v=20260912a"></script>
-<link rel="stylesheet" href="/app/style.css?v=20260912d">
+<link rel="stylesheet" href="/app/style.css?v=20260912e">
 </head>
 <body>
 
@@ -27,8 +27,14 @@
 </div>
 
 <header class="topbar">
-  <a class="home-link" id="home-link" href="/" hidden>
-    <span aria-hidden="true">←</span> 홈으로
+  <!-- 홈은 글자 대신 아이콘 (2026-09-12 지적). 좁은 머리띠에서 '← 홈으로'
+       넉 자가 탭·검색칸을 밀어냈다. 뜻은 집 그림 하나로 충분하다. -->
+  <a class="home-link" id="home-link" href="/" hidden aria-label="홈으로" title="홈으로">
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+      <path d="M12 3.2 3.4 10.4v10.1h6.1v-5.6h5v5.6h6.1V10.4Z"
+            fill="none" stroke="currentColor" stroke-width="1.9"
+            stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
   </a>
   <div class="brand">
     <!-- 아이콘 (요구사항 2026-09-10 — 빈 사각형을 걷어냅니다).
@@ -705,7 +711,7 @@
 <script src="/lib/supabase-init.js?v=20260905a"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
-<script src="/lib/access.js?v=20260912c"></script>
-<script src="/app/gate.js?v=20260912e"></script>
+<script src="/lib/access.js?v=20260912d"></script>
+<script src="/app/gate.js?v=20260912f"></script>
 </body>
 </html>

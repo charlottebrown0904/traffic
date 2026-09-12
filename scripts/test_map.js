@@ -2627,6 +2627,54 @@ const FAKE_LEAFLET = () => {
           phone.max / phone.vh > 0.98,
           `지도 ${phone.max}px / 화면 ${phone.vh}px`
           + ` (${(phone.max / phone.vh * 100).toFixed(0)}%)`);
+    // 필지 상세가 **지도 위로 올라오는 시트**인가 (2026-09-12 지적).
+    // 예전에는 지도 아래에 붙어 있어서, 지도가 화면의 74%를 먹는 폰에서
+    // 자세한 내용까지 내려갈 방법이 사실상 없었다 (지도를 만지면 Leaflet 이
+    // 지도를 끈다).
+    const sheet = await page.evaluate(() => {
+      const box = document.getElementById('detail');
+      if (!box) return null;
+      // 아직 필지를 고르지 않은 자리다. 자리 모양만 재려고 잠깐 열고
+      // 내용을 길게 넣어 본다 (재고 나서 되돌린다).
+      const wasHidden = box.hidden;
+      const wasHtml = box.innerHTML;
+      box.hidden = false;
+      box.innerHTML = '<div style="height:2000px">재는 중</div>';
+      const cs = getComputedStyle(box);
+      const r = box.getBoundingClientRect();
+      const mapR = document.querySelector('.map-wrap').getBoundingClientRect();
+      const out = {
+        pos: cs.position, z: Number(cs.zIndex),
+        overflowY: cs.overflowY, overscroll: cs.overscrollBehaviorY,
+        bottom: Math.round(window.innerHeight - r.bottom),
+        overMap: r.top < mapR.bottom,          // 지도 위로 겹쳐 올라왔는가
+        scrolls: box.scrollHeight > box.clientHeight + 1,
+        maxH: Math.round(r.height), vh: window.innerHeight,
+      };
+      box.innerHTML = wasHtml;
+      box.hidden = wasHidden;
+      return out;
+    });
+    check('폰에서 필지 상세가 아래에 붙어 지도 위로 올라온다',
+          sheet && sheet.pos === 'fixed' && sheet.bottom === 0 && sheet.overMap
+          && sheet.z >= 500, JSON.stringify(sheet));
+    check('시트 안에서 스크롤되고 그 힘이 지도로 넘어가지 않는다',
+          sheet && sheet.overflowY === 'auto' && sheet.overscroll === 'contain'
+          && sheet.scrolls,
+          `${sheet && sheet.overflowY} · ${sheet && sheet.overscroll} · 스크롤=${sheet && sheet.scrolls}`);
+    check('시트가 화면을 다 덮지는 않는다 (지도가 보인다)',
+          sheet && sheet.maxH < sheet.vh * 0.9,
+          `시트 ${sheet && sheet.maxH}px / 화면 ${sheet && sheet.vh}px`);
+    // 홈은 글자 대신 아이콘 (2026-09-12 지적)
+    const home = await page.evaluate(() => {
+      const a = document.getElementById('home-link');
+      return a ? { svg: !!a.querySelector('svg'), txt: a.textContent.trim(),
+                   label: a.getAttribute('aria-label') } : null;
+    });
+    check('홈 단추는 글자 없이 아이콘이다',
+          home && home.svg && home.txt === '' && home.label === '홈으로',
+          JSON.stringify(home));
+
     // 재고 나면 되돌린다. 뒤 절들이 넓은 화면을 전제한다.
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.waitForTimeout(150);
@@ -3155,17 +3203,23 @@ const FAKE_LEAFLET = () => {
     check('관리자면 Admin 링크가 보인다', admShown === true, String(admShown));
     await page.evaluate(() => { window.ME.profile.grade = 'C'; });
     const pcC = await clickMap(37.304, 127.011);
-    check('C 등급은 단추가 잠긴다 (회원 전용 꼬리표)',
-          /pcv-lock/.test(pcC.html) && /<span class="pcv-tag pcv-lock">회원 전용<\/span>/.test(pcC.html),
-          (pcC.html.match(/pc-val-row[^>]*>[\s\S]{0,160}/) || ['없음'])[0]);
-    const lockBox = await page.evaluate(() => {
+    // 2026-09-12 방향 전환: 등급 장벽을 뺐다. 승인된 회원이면 등급이
+    // 무엇이든 열린다 — C(손님) 등급도 잠기지 않는다.
+    check('C 등급도 잠기지 않는다 (가입하면 전면 무료)',
+          !/pcv-lock/.test(pcC.html) && !/is-locked/.test(pcC.html),
+          (pcC.html.match(/pc-val-row[^>]*>[\s\S]{0,120}/) || ['없음'])[0]);
+    // 승인 전이면 잠긴다 — 그때는 등급이 아니라 승인을 말해야 한다.
+    await page.evaluate(() => { window.ME.profile.status = 'pending'; });
+    const pcP = await clickMap(37.304, 127.011);
+    const lockPend = await page.evaluate(() => {
       document.querySelector('.pc-val[data-val="now"]').click();
       return document.getElementById('pc-val-box').innerHTML;
     });
-    check('손님 등급이 누르면 산출 대신 안내가 뜬다',
-          /VIP·회원 등급에게 열립니다/.test(lockBox) && /href="\/account"/.test(lockBox)
-          && !/공시지가기준법/.test(lockBox), lockBox.slice(0, 160));
-    check('안내에 지금 등급을 이름으로 적는다 (손님)', /지금 등급은 <b>손님<\/b>/.test(lockBox));
+    check('승인 전에는 잠기고 승인을 기다리라고 말한다',
+          /pcv-lock/.test(pcP.html) && /가입 승인을 기다리고 있습니다/.test(lockPend)
+          && !/등급에게 열립니다/.test(lockPend), lockPend.slice(0, 160));
+    await page.evaluate(() => { window.ME.profile.status = 'approved'; });
+
     // 로그인 안 한 사람(손님)은 등급 안내가 아니라 **가입 권유**를 본다
     // (2026-09-12 지시). 등급을 올려 달라고 문의할 계정이 아직 없다.
     const guestBox = await page.evaluate(async () => {
@@ -3182,14 +3236,6 @@ const FAKE_LEAFLET = () => {
     check('로그인 안 한 사람에게는 가입을 권한다',
           /무료 회원 가입/.test(guestBox) && /href="\/account\?next=%2Fapp"/.test(guestBox)
           && !/지금 등급은/.test(guestBox), guestBox.slice(0, 200));
-    await page.evaluate(() => { window.ME.profile.grade = 'B'; window.ME.profile.grade_until = '2020-01-01'; });
-    const pcX = await clickMap(37.304, 127.011);
-    const lockX = await page.evaluate(() => {
-      document.querySelector('.pc-val[data-val="now"]').click();
-      return document.getElementById('pc-val-box').innerHTML;
-    });
-    check('B 인데 기간이 지나면 잠기고 그렇게 말한다',
-          /pcv-lock/.test(pcX.html) && /이용 기간이 끝났습니다/.test(lockX), lockX.slice(0, 120));
     await page.evaluate(() => { delete window.ME.profile.grade_until; window.ME.profile.grade = 'B'; });
     await clickMap(37.304, 127.011);
 

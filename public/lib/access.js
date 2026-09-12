@@ -21,15 +21,23 @@
     var p = profile || {};
     var grade = p.grade || 'C';
     var until = p.grade_until ? new Date(p.grade_until) : null;
+    /* 2026-09-12 방향 전환: **등급 장벽 없이 가입하면 전부 무료.**
+       호갱노노·밸류맵도 결국 광고와 매물로 먹고 삽니다. 개인에게 월 얼마를
+       받는 것보다 사람을 모으는 것이 먼저라는 판단입니다. 등급 칸(A·B·C)과
+       만료일은 그대로 둡니다 — 나중에 다시 잠글 수 있어야 하고, 관리자
+       화면이 그것으로 회원을 봅니다. 지금은 '승인되었는가' 만 봅니다. */
     var live = grade === 'admin' || grade === 'A'
       || (grade === 'B' && (!until || until.getTime() > Date.now()));
+    var open = p.status === 'approved';
     return {
       grade: grade,
       label: LABEL[grade] || grade,
+      status: p.status || '',
+      approved: open,               // 승인되었는가 (이것이 지금의 유일한 문턱)
       until: until,
       expired: grade === 'B' && !live,
       admin: grade === 'admin' || p.role === 'admin',
-      premium: p.status === 'approved' && live,
+      premium: open,                 // 승인된 회원이면 현재·미래 가치가 열린다
     };
   };
 })();
