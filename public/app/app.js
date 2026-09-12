@@ -4940,7 +4940,7 @@ function premiumNotice(key, acc) {
   }
   const why = acc.expired
     ? `이용 기간이 끝났습니다${acc.until ? ` (${acc.until.toLocaleDateString('ko-KR')}까지)` : ''}.`
-    : `${s.label}는 VIP·일반 등급에게 열립니다.`;
+    : `${s.label}는 VIP·회원 등급에게 열립니다.`;
   return head
     + `<p class="pcv-lock-msg">${why} 지금 등급은 <b>${escapeHtml(acc.label)}</b> 입니다.</p>`
     + '<p class="pcv-lock-msg">등급은 관리자가 올려 드립니다 — '
