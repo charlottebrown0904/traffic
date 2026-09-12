@@ -1972,6 +1972,80 @@ _adj_one = pn.hedonic_adjust(_one_empty)
 check(abs(_corr_with_car(_adj_one, "adj_ln_price")) < 0.05,
       "한 열만 비어도 나머지로 보정한다")
 
+print("\n39. R-ONE 응답 파서와 비준표 쪼개기")
+
+# 명세서는 출력 '항목' 만 적고 봉투를 적지 않았다. 그래서 파서를 한 모양에
+# 못박지 않고 훑는다 — 그 훑기가 세 모양 다 읽는지 본다.
+from redt.collect import reb as _reb                                    # noqa: E402
+
+_seoul = {"SttsApiTblData": [{"list_total_count": 2},
+                             {"RESULT": {"CODE": "INFO-000", "MESSAGE": "정상"}},
+                             {"row": [{"DTA_VAL": "1.23"}, {"DTA_VAL": "4.56"}]}]}
+check([r["DTA_VAL"] for r in _reb._rows(_seoul)] == ["1.23", "4.56"],
+      "서울 열린데이터 계열 봉투를 읽는다")
+check(_reb._result(_seoul)[0] == "000", "코드에서 세 자리를 뽑는다 (INFO-000)")
+
+_flat = {"response": {"header": {"RESULT": {"CODE": "200"}}, "body": {"row": []}}}
+check(_reb._result(_flat)[0] == "200", "다른 봉투에서도 코드를 찾는다")
+check(_reb._rows(_flat) == [], "행이 없으면 빈 목록이다 — 예외가 아니다")
+
+_one = {"SttsApiTbl": {"row": {"STATBL_ID": "A_2024_00007"}}}
+check(_reb._rows(_one) == [{"STATBL_ID": "A_2024_00007"}],
+      "한 건이 dict 로 오면 한 줄 목록으로 만든다")
+
+# 자료 없음(200)은 오류가 아니다. 코드에 그 구분이 남아 있는지 본다.
+check(_reb.EMPTY == "200" and _reb.BAD_KEY == "290",
+      "'자료 없음' 과 '키 틀림' 을 가른다")
+
+# 시점수정의 순서는 실무기준 ①용도지역 → ②지역 이다. 바뀌면 안 된다.
+check(_reb.TABLES["지가변동률_용도지역_월"] == "A_2024_00007",
+      "시점수정 ① 은 용도지역별 지가변동률이다")
+check(_reb.TABLES["지가변동률_지역_월"] == "A_2024_00903",
+      "시점수정 ② 는 지역별 지가변동률이다")
+check(len(set(_reb.TABLES.values())) == len(_reb.TABLES),
+      "통계표 ID 가 겹치지 않는다")
+
+# pSize 1,000 초과는 오류 336 이라 부르기 전에 막는다.
+try:
+    _reb.call(_reb.TBL, {}, size=1001)
+    _too_big = False
+except ValueError:
+    _too_big = True
+check(_too_big, "pSize 1,000 초과는 부르기 전에 막는다 (명세서 오류 336)")
+
+# 비준표 쪼개기 — 빈 줄로만 끊는다. '-' 만 든 줄도 본문이고, 열 라벨이
+# 숫자인 항목(토지면적)도 놓치지 않는다.
+import importlib.util as _ilu                                           # noqa: E402
+_spec = _ilu.spec_from_file_location(
+    "_bj", pathlib.Path(__file__).resolve().parents[0] / "parse_bijunpyo.py")
+_bj = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_bj)
+
+_sheet = [
+    ["지목", "전", "답", "대"],
+    ["전", "1.00", "1.00", "1.17"],
+    ["광", "-", "-", "-"],
+    ["대", "0.85", "0.85", "1.00"],
+    [],
+    ["토지면적", "3300", "16500"],
+    ["3300", "1.00", "0.98"],
+    ["16500", "1.02", "1.00"],
+]
+_bl = _bj.blocks(_sheet)
+check([b[0] for b in _bl] == ["지목", "토지면적"],
+      "빈 줄로만 끊는다 — 열 라벨이 숫자인 항목도 잡는다")
+check(len(_bl[0][2]) == 3, "값이 전부 '-' 인 줄도 본문이다 (지목표 광·염·학)")
+check(_bl[0][2][1][1] == [None, None, None], "'-' 는 값이 아니라 빈 칸이다")
+
+# 방향 — 행이 표준지, 열이 대상. 역수 대칭이 그 증거다.
+_road = [["도로접면", "광대한면", "맹지"],
+         ["광대한면", "1.00", "0.73"],
+         ["맹지", "1.37", "1.00"]]
+_rb = _bj.blocks(_road)[0]
+_cell = {(r[0], c): v for r in _rb[2] for c, v in zip(_rb[1], r[1])}
+check(_cell[("광대한면", "맹지")] < 1 < _cell[("맹지", "광대한면")],
+      "행=표준지 · 열=대상 — 맹지 표준지에서 광대한면으로 가면 값이 커진다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

@@ -41,7 +41,9 @@ class ApiError(RuntimeError):
 
 # 중계기가 키를 끼워 넣으므로, 이쪽에서 보낸 키 자리는 지우고 보낸다.
 # OC(법제처 아이디)는 여기 없다 — 중계기로 실어 보내야 포털이 법제처로 넘길 수 있다.
-_KEY_PARAMS = ("serviceKey", "key", "apiKey", "authKey", "accessKey")
+# 'Key' 는 대문자다 — R-ONE Open API 의 인증키 이름이다. 소문자 'key'
+# 와 다른 항목이라 둘 다 적어야 한다 (파이썬 dict 조회는 대소문자를 가린다).
+_KEY_PARAMS = ("serviceKey", "key", "Key", "apiKey", "authKey", "accessKey")
 
 
 def _via_relay(url: str, params: dict) -> tuple[str, dict, dict]:

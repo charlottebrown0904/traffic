@@ -1,0 +1,58 @@
+# 부동산통계정보(R-ONE) Open API — 지가변동률을 받는다.
+#
+# 시점수정의 원천이다 (감정평가 실무기준 [610-1.5.2.3.1]①). 요청제한횟수가
+# 없어서(명세서 기재) 한 번에 전 기간을 받아도 된다.
+#
+# 인증키는 중계기(Vercel 환경변수 REB_KEY)에만 있다. 러너는 키를 모른다.
+name: 지가변동률 수집
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "probe = 표가 있나 확인만 · pull = 받아서 저장"
+        type: choice
+        options: ["probe", "pull"]
+        default: "probe"
+      table:
+        description: "pull 일 때 받을 표 이름 (scripts/reb_stats.py 의 이름)"
+        required: false
+        default: "지가변동률_용도지역_월"
+      from:
+        description: "시작 시점 YYYYMM"
+        required: false
+        default: "201001"
+      to:
+        description: "종료 시점 YYYYMM"
+        required: false
+        default: "202608"
+
+jobs:
+  reb:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 확인
+        run: PYTHONPATH=src python scripts/reb_stats.py --probe
+      - name: 받기
+        if: inputs.mode == 'pull'
+        run: |
+          PYTHONPATH=src python scripts/reb_stats.py \
+            --pull "${{ inputs.table }}" \
+            --from "${{ inputs.from }}" --to "${{ inputs.to }}"
+      - name: 결과 올리기
+        if: inputs.mode == 'pull'
+        uses: actions/upload-artifact@v4
+        with:
+          name: reb-stats
+          path: data/raw/reb/
+          if-no-files-found: warn

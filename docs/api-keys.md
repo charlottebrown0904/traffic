@@ -284,3 +284,28 @@ python -m redt.cli regions --verify
 
 '키가 없다' 와 '자료가 없다' 를 헷갈릴 일이 없도록 500 으로 분명히
 말합니다.
+
+---
+
+## 부동산통계정보(R-ONE) `REB_KEY` — 지가변동률 (2026-09-12 추가)
+
+시점수정의 원천입니다. 신청은 끝나 있고(`www.reb.or.kr/r-one/portal/openapi`),
+남은 것은 **키를 Vercel 에 넣는 일 한 가지**입니다.
+
+    Vercel → 이 프로젝트 → Settings → Environment Variables
+    이름:  REB_KEY
+    값:    R-ONE 에서 발급받은 인증키
+    적용:  Production
+
+넣은 뒤 **재배포**해야 반영됩니다. 다른 키와 마찬가지로 **채팅에 붙여넣지
+마십시오** — 중계기만 알면 됩니다.
+
+파라미터 이름이 대문자 `Key` 인 것이 이 API 의 특징입니다. 소문자 `key`
+(브이월드·도로공사)와 다른 항목이라 양쪽을 다 지우고 다시 넣습니다
+(`api/relay.js` 의 `STRIP`, `src/redt/collect/http.py` 의 `_KEY_PARAMS`).
+
+`www.reb.or.kr` 은 **키 없는 공개 화면 읽기에도** 쓰이므로(비준표 탐침),
+이 호스트만 `optional: true` 입니다. `REB_KEY` 가 없으면 500 으로 막지
+않고 키 없이 통과시킵니다 — 화면 탐침이 키를 기다리지 않게 하려는 것입니다.
+
+쓸 수 있는 통계표와 호출 모양은 `docs/reb-openapi.md` 에 있습니다.

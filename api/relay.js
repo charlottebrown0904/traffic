@@ -45,7 +45,14 @@ const ALLOW = {
   "sct.reb.or.kr":   {},
   // 부동산통계정보시스템(R-ONE). 지가변동률의 원천이다. 포털
   // (data.go.kr 15134761) 이 막히면 이쪽 Open API 를 본다.
-  "www.reb.or.kr":   {},
+  //
+  // Open API 의 인증키 파라미터 이름은 대문자 `Key` 다 (명세서). 키는
+  // 여기에만 두므로 REB_KEY 를 끼워 넣는다. optional 로 둔 이유는 이
+  // 호스트가 **키 없는 공개 페이지 읽기에도** 쓰이기 때문이다
+  // (scripts/reb_probe.py 가 포털 화면을 훑는다). env 가 비어 있으면
+  // 500 으로 막지 않고 그대로 통과시킨다 — 그러면 키를 받기 전에도
+  // 화면 탐침은 계속 된다.
+  "www.reb.or.kr":   { param: "Key", env: "REB_KEY", optional: true },
   // 경매·공매 원천 확인용. 둘 다 키가 없는 공개 페이지라 통과만 시킨다.
   // 러너는 미국이고 두 곳 다 해외 IP 에서 응답이 없어(1차 탐침에서 전부
   // ConnectTimeout) 서울을 거치지 않으면 열려 있는지조차 알 수 없다.
@@ -75,7 +82,7 @@ const DEFAULT_REFERER = "https://toji.fyi/";
 
 // OC 는 지우지 않는다 — 포털(apis.data.go.kr)이 법제처로 넘길 때 OC 를 같이 요구할 수
 // 있고, law.go.kr 은 rule.param 이 OC 라 set() 이 덮어쓴다.
-const STRIP = ["serviceKey", "key", "apiKey", "authKey", "accessKey"];
+const STRIP = ["serviceKey", "key", "Key", "apiKey", "authKey", "accessKey"];
 const TIMEOUT_MS = 25_000;
 
 function deny(res, code, message) {
@@ -135,11 +142,18 @@ module.exports = async function handler(req, res) {
   let secret = null;
   if (rule.env) {
     secret = process.env[rule.env];
-    if (!secret) return deny(res, 500, `${rule.env} 이 설정되지 않았습니다`);
+    // optional: 키가 없으면 통과 전용 호스트처럼 다룬다. 키 없이도 읽히는
+    // 공개 페이지가 같은 호스트에 있을 때만 쓴다.
+    if (!secret && !rule.optional) {
+      return deny(res, 500, `${rule.env} 이 설정되지 않았습니다`);
+    }
     // 호출 측이 실수로 키 비슷한 것을 넣어 보냈어도 우리 것으로 덮어쓴다.
+    // 자리표(__via_relay__)는 키가 없을 때도 반드시 지운다 — 그대로
+    // 상류에 닿으면 '인증키가 유효하지 않다(290)' 가 되어, 키가 없다는
+    // 사실이 키가 틀렸다는 오류로 둔갑한다.
     const given = target.searchParams.get(rule.param);
     for (const name of STRIP) target.searchParams.delete(name);
-    if (!(rule.keepClient && given && given !== "__via_relay__")) {
+    if (secret && !(rule.keepClient && given && given !== "__via_relay__")) {
       target.searchParams.set(rule.param, secret);
     }
   }
