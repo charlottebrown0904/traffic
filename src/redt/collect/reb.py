@@ -25,7 +25,8 @@ from __future__ import annotations
 
 import re
 
-from .http import ApiError, get_json
+from ..config import VIA_RELAY, keys
+from .http import ApiError, get, get_json
 
 BASE = "https://www.reb.or.kr/r-one/openapi"
 TBL = f"{BASE}/SttsApiTbl"
@@ -117,13 +118,34 @@ def _rows(payload) -> list[dict]:
     return []
 
 
-def call(url: str, params: dict, page: int = 1, size: int = 1000) -> tuple[list[dict], str, str]:
-    """한 페이지를 부른다. (행, 코드, 메시지)."""
+def _query(params: dict, page: int = 1, size: int = 1000) -> dict:
+    """기본인자를 채운다.
+
+    `Key` 자리가 **두 갈래를 가른다.**
+
+      · `REB_KEY` 가 이 프로세스에 있으면(러너·국내 PC) 진짜 키가 들어가고,
+        `http._should_relay` 가 '키가 있으니 돌아갈 필요 없다' 로 판단해
+        **직접** 부른다 — Vercel 함수 호출 0회.
+      · 없으면 자리표가 들어가고 중계기가 자기 `REB_KEY` 로 바꿔 끼운다.
+
+    그래서 키를 어디에 두느냐가 곧 어느 길로 가느냐이고, 코드는 하나다.
+    """
     if size > 1000:
         # 명세서 오류 336. 1,000 을 넘겨 부르면 아무것도 오지 않는다.
         raise ValueError("pSize 는 1,000 을 넘을 수 없습니다 (명세서 오류 336)")
-    q = {"Key": "__via_relay__", "Type": "json", "pIndex": page, "pSize": size}
+    q = {"Key": keys().reb or VIA_RELAY, "Type": "json", "pIndex": page, "pSize": size}
     q.update({k: v for k, v in params.items() if v not in (None, "")})
+    return q
+
+
+def get_raw(url: str, params: dict, size: int = 5):
+    """응답 객체를 그대로 돌려준다 — 바이트 수를 재거나 원문을 볼 때."""
+    return get(url, _query(params, size=size))
+
+
+def call(url: str, params: dict, page: int = 1, size: int = 1000) -> tuple[list[dict], str, str]:
+    """한 페이지를 부른다. (행, 코드, 메시지)."""
+    q = _query(params, page=page, size=size)
     payload = get_json(url, q)
     code, msg = _result(payload)
     if code == BAD_KEY:
@@ -132,7 +154,12 @@ def call(url: str, params: dict, page: int = 1, size: int = 1000) -> tuple[list[
 
 
 def pages(url: str, params: dict, size: int = 1000, limit: int = 200):
-    """끝까지 넘긴다. 한 페이지가 size 보다 적게 오면 마지막 장이다."""
+    """끝까지 넘긴다. 한 페이지가 size 보다 적게 오면 마지막 장이다.
+
+    `limit` 은 안전장치다. 중계기를 타는 경우 한 페이지가 곧 **Vercel 함수
+    호출 한 번 + 전송량**이라, 조건을 잘못 줘서 수백 장을 넘기는 일이
+    한도에 바로 닿는다 (docs/reb-openapi.md §6).
+    """
     for page in range(1, limit + 1):
         rows, code, msg = call(url, params, page=page, size=size)
         if code == EMPTY or not rows:
@@ -140,7 +167,8 @@ def pages(url: str, params: dict, size: int = 1000, limit: int = 200):
         yield from rows
         if len(rows) < size:
             return
-    raise ApiError(f"{limit} 페이지를 넘겼습니다 — 조건을 좁히세요")
+    raise ApiError(f"{limit} 페이지에서 멈췄습니다 — 기간을 끊어 받으세요 "
+                   f"(한 장이 곧 함수 호출 한 번입니다)")
 
 
 def tables(statbl_id: str | None = None) -> list[dict]:
@@ -170,14 +198,15 @@ def cycle_of(statbl_id: str) -> str:
 
 def data(statbl_id: str, cycle: str | None = None, *, start: str | None = None,
          end: str | None = None, itm_id: str | None = None,
-         cls_id: str | None = None, grp_id: str | None = None) -> list[dict]:
+         cls_id: str | None = None, grp_id: str | None = None,
+         max_pages: int = 200) -> list[dict]:
     """자료 조회. 시점은 YYYYMM(월) · YYYY(연) 형태다."""
     cycle = cycle or cycle_of(statbl_id)
     return list(pages(DATA, {
         "STATBL_ID": statbl_id, "DTACYCLE_CD": cycle,
         "START_WRTTIME": start, "END_WRTTIME": end,
         "ITM_ID": itm_id, "CLS_ID": cls_id, "GRP_ID": grp_id,
-    }))
+    }, limit=max_pages))
 
 
 def price_change(start: str, end: str, *, by: str = "용도지역") -> list[dict]:

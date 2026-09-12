@@ -44,6 +44,10 @@ class Keys:
     data_go_kr: str = os.getenv("DATA_GO_KR_KEY", "")
     ex: str = os.getenv("EX_API_KEY", "")
     vworld: str = os.getenv("VWORLD_KEY", "")
+    # R-ONE(부동산통계정보). **여기 있으면 직접 부르고, 없으면 중계기로 간다.**
+    # www.reb.or.kr 이 해외 IP 에 응답하는 곳이면 직접 부르는 쪽이 Vercel
+    # 함수 호출과 전송량을 아낀다 (docs/reb-openapi.md §6).
+    reb: str = os.getenv("REB_KEY", "")
 
     def require(self, name: str) -> str:
         value = getattr(self, name)

@@ -10,10 +10,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe = 표가 있나 확인만 · pull = 받아서 저장"
+        description: "reach = 직접/중계기 두 길 재기(키 없어도 됨) · probe = 표 확인 · pull = 받아서 저장"
         type: choice
-        options: ["probe", "pull"]
-        default: "probe"
+        options: ["reach", "probe", "pull"]
+        default: "reach"
       table:
         description: "pull 일 때 받을 표 이름 (scripts/reb_stats.py 의 이름)"
         required: false
@@ -26,6 +26,10 @@ on:
         description: "종료 시점 YYYYMM"
         required: false
         default: "202608"
+      max_pages:
+        description: "안전장치 — 중계기를 타면 한 장이 Vercel 함수 호출 한 번"
+        required: false
+        default: "40"
 
 jobs:
   reb:
@@ -34,6 +38,10 @@ jobs:
     env:
       REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
       REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+      # **있으면 러너가 직접 부르고, 없으면 중계기로 갑니다.**
+      # 직접 부르기가 되는 것이 확인되면(mode: reach) 이 시크릿을 넣는 쪽이
+      # Vercel 함수 호출·전송량을 0 으로 만듭니다. 없어도 동작합니다.
+      REB_KEY: ${{ secrets.REB_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,14 +49,19 @@ jobs:
           python-version: "3.11"
           cache: pip
       - run: pip install -r requirements.txt
-      - name: 확인
+      - name: 두 길 재기
+        if: inputs.mode == 'reach'
+        run: PYTHONPATH=src python scripts/reb_stats.py --reach
+      - name: 표 확인
+        if: inputs.mode != 'reach'
         run: PYTHONPATH=src python scripts/reb_stats.py --probe
       - name: 받기
         if: inputs.mode == 'pull'
         run: |
           PYTHONPATH=src python scripts/reb_stats.py \
             --pull "${{ inputs.table }}" \
-            --from "${{ inputs.from }}" --to "${{ inputs.to }}"
+            --from "${{ inputs.from }}" --to "${{ inputs.to }}" \
+            --max-pages "${{ inputs.max_pages }}"
       - name: 결과 올리기
         if: inputs.mode == 'pull'
         uses: actions/upload-artifact@v4
