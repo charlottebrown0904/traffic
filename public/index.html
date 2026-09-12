@@ -67,26 +67,6 @@ h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin-bottom:10px}
 }
 .hero-hint{font-size:13px;color:#e6d5c4;margin:14px 0 0}
 
-/* ── 무엇을 보여주나 ── */
-ul.what{list-style:none;display:grid;gap:14px}
-ul.what li{
-  padding-left:26px;position:relative;font-size:16px;font-weight:700
-}
-ul.what li::before{
-  content:"";position:absolute;left:2px;top:9px;
-  width:10px;height:10px;border-radius:3px;background:var(--brand-warm)
-}
-ul.what li span{display:block;font-weight:400;font-size:14.5px;color:var(--muted);margin-top:3px}
-
-/* ── 원천 ── */
-.src{
-  background:var(--surface-2);border-radius:var(--radius);
-  padding:18px 20px;font-size:14.5px;color:var(--muted)
-}
-.src dl{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;margin:0}
-.src dt{font-weight:800;color:var(--ink);white-space:nowrap}
-.src dd{margin:0}
-
 .tool-link{
   display:flex;align-items:center;justify-content:center;gap:8px;
   margin-top:22px;
@@ -95,6 +75,57 @@ ul.what li span{display:block;font-weight:400;font-size:14.5px;color:var(--muted
 }
 .tool-note{font-size:13px;color:var(--muted);text-align:center;margin-top:10px}
 .foot-theme{margin-top:14px}
+
+/* ── 할 수 있는 것 (실제 화면 캡쳐) ── */
+ol.can-list{list-style:none;display:grid;gap:34px;counter-reset:c}
+ol.can-list > li{counter-increment:c}
+ol.can-list h3{
+  font-size:17px;font-weight:800;line-height:1.4;margin-bottom:6px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px
+}
+ol.can-list h3::before{
+  content:counter(c);flex:none;
+  width:22px;height:22px;border-radius:7px;
+  background:var(--accent-soft);color:var(--accent);
+  font-size:12.5px;font-weight:800;text-align:center;line-height:22px
+}
+.can-only{
+  font-size:11px;font-weight:800;letter-spacing:.02em;
+  color:var(--on-accent);background:var(--accent);
+  padding:2px 8px;border-radius:999px
+}
+ol.can-list p{font-size:14.5px;color:var(--muted);margin-bottom:12px}
+.can-note{font-size:12.5px;color:var(--faint);margin-top:10px}
+
+/* 캡쳐. 화면 밖으로 나가지 않게 폭을 100% 로 두고, 세로로 긴 것(필지
+   카드·산출표)만 뚜껑을 씌워 본문 너비를 다 먹지 않게 한다. */
+.can-shot{
+  margin:0;border:1px solid var(--border);border-radius:var(--radius);
+  overflow:hidden;background:var(--surface);
+  box-shadow:0 10px 24px -18px var(--shadow)
+}
+.can-shot img{display:block;width:100%;height:auto}
+.can-shot.is-tall{max-width:360px}
+/* 산출표는 뒤쪽을 안 싣는다 (회원 화면의 몫). 그림 자체를 고치는 대신
+   아래를 부드럽게 덮고 무엇이 더 있는지 적는다. */
+.can-shot.is-peek{position:relative}
+.can-shot.is-peek img{mask-image:linear-gradient(180deg,#000 74%,transparent 100%);
+  -webkit-mask-image:linear-gradient(180deg,#000 74%,transparent 100%)}
+.can-shot.is-peek figcaption{
+  position:absolute;left:0;right:0;bottom:0;
+  padding:10px 12px;font-size:12px;font-weight:700;color:var(--accent);
+  text-align:center;background:linear-gradient(180deg,transparent,var(--surface) 55%)
+}
+
+/* ── 여기서만 ── */
+ul.only-list{list-style:none;display:grid;gap:16px}
+ul.only-list li{padding-left:26px;position:relative}
+ul.only-list li::before{
+  content:"";position:absolute;left:2px;top:9px;
+  width:10px;height:10px;border-radius:3px;background:var(--accent)
+}
+ul.only-list b{display:block;font-size:16px;font-weight:800}
+ul.only-list span{display:block;font-size:14.5px;color:var(--muted);margin-top:3px}
 
 /* ── 왜 교통량인가 ──
    계열 두 색은 dataviz 검산기를 통과한 값이다 (밝은 바탕 #FAF7F3 /
@@ -232,44 +263,110 @@ footer a{color:var(--muted)}
   </div>
 </section>
 
-<section>
+<!-- 할 수 있는 것 — 실제 화면 캡쳐 (지시 2026-09-12).
+     그림은 scripts/build_shots.js 가 찍고 scripts/pack_shots.py 가 다듬는다.
+     손으로 갈아 끼우지 말고 `node scripts/build_shots.js` 를 돌리면 된다.
+     예전에 있던 '무엇을 보여주나'·'자료' 두 칸을 이것이 대신한다 —
+     자료 출처는 바닥글로 내렸다 (공공데이터 출처표시). -->
+<section id="can">
   <div class="wrap">
-    <div class="label">무엇을 보여주나</div>
-    <h2>흩어져 있는 공공데이터를<br>한 화면에 겹쳐 놓습니다</h2>
-    <ul class="what">
-      <li>고속도로 영업소 교통량
-        <span>전국 영업소의 연도별 통행량. 차종(승용·화물)을 나눠 봅니다.</span></li>
-      <li>반경 안의 토지·공장 실거래
-        <span>영업소에서 1·3·5km 안에서 실제로 거래된 값과 면적.</span></li>
-      <li>용도지역과 필지 경계
-        <span>지적편집도를 배경으로 깔고, 누르면 그 땅의 용도지역을 알려줍니다.</span></li>
-      <li>시군구 인구
-        <span>2003년부터 해마다. 사람이 늘고 있는 곳인지 함께 봅니다.</span></li>
-    </ul>
-    <p class="soft" style="margin-top:18px">
-      따로 보면 각각 다른 사이트에서 찾아야 하는 것들입니다.
-      겹쳐 놓아야 “이 IC 주변이 어떤 자리인가”가 눈에 들어옵니다.
-    </p>
+    <div class="label">할 수 있는 것</div>
+    <h2>가입하면 이 화면을<br>그대로 쓰실 수 있습니다</h2>
+    <p class="soft" style="margin-bottom:22px">아래는 모두 <strong>실제 화면</strong>입니다.</p>
+
+    <ol class="can-list">
+      <li>
+        <h3>전국을 한 화면에</h3>
+        <p>고속도로 영업소 561곳과 그 주변 실거래가를 함께 놓고 봅니다.
+           2006년부터 2025년까지, 시·도에서 리까지 축척을 따라 값이 갈립니다.</p>
+        <figure class="can-shot">
+          <img src="/brand/shots/map.webp" width="1100" height="797" loading="lazy"
+               alt="전국 지도에 고속도로 영업소 561곳이 점으로, 시·도별 평당가가 값 태그로 표시된 화면">
+        </figure>
+      </li>
+
+      <li>
+        <h3>읍·면·동, 리까지 들어간 평당가</h3>
+        <p>시·군에서 멈추지 않습니다. 지도를 확대하면 읍·면·동과 리 단위로 평당
+           얼마에 거래됐는지가 보입니다. <strong>거래가 다섯 건이 안 되는 곳은 값을 적지
+           않고 건수만 적습니다</strong> — 몇 건으로 만든 중앙값은 추세가 아닙니다.
+           지금 그 지역을 몇 명이 보고 있는지도 함께 나옵니다.</p>
+        <figure class="can-shot">
+          <img src="/brand/shots/region.webp" width="1100" height="797" loading="lazy"
+               alt="평택 주변을 확대한 지도. 읍·면·동과 리마다 평당가 태그와 조회 인원 배지가 붙어 있다">
+        </figure>
+      </li>
+
+      <li>
+        <h3>용도지역별로 갈라 본 실거래가 추이<span class="can-only">여기서만</span></h3>
+        <p>계획관리·생산관리·자연녹지를 <strong>따로</strong> 그립니다. 같은 면에서도
+           용도지역이 다르면 다른 시장입니다. 화물 통행량과 한 그래프에 올려
+           같이 움직였는지 봅니다 — 단위가 다르니 기준연도를 100으로 둔 지수입니다.</p>
+        <figure class="can-shot">
+          <img src="/brand/shots/trend.webp" width="1100" height="581" loading="lazy"
+               alt="한 영업소의 화물 통행량과 계획관리·생산관리지역 실거래가를 지수로 겹쳐 그린 꺾은선 그래프">
+        </figure>
+      </li>
+
+      <li>
+        <h3>IC 통행량을 차종별로<span class="can-only">여기서만</span></h3>
+        <p>1종 승용부터 5종 특수화물까지 나눠 봅니다. <strong>화물(2·3·4·5종)만 따로</strong>
+           보는 것이 요점입니다 — 공장·물류 수요를 가장 직접 반영합니다. 연도를 바꾸면
+           그해 순위로, 전년 대비 증감과 차종 비중도 같이 나옵니다.</p>
+        <figure class="can-shot">
+          <img src="/brand/shots/rank.webp" width="1100" height="708" loading="lazy"
+               alt="IC 교통량 순위 표. 연도와 차종(화물 2·3·4·5종)을 골라 영업소별 일평균 통행량과 전년 대비 증감을 보여 준다">
+        </figure>
+      </li>
+
+      <li>
+        <h3>필지 한 곳을 여섯 축으로<span class="can-only">여기서만</span></h3>
+        <p>지도에서 땅을 누르면 도로·물류 교통·개발 여지·시장 동향·모양·지세·주변 이용을
+           <strong>또래 필지와 견줘</strong> 백분위로 보여 줍니다. 지목·용도지역·도로조건·형상·지세와
+           그 시·군 조례의 건폐율·용적률 한도까지 한 카드에 있습니다.</p>
+        <figure class="can-shot is-tall">
+          <img src="/brand/shots/parcel.webp" width="736" height="940" loading="lazy"
+               alt="필지 카드. 여섯 축 레이더와 축별 백분위, 도로조건·형상·지세가 표로 정리돼 있다">
+        </figure>
+        <p class="can-note">예시 자료로 띄운 화면입니다.</p>
+      </li>
+
+      <li>
+        <h3>현재 가치 — 공시지가기준법 다섯 마디<span class="can-only">회원 전용</span></h3>
+        <p>감정평가에 관한 규칙이 정한 순서를 그대로 따라갑니다. 비교표준지를 고르고,
+           시점수정·지역요인·개별요인·그 밖의 요인을 차례로 곱해 단가를 냅니다.
+           고른 이유와 각 마디의 값을 <strong>전부 적어</strong> 보여 줍니다.</p>
+        <figure class="can-shot is-tall is-peek">
+          <img src="/brand/shots/value.webp" width="666" height="826" loading="lazy"
+               alt="현재 가치 산출표. 기준시점, 대상 토지, 비교표준지 선정 이유, 시점수정, 지역요인 비교가 차례로 적혀 있다">
+          <figcaption>아래로 개별요인 격차율 · 그 밖의 요인 · 결정단가 · 평가액까지</figcaption>
+        </figure>
+        <p class="can-note">예시 자료로 띄운 화면입니다.
+           <strong>감정평가가 아니며, 담보·소송·과세·보상 목적으로 쓸 수 없습니다.</strong></p>
+      </li>
+    </ol>
   </div>
 </section>
 
-<section>
+<section id="only">
   <div class="wrap">
-    <div class="label">자료</div>
-    <h2>전부 공개된 자료입니다</h2>
-    <div class="src">
-      <dl>
-        <dt>실거래가</dt><dd>국토교통부 실거래가 공개시스템 (토지·공장)</dd>
-        <dt>교통량</dt><dd>한국도로공사 영업소 간 통행량 (TCS)</dd>
-        <dt>용도지역</dt><dd>국토교통부 브이월드 (지적편집도·연속지적도)</dd>
-        <dt>인구</dt><dd>통계청 KOSIS 행정구역별 주민등록인구</dd>
-        <dt>개발사업</dt><dd>전국도시개발사업정보 (지정일·위치)</dd>
-      </dl>
-    </div>
-    <p class="soft" style="margin-top:16px">
-      값을 지어내지 않습니다. 자료가 없는 자리는 채우지 않고 비워 두고,
-      화면에도 없다고 적습니다 — 통행량이 공개되지 않은 민자 영업소가 그렇습니다.
-    </p>
+    <div class="label">여기서만</div>
+    <h2>땅을 보는 도구가<br>아파트를 보는 도구와 같을 수는 없습니다</h2>
+    <ul class="only-list">
+      <li><b>단지가 아니라 용도지역과 필지</b>
+        <span>아파트는 같은 단지 같은 평형이 표본이 됩니다. 땅은 옆 필지도 값이 다릅니다 —
+              용도지역·지목·도로접·형상·지세로 갈라야 비교가 됩니다.</span></li>
+      <li><b>교통량을 차종까지 내려가 본다</b>
+        <span>화물차가 늘어난 자리와 승용차가 늘어난 자리는 다른 이야기입니다.
+              영업소 561곳의 통행량을 1~6종으로 나눠 2003년부터 쌓아 두었습니다.</span></li>
+      <li><b>값을 내는 방법을 숨기지 않는다</b>
+        <span>공시지가기준법의 다섯 마디를 화면에 그대로 적고, 산식은
+              <a href="/guide/law">가이드</a>에 공개합니다. 숫자 하나만 던지지 않습니다.</span></li>
+      <li><b>모르는 것은 모른다고 적는다</b>
+        <span>거래가 얇은 곳, 아직 조사하지 않은 필지, 통행량이 공개되지 않은 민자 영업소는
+              빈칸으로 두고 왜 비었는지 적습니다. 미래 가치는 예측이 아니라 참고 지표라고
+              먼저 밝힙니다.</span></li>
+    </ul>
   </div>
 </section>
 
@@ -292,6 +389,8 @@ footer a{color:var(--muted)}
 <footer>
   토지 고고 · 공공데이터 기반 토지 스크리닝 도구<br>
   <a href="/account?next=%2Fapp">회원 가입</a> · <a href="/guide">토지·건축 가이드</a><br>
+  자료: 국토교통부 실거래가 공개시스템 · 표준지공시지가 · 브이월드 ·
+  한국도로공사 영업소 간 통행량(TCS) · 통계청 KOSIS · 법제처 국가법령정보센터<br>
   과거 실거래 신고 자료와 교통량 통계를 요약한 지표입니다.
   미래 가격을 예측하거나 보장하지 않습니다.
   <div class="foot-theme" data-theme-switch></div>

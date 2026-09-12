@@ -2504,20 +2504,24 @@ const FAKE_LEAFLET = () => {
         viewsAlive: all.every((t) => !!document.getElementById(`view-${t.dataset.view}`)),
       };
     });
-    check("탭은 '지도'와 '매물' 둘만 선다",
-          tabs.shown.join(',') === '지도,매물', tabs.shown.join(',') || '없음');
-    check('나머지 넷은 접혀 있다',
-          tabs.hiddenViews.join(',') === 'rank,trend,board,verdict',
+    // 2026-09-12: 첫 화면이 '교통량 순위'와 '추이 비교' 를 광고한다. 광고한
+    // 것이 화면에 없으면 거짓말이라, 그 둘은 다시 세웠다. 스코어보드·가설
+    // 판정은 그대로 접어 둔다 (우리 쪽 판단 근거다).
+    check("탭은 지도·매물·교통량 순위·추이 비교가 선다",
+          tabs.shown.join(',') === '지도,매물,교통량 순위,추이 비교',
+          tabs.shown.join(',') || '없음');
+    check('스코어보드와 가설 판정만 접혀 있다',
+          tabs.hiddenViews.join(',') === 'board,verdict',
           tabs.hiddenViews.join(',') || '없음');
     check('접은 것이지 지운 것이 아니다 (화면이 그대로 있다)', tabs.viewsAlive);
 
     // 접어 둔 화면으로 가는 길. 이것이 없으면 배포가 깨져도 아무도 모른다.
     const hid = await page.evaluate(() => {
-      location.hash = '#rank';
+      location.hash = '#board';
       window.dispatchEvent(new HashChangeEvent('hashchange'));
-      const tab = document.querySelector('.tab[data-view="rank"]');
+      const tab = document.querySelector('.tab[data-view="board"]');
       const out = {
-        viewOn: document.getElementById('view-rank').classList.contains('is-active'),
+        viewOn: document.getElementById('view-board').classList.contains('is-active'),
         tabBack: !tab.hidden,
       };
       location.hash = '';
@@ -2525,7 +2529,7 @@ const FAKE_LEAFLET = () => {
       tab.hidden = true;
       return out;
     });
-    check('주소에 #rank 를 붙이면 접어 둔 화면이 열린다',
+    check('주소에 #board 를 붙이면 접어 둔 화면이 열린다',
           hid.viewOn && hid.tabBack,
           `화면=${hid.viewOn} 탭복귀=${hid.tabBack}`);
 

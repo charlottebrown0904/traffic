@@ -52,3 +52,8 @@ data/processed/*
 # 감정평가 인자 원장 — 비공개 (Supabase 가 원본, 이것은 손 사본). 2026-09-11 지시:
 # "이 데이터 베이스는 외부에서 볼 수 없게 해야함". 저장소가 공개라 파일로 두지 않는다.
 data/private/
+
+# npm 으로 받는 것은 저장소에 담지 않는다. scripts/build_shots.js 가
+# 첫 화면 캡쳐를 찍을 때 Leaflet(CDN 과 같은 버전)을 여기로 받는다 —
+# 없으면 스스로 받는다.
+node_modules/

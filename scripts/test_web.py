@@ -257,6 +257,64 @@ for _hex in ("#2563C9", "#C2740B", "#4A8AD0", "#B07E33"):
     check(_hex in _land, f"검산 통과한 계열 색 {_hex} 가 그대로다")
 
 
+# ── 첫 화면 '할 수 있는 것' — 실제 화면 캡쳐 ────────────────────────
+#
+# 지시(2026-09-12): "'무엇을 보여주나'·'자료' 는 삭제(숨김)하고, 우리
+# 서비스에서 사용자가 할 수 있는 것들을 실제 화면 캡쳐로 나열."
+#
+# 캡쳐는 scripts/build_shots.js 가 찍고 scripts/pack_shots.py 가 다듬는다.
+# 이 검사가 보는 것은 셋이다 — 걷어낸 칸이 정말 없는가, 화면이 가리키는
+# 그림 파일이 정말 있는가(깨진 그림은 첫 화면에서 치명적이다), 그리고
+# 그림이 첫 화면을 무겁게 만들지 않는가.
+
+check('<div class="label">무엇을 보여주나</div>' not in _land,
+      "'무엇을 보여주나' 칸이 없다")
+check("전부 공개된 자료입니다" not in _land and "ul.what" not in _land,
+      "'전부 공개된 자료입니다' 칸과 죽은 규칙이 없다")
+# 걷어낸 '자료' 칸 대신 바닥글에 출처를 남겼는지. 공공데이터 이용 조건이
+# 출처표시를 요구한다 (docs/legal-notes.md §6).
+check("국토교통부 실거래가 공개시스템" in _land and "한국도로공사" in _land
+      and "KOSIS" in _land,
+      "바닥글에 자료 출처가 남아 있다")
+
+check('id="can"' in _land and "할 수 있는 것" in _land, "'할 수 있는 것' 칸이 있다")
+check('id="only"' in _land, "'여기서만' 칸이 있다")
+
+_shots = re.findall(r'src="(/brand/shots/[^"]+)"', _land)
+check(len(_shots) == 6, f"캡쳐를 여섯 장 싣는다 — {len(_shots)}장")
+_total = 0
+for _rel in _shots:
+    _f = PUBLIC / _rel.lstrip("/")
+    _ok = _f.exists()
+    check(_ok, f"{_rel} 파일이 있다")
+    if _ok:
+        _total += _f.stat().st_size
+check(_total <= 500 * 1024, f"캡쳐 여섯 장이 500KB 안이다 — {_total // 1024}KB")
+
+# 그림마다 alt 가 있어야 한다. 화면을 못 보는 사람에게 '무엇을 할 수
+# 있는가' 가 통째로 사라지면 이 칸은 절반만 있는 것이다.
+for _tag in re.findall(r"<img[^>]*/brand/shots/[^>]*>", _land):
+    _alt = re.search(r'alt="([^"]*)"', _tag)
+    _name = re.search(r"/brand/shots/([^\"]+)", _tag).group(1)
+    check(bool(_alt and len(_alt.group(1)) > 10), f"{_name} 에 alt 설명이 있다")
+    check('width="' in _tag and 'height="' in _tag,
+          f"{_name} 에 width·height 가 있다 (그림이 뜨며 글이 튀지 않게)")
+
+# 예시 자료로 띄운 화면은 그렇다고 적는다. 실제 필지 자료가 아니다.
+check(_land.count("예시 자료로 띄운 화면") >= 2, "예시로 띄운 화면은 예시라고 적는다")
+# 산출표 캡쳐에는 용도 제한이 따라붙는다 (감정평가법 방어선).
+check("감정평가가 아니며" in _land and "담보·소송·과세·보상" in _land,
+      "산출표 캡쳐 옆에 감정평가가 아니라고 적는다")
+
+# 첫 화면이 광고하는 탭은 지도앱에 **서 있어야** 한다. 숨은 탭을
+# 광고하면 가입한 사람이 그 화면을 못 찾는다.
+_appidx = (PUBLIC / "app" / "index.html").read_text(encoding="utf-8")
+for _view, _name in (("rank", "교통량 순위"), ("trend", "추이 비교")):
+    _tag = re.search(r'<button class="tab"[^>]*data-view="%s"[^>]*>' % _view, _appidx)
+    check(bool(_tag) and "hidden" not in _tag.group(0),
+          f"지도앱에 '{_name}' 탭이 서 있다")
+
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

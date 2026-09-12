@@ -5435,10 +5435,19 @@ function wireValueButtons() {
 function parcelCard(parcel, diag, at, addr, zones, limits) {
   const won = (v) => Math.round(v).toLocaleString('ko-KR');
   const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
+  /* 백분위를 '상위 N%' 로 적는다. 백분위가 100 이면 N 이 0 이 되어
+     **'상위 0%'** 가 찍혔다 — 뜻은 '또래 전부보다 낫다' 인데 읽는 사람에게는
+     고장처럼 보인다. 그 칸만 말로 적는다. */
+  const pctText = (pct) => {
+    if (pct == null) return '<em>조사 안 됨</em>';
+    const top = 100 - pct;
+    if (top <= 0) return '최상위';
+    return `상위 ${top}%`;
+  };
   const rows = (diag ? diag.axes : []).map((a) => {
     const pct = a.pct == null ? null : Math.round(a.pct * 100);
     return `<tr><th>${escapeHtml(a.label)}</th>`
-      + `<td>${pct == null ? '<em>조사 안 됨</em>' : `상위 ${100 - pct}%`}</td>`
+      + `<td>${pctText(pct)}</td>`
       + `<td class="raw">${escapeHtml(a.raw)}</td></tr>`;
   }).join('');
   const peer = diag && diag.peer;
