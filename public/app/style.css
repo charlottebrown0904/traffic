@@ -1755,28 +1755,36 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 /* 현재 가치 — 감정평가서 산출표 모양 (2026-09-12 지시 "자세히").
    평가서의 '산출근거 및 결정의견' 을 본떠, 이름·순서·격차율 표를 그대로 둔다. */
 .pcv-sub { font-weight: 400; font-size: 11px; color: var(--muted); margin-left: .4rem; }
-.pcv-table { width: 100%; border-collapse: collapse; margin: .4rem 0; font-size: 12px; }
+.pcv-table { width: 100%; max-width: 100%; table-layout: fixed;
+  border-collapse: collapse; margin: .4rem 0; font-size: 12px; }
+/* 이름 칸은 **접히게** 둔다. nowrap 으로 두면 '비교표준지 선정' 같은 긴
+   이름이 칸을 넘어 값 위에 겹쳐 찍힌다 (2026-09-12 보고, 상세 칸 23rem). */
 .pcv-table > tbody > tr > th {
-  text-align: left; white-space: nowrap; vertical-align: top;
-  padding: .35rem .6rem .35rem 0; color: var(--muted); font-weight: 500; width: 7em;
+  text-align: left; vertical-align: top; white-space: normal; word-break: keep-all;
+  padding: .35rem .6rem .35rem 0; color: var(--muted); font-weight: 500; width: 6.2em;
 }
-.pcv-table > tbody > tr > td { padding: .35rem 0; border-bottom: 1px solid var(--border); }
+.pcv-table > tbody > tr > td { padding: .35rem 0; border-bottom: 1px solid var(--border);
+  word-break: keep-all; overflow-wrap: break-word; }
 .pcv-desc { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.5; margin-top: .1rem; }
 
-/* 개별요인 격차율 표 — 조건 · 대상 · 비교표준지 · 격차율 */
-.pcv-items { width: 100%; border-collapse: collapse; margin: .35rem 0 .1rem; font-size: 11.5px; }
-.pcv-items th, .pcv-items td { padding: .22rem .35rem; text-align: left; }
-.pcv-items thead th {
-  color: var(--faint); font-weight: 500; border-bottom: 1px solid var(--border);
-  white-space: nowrap;
+/* 개별요인 격차율 — 조건마다 두 줄. 좁은 칸(상세 23rem)에서도 안 넘친다.
+   윗줄: 조건 이름 + 격차율(오른쪽).  아랫줄: 대상 / 비교표준지. */
+.pcv-items { list-style: none; margin: .4rem 0 .1rem; padding: 0; }
+.pcv-items li {
+  display: grid; grid-template-columns: 1fr auto; gap: 0 .5rem;
+  padding: .3rem 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
-.pcv-items tbody th { color: var(--ink); font-weight: 500; white-space: nowrap; }
-.pcv-items tbody tr { border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
-.pcv-items .num { text-align: right; white-space: nowrap; }
-.pcv-items .pcv-why td { color: var(--muted); font-size: 11px; padding-top: 0; }
+.pcv-i-cond { font-size: 11.5px; font-weight: 500; }
+.pcv-i-ratio { font-size: 11.5px; text-align: right; white-space: nowrap;
+  font-family: "IBM Plex Mono", ui-monospace, monospace; }
+.pcv-i-vs { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
+.pcv-i-vs em { font-style: normal; color: var(--faint); }
+.pcv-i-why { grid-column: 1 / -1; font-size: 11px; color: var(--faint); }
 
 .pcv-sum { margin: .5rem 0 .2rem; padding: .5rem .6rem; border-radius: .4rem; background: var(--surface-2); }
-.pcv-calc { font-size: 11.5px; color: var(--muted); margin: 0 0 .25rem; word-break: break-all; }
+/* 숫자 중간에서 끊기면 '1 44,056원' 처럼 읽힌다. 빈칸에서만 접는다. */
+.pcv-calc { font-size: 11.5px; color: var(--muted); margin: 0 0 .25rem;
+  word-break: keep-all; overflow-wrap: break-word; }
 .pcv-decided { margin: .1rem 0; font-size: 15px; }
 .pcv-decided span { font-size: 11.5px; color: var(--muted); font-weight: 400; }
 .pcv-total { margin: .15rem 0 0; font-size: 12.5px; }

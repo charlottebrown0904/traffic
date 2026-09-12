@@ -3308,10 +3308,12 @@ const FAKE_LEAFLET = () => {
           && /시점수정/.test(vcalc) && /지역요인 비교/.test(vcalc)
           && /개별요인 비교/.test(vcalc) && /그 밖의 요인 보정/.test(vcalc),
           vtxt.slice(0, 140));
-    check('개별요인은 조건·대상·비교표준지·격차율 네 칸 표다',
-          /<th>조건<\/th>/.test(vcalc) && /<th>대상<\/th>/.test(vcalc)
-          && /<th>비교표준지<\/th>/.test(vcalc) && /격차율/.test(vcalc)
-          && /pcv-items/.test(vcalc));
+    // 네 칸 표는 상세 칸(23rem)보다 넓어 글자가 넘쳤다 (2026-09-12 보고).
+    // 조건마다 두 줄로 접는다 — 조건 이름 + 격차율, 그 아래 대상 / 표준지.
+    check('개별요인은 조건마다 격차율과 대상/표준지를 적는다',
+          /pcv-items/.test(vcalc) && /pcv-i-cond/.test(vcalc)
+          && /pcv-i-ratio/.test(vcalc) && /pcv-i-vs/.test(vcalc)
+          && !/<th>비교표준지<\/th>/.test(vcalc));
     const vhead = vtxt.slice(vtxt.indexOf('비교표준지 선정'), vtxt.indexOf('시점수정'));
     check('같은 동리의 표준지 A 를 고른다 (다른 동리 B 는 벌점 1.0)',
           /지월리 5/.test(vhead) && !/대쌍령리/.test(vhead), vhead.slice(0, 160));

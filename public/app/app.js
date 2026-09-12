@@ -5266,7 +5266,12 @@ function renderValuation(res) {
   const f3 = (v) => (v == null ? '—' : Number(v).toFixed(3));
   const desc = (o) => [o.land_use, o.jimok || o.use_situation, o.road_side, o.shape, o.slope]
     .filter(Boolean).join(' · ');
-  const stdLabel = [s.ld_name, s.jibun ? `${s.jibun}` : null].filter(Boolean).join(' ')
+  // 동리 이름에 지번이 이미 붙어 오는 자료가 있다 — 그대로 이으면
+  // '상삼리 888-7 888-7' 이 된다.
+  const ldn = String(s.ld_name || '').trim();
+  const jb = String(s.jibun || '').trim();
+  const stdLabel = (ldn && jb && (ldn === jb || ldn.endsWith(' ' + jb)) ? ldn
+    : [ldn, jb].filter(Boolean).join(' '))
     || `표준지 ${String(s.pnu || '').slice(0, 10)}`;
   const a = sub.addr || {};
   const subLabel = a.jibun
@@ -5290,14 +5295,19 @@ function renderValuation(res) {
   rows.push(['지역요인 비교', '<b>1.000</b><span class="pcv-desc">대상과 비교표준지가 '
     + '같은 인근지역에 있어 지역요인은 대등합니다</span>']);
 
+  /* 격차율은 평가서처럼 조건마다 '대상 / 비교표준지 × 격차율' 을 적는다.
+     네 칸 표로 그렸더니 상세 칸(23rem)보다 넓어져 글자가 옆으로 넘쳤다
+     (2026-09-12 보고). 조건마다 두 줄로 접어 칸 안에 들어오게 한다. */
   const ind = res.individual;
   const itemRows = ind.items.map((it) =>
-    `<tr><th>${e(it.cond)}</th><td>${e(String(it.subject || '—'))}</td>`
-    + `<td>${e(String(it.std || '—'))}</td><td class="num"><b>${f3(it.ratio)}</b></td></tr>`
-    + (it.why ? `<tr class="pcv-why"><td colspan="4">${e(it.why)}</td></tr>` : '')).join('');
-  rows.push(['개별요인 비교', `<b>${f3(ind.factor)}</b><span class="pcv-desc">[${e(ind.kind)}] 조건별 격차율의 곱</span>`
-    + '<table class="pcv-items"><thead><tr><th>조건</th><th>대상</th><th>비교표준지</th>'
-    + '<th class="num">격차율</th></tr></thead><tbody>' + itemRows + '</tbody></table>']);
+    '<li><span class="pcv-i-cond">' + e(it.cond) + '</span>'
+    + `<b class="pcv-i-ratio">${f3(it.ratio)}</b>`
+    + `<span class="pcv-i-vs">${e(String(it.subject || '—'))} <em>/</em> ${e(String(it.std || '—'))}</span>`
+    + (it.why ? `<span class="pcv-i-why">${e(it.why)}</span>` : '')
+    + '</li>').join('');
+  rows.push(['개별요인 비교', `<b>${f3(ind.factor)}</b><span class="pcv-desc">[${e(ind.kind)}] 조건별 격차율의 곱`
+    + ' — 대상 / 비교표준지</span>'
+    + '<ul class="pcv-items">' + itemRows + '</ul>']);
   rows.push(['그 밖의 요인 보정', res.other.factor == null
     ? '<em>자료 없음</em>'
     : `<b>${res.other.factor}</b><span class="pcv-desc">${e(res.other.basis)}</span>`]);
@@ -5348,6 +5358,7 @@ async function nowResults() {
   return { picked, results: picked.map((std) => appraiseNow(subject, std, T, mo ? mo.trend : null)) };
 }
 window.__nowResults = () => nowResults();
+window.__renderValuation = (res) => renderValuation(res);  // 좁은 칸 확인용
 
 async function fillNowValue(box) {
   const got = await nowResults();
