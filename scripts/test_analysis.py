@@ -1997,6 +1997,22 @@ check(_reb._rows(_one) == [{"STATBL_ID": "A_2024_00007"}],
 check(_reb.pick_cycle("QY,MM") == "MM" and _reb.pick_cycle("YY") == "YY"
       and _reb.pick_cycle("QY, YY") == "QY",
       "주기코드가 'QY,MM' 처럼 여럿이면 월(MM)을 고른다 — 자료 조회엔 하나만 넣는다")
+# 페이지 한도에서 잘리면 받은 행을 버리지 않는다 (첫 pull 에서 3장을 버렸다).
+_calls = []
+def _fake_call(url, params, page=1, size=1000):
+    _calls.append(page)
+    return [{"DTA_VAL": str(page)}] * size, "000", "ok"
+_orig_call = _reb.call
+_reb.call = _fake_call
+try:
+    _reb.data("A_2024_00007", cycle="MM", max_pages=2)
+    _trunc = None
+except _reb.Truncated as exc:
+    _trunc = exc
+finally:
+    _reb.call = _orig_call
+check(_trunc is not None and len(_trunc.rows) == 2000 and _trunc.limit == 2 and _calls == [1, 2],
+      "한도에서 잘리면 Truncated 가 받은 행 2,000개를 들고 온다 — 버리지 않는다")
 check(_reb.EMPTY == "200" and _reb.BAD_KEY == "290",
       "'자료 없음' 과 '키 틀림' 을 가른다")
 

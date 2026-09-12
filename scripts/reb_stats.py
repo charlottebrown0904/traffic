@@ -187,7 +187,12 @@ def pull(name: str, start: str | None, end: str | None, max_pages: int = 40) -> 
     direct = bool(reb.keys().reb)
     print(f"길: {'직접 (러너 IP)' if direct else '중계기 (서울 icn1 경유)'}"
           f" · 한 장 {PAGE:,}건 · 최대 {max_pages}장")
-    rows = reb.data(sid, start=start, end=end, max_pages=max_pages)
+    cut = None
+    try:
+        rows = reb.data(sid, start=start, end=end, max_pages=max_pages)
+    except reb.Truncated as exc:
+        # 받은 만큼은 저장한다 — 이미 쓴 호출이다. 대신 크게 알리고 1 로 끝낸다.
+        rows, cut = exc.rows, exc
     if not rows:
         print(f"{name}({sid}) — 0행. 시점 범위와 주기코드를 --probe 로 확인하세요.")
         return 1
@@ -212,6 +217,10 @@ def pull(name: str, start: str | None, end: str | None, max_pages: int = 40) -> 
     if not direct:
         print(f"  → Vercel 함수 호출 {calls}회 · Fast Origin Transfer 약 "
               f"{wire / 1e6:.1f}MB 를 썼습니다 (한도 1M회 / 10GB per month)")
+    if cut is not None:
+        print(f"\n⚠ {cut.limit}장에서 잘렸습니다 — 위 파일은 **앞부분만**입니다."
+              f" 기간을 더 끊거나 max_pages 를 올려 다시 받으세요.")
+        return 1
     return 0
 
 

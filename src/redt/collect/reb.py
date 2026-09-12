@@ -167,8 +167,22 @@ def pages(url: str, params: dict, size: int = 1000, limit: int = 200):
         yield from rows
         if len(rows) < size:
             return
-    raise ApiError(f"{limit} 페이지에서 멈췄습니다 — 기간을 끊어 받으세요 "
-                   f"(한 장이 곧 함수 호출 한 번입니다)")
+    raise Truncated(limit)
+
+
+class Truncated(ApiError):
+    """페이지 한도에서 멈췄다. 받은 만큼은 `.rows` 에 있다 — 버리지 않는다.
+
+    첫 pull(2026-09-12)에서 3장을 다 받고 나서 예외로 버렸다. 중계기를
+    탔으면 그 3장이 이미 Vercel 사용량이다. 받은 것은 저장하고, 잘렸다는
+    것을 크게 알리는 쪽이 맞다. `data()` 가 채워서 던진다.
+    """
+
+    def __init__(self, limit: int, rows: list[dict] | None = None):
+        super().__init__(f"{limit} 페이지에서 멈췄습니다 — 기간을 끊어 받으세요 "
+                         f"(한 장이 곧 함수 호출 한 번입니다)")
+        self.limit = limit
+        self.rows = rows or []
 
 
 def tables(statbl_id: str | None = None) -> list[dict]:
@@ -219,11 +233,17 @@ def data(statbl_id: str, cycle: str | None = None, *, start: str | None = None,
          max_pages: int = 200) -> list[dict]:
     """자료 조회. 시점은 YYYYMM(월) · YYYY(연) 형태다."""
     cycle = cycle or cycle_of(statbl_id)
-    return list(pages(DATA, {
-        "STATBL_ID": statbl_id, "DTACYCLE_CD": cycle,
-        "START_WRTTIME": start, "END_WRTTIME": end,
-        "ITM_ID": itm_id, "CLS_ID": cls_id, "GRP_ID": grp_id,
-    }, limit=max_pages))
+    out: list[dict] = []
+    try:
+        for r in pages(DATA, {
+            "STATBL_ID": statbl_id, "DTACYCLE_CD": cycle,
+            "START_WRTTIME": start, "END_WRTTIME": end,
+            "ITM_ID": itm_id, "CLS_ID": cls_id, "GRP_ID": grp_id,
+        }, limit=max_pages):
+            out.append(r)
+    except Truncated as exc:
+        raise Truncated(exc.limit, out) from None
+    return out
 
 
 def price_change(start: str, end: str, *, by: str = "용도지역") -> list[dict]:

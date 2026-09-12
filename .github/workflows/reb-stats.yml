@@ -63,7 +63,8 @@ jobs:
             --from "${{ inputs.from }}" --to "${{ inputs.to }}" \
             --max-pages "${{ inputs.max_pages }}"
       - name: 결과 올리기
-        if: inputs.mode == 'pull'
+        # 잘려도(exit 1) 받은 만큼은 올린다 — 이미 쓴 호출이다.
+        if: always() && inputs.mode == 'pull'
         uses: actions/upload-artifact@v4
         with:
           name: reb-stats
