@@ -6339,6 +6339,11 @@ function wireFind() {
 
 wireFind();
 
+/* 머리띠의 Admin 링크 — 관리자에게만 보인다 (2026-09-12 지시).
+   관문(gate.js)이 window.ME 를 세운 뒤 이 파일이 실행되므로 여기서 안다.
+   링크를 보이는 것뿐이고, 자물쇠는 /admin 화면과 데이터베이스다. */
+if (typeof window.tojiAdminNav === 'function') window.tojiAdminNav(myAccess().admin);
+
 boot();
 
 // 지도와 regions.json 이 다 준비된 뒤에 처음 한 번 붙는다. boot 안에서

@@ -3137,6 +3137,22 @@ const FAKE_LEAFLET = () => {
     // 프리미엄 잠금 (2026-09-11 지시). C 등급은 단추에 '프리미엄' 꼬리표가
     // 붙고, 누르면 산출 대신 안내가 뜬다 — 결제 안내는 미확정이라 '준비 중'.
     check('B 등급은 잠기지 않는다', !/pcv-lock/.test(pc.html) && !/is-locked/.test(pc.html));
+    // Admin 링크 (2026-09-12 지시). 머리띠에 자리는 늘 있고, 관리자에게만
+    // 보인다. 링크를 보이는 것뿐이고 자물쇠는 /admin 화면과 데이터베이스다.
+    const admNav = await page.evaluate(() => {
+      const a = document.querySelector('.sitenav a[href="/admin"]');
+      return { there: !!a, hiddenForB: a ? a.hidden : null };
+    });
+    check('머리띠에 Admin 링크 자리가 있고 회원에게는 숨어 있다',
+          admNav.there && admNav.hiddenForB === true, JSON.stringify(admNav));
+    const admShown = await page.evaluate(() => {
+      window.tojiAdminNav(true);
+      const a = document.querySelector('.sitenav a[href="/admin"]');
+      const on = a && !a.hidden;
+      window.tojiAdminNav(false);                 // 뒤 검사를 위해 되돌린다
+      return on;
+    });
+    check('관리자면 Admin 링크가 보인다', admShown === true, String(admShown));
     await page.evaluate(() => { window.ME.profile.grade = 'C'; });
     const pcC = await clickMap(37.304, 127.011);
     check('C 등급은 단추가 잠긴다 (회원 전용 꼬리표)',

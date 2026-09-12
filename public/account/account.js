@@ -254,6 +254,9 @@
     var name = p.nickname || u.email || "이용자";
     var role = { user: "일반 회원", broker: "중개사", admin: "관리자" }[p.role] || p.role;
     var acc = window.accessOf ? window.accessOf(p) : { label: p.grade || "C", premium: false };
+    // 머리띠의 Admin 링크 (2026-09-12). 관리자면 보이고, 아니면 지운다 —
+    // 관리자 계정에서 로그아웃한 브라우저에 메뉴가 남으면 안 된다.
+    if (typeof window.tojiAdminNav === "function") window.tojiAdminNav(!!acc.admin);
     // profile 이 아직 없으면 승인 전으로 본다. 모르는 것을 통과로
     // 처리하면 안 된다 — gate.js 와 같은 판단이다.
     var status = p.status || "pending";

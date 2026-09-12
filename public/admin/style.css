@@ -1,0 +1,75 @@
+/* Admin 전용 화면 — 제목 · 간략 내용 카드, 누르면 자세히 (2026-09-12 지시).
+   색·타이포는 /lib/theme.css 토큰과 /guide/style.css 를 그대로 쓴다. */
+
+.wrap.wide { max-width: 70rem; }
+
+.adm-head { padding: 2rem 0 1.25rem; border-bottom: 2px solid var(--border-strong); margin-bottom: 1.5rem; }
+.adm-head h1 { font-size: 1.5rem; margin: 0 0 .4rem; }
+.adm-head p { margin: 0; color: var(--muted); font-size: .92rem; }
+.adm-stamp { margin-top: .6rem; font-size: .8rem; color: var(--faint); }
+.adm-stamp b { font-weight: 600; color: var(--muted); }
+
+/* 묶음 제목 */
+.adm-group { margin: 2rem 0 .75rem; font-size: .78rem; font-weight: 700;
+  letter-spacing: .1em; color: var(--accent); }
+
+/* 카드 — 접힌 상태가 '제목 / 간략 내용' */
+.adm-card { border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
+  margin-bottom: .6rem; overflow: hidden; }
+.adm-card > summary {
+  list-style: none; cursor: pointer; padding: .95rem 1.1rem;
+  display: grid; grid-template-columns: 2.2rem 1fr auto; gap: .1rem .75rem; align-items: baseline;
+}
+.adm-card > summary::-webkit-details-marker { display: none; }
+.adm-card > summary:hover { background: var(--surface-2); }
+.adm-card > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.adm-n { grid-row: span 2; font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .82rem; color: var(--faint); padding-top: .15rem; }
+.adm-t { font-weight: 700; font-size: 1rem; }
+.adm-s { grid-column: 2; color: var(--muted); font-size: .88rem; line-height: 1.55; margin-top: .2rem; }
+.adm-more { grid-row: span 2; font-size: .78rem; color: var(--accent); white-space: nowrap; }
+.adm-card[open] > summary { background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.adm-card[open] .adm-more::after { content: " ▴"; }
+.adm-card:not([open]) .adm-more::after { content: " ▾"; }
+
+.adm-body { padding: 1.1rem 1.1rem 1.35rem; font-size: .92rem; line-height: 1.75; }
+.adm-body > *:first-child { margin-top: 0; }
+.adm-body h4 { margin: 1.25rem 0 .4rem; font-size: .95rem; }
+.adm-body p { margin: .5rem 0; }
+.adm-body ul, .adm-body ol { margin: .5rem 0; padding-left: 1.2rem; }
+.adm-body li { margin: .25rem 0; }
+.adm-body code, .adm-body .mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: .86em;
+  background: var(--surface-2); padding: .05rem .3rem; border-radius: 4px;
+}
+.adm-body pre { margin: .6rem 0; padding: .7rem .85rem; border-radius: 8px;
+  background: var(--surface-2); overflow-x: auto; font-size: .82rem; line-height: 1.6; }
+.adm-body pre code { background: none; padding: 0; }
+.adm-body table { width: 100%; border-collapse: collapse; margin: .6rem 0; font-size: .85rem; }
+.adm-body th, .adm-body td { padding: .4rem .55rem; text-align: left;
+  border-bottom: 1px solid var(--border); vertical-align: top; }
+.adm-body thead th { color: var(--faint); font-weight: 600; white-space: nowrap; }
+.adm-body td.num, .adm-body th.num { text-align: right; white-space: nowrap;
+  font-family: "IBM Plex Mono", ui-monospace, monospace; }
+.adm-scroll { overflow-x: auto; }
+
+.adm-note { margin: .7rem 0; padding: .6rem .8rem; border-radius: 8px; font-size: .87rem;
+  background: var(--accent-soft); border-left: 3px solid var(--accent); }
+.adm-warn { background: var(--warn-soft); border-left-color: var(--warn); }
+.adm-block { background: var(--block-soft); border-left-color: var(--block); }
+.adm-ok { background: var(--ok-soft); border-left-color: var(--ok); }
+
+/* 숫자 몇 개를 나란히 */
+.adm-kpi { display: grid; grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: .5rem; margin: .7rem 0; }
+.adm-kpi div { padding: .6rem .7rem; border-radius: 8px; background: var(--surface-2); }
+.adm-kpi b { display: block; font-size: 1.15rem; line-height: 1.3; }
+.adm-kpi span { font-size: .78rem; color: var(--muted); }
+
+.adm-miss { color: var(--faint); font-style: normal; }
+
+@media (max-width: 34rem) {
+  .adm-card > summary { grid-template-columns: 1.6rem 1fr; padding: .8rem .85rem; }
+  .adm-more { display: none; }
+  .adm-body { padding: .9rem .85rem 1.1rem; }
+}

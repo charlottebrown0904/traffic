@@ -115,6 +115,48 @@ check("hour < now() - interval '24 hours'" in sql6 and "n24 bigint" in sql6,
 check("/lib/access.js" in acct_html, "계정 화면도 같은 판단을 쓴다")
 
 print()
+print("5. Admin 전용 탭 (2026-09-12 지시) — 관리자만, 숫자는 화면 파일에 없다")
+adm = (ROOT / "public" / "admin" / "admin.js").read_text(encoding="utf-8")
+adm_html = (ROOT / "public" / "admin" / "index.html").read_text(encoding="utf-8")
+nav = (ROOT / "public" / "lib" / "adminnav.js").read_text(encoding="utf-8")
+sql8 = (ROOT / "supabase" / "migrations" / "0008_admin_stats.sql").read_text(encoding="utf-8")
+
+check("window.accessOf" in adm and "acc.admin" in adm and "deny(" in adm,
+      "화면이 관리자인지 보고, 아니면 안내만 낸다")
+check("appraisal_admin_stats" in adm and "premium" in adm,
+      "숫자는 관리자 전용 집계와 비공개 버킷에서 받는다")
+# 이 화면 파일은 누구나 받아 볼 수 있다. 숫자를 적으면 그것이 곧 공개다.
+# 격차율·배율처럼 소수점 둘 이상인 숫자가 코드에 박혀 있으면 잡는다
+# (버전 꼬리표·연도는 뺀다).
+import re as _re
+# 1.00 · 1.000 은 '차이 없음' 이라는 중립값이라 비밀이 아니다. 그 밖의
+# 소수점 둘 이상 숫자가 코드에 박혀 있으면 격차율·배율일 수 있으므로 잡는다.
+_lits = [x for x in _re.findall(r"(?<![\w.])[0-9]+\.[0-9]{2,}", adm)
+         if x not in ("1.00", "1.000")]
+check(not _lits, f"화면 파일에 배율 같은 숫자를 박아 두지 않았다 ({_lits[:5]})")
+for _k in ("road_index", "shape_index", "slope_index", "area_rules",
+           "use_mismatch", "special"):
+    check(f"v.{_k}" in adm, f"  {_k} 는 비공개 자료에서 읽어 그린다")
+check("is_admin()" in sql8 and "security definer" in sql8,
+      "집계 함수가 안에서 관리자인지 다시 본다")
+check("create policy" not in sql8.lower(),
+      "원장 두 표에는 여전히 정책을 만들지 않는다 (원본 행은 아무도 못 읽는다)")
+check("revoke all on function public.appraisal_admin_stats() from public, anon" in sql8,
+      "anon 은 집계 함수를 못 부른다")
+check('data-admin-link hidden' in adm_html or 'aria-current="page"' in adm_html,
+      "Admin 화면 머리띠에 Admin 자리가 있다")
+for _p in ("app/index.html", "guide/index.html", "guide/law.html", "board/index.html",
+           "account/index.html"):
+    _t = (ROOT / "public" / _p).read_text(encoding="utf-8")
+    check('href="/admin" data-admin-link hidden' in _t and "/lib/adminnav.js" in _t,
+          f"  {_p} 의 Admin 링크는 기본이 숨김")
+check("localStorage" in nav and "hidden" in nav and "SB" not in nav,
+      "링크를 보이는 것뿐 — 로그인 연결을 부르지 않는다 (자물쇠가 아니다)")
+check("tojiAdminNav" in (ROOT / "public" / "app" / "app.js").read_text(encoding="utf-8")
+      and "tojiAdminNav" in acct,
+      "지도·계정 화면이 로그인 상태를 알 때 링크 힌트를 갱신한다")
+
+print()
 print("4. 진짜 자물쇠 — 숫자 원천은 비공개 버킷에서만")
 sql4 = (ROOT / "supabase" / "migrations" / "0004_premium_storage.sql").read_text(encoding="utf-8")
 check("values ('premium', 'premium', false" in sql4 and "bucket_id = 'premium' and public.premium_ok()" in sql4
