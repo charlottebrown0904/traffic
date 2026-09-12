@@ -3285,18 +3285,41 @@ const FAKE_LEAFLET = () => {
     // 곧 만드는 법이라 걷어냈다. 다섯 마디가 맞는지는 화면이 아니라 고리
     // (window.__appraiseNow · __pickStandard)로 본다 — 값이 틀리면 화면이
     // 조용히 틀린 숫자를 보이게 되므로 검사는 계속 마디마다 견준다.
-    check('화면에는 결정단가와 총액만 낸다',
-          /결정단가/.test(vcalc) && /총액 약/.test(vcalc)
-          && !/비교표준지/.test(vcalc) && !/시점수정/.test(vcalc) && !/지역요인/.test(vcalc)
-          && !/개별요인/.test(vcalc) && !/그 밖의 요인/.test(vcalc)
-          && !/pcv-table/.test(vcalc), vtxt.slice(0, 160));
+    // 산출표를 되돌렸다 (2026-09-12 두 번째 지시 "감정평가사가 작성한 것처럼
+    // 자세히"). 평가서의 말과 순서를 그대로 쓴다.
+    check('감정평가서 산출표 순서대로 낸다',
+          /기준시점/.test(vcalc) && /대상 토지/.test(vcalc) && /비교표준지 선정/.test(vcalc)
+          && /시점수정/.test(vcalc) && /지역요인 비교/.test(vcalc)
+          && /개별요인 비교/.test(vcalc) && /그 밖의 요인 보정/.test(vcalc),
+          vtxt.slice(0, 140));
+    check('개별요인은 조건·대상·비교표준지·격차율 네 칸 표다',
+          /<th>조건<\/th>/.test(vcalc) && /<th>대상<\/th>/.test(vcalc)
+          && /<th>비교표준지<\/th>/.test(vcalc) && /격차율/.test(vcalc)
+          && /pcv-items/.test(vcalc));
+    const vhead = vtxt.slice(vtxt.indexOf('비교표준지 선정'), vtxt.indexOf('시점수정'));
+    check('같은 동리의 표준지 A 를 고른다 (다른 동리 B 는 벌점 1.0)',
+          /지월리 5/.test(vhead) && !/대쌍령리/.test(vhead), vhead.slice(0, 160));
+    check('용도지역이 다른 표준지는 후보에서 뺀다', !/지월리 9/.test(vcalc));
+    check('개별요인이 격차율의 곱이다 (1.243)', /1\.243/.test(vcalc),
+          (vcalc.match(/개별요인 비교[^<]*<\/th><td><b>[^<]*/) || ['없음'])[0]);
+    check('그 밖의 요인은 시·도 값 (경기 관리 전·답 2.32)',
+          /2\.32/.test(vcalc) && /같은 시·도/.test(vcalc));
+    check('시점수정은 추세로 대신했다고 적고 상한 1.03 안이다',
+          /추세로 대신함/.test(vcalc) && /1\.030/.test(vcalc),
+          (vcalc.match(/시점수정[\s\S]{0,120}/) || ['없음'])[0]);
+    check('산식을 한 줄로 적는다', /산출단가 [0-9,]+ × /.test(vtxt));
     check('결정단가를 자리수 규칙으로 낸다 (446,000원/㎡)', /446,000원\/㎡/.test(vcalc),
           (vcalc.match(/결정단가[^<]*<b>[^<]*/) || ['없음'])[0]);
-    check('범위·다른 표준지·경고는 화면에 안 낸다',
-          !/흔히 [0-9,]+~[0-9,]+/.test(vtxt) && !/다른 표준지를 쓰면/.test(vcalc)
-          && !/pcv-warn/.test(vcalc) && !/확인하지 못했다/.test(vcalc));
-    check('머리에 산출 방법을 적지 않는다',
-          !/표준지 [0-9,]+필지 중 고름/.test(vcalc) && !/pcv-sub/.test(vcalc));
+    check('인근 지가수준 범위를 함께 적는다', /인근 지가수준 [0-9,]+~[0-9,]+/.test(vtxt));
+    check('평가액(추정)도 적는다 (1,653㎡)', /평가액\(추정\) 약/.test(vtxt));
+    check('농업진흥은 표준지 자료에 없어 확인 못 했다고 참고사항에 적는다',
+          /참고사항/.test(vcalc) && /확인하지 못했다/.test(vcalc));
+    // '다른 표준지를 쓰면' 은 뺐다 (2026-09-12 지시). 평가서는 표준지를 하나
+    // 고르고 그 근거를 적는다 — 여러 안을 나란히 두지 않는다.
+    check('다른 표준지를 쓰면 이라는 단서는 없다',
+          !/다른 표준지를 쓰면/.test(vcalc) && !/pcv-alts/.test(vcalc));
+    check('머리에 표준지를 몇 필지에서 골랐는지 적지 않는다',
+          !/표준지 [0-9,]+필지 중 고름/.test(vcalc));
     check('데이터베이스로 산출한 예상값이라고 적는다',
           /데이터베이스로 산출한/.test(vtxt) && /예상값/.test(vtxt)
           && /감정평가가 아닙니다/.test(vtxt) && /href="\/guide\/law"/.test(vcalc));

@@ -5238,35 +5238,93 @@ function appraiseNow(subject, std, T, trend) {
     if (other.q1 && other.q3) range = [roundDecided(std.price * t.factor * ind.factor * other.q1),
                                        roundDecided(std.price * t.factor * ind.factor * other.q3)];
   }
-  return { std, time: t, individual: ind, other, parts, missing, unit_calc: unit, unit_decided: decided,
+  return { subject, std, time: t, individual: ind, other, parts, missing,
+           unit_calc: unit, unit_decided: decided,
            range, total_krw: total, warnings: ind.warnings };
 }
 
-/* 화면에 내는 것은 **값 하나와 총액**이다 (2026-09-12 지시).
+/* 산출표 — 감정평가서의 '감정평가액의 산출근거 및 결정의견' 을 본뜬다
+ * (2026-09-12 지시 "감정평가사가 작성한 것처럼 보이게 자세히").
  *
- * 예전에는 다섯 마디를 표로 다 보여 줬습니다 — 어느 표준지를 골랐고,
- * 시점수정이 몇이고, 개별요인을 항목마다 어떻게 곱했고, 그 밖의 요인이
- * 평가선례 몇(n=몇)과 거래사례 몇(n=몇)의 건수 가중 기하평균이라는 것까지.
- * 그 표가 곧 만드는 법입니다. 베끼려는 사람에게는 설명서였고, 정작 땅을
- * 보려는 사람에게는 읽을 것이 너무 많았습니다.
+ * 감정평가에 관한 규칙 §14 의 순서를 그대로 따른다. 평가서를 본 사람이
+ * 어디를 봐야 하는지 바로 알도록 이름도 평가서의 말(비교표준지 선정 ·
+ * 시점수정 · 지역요인 비교 · 개별요인 비교 · 그 밖의 요인 보정 · 산출단가 ·
+ * 결정단가)을 쓴다.
  *
- * 그래서 값만 답합니다. 근거가 궁금한 사람은 가이드(공시지가기준법)로
- * 보냅니다 — 법에 적힌 순서는 공개 자료이니 그것은 숨길 것이 아닙니다.
- * 산출이 보류될 때는 어느 마디가 비었는지 적지 않습니다. 비었다는 사실만
- * 말합니다.
+ * 개별요인은 평가서의 격차율 표처럼 **조건 · 대상 · 비교표준지 · 격차율**
+ * 네 칸으로 낸다. 어느 조건에서 얼마를 깎였는지가 그 표의 요점이다.
+ *
+ * '다른 표준지를 쓰면' 은 빼 두었다 (2026-09-12 지시). 평가서는 표준지를
+ * 하나 고르고 그 근거를 적는다 — 여러 안을 나란히 두는 것은 평가서의
+ * 모양이 아니다.
  */
-/* 다섯 마디는 **화면에 안 내지만 검사는 본다.** 값이 틀리면 화면이
-   조용히 틀린 숫자를 보이게 되므로, 고리를 걸어 두고 test_map.js 가
-   마디마다 견준다 (표준지 선택 · 시점수정 · 개별요인 · 그 밖의 요인). */
-
 function renderValuation(res) {
   const won = (v) => (v == null ? '—' : Math.round(v).toLocaleString('ko-KR'));
-  if (res.missing.length || res.unit_decided == null) {
-    return '<p class="pcv-hold">견줄 자료가 모자라 이 필지는 값을 내지 못했습니다.</p>'
-      + '<p class="pcv-note">비어 있는 자리를 1.00 으로 메우지 않습니다. 자료가 채워지면 값이 나옵니다.</p>';
+  const e = escapeHtml;
+  const s = res.std;
+  const sub = res.subject || {};
+  const f3 = (v) => (v == null ? '—' : Number(v).toFixed(3));
+  const desc = (o) => [o.land_use, o.jimok || o.use_situation, o.road_side, o.shape, o.slope]
+    .filter(Boolean).join(' · ');
+  const stdLabel = [s.ld_name, s.jibun ? `${s.jibun}` : null].filter(Boolean).join(' ')
+    || `표준지 ${String(s.pnu || '').slice(0, 10)}`;
+  const a = sub.addr || {};
+  const subLabel = a.jibun
+    || [a.sido, a.sigungu, a.umd, a.ri].filter(Boolean).join(' ')
+    || [sub.ld_name, sub.jibun].filter(Boolean).join(' ')
+    || '대상 필지';
+  const today = new Date().toLocaleDateString('ko-KR');
+
+  const rows = [];
+  rows.push(['기준시점', `<b>${e(today)}</b> <span>가격조사 완료일 기준</span>`]);
+  rows.push(['대상 토지', `${e(subLabel)}${sub.area_m2 ? ` · ${won(sub.area_m2)}㎡` : ''}`
+    + `<span class="pcv-desc">${e(desc(sub))}</span>`]);
+  rows.push(['비교표준지 선정', `${e(stdLabel)}<span class="pcv-desc">${e(desc(s))}</span>`
+    + `<span class="pcv-desc">공시지가 <b>${won(s.price)}원/㎡</b>${s.year ? ` (${s.year}. 1. 1.)` : ''}`
+    + (s.distance_km != null ? ` · 대상과 ${s.distance_km}km` : '')
+    + (s.why ? ` · ${e(s.why)}` : '') + '</span>']);
+  rows.push(['시점수정', res.time.factor == null
+    ? '<em>자료 없음</em>'
+    : `<b>${f3(res.time.factor)}</b><span class="pcv-desc">${e(res.time.source)}`
+      + `${res.time.months ? ` · ${res.time.months}개월` : ''}</span>`]);
+  rows.push(['지역요인 비교', '<b>1.000</b><span class="pcv-desc">대상과 비교표준지가 '
+    + '같은 인근지역에 있어 지역요인은 대등합니다</span>']);
+
+  const ind = res.individual;
+  const itemRows = ind.items.map((it) =>
+    `<tr><th>${e(it.cond)}</th><td>${e(String(it.subject || '—'))}</td>`
+    + `<td>${e(String(it.std || '—'))}</td><td class="num"><b>${f3(it.ratio)}</b></td></tr>`
+    + (it.why ? `<tr class="pcv-why"><td colspan="4">${e(it.why)}</td></tr>` : '')).join('');
+  rows.push(['개별요인 비교', `<b>${f3(ind.factor)}</b><span class="pcv-desc">[${e(ind.kind)}] 조건별 격차율의 곱</span>`
+    + '<table class="pcv-items"><thead><tr><th>조건</th><th>대상</th><th>비교표준지</th>'
+    + '<th class="num">격차율</th></tr></thead><tbody>' + itemRows + '</tbody></table>']);
+  rows.push(['그 밖의 요인 보정', res.other.factor == null
+    ? '<em>자료 없음</em>'
+    : `<b>${res.other.factor}</b><span class="pcv-desc">${e(res.other.basis)}</span>`]);
+
+  let bottom;
+  if (res.missing.length) {
+    bottom = `<p class="pcv-hold">산출 보류 — 비어 있는 마디: ${e(res.missing.join(', '))}. `
+      + '1.00 으로 메우지 않습니다.</p>';
+  } else {
+    const p = res.parts;
+    bottom = '<div class="pcv-sum">'
+      + `<p class="pcv-calc">산출단가 ${won(p['표준지공시지가'])} × ${f3(p['시점수정'])}`
+      + ` × 1.000 × ${f3(p['개별요인'])} × ${p['그 밖의 요인']} = ${won(res.unit_calc)}원/㎡</p>`
+      + `<p class="pcv-decided">결정단가 <b>${won(res.unit_decided)}원/㎡</b>`
+      + (res.range ? ` <span>(인근 지가수준 ${won(res.range[0])}~${won(res.range[1])})</span>` : '') + '</p>'
+      + (res.total_krw
+        ? `<p class="pcv-total">평가액(추정) 약 <b>${won(res.total_krw)}원</b>`
+          + (sub.area_m2 ? ` <span>${won(sub.area_m2)}㎡ × ${won(res.unit_decided)}원/㎡</span>` : '') + '</p>'
+        : '') + '</div>';
   }
-  return `<p class="pcv-decided">결정단가 <b>${won(res.unit_decided)}원/㎡</b></p>`
-    + (res.total_krw ? `<p class="pcv-total">총액 약 <b>${won(res.total_krw)}원</b></p>` : '')
+  const warn = res.warnings.length
+    ? '<div class="pcv-warnbox"><b>참고사항</b><ul class="pcv-warn">'
+      + res.warnings.map((w) => `<li>${e(w)}</li>`).join('') + '</ul></div>'
+    : '';
+  return '<table class="pcv-table"><tbody>'
+    + rows.map(([k, v]) => `<tr><th>${e(k)}</th><td>${v}</td></tr>`).join('')
+    + '</tbody></table>' + bottom + warn
     + '<p class="pcv-note">공시지가기준법의 다섯 마디를 데이터베이스로 산출한 <strong>예상값</strong>입니다. '
     + '감정평가가 아닙니다. <a href="/guide/law">산출 방법</a></p>';
 }
@@ -5281,7 +5339,8 @@ async function nowResults() {
   const code = String(parcel.pnu || '').slice(0, 5);
   const [T, chunk] = await Promise.all([loadValuationTables(), loadStdland(code)]);
   if (!T || !chunk || !chunk.rows || !chunk.rows.length) return null;
-  const subject = { ...parcel, zones: ctx.zones || [] };
+  // 주소는 필지 자료가 아니라 따로 온다 (ctx.addr). 산출표 첫 줄에 적는다.
+  const subject = { ...parcel, zones: ctx.zones || [], addr: ctx.addr || null };
   const cands = chunk.rows.map(stdAsParcel);
   const picked = pickStandard(subject, cands, T, 3);
   if (!picked.length) return { picked: [], results: [] };

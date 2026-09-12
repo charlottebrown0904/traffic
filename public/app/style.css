@@ -1752,18 +1752,46 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   text-shadow: 0 0 2px rgba(0, 0, 0, .45);
 }
 
-/* 현재 가치 — 값 하나와 총액만 (2026-09-12 지시).
-   산출표·항목 목록·다른 표준지 규칙은 화면에서 뺐으므로 여기서도 지운다. */
+/* 현재 가치 — 감정평가서 산출표 모양 (2026-09-12 지시 "자세히").
+   평가서의 '산출근거 및 결정의견' 을 본떠, 이름·순서·격차율 표를 그대로 둔다. */
 .pcv-sub { font-weight: 400; font-size: 11px; color: var(--muted); margin-left: .4rem; }
-.pcv-decided { margin: .2rem 0; font-size: 15px; }
-.pcv-total { margin: .1rem 0; font-size: 12px; color: var(--muted); }
+.pcv-table { width: 100%; border-collapse: collapse; margin: .4rem 0; font-size: 12px; }
+.pcv-table > tbody > tr > th {
+  text-align: left; white-space: nowrap; vertical-align: top;
+  padding: .35rem .6rem .35rem 0; color: var(--muted); font-weight: 500; width: 7em;
+}
+.pcv-table > tbody > tr > td { padding: .35rem 0; border-bottom: 1px solid var(--border); }
+.pcv-desc { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.5; margin-top: .1rem; }
+
+/* 개별요인 격차율 표 — 조건 · 대상 · 비교표준지 · 격차율 */
+.pcv-items { width: 100%; border-collapse: collapse; margin: .35rem 0 .1rem; font-size: 11.5px; }
+.pcv-items th, .pcv-items td { padding: .22rem .35rem; text-align: left; }
+.pcv-items thead th {
+  color: var(--faint); font-weight: 500; border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.pcv-items tbody th { color: var(--ink); font-weight: 500; white-space: nowrap; }
+.pcv-items tbody tr { border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent); }
+.pcv-items .num { text-align: right; white-space: nowrap; }
+.pcv-items .pcv-why td { color: var(--muted); font-size: 11px; padding-top: 0; }
+
+.pcv-sum { margin: .5rem 0 .2rem; padding: .5rem .6rem; border-radius: .4rem; background: var(--surface-2); }
+.pcv-calc { font-size: 11.5px; color: var(--muted); margin: 0 0 .25rem; word-break: break-all; }
+.pcv-decided { margin: .1rem 0; font-size: 15px; }
+.pcv-decided span { font-size: 11.5px; color: var(--muted); font-weight: 400; }
+.pcv-total { margin: .15rem 0 0; font-size: 12.5px; }
+.pcv-total span { font-size: 11px; color: var(--muted); }
 .pcv-hold { margin: .4rem 0; font-size: 12.5px; }
-.pcv-lock-msg a.pcv-cta, .pcv-cta {
+.pcv-warnbox { margin: .45rem 0 0; font-size: 11.5px; }
+.pcv-warnbox b { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.pcv-warn { margin: .2rem 0 0; padding-left: 1.1rem; color: var(--warn); }
+.pcv-cta {
   display: inline-block; margin: .15rem 0;
   padding: .45rem 1rem; border-radius: .4rem;
   background: var(--accent); color: var(--on-accent);
   font-size: 12.5px; font-weight: 600; text-decoration: none;
 }
+.pcv-lock-msg a.pcv-cta { color: var(--on-accent); }
 .pcv-cta:hover { filter: brightness(1.08); }
 .pcv-note a { color: var(--accent); }
 .pcv-note { margin: .5rem 0 0; font-size: 11px; color: var(--muted); }
