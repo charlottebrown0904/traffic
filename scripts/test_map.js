@@ -3386,7 +3386,10 @@ const FAKE_LEAFLET = () => {
           !/표준지 [0-9,]+필지 중 고름/.test(vcalc));
     check('데이터베이스로 산출한 예상값이라고 적는다',
           /데이터베이스로 산출한/.test(vtxt) && /예상값/.test(vtxt)
-          && /감정평가가 아닙니다/.test(vtxt) && /href="\/guide\/law"/.test(vcalc));
+          && /감정평가가 아니며/.test(vtxt) && /href="\/guide\/law"/.test(vcalc));
+    // 용도를 스스로 좁히는 문장. 감정평가법 방어선이다 (docs/legal-notes.md §2).
+    check('담보·소송·과세·보상 목적으로 쓸 수 없다고 적는다',
+          /담보·소송·과세·보상 목적으로 쓸 수 없습니다/.test(vtxt));
 
     // 다섯 마디 — 고리로 본다 (화면에는 없다). 화면이 쓰는 것과 **같은**
     // 함수(nowResults)를 부르므로, 마디가 틀리면 여기서 잡힌다.
