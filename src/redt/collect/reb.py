@@ -192,8 +192,25 @@ def cycle_of(statbl_id: str) -> str:
     for r in rows:
         cd = r.get("DTACYCLE_CD") or r.get("dtacycle_cd")
         if cd:
-            return str(cd)
+            return pick_cycle(str(cd))
     raise ApiError(f"통계표를 찾을 수 없습니다: {statbl_id}")
+
+
+# 목록의 DTACYCLE_CD 는 한 표에 여러 주기가 붙어 온다 — 첫 실측(probe,
+# 2026-09-12)에서 지가변동률 월 표가 'QY,MM' 이었다. 자료 조회에는 하나만
+# 넣어야 하므로 고른다. 시점수정은 월 단위라 MM 을 먼저, 없으면 분기·연.
+_CYCLE_PREF = ("MM", "QY", "HY", "YY", "WK", "DD")
+
+
+def pick_cycle(cd: str) -> str:
+    """'QY,MM' → 'MM'. 하나뿐이면 그대로."""
+    parts = [p.strip() for p in cd.split(",") if p.strip()]
+    if len(parts) <= 1:
+        return parts[0] if parts else cd
+    for pref in _CYCLE_PREF:
+        if pref in parts:
+            return pref
+    return parts[0]
 
 
 def data(statbl_id: str, cycle: str | None = None, *, start: str | None = None,

@@ -1994,6 +1994,9 @@ check(_reb._rows(_one) == [{"STATBL_ID": "A_2024_00007"}],
       "한 건이 dict 로 오면 한 줄 목록으로 만든다")
 
 # 자료 없음(200)은 오류가 아니다. 코드에 그 구분이 남아 있는지 본다.
+check(_reb.pick_cycle("QY,MM") == "MM" and _reb.pick_cycle("YY") == "YY"
+      and _reb.pick_cycle("QY, YY") == "QY",
+      "주기코드가 'QY,MM' 처럼 여럿이면 월(MM)을 고른다 — 자료 조회엔 하나만 넣는다")
 check(_reb.EMPTY == "200" and _reb.BAD_KEY == "290",
       "'자료 없음' 과 '키 틀림' 을 가른다")
 
