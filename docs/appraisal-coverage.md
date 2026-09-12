@@ -112,5 +112,9 @@
 select land_use, std_jimok, count(*), count(f_other) from appraisal_case group by 1,2;
 ```
 
-Admin 탭(`/admin`)의 '감정평가서 원장 현황' 카드에 이 칸 표를 붙이면 문서가
-낡지 않습니다 — 아직 안 붙였습니다.
+**Admin 탭에 붙였습니다** (2026-09-12). `/admin` → 감정평가서 →
+'부족한 칸' 카드가 `appraisal_coverage()`(0010)로 24칸을 직접 셉니다.
+이 문서의 숫자는 그날의 사본이고, 살아 있는 값은 그 카드입니다.
+
+정확도를 올리는 방법과 필요한 문서는 `docs/appraisal-accuracy.md`,
+고시와 우리 산출의 대조는 `docs/appraisal-standard.md` 에 있습니다.

@@ -535,8 +535,18 @@ def ledger_other_factor(sido: str | None, sigungu: str | None,
 
 TRADE_OTHER_SQL = """
 -- 거래사례 기준 그 밖의 요인: 실거래단가 ÷ 개별공시지가.
--- 최근 3년, 취소 제외, 필지 특성이 붙은 거래만. 10~90% 를 잘라
--- 한두 건의 이상치가 중앙값 밖의 사분위를 흔들지 않게 한다.
+-- 취소 제외, 필지 특성이 붙은 거래만. 10~90% 를 잘라 한두 건의 이상치가
+-- 중앙값 밖의 사분위를 흔들지 않게 한다.
+--
+-- **창은 도시지역 3년 · 그 밖의 지역 5년이다.** 감정평가 실무기준
+-- (국토부 고시 2023-522) [610-1.5.2.5] ③4:
+--
+--   "기준시점으로부터 도시지역은 3년 이내, 그 밖의 지역은 5년 이내에
+--    거래 또는 감정평가된 사례일 것"
+--
+-- 도시지역은 국토계획법 §36①1 — 주거·상업·공업·**녹지**다. 관리·농림·
+-- 자연환경보전은 도시지역이 아니다. 우리 주 타깃(계획관리·생산관리)이
+-- 바로 그쪽이라, 3년으로 묶어 두면 고시가 허락한 표본을 스스로 버린다.
 WITH r AS (
     SELECT t.sigungu_cd,
            CASE {zone_case} ELSE NULL END AS zg,
@@ -546,14 +556,15 @@ WITH r AS (
              WHEN pc.jimok = '대' THEN '대'
              WHEN pc.jimok IN ('공장용지','도로','잡종지','창고용지','주차장') THEN '공장·도로'
              ELSE NULL END AS ug,
-           t.price_per_m2 / pc.official_price AS ratio
+           t.price_per_m2 / pc.official_price AS ratio,
+           t.deal_year
     FROM trade t
     JOIN trade_parcel tp ON tp.trade_id = t.trade_id
     JOIN parcel pc ON pc.pnu = tp.pnu
     WHERE t.kind = 'land'
       AND NOT coalesce(t.is_cancelled, FALSE)
       AND t.price_per_m2 > 0 AND pc.official_price > 0
-      AND t.deal_year >= {from_year}
+      AND t.deal_year >= {from_year_nonurban}
       -- 거래면적이 필지면적의 절반~두 배 밖이면 지번 지오코딩이 옆 필지에
       -- 떨어진 것일 수 있다 — 그 필지의 공시지가로 나누면 배율이 엉뚱해진다.
       AND t.area_m2 BETWEEN pc.area_m2 * 0.5 AND pc.area_m2 * 2.0
@@ -569,22 +580,42 @@ SELECT sigungu_cd, zg,
        quantile_cont(ratio, 0.75) AS q3
 FROM r
 WHERE zg IS NOT NULL
+  -- 도시지역(녹지 포함)은 3년으로 좁힌다. 위 WHERE 는 넓은 쪽(5년)으로
+  -- 한 번만 읽고, 여기서 용도지역군을 보고 자른다.
+  AND deal_year >= CASE WHEN zg IN ('관리', '농림') THEN {from_year_nonurban}
+                        ELSE {from_year_urban} END
   AND ratio BETWEEN 0.3 AND 20
 GROUP BY GROUPING SETS ((sigungu_cd, zg, ug), (sigungu_cd, zg))
 HAVING count(*) >= 10 AND (grouping(ug) = 1 OR ug IS NOT NULL)
 """
 
 
-def trade_other_factor(con, groups: list[tuple[str, str]], years: int = 3) -> dict:
+# 거래사례 창 (감정평가 실무기준 [610-1.5.2.5] ③4). 도시지역과 그 밖의
+# 지역이 다르다 — 숫자를 두 곳에 적지 않게 여기 한 번만 적는다.
+TRADE_YEARS_URBAN = 3
+TRADE_YEARS_NONURBAN = 5
+NONURBAN_ZONES = ("관리", "농림")      # 국토계획법 §36①1 밖 (녹지는 도시지역)
+
+
+def trade_other_factor(con, groups: list[tuple[str, str]],
+                       years: int | None = None) -> dict:
     """거래사례 기준 그 밖의 요인을 (시군구|용도지역군|지목군) 열쇠로 만든다.
     지목군을 합친 칸은 (시군구|용도지역군|*).
 
     groups 는 (용도지역군 이름, LIKE 조각) 목록이다. SQL 은 parcelscore.build
     와 같은 표·같은 조인을 쓴다. 러너에서 돌았다 (2026-09-11 안성 검증).
+
+    창은 용도지역군마다 다르다 — 도시지역 3년, 관리·농림 5년 (고시
+    [610-1.5.2.5] ③4). years 를 주면 두 창을 그 값으로 덮어쓴다(검사용).
     """
     case = " ".join(f"WHEN coalesce(pc.land_use, t.land_use) LIKE '%{like}%' THEN '{name}'" for name, like in groups)
-    from_year = dt.date.today().year - years
-    df = con.execute(TRADE_OTHER_SQL.format(zone_case=case, from_year=from_year)).fetchdf()
+    this_year = dt.date.today().year
+    y_urban = years if years is not None else TRADE_YEARS_URBAN
+    y_non = years if years is not None else TRADE_YEARS_NONURBAN
+    df = con.execute(TRADE_OTHER_SQL.format(
+        zone_case=case,
+        from_year_urban=this_year - y_urban,
+        from_year_nonurban=this_year - y_non)).fetchdf()
     out = {}
     for r in df.itertuples(index=False):
         out[f"{r.sigungu_cd}|{r.zg}|{r.ug}"] = {
@@ -786,7 +817,8 @@ def tables_for_web(trade: dict | None = None) -> dict:
         # 표준지의 지목군 칸 → 대상의 지목군 칸 → 합친 칸 순으로 찾고, 평가선례와
         # 건수 가중 기하평균으로 합친다 (decide_other 와 같은 규칙).
         "trade": trade or {},
-        "trade_years": 3,
+        "trade_years": TRADE_YEARS_URBAN,
+        "trade_years_nonurban": TRADE_YEARS_NONURBAN,
         "time_clamp": [0.98, 1.03],
         "zone_groups": ZONE_GROUPS, "use_groups": USE_GROUPS,
         "ledger_n": len(rows),
