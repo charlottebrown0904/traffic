@@ -29,9 +29,9 @@ from ..config import VIA_RELAY, keys
 from .http import ApiError, get, get_json
 
 BASE = "https://www.reb.or.kr/r-one/openapi"
-TBL = f"{BASE}/SttsApiTbl"
-ITM = f"{BASE}/SttsApiTblItm"
-DATA = f"{BASE}/SttsApiTblData"
+TBL = f"{BASE}/SttsApiTbl.do"
+ITM = f"{BASE}/SttsApiTblItm.do"
+DATA = f"{BASE}/SttsApiTblData.do"
 
 # 우리에게 필요한 통계표. 값은 R-ONE 이 준 '통계표 목록'(635개) 에서
 # 골랐고, 이름은 목록에 적힌 그대로다 — 추측한 ID 가 하나도 없다.

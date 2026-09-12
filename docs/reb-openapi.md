@@ -23,9 +23,9 @@
 ## 1. API 의 모양 — 세 개가 한 줄로 이어진다
 
 ```
-SttsApiTbl      https://www.reb.or.kr/r-one/openapi/SttsApiTbl
-SttsApiTblItm   https://www.reb.or.kr/r-one/openapi/SttsApiTblItm
-SttsApiTblData  https://www.reb.or.kr/r-one/openapi/SttsApiTblData
+SttsApiTbl      https://www.reb.or.kr/r-one/openapi/SttsApiTbl.do
+SttsApiTblItm   https://www.reb.or.kr/r-one/openapi/SttsApiTblItm.do
+SttsApiTblData  https://www.reb.or.kr/r-one/openapi/SttsApiTblData.do
 ```
 
 세 개 모두 기본인자가 같습니다.
@@ -234,7 +234,8 @@ GitHub 에 있든 R-ONE 이 보는 것은 같은 키이므로 **이 항목은 �
 
 ### 5-4. 그래서 — 답
 
-**지금은 Vercel 이 맞습니다. 다만 그게 최선이라는 뜻은 아닙니다.**
+**재 봤습니다(§7). 직접이 됩니다 — 키는 GitHub Secrets 가 유리합니다.**
+아래는 재기 전에 적은 논리이고, 결과는 §7 에 있습니다.
 
 이유는 하나입니다. 러너가 직접 부르는 길이 **있는지 아직 재 보지
 않았습니다.** 한국 공공 API 는 해외 IP 를 막습니다 —
@@ -287,7 +288,8 @@ GitHub 에 두면 그 저장소의 **모든 워크플로와 그 워크플로가 
 
 ## 6. 아직 말할 수 없는 것
 
-정직하게 적습니다. 키가 없어 **한 번도 호출해 보지 못했습니다.**
+정직하게 적습니다. 목록(`SttsApiTbl.do`)은 불러 봤고(§7), 항목·자료
+(`SttsApiTblItm.do`/`SttsApiTblData.do`)는 아직입니다.
 
 1. **응답을 감싸는 모양** — 명세서는 출력 *항목*만 적고 봉투를 적지
    않았습니다. 기본인자(`Key`/`Type`/`pIndex`/`pSize`)가 서울 열린데이터
@@ -301,3 +303,31 @@ GitHub 에 두면 그 저장소의 **모든 워크플로와 그 워크플로가 
    있으면서 오류 코드에는 `337 일별 트래픽 제한`이 있습니다. 둘 중 무엇이
    맞는지는 실제로 많이 불러 봐야 압니다. 그래서 수집기는 한 표씩,
    기간을 끊어 받습니다.
+
+## 7. 첫 실측 (2026-09-12, GitHub Actions 러너 · mode: reach)
+
+| 경로 | 직접 (미국 러너) | 중계기 (서울 icn1) |
+|---|---|---|
+| `/r-one/openapi/SttsApiTbl` (명세서 표기) | HTTP 200 · **HTML 'Page Not Found'** 7,057B | 같음 |
+| `/r-one/openapi/SttsApiTbl.do` | HTTP 200 · **JSON `code=000 정상 처리되었습니다.`** 2,228B | 같음 |
+
+세 가지가 정해졌습니다.
+
+1. **경로에 `.do` 가 붙습니다.** 명세서 URL 그대로는 서버가 '없는
+   페이지' 로 답합니다 — 키가 틀렸을 때의 `290` 이 아니라 HTML 입니다.
+   그래서 처음에 키 문제로 오해할 뻔했습니다(`http.visible()` 로 오류
+   문장을 앞으로 가져온 뒤에야 보였습니다). `reb.py` 의 `TBL`/`ITM`/`DATA`
+   가 `.do` 로 바뀌었고, `reach` 는 두 후보를 나란히 두드려 JSON 이 오는
+   쪽을 찍습니다.
+2. **미국 러너에서 직접 닿습니다.** 지오블록이 없습니다(1초 안에 응답).
+   §5 의 계산대로 대량 backfill 은 러너가 직접 부르는 쪽이 낫습니다 —
+   Vercel 함수 호출 0회, Fast Origin Transfer 0바이트.
+3. **목록 호출은 키 없이도 `000` 입니다.** 러너 쪽 `REB_KEY` 가 비어
+   있었는데도 정상 응답이 왔습니다. 자료 호출(`SttsApiTblData.do`)도
+   그런지는 모릅니다 — `mode: probe`/`pull` 로 확인합니다.
+
+**키를 둘 곳 — 판정.** 지금은 Vercel 에 있습니다(중계기가 끼워 넣음).
+동작에는 문제가 없지만 한 표의 전 기간(추정 120MB)이 Vercel 전송 한도를
+갉아먹습니다(§5-2). 옮기려면 **GitHub → Settings → Secrets and variables →
+Actions → `REB_KEY`** 에 넣고 **Vercel 쪽은 지웁니다** — 한 곳에만 둔다는
+원칙(§4-2)입니다. 옮기지 않아도 `probe`·소량 `pull` 은 그대로 됩니다.
