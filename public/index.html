@@ -96,6 +96,18 @@ ol.can-list h3::before{
 }
 ol.can-list p{font-size:14.5px;color:var(--muted);margin-bottom:12px}
 .can-note{font-size:12.5px;color:var(--faint);margin-top:10px}
+.can-tag{
+  display:grid;grid-template-columns:auto 1fr;gap:8px 14px;
+  background:var(--surface-2);border-radius:var(--radius);
+  padding:14px 16px;margin:0 0 12px
+}
+.can-tag dt{font-size:13.5px;font-weight:800;white-space:nowrap;color:var(--ink)}
+.can-tag dd{margin:0;font-size:13.5px;color:var(--muted)}
+@media (max-width:420px){
+  .can-tag{grid-template-columns:1fr;gap:2px}
+  .can-tag dt{margin-top:8px}
+  .can-tag dt:first-child{margin-top:0}
+}
 
 /* 캡쳐. 화면 밖으로 나가지 않게 폭을 100% 로 두고, 세로로 긴 것(필지
    카드·산출표)만 뚜껑을 씌워 본문 너비를 다 먹지 않게 한다. */
@@ -214,6 +226,9 @@ footer{
   line-height:1.7
 }
 footer a{color:var(--muted)}
+/* 칸 안의 링크. 이것이 없으면 브라우저 기본 파란색이 나와, 갈색 판에
+   혼자 파랗게 뜬다 ('가이드'·'지도' 링크가 그랬다). */
+section a{color:var(--accent);text-underline-offset:2px}
 </style>
 </head>
 <body>
@@ -286,14 +301,30 @@ footer a{color:var(--muted)}
       </li>
 
       <li>
-        <h3>읍·면·동, 리까지 들어간 평당가</h3>
-        <p>시·군에서 멈추지 않습니다. 지도를 확대하면 읍·면·동과 리 단위로 평당
-           얼마에 거래됐는지가 보입니다. <strong>거래가 다섯 건이 안 되는 곳은 값을 적지
-           않고 건수만 적습니다</strong> — 몇 건으로 만든 중앙값은 추세가 아닙니다.
-           지금 그 지역을 몇 명이 보고 있는지도 함께 나옵니다.</p>
+        <h3>지역 태그 하나에 네 가지</h3>
+        <p>지도의 파란 태그가 이 서비스의 기본 단위입니다. 확대하면
+           <strong>시·도 → 시·군·구 → 읍·면·동 → 리</strong>로 내려갑니다 — 시·군에서
+           멈추지 않습니다.</p>
+        <dl class="can-tag">
+          <dt>지역</dt>
+          <dd>그 축척의 행정구역 이름. 리 단계에서는 앞의 면 이름을 떼고 리만 적습니다.</dd>
+          <dt>인구</dt>
+          <dd>시·도와 시·군 단계에 이름 옆에 붙습니다. 읍·면·동과 리는
+              <strong>비워 둡니다</strong> — 우리가 가진 인구는 시군구 단위가 전부라,
+              그 숫자를 리에 적으면 리 하나가 20만 명인 것처럼 읽힙니다.</dd>
+          <dt>용도지역별 단가</dt>
+          <dd>평당 얼마에 거래됐는지. 처음에는 <strong>계획관리·생산관리·자연녹지 세
+              용도지역</strong>을 묶어 보여 주고, 용도지역을 골라 바꿀 수 있습니다.
+              거래가 다섯 건이 안 되는 곳은 값을 적지 않고 건수만 적습니다 —
+              몇 건으로 만든 중앙값은 추세가 아닙니다.</dd>
+          <dt>보는 사람</dt>
+          <dd>지금 몇 명이 보고 있는지, 오늘 몇 명이 봤는지. <strong>많이 보는
+              지역</strong>에는 이름 앞에 별표가 붙습니다 — 사람들이 지금 어디를 찾고
+              있는지가 보입니다.</dd>
+        </dl>
         <figure class="can-shot">
           <img src="/brand/shots/region.webp" width="1100" height="797" loading="lazy"
-               alt="평택 주변을 확대한 지도. 읍·면·동과 리마다 평당가 태그와 조회 인원 배지가 붙어 있다">
+               alt="평택 주변을 확대한 지도. 읍·면·동과 리마다 이름·평당가 태그와 조회 인원 배지가 붙어 있다">
         </figure>
       </li>
 
@@ -362,10 +393,6 @@ footer a{color:var(--muted)}
       <li><b>값을 내는 방법을 숨기지 않는다</b>
         <span>공시지가기준법의 다섯 마디를 화면에 그대로 적고, 산식은
               <a href="/guide/law">가이드</a>에 공개합니다. 숫자 하나만 던지지 않습니다.</span></li>
-      <li><b>모르는 것은 모른다고 적는다</b>
-        <span>거래가 얇은 곳, 아직 조사하지 않은 필지, 통행량이 공개되지 않은 민자 영업소는
-              빈칸으로 두고 왜 비었는지 적습니다. 미래 가치는 예측이 아니라 참고 지표라고
-              먼저 밝힙니다.</span></li>
     </ul>
   </div>
 </section>
@@ -375,14 +402,12 @@ footer a{color:var(--muted)}
     <div class="label">이용</div>
     <h2>회원 가입 후 이용하실 수 있습니다</h2>
     <p class="soft">
-      구글 또는 카카오 계정으로 가입하시면 관리자 승인 후 지도가 열립니다.
-      <strong>가입하면 모든 기능이 무료입니다</strong> — 등급이나 결제가 없습니다.
+      구글 또는 카카오 계정으로 <strong>가입하면 모든 기능이 무료입니다</strong>.
       아직 만들어 가는 중이라 승인제로 받고 있습니다.
     </p>
     <a class="tool-link" href="/account?next=%2Fapp">
       회원 가입하고 보기 <span aria-hidden="true">→</span>
     </a>
-    <p class="tool-note">토지·건축이 처음이시면 <a href="/guide">토지·건축 가이드</a>부터 보셔도 됩니다</p>
   </div>
 </section>
 
