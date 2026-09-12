@@ -105,8 +105,10 @@ check('rpc("set_grade"' in acct and "renderMembers" in acct and "if (acc.admin) 
 check("approved_at" in acct and "메일 복사" in acct and "CSV" in acct and "data-sort" in acct,
       "회원 목록: 신청일·가입일 · 메일 복사 · CSV · 정렬·필터")
 access_js = (ROOT / "public" / "lib" / "access.js").read_text(encoding="utf-8")
-check("A: 'VIP', B: '회원', C: '손님'" in access_js and "VIP" in acct,
-      "등급 이름: A→VIP · B→회원 · C→손님")
+check("A: 'VIP', B: '일반', C: '손님'" in access_js and "VIP" in acct,
+      "등급 이름: A→VIP · B→일반 · C→손님")
+check("label: guest ? '손님'" in app,
+      "로그인 없이 들어온 사람은 이름도 손님")
 sql6 = (ROOT / "supabase" / "migrations" / "0006_views_24h_approved_at.sql").read_text(encoding="utf-8")
 check("add column if not exists approved_at" in sql6 and "create trigger profile_stamp" in sql6,
       "가입(승인)일은 트리거가 찍는다")

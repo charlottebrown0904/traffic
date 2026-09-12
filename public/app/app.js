@@ -4903,10 +4903,15 @@ const VALUE_SERVICES = {
  * 일이 남아 있다 (docs/membership-grades.md). */
 function myAccess() {
   const me = window.ME;
-  const guest = !(me && me.user);          // 로그인 안 한 사람 = 손님
+  /* 손님 = **로그인 없이 들어온 사람** (2026-09-12 지시). 지금은 가입이
+     필수라 이 자리가 비지만, 나중에 로그인 없이 들어올 수 있게 풀면 그
+     사람이 여기로 온다. 이름도 그때 '손님' 으로 서야 한다. */
+  const guest = !(me && me.user);
   const prof = me && me.profile;
-  if (typeof window.accessOf === 'function') return { ...window.accessOf(prof), guest };
-  return { grade: 'C', label: '손님', premium: false, expired: false, admin: false, guest };
+  const base = (typeof window.accessOf === 'function')
+    ? window.accessOf(prof)
+    : { grade: 'C', label: '손님', premium: false, expired: false, admin: false };
+  return { ...base, guest, label: guest ? '손님' : base.label };
 }
 
 function valueButtons() {
@@ -4935,7 +4940,7 @@ function premiumNotice(key, acc) {
   }
   const why = acc.expired
     ? `이용 기간이 끝났습니다${acc.until ? ` (${acc.until.toLocaleDateString('ko-KR')}까지)` : ''}.`
-    : `${s.label}는 VIP·회원 등급에게 열립니다.`;
+    : `${s.label}는 VIP·일반 등급에게 열립니다.`;
   return head
     + `<p class="pcv-lock-msg">${why} 지금 등급은 <b>${escapeHtml(acc.label)}</b> 입니다.</p>`
     + '<p class="pcv-lock-msg">등급은 관리자가 올려 드립니다 — '

@@ -3163,7 +3163,7 @@ const FAKE_LEAFLET = () => {
       return document.getElementById('pc-val-box').innerHTML;
     });
     check('손님 등급이 누르면 산출 대신 안내가 뜬다',
-          /VIP·회원 등급에게 열립니다/.test(lockBox) && /href="\/account"/.test(lockBox)
+          /VIP·일반 등급에게 열립니다/.test(lockBox) && /href="\/account"/.test(lockBox)
           && !/공시지가기준법/.test(lockBox), lockBox.slice(0, 160));
     check('안내에 지금 등급을 이름으로 적는다 (손님)', /지금 등급은 <b>손님<\/b>/.test(lockBox));
     // 로그인 안 한 사람(손님)은 등급 안내가 아니라 **가입 권유**를 본다
