@@ -50,7 +50,7 @@ function chromiumPath() {
    수 없어 배경 지도가 없는 그림밖에 못 만든다 — 배경이 살아 있는 그림이
    이미 있으면 그쪽이 낫다. 여기 적힌 이름의 .webp 가 있으면 건너뛴다.
    다시 찍고 싶으면 그 파일을 지우고 돌리면 된다. */
-const HUMAN = new Set(['map', 'region', 'cadastral']);
+const HUMAN = new Set(['map', 'region', 'cadastral', 'parcel']);
 
 const ROOT = path.resolve(__dirname, '..');
 const OUT = path.join(ROOT, 'public', 'brand', 'shots');
@@ -326,12 +326,20 @@ async function main() {
       await page.waitForTimeout(700);
       // 필지 진단 — 여섯 축 레이더와 축별 백분위. 카드가 화면보다 길어서
       // 위쪽만 자른다 (자르기는 그림을 고치는 것이 아니다).
-      const dbb = await (await page.$('#detail')).boundingBox();
-      await page.screenshot({
-        path: path.join(OUT, 'parcel.png'),
-        clip: { x: dbb.x, y: dbb.y, width: dbb.width, height: Math.min(dbb.height, 470) },
-      });
-      console.log('  ✓ parcel.png  필지 진단 — 여섯 축 (예시 필지)');
+      //
+      // **사람이 찍은 것이 있으면 건드리지 않는다.** 이 칸은 실제 필지
+      // 화면(지번을 가린 것)을 쓰고 있어서, 여기서 다시 찍으면 그것을
+      // 예시 필지로 덮어쓴다. shoot() 과 같은 규칙이다.
+      if (HUMAN.has('parcel') && fs.existsSync(path.join(OUT, 'parcel.webp'))) {
+        console.log('  · parcel.webp — 사람이 찍은 것을 그대로 둡니다 (지번 가림)');
+      } else {
+        const dbb = await (await page.$('#detail')).boundingBox();
+        await page.screenshot({
+          path: path.join(OUT, 'parcel.png'),
+          clip: { x: dbb.x, y: dbb.y, width: dbb.width, height: Math.min(dbb.height, 470) },
+        });
+        console.log('  ✓ parcel.png  필지 진단 — 여섯 축 (예시 필지)');
+      }
       // 현재 가치 산출표만 따로. #detail 은 스크롤 칸이라 잘리는데 이 안쪽
       // 상자는 제 높이를 갖고 있다.
       await shoot('value', '#pc-val-box', '현재 가치 — 공시지가기준법 다섯 마디 (예시 필지)');
