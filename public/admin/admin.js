@@ -176,6 +176,14 @@
               return '<p><b>' + E(k) + '</b></p>' + idxTable(v.slope_index[k], '지세');
             }).join('')
             : '<p><em class="adm-miss">비공개 자료를 못 받았습니다.</em></p>')
+          + ((v.bijunpyo && v.bijunpyo.rows)
+            ? '<h4>관의 공식 배율과 나란히 — 토지가격비준표</h4>'
+              + '<p>' + E(v.bijunpyo.source) + '. 지세는 이 값을 그대로 옮겨 적었고(2026-09-12), '
+              + '도로접면·형상은 평가서 검산이 있는 우리 값을 씁니다. 차이가 곧 개별공시지가와 감정평가의 거리입니다.</p>'
+              + Object.keys(v.bijunpyo.rows).map(function (k) {
+                return '<p><b>' + E(k) + '</b></p>' + idxTable(v.bijunpyo.rows[k], k);
+              }).join('')
+            : '')
           + '<h4>면적</h4>'
           + (v.area_rules
             ? Object.keys(v.area_rules).map(function (k) {

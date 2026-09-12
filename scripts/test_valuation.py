@@ -42,6 +42,23 @@ check(V.zone_kind("제2종일반주거지역", "대") == "주택지대", "주거
 check(V.zone_kind("준공업지역", "대", "공업나지") == "공업지대", "공업 → 공업지대")
 
 print()
+print("1-1. 지세 표 — 비준표 파일과 같은 값인가")
+
+# 지세 지수는 토지가격비준표(안성시 보개면 2026, 계획관리지역) 값이다.
+# 파일이 바뀌거나 표를 손대면 여기서 걸린다 — 어느 쪽이 진실인지는
+# 파일이고, 코드는 그것을 옮겨 적은 것뿐이다.
+_bj = ROOT / "data" / "bijunpyo" / "41550_bogae_2026.tsv"
+_cells = {}
+for _line in _bj.read_text(encoding="utf-8").splitlines()[1:]:
+    _c = _line.split("\t")
+    if _c[3] == "계획관리지역" and _c[4] == "고저" and _c[5] == "평지":
+        _cells[_c[6]] = float(_c[7])
+check(_cells, "비준표 파일에 계획관리지역 고저 표가 있다")
+for _k, _v in V.SLOPE_INDEX["*"]:
+    check(abs(_cells.get(_k, -1) - _v) < 1e-9, f"지세 {_k} = 비준표 {_cells.get(_k)}")
+check(V.SLOPE_INDEX["임야지대"] == V.SLOPE_INDEX["*"],
+      "임야지대도 같은 표 — 따로 볼 근거가 생기면 그 줄만 바꾼다")
+
 print("2. 격차율 — 대상 ÷ 표준지")
 r = V.individual_factor(
     {"land_use": "자연녹지지역", "jimok": "임야", "road_side": "세로(가)", "slope": "완경사"},

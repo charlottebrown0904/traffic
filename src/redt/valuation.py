@@ -144,12 +144,28 @@ SHAPE_INDEX = [
     ("부정", 0.95), ("자루", 0.90),
 ]
 
-# 지세. 임야는 급경사 감가가 더 크다 (평가서 0.75~0.85, 농지 0.88~0.93).
+# 지세 — **토지가격비준표 값이다** (2026-09-12, 안성시 보개면 2026,
+# 계획관리지역 시트의 '고저' 표에서 표준지=평지 행. data/bijunpyo/).
+#
+# 전에는 평가서에서 읽은 값이었다 (임야 급경사 0.82 · 그 밖 0.88 · 고지
+# 0.95). 급경사·고지 사례가 원장에 몇 건 없어 사실상 기본값에 가까웠고,
+# 비준표는 그 자리를 훨씬 크게 감가한다 — 급경사 0.70 · 고지 0.69.
+# 용도지역 11장 모두에서 급경사 0.65~0.73 · 고지 0.63~0.72 라 시트에
+# 따라 크게 다르지 않아 한 줄로 둔다.
+#
+# 원장 검산(253건)으로는 판가름이 안 난다 — 지세가 표준지와 다른 행이
+# 20건뿐이고 그마저 지목군 불일치·특례가 값을 지배한다. ±10% 149→150.
+# 그래서 근거가 있는 쪽(관의 공식 배율)을 택했다. 평가서가 농지 급경사를
+# 0.88~0.93 으로 적은 사례가 있었던 것은 사실이고, 그것은 이 표가 아니라
+# docs/bijunpyo.md §3 에 남긴다.
+#
+# 열쇠(지대)별로 갈라 둔 모양은 유지한다 — slope_index(text, kind) 가
+# 그 모양을 읽고, 임야를 따로 볼 근거가 다시 생기면 그 줄만 바꾸면 된다.
+_SLOPE_BIJUNPYO = [("평지", 1.00), ("완경사", 0.90), ("급경사", 0.70),
+                   ("고지", 0.69), ("저지", 0.97)]
 SLOPE_INDEX = {
-    "임야지대": [("평지", 1.00), ("완경사", 0.95), ("급경사", 0.82),
-               ("고지", 0.92), ("저지", 0.92)],
-    "*": [("평지", 1.00), ("완경사", 0.97), ("급경사", 0.88),
-          ("고지", 0.95), ("저지", 0.95)],
+    "임야지대": list(_SLOPE_BIJUNPYO),
+    "*": list(_SLOPE_BIJUNPYO),
 }
 
 # 지목·이용상황이 표준지와 다를 때 (대상, 표준지) → 격차율.
@@ -789,6 +805,39 @@ SIDO_NAMES = {"11": "서울", "26": "부산", "27": "대구", "28": "인천", "2
               "46": "전남", "47": "경북", "48": "경남", "50": "제주", "51": "강원", "52": "전북"}
 
 
+BIJUNPYO_TSV = ROOT / "data" / "bijunpyo" / "41550_bogae_2026.tsv"
+
+# 우리 지수표와 나란히 보일 비준표 항목. (항목, 기준 행) — 기준 행이 곧
+# '지수 1.00' 이라, 그 행을 꺼내면 우리 표와 같은 기준이 된다.
+_BIJUNPYO_ROWS = (("도로접면", "세로(가)"), ("형상(주거.공업)", "정방형"), ("고저", "평지"))
+
+
+def bijunpyo_index(zone: str = "계획관리지역", path: Path | None = None) -> dict:
+    """토지가격비준표(안성시 보개면 2026)의 세 항목을 지수 모양으로.
+
+    화면(Admin 격차율 표)에 우리 값과 **나란히** 싣기 위한 것이다 — 관의
+    공식 배율이 우리 값과 얼마나 떨어져 있는지를 사람이 보게 한다.
+    파일이 없으면 빈 사전이다. 산출에는 쓰지 않는다 (지세는 이미 그 값을
+    SLOPE_INDEX 에 옮겨 적었고, 도로·형상은 평가서 검산이 있는 우리 값을 쓴다).
+    """
+    path = path or BIJUNPYO_TSV
+    if not path.exists():
+        return {}
+    want = {item: base for item, base in _BIJUNPYO_ROWS}
+    out = {item: {} for item in want}
+    with open(path, encoding="utf-8") as fh:
+        next(fh)
+        for line in fh:
+            c = line.rstrip("\n").split("\t")
+            if len(c) < 8 or c[3] != zone:
+                continue
+            item, std, target, ratio = c[4], c[5], c[6], c[7]
+            if want.get(item) == std:
+                out[item][target] = float(ratio)
+    return {"source": f"토지가격비준표 안성시 보개면 2026 · {zone}",
+            "rows": {k: [[t, v] for t, v in d.items()] for k, d in out.items() if d}}
+
+
 def tables_for_web(trade: dict | None = None) -> dict:
     """화면용 표. trade 는 trade_other_factor() 의 거래사례 칸 — 내보내기(webexport)가
     DB 를 열어 넘긴다. 없으면 빈 사전이고 화면은 평가선례만 쓴다."""
@@ -808,6 +857,8 @@ def tables_for_web(trade: dict | None = None) -> dict:
     return {
         "road_index": ROAD_INDEX, "road_corner_bonus": ROAD_CORNER_BONUS,
         "shape_index": SHAPE_INDEX, "slope_index": SLOPE_INDEX,
+        # 관의 공식 배율 — 우리 값 옆에 놓아 보라고 싣는다 (산출에는 안 쓴다).
+        "bijunpyo": bijunpyo_index(),
         "use_mismatch": {f"{a}|{b}": v for (a, b), v in USE_MISMATCH.items()},
         "special": SPECIAL, "must_match": list(MUST_MATCH), "std_known": list(STD_KNOWN),
         "area_rules": {k: [[lo, (None if hi == math.inf else hi), r, why] for lo, hi, r, why in v]
@@ -833,8 +884,11 @@ def tables_for_web(trade: dict | None = None) -> dict:
 def check_ledger(rows: list[dict] | None = None) -> dict:
     """개별요인 표를 평가서와 견준다.
 
-    원장에는 표준지의 도로접면·형상만 있고 지세가 없다. 그래서 여기서는
-    도로·형상·지목군만 대입한다 — 지세 격차가 든 건은 그만큼 벗어난다.
+    1차 원장(52건)에는 표준지의 도로접면·형상만 있고 지세가 없다. 그
+    행들은 도로·형상·지목군만 대입된다 — 지세 격차가 든 건은 그만큼
+    벗어난다. 2차 원장부터는 std_slope·std_jimok 이 있어 지세와 표준지
+    지목군까지 대입된다. 열이 없으면 individual_factor 가 그 항목을
+    빼므로(1.00 으로 메우지 않는다) 두 원장을 한 표로 검산해도 된다.
     """
     rows = rows if rows is not None else load_ledger()
     out = []
@@ -847,9 +901,10 @@ def check_ledger(rows: list[dict] | None = None) -> dict:
             continue        # 특례 0.33 — 표가 아니라 규칙이 정한다
         subject = {"land_use": r.get("land_use"), "jimok": r.get("jimok"),
                    "use_situation": use, "road_side": r.get("road"),
-                   "shape": r.get("shape")}
+                   "shape": r.get("shape"), "slope": r.get("slope")}
         std = {"road_side": r.get("std_road"), "shape": r.get("std_shape"),
-               "jimok": r.get("jimok")}
+               "slope": r.get("std_slope"),
+               "jimok": r.get("std_jimok") or r.get("jimok")}
         got = individual_factor(subject, std)
         out.append({"file_id": r.get("file_id"), "sigungu": r.get("sigungu"),
                     "use": use, "obs": obs, "pred": got["factor"],

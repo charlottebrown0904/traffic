@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import xml.etree.ElementTree as ET
@@ -150,7 +151,21 @@ def get_json(url: str, params: dict, timeout: int = 60) -> dict:
         return json.loads(resp.text, strict=False)
     except ValueError:
         raise ApiError(
-            f"JSON 이 아닙니다 (HTTP {resp.status_code}): {scrub(resp.text[:200])}")
+            f"JSON 이 아닙니다 (HTTP {resp.status_code}): {visible(resp.text)}")
+
+
+def visible(text: str, limit: int = 300) -> str:
+    """HTML 이면 태그와 빈칸을 걷어 사람이 읽을 글만 남긴다.
+
+    R-ONE 은 요청이 틀리면 HTTP 200 에 HTML 오류 페이지를 준다. 앞 200자를
+    그대로 찍으면 빈 줄 스무 개와 <!DOCTYPE html> 만 보이고, 오류 메시지는
+    그 아래에 있다(실측 2026-09-12). 태그를 지우고 빈칸을 모으면 그 메시지가
+    앞으로 온다.
+    """
+    t = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", text, flags=re.S | re.I)
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    return scrub(t[:limit])
 
 
 def get_xml(url: str, params: dict, timeout: int = 30) -> ET.Element:

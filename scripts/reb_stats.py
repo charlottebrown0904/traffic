@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from redt.collect import reb                                    # noqa: E402
+from redt.collect.http import visible                           # noqa: E402
 from redt.config import RAW, relay                              # noqa: E402
 
 OUT = RAW / "reb"
@@ -60,9 +61,8 @@ def reach() -> int:
         r = requests.get(url, params=q, timeout=20,
                          headers={"User-Agent": "redt-research/0.1"})
         dt = time.time() - t0
-        body = r.text[:200].replace("\n", " ")
         print(f"   HTTP {r.status_code} · {dt:.2f}초 · {len(r.content):,}바이트")
-        print(f"   {body}")
+        print(f"   {visible(r.text)}")
         direct_ok = True
     except Exception as exc:
         dt = time.time() - t0
@@ -87,7 +87,7 @@ def reach() -> int:
             resp = reb.get_raw(url, q)
             dt = time.time() - t0
             print(f"   HTTP {resp.status_code} · {dt:.2f}초 · {len(resp.content):,}바이트")
-            print(f"   {resp.text[:200]}")
+            print(f"   {visible(resp.text)}")
             relay_ok = True
         except Exception as exc:
             dt = time.time() - t0
