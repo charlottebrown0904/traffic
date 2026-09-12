@@ -3108,13 +3108,17 @@ const FAKE_LEAFLET = () => {
           /연 \+7\.2%/.test(pc.html),
           (pc.html.match(/연 [+-][0-9.]+%[^<]*/) || ['없음'])[0]);
     check('몇 해를 본 것인지 적는다', /최근 6년/.test(pc.html));
-    // 같은 또래 안에서 재면 모두 같은 값이 된다. 전국과 견뎌야 한다.
-    check('전국과 견줬다고 적는다',
-          /전국의 다른 동네·용도와 견줍니다/.test(pc.html));
-    // 교통 축은 2종까지 넣었다 (요구사항 2026-09-10).
-    check('교통 축이 2종까지 센다고 적는다',
-          /2·3·4·5종/.test(pc.html),
+    // 축 설명에서 **재는 방법**을 뺐다 (2026-09-12 지시 '노하우는 숨긴다').
+    // 몇 km 안의 어느 차종인지, 또래를 무슨 열쇠로 묶고 얇으면 어디로
+    // 물러나는지는 곧 만드는 법이다. 뜻과 주의만 남긴다.
+    check('축 설명이 재는 방법을 적지 않는다',
+          !/2·3·4·5종/.test(pc.html) && !/10km 안/.test(pc.html)
+          && !/같은 시군구·같은 용도지역·같은 지목군/.test(pc.html)
+          && !/시·도로 물러납니다/.test(pc.html),
           (pc.html.match(/<dt>물류 교통<\/dt><dd>[^<]*/) || ['없음'])[0]);
+    check('그래도 무엇을 재는지와 주의는 남는다',
+          /화물 통행/.test(pc.html) && /오르는 중인지/.test(pc.html)
+          && /지적상 접면/.test(pc.html) && /비슷한 조건의 거래/.test(pc.html));
 
     // 현재 가치 · 미래 가치 (요구사항 2026-09-10). 축 설명 바로 밑.
     check('가치 단추가 둘 선다',
@@ -3122,30 +3126,46 @@ const FAKE_LEAFLET = () => {
           String((pc.html.match(/class="pc-val"/g) || []).length));
     check('현재 가치 · 미래 가치 라는 이름이다',
           /현재 가치/.test(pc.html) && /미래 가치/.test(pc.html));
-    check('누르기 전에 준비 중이라고 적는다', /준비 중/.test(pc.html));
+    check('누르기 전에 회원 전용이라고 적는다', /회원 전용/.test(pc.html));
     check('축 설명 바로 아래에 있다',
           pc.html.indexOf('pc-axis-help') < pc.html.indexOf('pc-val-row')
           && pc.html.indexOf('pc-val-row') < pc.html.indexOf('토지 정보'));
     // CSS 가 아직 안 붙은 한순간에 <em> 은 기울어진 글씨로 이름에
     // 붙어 '현재 가치준비 중' 처럼 보인다. 태그로 뜻이 서게 둔다.
     check('뱃지를 <em> 으로 달지 않는다',
-          !/<em>준비 중<\/em>/.test(pc.html) && /pcv-tag/.test(pc.html));
+          !/<em>회원 전용<\/em>/.test(pc.html) && /pcv-tag/.test(pc.html));
     // 프리미엄 잠금 (2026-09-11 지시). C 등급은 단추에 '프리미엄' 꼬리표가
     // 붙고, 누르면 산출 대신 안내가 뜬다 — 결제 안내는 미확정이라 '준비 중'.
     check('B 등급은 잠기지 않는다', !/pcv-lock/.test(pc.html) && !/is-locked/.test(pc.html));
     await page.evaluate(() => { window.ME.profile.grade = 'C'; });
     const pcC = await clickMap(37.304, 127.011);
-    check('C 등급은 단추에 프리미엄 꼬리표가 붙는다',
-          /pcv-lock/.test(pcC.html) && /<span class="pcv-tag pcv-lock">프리미엄<\/span>/.test(pcC.html),
+    check('C 등급은 단추가 잠긴다 (회원 전용 꼬리표)',
+          /pcv-lock/.test(pcC.html) && /<span class="pcv-tag pcv-lock">회원 전용<\/span>/.test(pcC.html),
           (pcC.html.match(/pc-val-row[^>]*>[\s\S]{0,160}/) || ['없음'])[0]);
     const lockBox = await page.evaluate(() => {
       document.querySelector('.pc-val[data-val="now"]').click();
       return document.getElementById('pc-val-box').innerHTML;
     });
-    check('일반 등급이 누르면 산출 대신 안내가 뜬다',
-          /프리미엄 등급 이상/.test(lockBox) && /준비 중입니다/.test(lockBox) && /href="\/account"/.test(lockBox)
+    check('손님 등급이 누르면 산출 대신 안내가 뜬다',
+          /VIP·회원 등급에게 열립니다/.test(lockBox) && /href="\/account"/.test(lockBox)
           && !/공시지가기준법/.test(lockBox), lockBox.slice(0, 160));
-    check('안내에 지금 등급을 이름으로 적는다 (일반)', /지금 등급은 <b>일반<\/b>/.test(lockBox));
+    check('안내에 지금 등급을 이름으로 적는다 (손님)', /지금 등급은 <b>손님<\/b>/.test(lockBox));
+    // 로그인 안 한 사람(손님)은 등급 안내가 아니라 **가입 권유**를 본다
+    // (2026-09-12 지시). 등급을 올려 달라고 문의할 계정이 아직 없다.
+    const guestBox = await page.evaluate(async () => {
+      const keep = window.ME;
+      window.ME = null;
+      const b = document.querySelector('.pc-val[data-val="now"]');
+      b.click();                                   // 열려 있던 것을 닫고
+      await new Promise((ok) => setTimeout(ok, 20));
+      b.click();                                   // 손님 자격으로 다시 연다
+      const html = document.getElementById('pc-val-box').innerHTML;
+      window.ME = keep;
+      return html;
+    });
+    check('로그인 안 한 사람에게는 가입을 권한다',
+          /무료 회원 가입/.test(guestBox) && /href="\/account\?next=%2Fapp"/.test(guestBox)
+          && !/지금 등급은/.test(guestBox), guestBox.slice(0, 200));
     await page.evaluate(() => { window.ME.profile.grade = 'B'; window.ME.profile.grade_until = '2020-01-01'; });
     const pcX = await clickMap(37.304, 127.011);
     const lockX = await page.evaluate(() => {
@@ -3153,7 +3173,7 @@ const FAKE_LEAFLET = () => {
       return document.getElementById('pc-val-box').innerHTML;
     });
     check('B 인데 기간이 지나면 잠기고 그렇게 말한다',
-          /pcv-lock/.test(pcX.html) && /기간이 끝났습니다/.test(lockX), lockX.slice(0, 120));
+          /pcv-lock/.test(pcX.html) && /이용 기간이 끝났습니다/.test(lockX), lockX.slice(0, 120));
     await page.evaluate(() => { delete window.ME.profile.grade_until; window.ME.profile.grade = 'B'; });
     await clickMap(37.304, 127.011);
 
@@ -3261,49 +3281,53 @@ const FAKE_LEAFLET = () => {
       return document.getElementById('pc-val-box').innerHTML;
     });
     const vtxt = vcalc.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
-    check('표준지가 있으면 산출표를 낸다 (다섯 마디)',
-          /비교표준지/.test(vcalc) && /시점수정/.test(vcalc) && /지역요인/.test(vcalc)
-          && /개별요인/.test(vcalc) && /그 밖의 요인/.test(vcalc), vtxt.slice(0, 120));
-    const vhead = vtxt.slice(vtxt.indexOf('비교표준지'), vtxt.indexOf('시점수정'));
-    check('같은 동리의 표준지 A 를 고른다 (다른 동리 B 는 벌점 1.0)',
-          /지월리 5/.test(vhead) && !/대쌍령리/.test(vhead), vhead.slice(0, 160));
-    check('용도지역이 다른 표준지는 후보에서 뺀다',
-          !/지월리 9/.test(vcalc));
-    // 개별요인 = 도로 1.18/1.00 × 형상 1.00/0.95(→1.053) × 지세 1 = 1.243 (항목마다 셋째 자리로)
-    check('개별요인이 격차율의 곱이다 (1.243)', /1\.243/.test(vcalc),
-          (vcalc.match(/개별요인[^<]*<\/th><td><b>[^<]*/) || ['없음'])[0]);
-    check('그 밖의 요인은 시·도 값 (경기 관리 전·답 2.32)', /2\.32/.test(vcalc) && /같은 시·도/.test(vcalc));
-    check('시점수정은 추세로 대신했다고 적고 상한 1.03 안이다',
-          /추세로 대신함/.test(vcalc) && /1\.030/.test(vcalc),
-          (vcalc.match(/시점수정[^<]*<\/th><td>[^<]*<b>[^<]*/) || ['없음'])[0]);
-    // 150,000 × 1.03 × 1.243 × 2.32 = 445,560 → 1,000원 단위 → 446,000
+    // 화면에 내는 것은 **값 하나와 총액**뿐이다 (2026-09-12 지시). 산출표는
+    // 곧 만드는 법이라 걷어냈다. 다섯 마디가 맞는지는 화면이 아니라 고리
+    // (window.__appraiseNow · __pickStandard)로 본다 — 값이 틀리면 화면이
+    // 조용히 틀린 숫자를 보이게 되므로 검사는 계속 마디마다 견준다.
+    check('화면에는 결정단가와 총액만 낸다',
+          /결정단가/.test(vcalc) && /총액 약/.test(vcalc)
+          && !/비교표준지/.test(vcalc) && !/시점수정/.test(vcalc) && !/지역요인/.test(vcalc)
+          && !/개별요인/.test(vcalc) && !/그 밖의 요인/.test(vcalc)
+          && !/pcv-table/.test(vcalc), vtxt.slice(0, 160));
     check('결정단가를 자리수 규칙으로 낸다 (446,000원/㎡)', /446,000원\/㎡/.test(vcalc),
           (vcalc.match(/결정단가[^<]*<b>[^<]*/) || ['없음'])[0]);
-    check('범위(그 밖의 요인 사분위)를 함께 적는다', /흔히 [0-9,]+~[0-9,]+/.test(vtxt));
-    // 그 밖의 요인 두 갈래 (2026-09-11 F). 표는 위와 같고 거래사례 칸만 더한다.
-    const of = await page.evaluate((T) => {
-      const T2 = { ...T, trade: { '41111|관리|전·답': { median: 2.0, q1: 1.5, q3: 2.6, n: 40, source: '거래사례', level: '시군구' },
-                                 '41111|관리|*': { median: 1.8, q1: 1.4, q3: 2.2, n: 90, source: '거래사례', level: '시군구 · 지목군 합침' } } };
-      const subj = { pnu: '4111110300100010000', land_use: '계획관리지역', jimok: '전', use_situation: '전' };
-      const std = { jimok: '전', use_situation: '전' };
-      const both = window.__otherFactorOf(subj, std, T2);
-      // 대상은 구거(지목군 없음), 표준지는 대 → '대' 칸을 봐야 한다 (원장엔 관리|대 가 없어 자료 없음이 맞다)
-      const gugeo = window.__otherFactorOf({ ...subj, jimok: '구거', use_situation: '구거' }, { jimok: '대', use_situation: '대' }, T);
-      const ledgerOnly = window.__otherFactorOf(subj, std, T);
-      const star = window.__otherFactorOf({ ...subj, jimok: '구거', use_situation: '구거' }, { jimok: '구거' }, T2);
-      return { both, gugeo, ledgerOnly, star };
-    }, VAL);
-    check('평가선례 2.32(n=5)와 거래사례 2.0(n=40)을 건수 가중 기하평균으로 합친다 → 2.04',
-          of.both.factor === 2.04 && /건수 가중 기하평균/.test(of.both.basis) && of.both.q1 === 1.5 && of.both.q3 === 2.6,
-          JSON.stringify(of.both));
-    check('거래사례가 없으면 평가선례 값 그대로 (2.32)', of.ledgerOnly.factor === 2.32);
-    check('칸은 표준지의 지목군으로 고른다 (구거 대상 · 대 표준지 → 전·답 배율을 안 쓴다)',
-          of.gugeo.factor === null, JSON.stringify(of.gugeo));
-    check('지목군이 없으면 지목군 합친 거래사례 칸으로 물러난다 (1.8)', of.star.factor === 1.8, JSON.stringify(of.star));
-    check('총액도 적는다 (1,653㎡)', /총액 약/.test(vcalc));
-    check('농업진흥은 표준지 자료에 없어 확인 못 했다고 적는다', /확인하지 못했다/.test(vcalc));
-    check('다른 표준지를 쓰면 얼마인지도 보인다', /다른 표준지를 쓰면/.test(vcalc) && /대쌍령리 7/.test(vcalc));
-    check('감정평가가 아니라고 적는다', /감정평가가 아니며/.test(vcalc));
+    check('범위·다른 표준지·경고는 화면에 안 낸다',
+          !/흔히 [0-9,]+~[0-9,]+/.test(vtxt) && !/다른 표준지를 쓰면/.test(vcalc)
+          && !/pcv-warn/.test(vcalc) && !/확인하지 못했다/.test(vcalc));
+    check('머리에 산출 방법을 적지 않는다',
+          !/표준지 [0-9,]+필지 중 고름/.test(vcalc) && !/pcv-sub/.test(vcalc));
+    check('데이터베이스로 산출한 예상값이라고 적는다',
+          /데이터베이스로 산출한/.test(vtxt) && /예상값/.test(vtxt)
+          && /감정평가가 아닙니다/.test(vtxt) && /href="\/guide\/law"/.test(vcalc));
+
+    // 다섯 마디 — 고리로 본다 (화면에는 없다). 화면이 쓰는 것과 **같은**
+    // 함수(nowResults)를 부르므로, 마디가 틀리면 여기서 잡힌다.
+    const five = await page.evaluate(async () => {
+      const got = await window.__nowResults();
+      const res = got.results[0];
+      return {
+        std: [res.std.ld_name, res.std.jibun].filter(Boolean).join(' '),
+        others: got.picked.map((p) => [p.ld_name, p.jibun].filter(Boolean).join(' ')),
+        time: res.time.factor, timeSrc: res.time.source,
+        indiv: res.individual.factor, other: res.other.factor, otherLevel: res.other.basis,
+        unit: res.unit_decided, total: res.total_krw, warn: res.warnings,
+      };
+    });
+    check('같은 동리의 표준지 A 를 고른다 (다른 동리 B 는 벌점 1.0)',
+          /지월리 5/.test(five.std) && !/대쌍령리/.test(five.std), five.std);
+    check('용도지역이 다른 표준지는 후보에서 뺀다',
+          !five.others.some((x) => /지월리 9/.test(x)), JSON.stringify(five.others));
+    // 개별요인 = 도로 1.18/1.00 × 형상 1.00/0.95(→1.053) × 지세 1 = 1.243
+    check('개별요인이 격차율의 곱이다 (1.243)',
+          Math.abs(five.indiv - 1.243) < 0.001, String(five.indiv));
+    check('그 밖의 요인은 시·도 값 (경기 관리 전·답 2.32)',
+          five.other === 2.32 && /같은 시·도/.test(five.otherLevel), five.otherLevel);
+    check('시점수정은 추세로 대신했다고 적고 상한 1.03 안이다',
+          /추세로 대신함/.test(five.timeSrc) && Math.abs(five.time - 1.03) < 0.0005,
+          `${five.time} ${five.timeSrc}`);
+    check('농업진흥은 표준지 자료에 없어 확인 못 했다고 경고에 남는다',
+          five.warn.some((w) => /확인하지 못했다/.test(w)), JSON.stringify(five.warn));
     // 뒤 검사는 '미래 가치' 가 열린 상태에서 시작한다. 그 상태로 되돌린다.
     await page.evaluate(async () => {
       document.querySelector('.pc-val[data-val="future"]').click();

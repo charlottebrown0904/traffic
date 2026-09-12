@@ -1,6 +1,6 @@
 """회원 등급 뼈대 (2026-09-11 지시) — admin / A / B / C.
 
-  1. 화면 판단(public/lib/access.js): A·admin 은 늘 프리미엄, B 는 기간 안에서만,
+  1. 화면 판단(public/lib/access.js): A·admin 은 늘 열림, B 는 기간 안에서만,
      C 는 아니다. 승인 전이면 등급이 높아도 아니다.
   2. 자물쇠는 데이터베이스: 이주 SQL 에 본인이 등급·상태를 못 고치는 트리거,
      관리자만 부르는 set_grade, 서버용 premium_ok 가 있다.
@@ -94,14 +94,19 @@ check("window.ME = me;" in gate and gate.index("window.ME = me;") < gate.index("
 check(html.index("/lib/access.js") < html.index("/app/gate.js"), "access.js 가 관문보다 먼저 실린다")
 check("if (!acc.premium) {\n      box.innerHTML = premiumNotice(key, acc);\n      return;\n    }" in app,
       "프리미엄이 아니면 산출 대신 안내")
-check("준비 중입니다" in app and "결제" in app, "결제 안내는 '준비 중' 이라 적는다 (문구 미확정)")
+_notice = app[app.index("function premiumNotice("):app.index("function valuePanel(")]
+check("등급은 관리자가 올려 드립니다" in _notice and "결제" not in _notice,
+      "등급 안내는 관리자 문의로 보낸다 (결제 문구를 지어내지 않는다)")
+check("acc.guest" in app and "무료 회원 가입" in app and "next=%2Fapp" in app,
+      "로그인 안 한 사람(손님)에게는 가입을 권한다")
+check("const tag = '회원 전용'" in app, "가치 단추 꼬리표는 '회원 전용'")
 check('rpc("set_grade"' in acct and "renderMembers" in acct and "if (acc.admin) renderMembers" in acct,
       "계정 화면: 관리자에게만 회원 목록 (등급 변경 포함)")
 check("approved_at" in acct and "메일 복사" in acct and "CSV" in acct and "data-sort" in acct,
       "회원 목록: 신청일·가입일 · 메일 복사 · CSV · 정렬·필터")
 access_js = (ROOT / "public" / "lib" / "access.js").read_text(encoding="utf-8")
-check("A: 'VIP', B: '프리미엄', C: '일반'" in access_js and "VIP" in acct and "무료" not in acct,
-      "등급 이름: A→VIP · B→프리미엄 · C→일반")
+check("A: 'VIP', B: '회원', C: '손님'" in access_js and "VIP" in acct,
+      "등급 이름: A→VIP · B→회원 · C→손님")
 sql6 = (ROOT / "supabase" / "migrations" / "0006_views_24h_approved_at.sql").read_text(encoding="utf-8")
 check("add column if not exists approved_at" in sql6 and "create trigger profile_stamp" in sql6,
       "가입(승인)일은 트리거가 찍는다")

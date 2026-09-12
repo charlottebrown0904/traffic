@@ -9,10 +9,10 @@
 |---|---|---|---|---|
 | admin | 관리자 | 모든 권한 | 본다 | **할 수 있다** (남의 등급) |
 | A | **VIP** | 제한 없음 — 결제 없이 열어 주는 계정 | 본다 | 못 한다 |
-| B | **프리미엄** | 유료. `grade_until` 이 있으면 그날까지 | 기간 안에서 본다 | 못 한다 |
-| C | **일반** | 가입 기본값 | 못 본다 — 누르면 안내 | 못 한다 |
+| B | **회원** | 유료. `grade_until` 이 있으면 그날까지 | 기간 안에서 본다 | 못 한다 |
+| C | **손님** | 가입 기본값 | 못 본다 — 누르면 안내 | 못 한다 |
 
-이름은 2026-09-11 지시로 정했다 (A→VIP · B→프리미엄 · C→일반). 코드값은 데이터베이스
+이름은 2026-09-12 지시로 바꿨다 (A→VIP · B→회원 · C→손님). 2026-09-11 의 '프리미엄·일반' 은 옛 이름이다. 코드값은 데이터베이스
 그대로다 — 이름은 `public/lib/access.js` 의 LABEL 한 곳에서 바꾼다.
 
 승인(status: pending/approved/rejected)과 역할(role: user/broker/admin)은 그대로다.
@@ -25,7 +25,7 @@
 | 데이터베이스 (**자물쇠**) | `supabase/migrations/0003_grade.sql` | `profile.grade/grade_until/grade_note` · `grade_log` · 트리거 `profile_guard`(본인은 등급·역할·상태를 못 고침) · `set_grade()`(관리자만, 기록) · `premium_ok()`(서버용 판정) · `is_admin()` 이 grade=admin 도 봄 |
 | 판단 한 곳 | `public/lib/access.js` | `accessOf(profile)` → `{grade, label, premium, expired, admin}`. 지도·계정 화면이 같이 쓴다 |
 | 관문 | `public/app/gate.js` | 승인 확인 뒤 `window.ME = me` 를 두고 앱을 붙인다 |
-| 지도 | `public/app/app.js` `myAccess`·`valueButtons`·`premiumNotice` | C·기간 만료면 단추에 '프리미엄' 꼬리표, 누르면 산출 대신 안내 |
+| 지도 | `public/app/app.js` `myAccess`·`valueButtons`·`premiumNotice` | 단추 꼬리표는 늘 '회원 전용'. 로그인 안 한 사람은 가입 권유, 등급이 모자라면 등급 안내 |
 | 계정 | `public/account/account.js` | 내 등급·기한 표시. 관리자에게는 **회원 등급 목록**(승인된 회원 · 등급 선택 · B 만료일 · 저장 → `set_grade`) |
 
 이미 적용: 이주 SQL 은 2026-09-11 Supabase 에 넣었다 (`grade_admin_a_b_c`). 기존

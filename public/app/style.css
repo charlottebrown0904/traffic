@@ -1752,22 +1752,20 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   text-shadow: 0 0 2px rgba(0, 0, 0, .45);
 }
 
-/* 현재 가치 — 산출표 (공시지가기준법 다섯 마디) */
+/* 현재 가치 — 값 하나와 총액만 (2026-09-12 지시).
+   산출표·항목 목록·다른 표준지 규칙은 화면에서 뺐으므로 여기서도 지운다. */
 .pcv-sub { font-weight: 400; font-size: 11px; color: var(--muted); margin-left: .4rem; }
-.pcv-table { width: 100%; border-collapse: collapse; margin: .4rem 0; font-size: 12px; }
-.pcv-table th { text-align: left; white-space: nowrap; vertical-align: top; padding: .25rem .5rem .25rem 0; color: var(--muted); font-weight: 500; width: 6.5em; }
-.pcv-table td { padding: .25rem 0; border-bottom: 1px solid var(--border); }
-.pcv-table td span, .pcv-items span { color: var(--muted); }
-.pcv-items { margin: .2rem 0 0; padding-left: 1rem; }
-.pcv-items li { margin: .1rem 0; }
-.pcv-calc { font-size: 11.5px; color: var(--muted); margin: .4rem 0 .2rem; word-break: break-all; }
-.pcv-decided { margin: .2rem 0; font-size: 14px; }
-.pcv-decided span, .pcv-total { font-size: 12px; color: var(--muted); }
-.pcv-total { margin: .1rem 0; }
+.pcv-decided { margin: .2rem 0; font-size: 15px; }
+.pcv-total { margin: .1rem 0; font-size: 12px; color: var(--muted); }
 .pcv-hold { margin: .4rem 0; font-size: 12.5px; }
-.pcv-warn { margin: .3rem 0; padding-left: 1rem; font-size: 11.5px; color: var(--warn, #b45309); }
-.pcv-alts { margin: .4rem 0; font-size: 11.5px; }
-.pcv-alts ul { margin: .2rem 0 0; padding-left: 1rem; }
+.pcv-lock-msg a.pcv-cta, .pcv-cta {
+  display: inline-block; margin: .15rem 0;
+  padding: .45rem 1rem; border-radius: .4rem;
+  background: var(--accent); color: var(--on-accent);
+  font-size: 12.5px; font-weight: 600; text-decoration: none;
+}
+.pcv-cta:hover { filter: brightness(1.08); }
+.pcv-note a { color: var(--accent); }
 .pcv-note { margin: .5rem 0 0; font-size: 11px; color: var(--muted); }
 
 /* 검색칸 너비는 좁은 화면에서 한 줄 전체다. 이 규칙이 #find-q 의 42vw

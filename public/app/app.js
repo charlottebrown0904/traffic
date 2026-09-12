@@ -4852,20 +4852,20 @@ function parcelZones(zones) {
  * 가격은 높다고 좋은 것도 낮다고 좋은 것도 아닙니다. 그것을 안 적으면
  * 다섯 축을 같은 방향으로 읽게 됩니다.
  */
+/* 축 설명 — **무엇을 재는지만** 적는다 (2026-09-12 지시).
+ *
+ * 예전에는 재는 방법을 그대로 적어 두었습니다 — 몇 km 안의 어느 차종을
+ * 어떻게 거리로 나눠 더하는지, 또래를 무슨 열쇠로 묶고 얇으면 어디로
+ * 물러나는지까지. 그 문장이 곧 이 서비스의 만드는 법이라, 화면에 두면
+ * 누구나 베낄 수 있습니다. 뜻과 주의만 남기고 방법은 뺍니다.
+ */
 const AXIS_NOTES = {
-  road: ['도로', '차가 들어올 수 있는가. 맹지에서 광대로까지 사다리로 매겨 또래와 견줍니다. '
-    + '<strong>지적상 접면</strong>이라 현황 도로·진입로와 다를 수 있습니다.'],
-  traffic: ['물류 교통', '10km 안 영업소의 화물(2·3·4·5종) 통행량을 거리로 나눠 더한 값입니다. '
-    + '물류·공장 적성이지, 그래서 오른다는 뜻이 아닙니다.'],
-  zoning: ['개발 여지', '용도지역의 건폐율·용적률 사다리입니다. 같은 시군구 안에서 견줍니다. '
-    + '농업진흥구역·개발제한구역이 겹치면 한 단 아래로 봅니다.'],
-  price: ['시장 동향', '이 동네·용도지역의 실거래 단가가 최근 몇 해 얼마나 올랐는지(연평균)입니다. '
-    + '지금 비싼지가 아니라 <strong>오르는 중인지</strong>를 봅니다. 전국의 다른 동네·용도와 견줍니다. '
-    + '땅의 성질이 아니라 시장의 자리입니다.'],
-  land: ['모양·지세', '필지 형상과 경사입니다. 반듯하고 평평할수록 높습니다. 임야는 평가서처럼 지세만 봅니다.'],
-  urban: ['주변 이용', '이 땅이 속한 법정동리에서 주거·상업·공업으로 쓰이는 땅의 면적 비율입니다. '
-    + '같은 시군 안 동리들과 견줍니다. 높으면 전용 압력, 낮으면 외딴 곳 — '
-    + '<strong>좋고 나쁨의 방향이 없습니다.</strong>'],
+  road: ['도로', '차가 들어올 수 있는가. <strong>지적상 접면</strong>이라 현황 진입로와 다를 수 있습니다.'],
+  traffic: ['물류 교통', '주변 고속도로의 화물 통행이 얼마나 되는가. 물류·공장 적성이지, 그래서 오른다는 뜻이 아닙니다.'],
+  zoning: ['개발 여지', '용도지역이 허용하는 개발 강도. 겹치는 보전규제를 함께 봅니다.'],
+  price: ['시장 동향', '이 동네·용도의 실거래 단가가 <strong>오르는 중인지</strong>입니다. 지금 비싼지가 아닙니다.'],
+  land: ['모양·지세', '필지 형상과 경사입니다. 반듯하고 평평할수록 높습니다.'],
+  urban: ['주변 이용', '주변이 얼마나 개발되어 있는가. <strong>좋고 나쁨의 방향이 없습니다.</strong>'],
 };
 
 function axisNotes(axes) {
@@ -4874,8 +4874,7 @@ function axisNotes(axes) {
   return `<details class="pc-axis-help"><summary>${n} 축이 무엇을 재는가</summary>`
     + '<dl>' + keys.map((k) => `<dt>${AXIS_NOTES[k][0]}</dt><dd>${AXIS_NOTES[k][1]}</dd>`).join('')
     + '</dl>'
-    + '<p>모두 <strong>같은 또래</strong>(같은 시군구·같은 용도지역·같은 지목군의 거래)와 '
-    + '견준 백분위입니다. 또래가 얇으면 시·도로 물러납니다.</p></details>';
+    + '<p>모두 <strong>비슷한 조건의 거래</strong>와 견준 자리입니다.</p></details>';
 }
 
 /* 현재 가치 · 미래 가치 (요구사항 2026-09-10).
@@ -4903,14 +4902,16 @@ const VALUE_SERVICES = {
  * (supabase/migrations/0003_grade.sql) 이고, 숫자 원천을 API 뒤로 옮기는
  * 일이 남아 있다 (docs/membership-grades.md). */
 function myAccess() {
-  const prof = window.ME && window.ME.profile;
-  if (typeof window.accessOf === 'function') return window.accessOf(prof);
-  return { grade: 'C', label: '일반', premium: false, expired: false, admin: false };
+  const me = window.ME;
+  const guest = !(me && me.user);          // 로그인 안 한 사람 = 손님
+  const prof = me && me.profile;
+  if (typeof window.accessOf === 'function') return { ...window.accessOf(prof), guest };
+  return { grade: 'C', label: '손님', premium: false, expired: false, admin: false, guest };
 }
 
 function valueButtons() {
   const acc = myAccess();
-  const tag = acc.premium ? '준비 중' : '프리미엄';
+  const tag = '회원 전용';          // 둘 다 회원에게만 엽니다 (2026-09-12 지시)
   return `<div class="pc-val-row${acc.premium ? '' : ' is-locked'}">`
     + Object.entries(VALUE_SERVICES).map(([k, s]) =>
       `<button type="button" class="pc-val" data-val="${k}" aria-expanded="false">`
@@ -4918,16 +4919,26 @@ function valueButtons() {
     + '</div><div class="pc-val-box" id="pc-val-box" hidden></div>';
 }
 
-/* C 등급(무료)이 프리미엄을 눌렀을 때. 결제 안내 문구는 **아직 확정이
- * 아니다** — 값을 지어내지 않고 '준비 중' 이라 적고 계정 화면으로 보낸다. */
+/* 잠긴 단추를 눌렀을 때. 두 경우를 가른다 (2026-09-12 지시).
+ *
+ *   손님(로그인 안 한 사람)  → 가입을 권한다. 값이 있다는 것만 보인다.
+ *   등급이 모자란 회원        → 등급 안내. 결제 문구는 아직 확정이 아니다.
+ */
 function premiumNotice(key, acc) {
   const s = VALUE_SERVICES[key] || { label: '' };
+  const head = `<h4>${s.label} <span class="pcv-sub">회원 전용</span></h4>`;
+  if (acc.guest) {
+    return head
+      + `<p class="pcv-lock-msg">이 필지의 ${s.label}는 회원에게 보여 드립니다.</p>`
+      + '<p class="pcv-lock-msg"><a class="pcv-cta" href="/account?next=%2Fapp">무료 회원 가입</a></p>'
+      + '<p class="pcv-lock-msg">구글·카카오 계정으로 가입하시면 됩니다.</p>';
+  }
   const why = acc.expired
-    ? `프리미엄 기간이 끝났습니다${acc.until ? ` (${acc.until.toLocaleDateString('ko-KR')}까지)` : ''}.`
-    : '현재 가치·미래 가치는 프리미엄 등급 이상 회원에게 열립니다.';
-  return `<h4>${s.label} <span class="pcv-sub">프리미엄</span></h4>`
+    ? `이용 기간이 끝났습니다${acc.until ? ` (${acc.until.toLocaleDateString('ko-KR')}까지)` : ''}.`
+    : `${s.label}는 VIP·회원 등급에게 열립니다.`;
+  return head
     + `<p class="pcv-lock-msg">${why} 지금 등급은 <b>${escapeHtml(acc.label)}</b> 입니다.</p>`
-    + '<p class="pcv-lock-msg">가입·결제 안내는 준비 중입니다. 그때까지는 관리자가 등급을 올려 드립니다 — '
+    + '<p class="pcv-lock-msg">등급은 관리자가 올려 드립니다 — '
     + '<a href="/account">내 계정</a>에서 문의해 주세요.</p>';
 }
 
@@ -5205,7 +5216,7 @@ function otherFactorOf(subject, std, T) {
            n: have.reduce((a, o) => a + Number(o.n), 0), sources: have,
            basis: have.map((o) => `${o.source} ${Number(o.median).toFixed(2)} (n=${o.n})`).join(' · ') + ' → 건수 가중 기하평균' };
 }
-window.__otherFactorOf = otherFactorOf;      // 검사(test_map.js)가 표와 함께 부른다
+window.__otherFactorOf = otherFactorOf;      // 검사(test_map.js)가 부른다
 
 function roundDecided(x) {
   const unit = x < 10000 ? 100 : (x < 1000000 ? 1000 : 10000);
@@ -5231,66 +5242,64 @@ function appraiseNow(subject, std, T, trend) {
            range, total_krw: total, warnings: ind.warnings };
 }
 
-function renderValuation(res, alts) {
+/* 화면에 내는 것은 **값 하나와 총액**이다 (2026-09-12 지시).
+ *
+ * 예전에는 다섯 마디를 표로 다 보여 줬습니다 — 어느 표준지를 골랐고,
+ * 시점수정이 몇이고, 개별요인을 항목마다 어떻게 곱했고, 그 밖의 요인이
+ * 평가선례 몇(n=몇)과 거래사례 몇(n=몇)의 건수 가중 기하평균이라는 것까지.
+ * 그 표가 곧 만드는 법입니다. 베끼려는 사람에게는 설명서였고, 정작 땅을
+ * 보려는 사람에게는 읽을 것이 너무 많았습니다.
+ *
+ * 그래서 값만 답합니다. 근거가 궁금한 사람은 가이드(공시지가기준법)로
+ * 보냅니다 — 법에 적힌 순서는 공개 자료이니 그것은 숨길 것이 아닙니다.
+ * 산출이 보류될 때는 어느 마디가 비었는지 적지 않습니다. 비었다는 사실만
+ * 말합니다.
+ */
+/* 다섯 마디는 **화면에 안 내지만 검사는 본다.** 값이 틀리면 화면이
+   조용히 틀린 숫자를 보이게 되므로, 고리를 걸어 두고 test_map.js 가
+   마디마다 견준다 (표준지 선택 · 시점수정 · 개별요인 · 그 밖의 요인). */
+
+function renderValuation(res) {
   const won = (v) => (v == null ? '—' : Math.round(v).toLocaleString('ko-KR'));
-  const e = escapeHtml;
-  const s = res.std;
-  const stdLabel = [s.ld_name, s.jibun ? `${s.jibun}` : null].filter(Boolean).join(' ')
-    || `표준지 ${String(s.pnu || '').slice(0, 10)}`;
-  const rows = [];
-  rows.push(['비교표준지', `${e(stdLabel)} · ${e([s.land_use, s.jimok || s.use_situation, s.road_side, s.shape, s.slope].filter(Boolean).join(' · '))}`
-    + ` · 공시 <b>${won(s.price)}원/㎡</b>${s.year ? ` (${s.year}.1.1)` : ''}`
-    + (s.distance_km != null ? ` · ${s.distance_km}km` : '') + (s.why ? ` <em>${e(s.why)}</em>` : '')]);
-  rows.push(['시점수정', res.time.factor == null ? `<em>자료 없음</em>` : `<b>${res.time.factor.toFixed(3)}</b> <span>${e(res.time.source)}${res.time.months ? ` · ${res.time.months}개월` : ''}</span>`]);
-  rows.push(['지역요인', '<b>1.000</b> <span>같은 인근지역에서 표준지를 골랐다 (평가서 41/41 이 1.00)</span>']);
-  const items = res.individual.items.map((it) =>
-    `<li>${e(it.cond)} — ${e(String(it.subject || '—'))} / ${e(String(it.std || '—'))} × <b>${it.ratio == null ? '—' : it.ratio.toFixed(3)}</b>${it.why ? ` <span>${e(it.why)}</span>` : ''}</li>`).join('');
-  rows.push(['개별요인', `<b>${res.individual.factor.toFixed(3)}</b> <span>[${e(res.individual.kind)}]</span><ul class="pcv-items">${items}</ul>`]);
-  rows.push(['그 밖의 요인', res.other.factor == null ? '<em>자료 없음</em>' : `<b>${res.other.factor}</b> <span>${e(res.other.basis)}</span>`]);
-  let bottom;
-  if (res.missing.length) {
-    bottom = `<p class="pcv-hold">산출 보류 — 비어 있는 마디: ${e(res.missing.join(', '))}. 1.00 으로 메우지 않습니다.</p>`;
-  } else {
-    const p = res.parts;
-    bottom = `<p class="pcv-calc">${won(p['표준지공시지가'])} × ${p['시점수정'].toFixed(3)} × 1.000 × ${p['개별요인'].toFixed(3)} × ${p['그 밖의 요인']} = ${won(res.unit_calc)}원/㎡</p>`
-      + `<p class="pcv-decided">결정단가 <b>${won(res.unit_decided)}원/㎡</b>`
-      + (res.range ? ` <span>(흔히 ${won(res.range[0])}~${won(res.range[1])})</span>` : '') + '</p>'
-      + (res.total_krw ? `<p class="pcv-total">총액 약 <b>${won(res.total_krw)}원</b></p>` : '');
+  if (res.missing.length || res.unit_decided == null) {
+    return '<p class="pcv-hold">견줄 자료가 모자라 이 필지는 값을 내지 못했습니다.</p>'
+      + '<p class="pcv-note">비어 있는 자리를 1.00 으로 메우지 않습니다. 자료가 채워지면 값이 나옵니다.</p>';
   }
-  const alt = (alts || []).length > 1
-    ? '<details class="pcv-alts"><summary>다른 표준지를 쓰면</summary><ul>'
-      + alts.slice(1).map((a) => `<li>${e([a.std.ld_name, a.std.jibun].filter(Boolean).join(' ') || a.std.pnu)} · ${e([a.std.land_use, a.std.jimok, a.std.road_side].filter(Boolean).join(' · '))} · 공시 ${won(a.std.price)} → `
-        + (a.unit_decided == null ? '보류' : `<b>${won(a.unit_decided)}원/㎡</b>`) + `</li>`).join('')
-      + '</ul></details>' : '';
-  const warn = res.warnings.length ? `<ul class="pcv-warn">${res.warnings.map((w) => `<li>${e(w)}</li>`).join('')}</ul>` : '';
-  return '<table class="pcv-table"><tbody>'
-    + rows.map(([k, v]) => `<tr><th>${e(k)}</th><td>${v}</td></tr>`).join('')
-    + '</tbody></table>' + bottom + warn + alt
-    + '<p class="pcv-note">공시지가기준법(감정평가에 관한 규칙 §14)의 다섯 마디를 공개 자료로 '
-    + '재현한 참고값입니다. 감정평가가 아니며, 그 밖의 요인은 감정평가서 표본에서 배운 값입니다.</p>';
+  return `<p class="pcv-decided">결정단가 <b>${won(res.unit_decided)}원/㎡</b></p>`
+    + (res.total_krw ? `<p class="pcv-total">총액 약 <b>${won(res.total_krw)}원</b></p>` : '')
+    + '<p class="pcv-note">공시지가기준법의 다섯 마디를 데이터베이스로 산출한 <strong>예상값</strong>입니다. '
+    + '감정평가가 아닙니다. <a href="/guide/law">산출 방법</a></p>';
 }
 
-/* 단추를 누르면 여기로 온다. 조각이 없으면 예전 글(곧 공개)로 둔다. */
-async function fillNowValue(box) {
+/* 단추를 누르면 여기로 온다. 조각이 없으면 예전 글(곧 공개)로 둔다.
+   산출은 nowResults() 한 곳에서 한다 — 검사(test_map.js)도 같은 것을 불러
+   다섯 마디를 견준다. 화면은 값만 내지만 마디가 틀리면 검사가 잡는다. */
+async function nowResults() {
   const ctx = window.__parcel;
-  if (!ctx || !ctx.parcel) return;
+  if (!ctx || !ctx.parcel) return null;
   const parcel = ctx.parcel;
   const code = String(parcel.pnu || '').slice(0, 5);
   const [T, chunk] = await Promise.all([loadValuationTables(), loadStdland(code)]);
-  if (!T || !chunk || !chunk.rows || !chunk.rows.length) return;
-  if (box.dataset.open !== 'now') return;
+  if (!T || !chunk || !chunk.rows || !chunk.rows.length) return null;
   const subject = { ...parcel, zones: ctx.zones || [] };
   const cands = chunk.rows.map(stdAsParcel);
   const picked = pickStandard(subject, cands, T, 3);
-  if (!picked.length) {
+  if (!picked.length) return { picked: [], results: [] };
+  const mo = pickTrend(code, parcelGroup(parcel.land_use));
+  return { picked, results: picked.map((std) => appraiseNow(subject, std, T, mo ? mo.trend : null)) };
+}
+window.__nowResults = () => nowResults();
+
+async function fillNowValue(box) {
+  const got = await nowResults();
+  if (!got) return;
+  if (box.dataset.open !== 'now') return;
+  if (!got.results.length) {
     box.innerHTML = `<h4>${VALUE_SERVICES.now.label}</h4>`
-      + '<p class="pcv-hold">같은 용도지역·구역의 표준지가 이 시군구 조각에 없어 산출을 보류합니다.</p>';
+      + '<p class="pcv-hold">견줄 자료가 모자라 이 필지는 값을 내지 못했습니다.</p>';
     return;
   }
-  const mo = pickTrend(code, parcelGroup(parcel.land_use));
-  const results = picked.map((std) => appraiseNow(subject, std, T, mo ? mo.trend : null));
-  box.innerHTML = `<h4>${VALUE_SERVICES.now.label} <span class="pcv-sub">공시지가기준법 · 표준지 ${chunk.n.toLocaleString('ko-KR')}필지 중 고름</span></h4>`
-    + renderValuation(results[0], results);
+  box.innerHTML = `<h4>${VALUE_SERVICES.now.label}</h4>` + renderValuation(got.results[0]);
 }
 
 /* 카드는 누를 때마다 통째로 다시 그려진다. 그래서 단추에 직접 듣지

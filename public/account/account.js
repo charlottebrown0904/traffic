@@ -53,10 +53,10 @@
     approved: "이용 중",
     rejected: "거절",
   };
-  /* 등급 이름 (2026-09-11 지시): A→VIP · B→프리미엄 · C→일반. 코드값은
+  /* 등급 이름 (2026-09-12 지시): A→VIP · B→회원 · C→손님. 코드값은
      데이터베이스(admin/A/B/C)와 같다 — 이름만 바꿨다. */
-  var GRADE_OPTS = [["admin", "관리자"], ["A", "VIP"], ["B", "프리미엄 (유료)"], ["C", "일반"]];
-  var GRADE_NAME = { admin: "관리자", A: "VIP", B: "프리미엄", C: "일반" };
+  var GRADE_OPTS = [["admin", "관리자"], ["A", "VIP"], ["B", "회원 (유료)"], ["C", "손님"]];
+  var GRADE_NAME = { admin: "관리자", A: "VIP", B: "회원", C: "손님" };
   var GRADE_ORDER = { admin: 0, A: 1, B: 2, C: 3 };
   var STATUS_ORDER = { pending: 0, approved: 1, rejected: 2 };
 
@@ -116,7 +116,7 @@
       '<td class="nowrap"><select data-f="grade">' + GRADE_OPTS.map(function (o) {
         return '<option value="' + o[0] + '"' + (o[0] === (u.grade || "C") ? " selected" : "") + ">" + o[1] + "</option>";
       }).join("") + "</select> " +
-      '<input type="date" data-f="until" value="' + E(until) + '" title="프리미엄 만료일 (비우면 기한 없음)"> ' +
+      '<input type="date" data-f="until" value="' + E(until) + '" title="회원 만료일 (비우면 기한 없음)"> ' +
       '<button class="btn sm" data-act="save">저장</button></td>' +
       '<td class="nowrap">' + day(u.created_at) + "</td>" +
       '<td class="nowrap">' + (day(u.approved_at) || '<span class="note-in">—</span>') + "</td>" +
@@ -154,7 +154,7 @@
       '<button class="btn sm ghost" id="m-copy" title="보이는 회원의 메일을 쉼표로 이어 복사">메일 복사</button>' +
       '<button class="btn sm ghost" id="m-csv">CSV 내려받기</button>' +
       "</div></div>" +
-      '<p class="note" style="margin:0 0 .5rem">프리미엄은 만료일을 적으면 그날까지, 비우면 기한 없음. 저장하면 기록이 남습니다.</p>' +
+      '<p class="note" style="margin:0 0 .5rem">회원 등급은 만료일을 적으면 그날까지, 비우면 기한 없음. 저장하면 기록이 남습니다.</p>' +
       '<div class="scroller"><table class="mtable"><thead><tr>' +
       col("name", "이름") + "<th>이메일</th>" + col("status", "상태") + col("grade", "등급") +
       col("created", "신청일") + col("approved", "가입일") + "<th>처리</th>" +
@@ -270,7 +270,7 @@
       (acc.until ? " (" + acc.until.toLocaleDateString("ko-KR") + "까지)" : "") +
       (acc.expired ? " · 기간 만료" : "") + "</div>" +
       (ok && !acc.premium
-        ? '<div class="note block" style="margin-bottom:1rem">현재 가치·미래 가치는 프리미엄 등급 이상입니다. ' +
+        ? '<div class="note block" style="margin-bottom:1rem">현재 가치·미래 가치는 VIP·회원 등급에게 열립니다. ' +
           "가입·결제 안내는 준비 중이며, 그때까지는 관리자가 등급을 올려 드립니다.</div>" : "") +
       (ok ? "" :
         '<div class="note block" style="margin-bottom:1rem">' +
