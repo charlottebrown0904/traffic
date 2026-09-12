@@ -7,13 +7,16 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
-<meta name="theme-color" content="#C9A47C">
+<meta name="theme-color" content="#FAF7F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12100D" media="(prefers-color-scheme: dark)">
 <title>토지 고고 — 전국 토지 실거래와 필지 진단</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/app/style.css?v=20260911c">
+<link rel="stylesheet" href="/lib/theme.css?v=20260912a">
+<script src="/lib/theme.js?v=20260912a"></script>
+<link rel="stylesheet" href="/app/style.css?v=20260912a">
 </head>
 <body>
 
@@ -84,6 +87,14 @@
     <ul class="find-list" id="find-list" role="listbox" hidden></ul>
   </div>
   <div class="meta-stamp" id="meta-stamp"></div>
+
+  <!-- 나머지 화면으로 가는 길 (2026-09-12). 지도에서 게시판·내 계정으로
+       갈 방법이 화면에 없었다 — 가이드는 지도 위 안내문 안에만 있었고,
+       내 계정은 등급 잠금 문구 안에만 있었다. -->
+  <nav class="sitenav">
+    <a href="/guide">가이드</a><a href="/board">게시판</a><a href="/account">내 계정</a>
+    <span data-theme-switch></span>
+  </nav>
 </header>
 
 <!-- ══ 탐색 ══ -->
@@ -694,6 +705,6 @@
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
 <script src="/lib/access.js?v=20260911b"></script>
-<script src="/app/gate.js?v=20260911a"></script>
+<script src="/app/gate.js?v=20260912a"></script>
 </body>
 </html>

@@ -1,39 +1,7 @@
-/* 토지·건축 가이드 — 앱(/app)과 같은 토큰 체계를 쓴다. 참조 문서형 편집. */
-:root{
-  /* 중립색을 앱(app/style.css)과 같은 브라운 계열로 맞춘다. 가이드만 청색
-     계열이라 같은 제품의 다른 페이지처럼 안 보였다. faint 는 힌트와 표
-     머리글에 쓰는 진짜 글자라 명암비 4.5 아래로 내리지 않는다. */
-  --ground:#FAF7F3; --surface:#FFFFFF; --surface-2:#F3EDE5;
-  --ink:#1C1611; --muted:#6B5E52; --faint:#7A6B5C;
-  --border:#E7DDD1; --border-strong:#CDBDAB;
-  --accent:#8A6547; --accent-soft:#F4E9DD; --on-accent:#FFFFFF;
-  --warn:#B45309; --warn-soft:#FDF5E6;
-  --block:#B3261E; --block-soft:#FBEAE8;
-  --ok:#0B7A43; --ok-soft:#E4F3EA;
-  --shadow:0 1px 2px rgba(15,23,32,.05), 0 8px 24px -18px rgba(15,23,32,.3);
-}
-@media (prefers-color-scheme:dark){
-  :root:not([data-theme="light"]){
-    --ground:#12100D; --surface:#1C1915; --surface-2:#26221D;
-    --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
-    --border:#332D26; --border-strong:#4A4239;
-    --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
-    --warn:#DDA23C; --warn-soft:#2A2011;
-    --block:#E8796C; --block-soft:#2B1614;
-    --ok:#4FC084; --ok-soft:#11251B;
-    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
-  }
-}
-:root[data-theme="dark"]{
-  --ground:#12100D; --surface:#1C1915; --surface-2:#26221D;
-  --ink:#F0EAE3; --muted:#A79A8C; --faint:#8A7D70;
-  --border:#332D26; --border-strong:#4A4239;
-  --accent:#D8B18C; --accent-soft:#2A2019; --on-accent:#1A120B;
-  --warn:#DDA23C; --warn-soft:#2A2011;
-  --block:#E8796C; --block-soft:#2B1614;
-  --ok:#4FC084; --ok-soft:#11251B;
-  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -18px rgba(0,0,0,.8);
-}
+/* 토지·건축 가이드 — 지면색은 /lib/theme.css 한 곳에서 온다.
+   예전에는 이 파일이 제 팔레트를 따로 갖고 있었고, 지도앱은 또 다른
+   팔레트를 갖고 있어 두 화면이 다른 제품처럼 보였다. 여기에는 이
+   화면에만 있는 모양새만 남긴다. */
 
 *{box-sizing:border-box}
 body{
@@ -44,27 +12,7 @@ body{
 }
 .wrap{max-width:52rem; margin:0 auto; padding:0 1.25rem 5rem}
 
-/* ── 상단 ── */
-.topbar{
-  position:sticky; top:0; z-index:20;
-  background:color-mix(in srgb, var(--surface) 92%, transparent);
-  -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
-  border-bottom:1px solid var(--border);
-}
-.topbar .inner{
-  max-width:52rem; margin:0 auto; padding:.6rem 1.25rem;
-  display:flex; align-items:center; gap:.75rem; flex-wrap:wrap;
-}
-.back{
-  font-size:.82rem; font-weight:600; color:var(--muted); text-decoration:none;
-  padding:.3rem .65rem; border-radius:.35rem; border:1px solid var(--border-strong);
-  white-space:nowrap;
-}
-.back:hover{background:var(--surface-2); color:var(--ink)}
-.back:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-.crumb{font-size:.82rem; color:var(--faint)}
-.crumb a{color:var(--muted); text-decoration:none}
-.crumb a:hover{color:var(--accent)}
+/* 상단 머리띠는 /lib/theme.css 의 .sitebar 하나로 모았다. */
 
 /* ── 제목 ── */
 header.page{padding:2.75rem 0 1.75rem; border-bottom:2px solid var(--border-strong); margin-bottom:2rem}

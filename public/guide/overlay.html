@@ -7,22 +7,27 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
-<meta name="theme-color" content="#C9A47C">
+<meta name="theme-color" content="#FAF7F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12100D" media="(prefers-color-scheme: dark)">
 <title>용도지구 · 용도구역 · 보전규제 · 토지·건축 가이드 | 토지 고고</title>
 <meta name="description" content="용도지구 9종, 용도구역 5종, 농업진흥지역·보전산지·수질보전 등 다른 법령상 보전규제 정리.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/lib/theme.css?v=20260912a">
+<script src="/lib/theme.js?v=20260912a"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="/guide/style.css">
+<link rel="stylesheet" href="/guide/style.css?v=20260912a">
 </head>
 <body>
 
-<nav class="topbar">
-  <div class="inner">
-    <a class="back" href="/app">← 서비스로</a>
-    <span class="crumb"><a href="/guide">토지·건축 가이드</a> · 용도지구·용도구역</span>
+<header class="sitebar">
+  <div class="sitebar-inner">
+    <a class="sitebar-brand" href="/"><img src="/icon.svg" alt="" width="22" height="22"><span>토지 고고</span></a>
+    <span class="sitebar-crumb"><a href="/guide">토지·건축 가이드</a> · 용도지구·용도구역</span>
+    <nav class="sitebar-nav"><a href="/app">지도</a><a href="/guide" aria-current="page">가이드</a><a href="/board">게시판</a><a href="/account">내 계정</a></nav>
+    <span data-theme-switch></span>
   </div>
-</nav>
+</header>
 
 <div class="wrap">
 <header class="page">

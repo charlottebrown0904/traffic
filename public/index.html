@@ -7,7 +7,8 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
-<meta name="theme-color" content="#C9A47C">
+<meta name="theme-color" content="#FAF7F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12100D" media="(prefers-color-scheme: dark)">
 <title>토지 고고 — IC 교통량과 토지 실거래가를 한 지도에서</title>
 <meta name="description" content="전국 고속도로 영업소의 연도별 교통량과 그 주변 토지·공장 실거래가를 지도 한 장에서 봅니다. 공공데이터로 만든 스크리닝 도구입니다.">
 <meta property="og:title" content="토지 고고 — IC 교통량과 토지 실거래가를 한 지도에서">
@@ -15,42 +16,43 @@
 <meta property="og:image" content="https://toji.fyi/brand/icon-512.png">
 <meta property="og:description" content="고속도로 IC 교통량, 반경 안의 토지·공장 실거래가, 용도지역, 시군구 인구를 함께 놓고 봅니다. 미래 가격을 예측하지 않습니다.">
 <meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/lib/theme.css?v=20260912a">
+<script src="/lib/theme.js?v=20260912a"></script>
 <style>
+/* 색은 /lib/theme.css 한 곳에서 온다. 예전에는 이 쪽만 제 팔레트를
+   갖고 있어서 (흰 바탕 · 모래색 강조) 가이드·지도와 다른 제품처럼
+   보였고, **어두운 화면을 켠 사람에게도 흰 바탕 그대로** 나왔다. */
 :root{
-  --ink:#14202e;
-  --ink-soft:#5b6b7c;
-  --line:#e3e8ee;
-  --bg:#ffffff;
-  --bg-soft:#f6f8fa;
-  --brand:#8A6547;
-  --brand-soft:#F4E9DD;
-  --accent:#C9A47C;
   --radius:14px;
   --max:600px;
+  --hero-1:#9C7454; --hero-2:#7C5A3D;   /* 머리 그림의 띠. 두 테마 공통 */
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{-webkit-text-size-adjust:100%}
 body{
-  font-family:'Pretendard','Apple SD Gothic Neo','Malgun Gothic',system-ui,-apple-system,sans-serif;
-  color:var(--ink); background:var(--bg);
+  font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  color:var(--ink); background:var(--ground);
   line-height:1.65; word-break:keep-all;
 }
 .wrap{max-width:var(--max);margin:0 auto;padding:0 22px}
-section{padding:36px 0;border-bottom:1px solid var(--line)}
+section{padding:36px 0;border-bottom:1px solid var(--border)}
 section:last-of-type{border-bottom:0}
 .label{
   font-size:12px;font-weight:800;letter-spacing:.12em;
-  color:var(--brand);margin-bottom:14px
+  color:var(--accent);margin-bottom:14px
 }
 h2{font-size:20px;font-weight:800;line-height:1.4;margin-bottom:14px;letter-spacing:-.02em}
 p{font-size:16px;color:var(--ink);margin-bottom:12px}
-p.soft{color:var(--ink-soft);font-size:15px}
+p.soft{color:var(--muted);font-size:15px}
 p:last-child{margin-bottom:0}
 strong{font-weight:800}
 
 /* ── 머리 ── */
 .hero{
-  background:linear-gradient(160deg,#9C7454 0%,#7C5A3D 100%);color:#fff;
+  background:linear-gradient(160deg,var(--hero-1) 0%,var(--hero-2) 100%);color:#fff;
   padding:52px 0 40px;text-align:center;border-bottom:0
 }
 .hero-mark{display:block;margin:0 auto 16px;border-radius:18px}
@@ -59,7 +61,7 @@ h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin-bottom:10px}
 .hero-link{
   display:flex;align-items:center;justify-content:center;gap:8px;
   max-width:340px;margin:0 auto;
-  background:#fff;color:var(--brand);text-decoration:none;
+  background:#FFF8F0;color:#7C5A3D;text-decoration:none;
   font-size:16.5px;font-weight:800;
   padding:15px 20px;border-radius:12px
 }
@@ -72,14 +74,14 @@ ul.what li{
 }
 ul.what li::before{
   content:"";position:absolute;left:2px;top:9px;
-  width:10px;height:10px;border-radius:3px;background:var(--accent)
+  width:10px;height:10px;border-radius:3px;background:var(--brand-warm)
 }
-ul.what li span{display:block;font-weight:400;font-size:14.5px;color:var(--ink-soft);margin-top:3px}
+ul.what li span{display:block;font-weight:400;font-size:14.5px;color:var(--muted);margin-top:3px}
 
 /* ── 원천 ── */
 .src{
-  background:var(--bg-soft);border-radius:var(--radius);
-  padding:18px 20px;font-size:14.5px;color:var(--ink-soft)
+  background:var(--surface-2);border-radius:var(--radius);
+  padding:18px 20px;font-size:14.5px;color:var(--muted)
 }
 .src dl{display:grid;grid-template-columns:auto 1fr;gap:8px 14px;margin:0}
 .src dt{font-weight:800;color:var(--ink);white-space:nowrap}
@@ -88,16 +90,17 @@ ul.what li span{display:block;font-weight:400;font-size:14.5px;color:var(--ink-s
 .tool-link{
   display:flex;align-items:center;justify-content:center;gap:8px;
   margin-top:22px;
-  background:var(--brand);color:#fff;text-decoration:none;
+  background:var(--accent);color:var(--on-accent);text-decoration:none;
   font-size:16px;font-weight:800;padding:15px 20px;border-radius:12px
 }
-.tool-note{font-size:13px;color:var(--ink-soft);text-align:center;margin-top:10px}
+.tool-note{font-size:13px;color:var(--muted);text-align:center;margin-top:10px}
+.foot-theme{margin-top:14px}
 
 footer{
-  padding:26px 0 34px;text-align:center;font-size:12.5px;color:#93a2b1;
+  padding:26px 0 34px;text-align:center;font-size:12.5px;color:var(--faint);
   line-height:1.7
 }
-footer a{color:#93a2b1}
+footer a{color:var(--muted)}
 </style>
 </head>
 <body>
@@ -176,6 +179,7 @@ footer a{color:#93a2b1}
   <a href="/account?next=%2Fapp">회원 가입</a> · <a href="/guide">토지·건축 가이드</a><br>
   과거 실거래 신고 자료와 교통량 통계를 요약한 지표입니다.
   미래 가격을 예측하거나 보장하지 않습니다.
+  <div class="foot-theme" data-theme-switch></div>
 </footer>
 
 </body>

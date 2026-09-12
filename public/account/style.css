@@ -88,8 +88,12 @@
 .empty{padding:3rem 1rem; text-align:center; color:var(--faint)}
 
 /* 관리자 회원 목록 (2026-09-11). 카드가 26rem 이면 표가 찌그러진다 —
-   관리자에게는 넓힌다. 표 글꼴·선은 /guide/style.css 의 table 을 쓴다. */
-.auth-card.wide{max-width:64rem}
+   관리자에게는 넓힌다. 표 글꼴·선은 /guide/style.css 의 table 을 쓴다.
+
+   2026-09-12: 넓히는 것이 **먹지 않고 있었다.** .auth-card.wide 에 64rem 을
+   줬지만 부모 .wrap 이 52rem 이라 거기서 잘렸다. 칸부터 넓힌다. */
+.wrap:has(> .auth-card.wide){max-width:70rem}
+.auth-card.wide{max-width:none}
 .mtool{display:flex; flex-direction:column; gap:.5rem; margin:.25rem 0 .75rem}
 .mtool-row{display:flex; gap:.4rem; flex-wrap:wrap; align-items:center}
 .mtool-row select, .mtool-row input{

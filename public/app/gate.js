@@ -39,15 +39,15 @@
     var rejected = status === "rejected";
     document.body.innerHTML =
       '<div style="max-width:34rem;margin:18vh auto;padding:0 1.5rem;' +
-      'font:400 15px/1.7 system-ui,sans-serif;color:#3d3227">' +
+      'font:400 15px/1.7 system-ui,sans-serif;color:var(--ink)">' +
       "<h1 style='font-size:1.3rem;margin:0 0 .75rem'>" +
       (rejected ? "가입이 승인되지 않았습니다" : "가입 승인을 기다리고 있습니다") +
-      "</h1><p style='color:#7a6a58;margin:0 0 1.25rem'>" +
+      "</h1><p style='color:var(--muted);margin:0 0 1.25rem'>" +
       (rejected
         ? "문의가 필요하시면 관리자에게 연락해 주세요."
         : "관리자가 확인한 뒤 이용하실 수 있습니다. 승인되면 이 화면 대신 지도가 열립니다.") +
-      "</p><p><a href=\"/account\" style=\"color:#8A6547\">내 계정</a>" +
-      ' &nbsp;·&nbsp; <a href="/" style="color:#8A6547">홈으로</a></p></div>';
+      "</p><p><a href=\"/account\" style=\"color:var(--accent)\">내 계정</a>" +
+      ' &nbsp;·&nbsp; <a href="/" style="color:var(--accent)">홈으로</a></p></div>';
   }
 
   /* 로그인 여부를 확인할 수 없을 때. 들여보내는 것도 막는 것도 틀렸다 —
@@ -57,11 +57,11 @@
     show();
     document.body.innerHTML =
       '<div style="max-width:34rem;margin:18vh auto;padding:0 1.5rem;' +
-      'font:400 15px/1.7 system-ui,sans-serif;color:#3d3227">' +
+      'font:400 15px/1.7 system-ui,sans-serif;color:var(--ink)">' +
       "<h1 style='font-size:1.3rem;margin:0 0 .75rem'>로그인 상태를 확인하지 못했습니다</h1>" +
-      "<p style='color:#7a6a58;margin:0 0 1.25rem'>" + why + "</p>" +
-      '<p><a href="' + NEXT + '" style="color:#8A6547">로그인 화면으로 가기</a>' +
-      ' &nbsp;·&nbsp; <a href="/" style="color:#8A6547">홈으로</a></p></div>';
+      "<p style='color:var(--muted);margin:0 0 1.25rem'>" + why + "</p>" +
+      '<p><a href="' + NEXT + '" style="color:var(--accent)">로그인 화면으로 가기</a>' +
+      ' &nbsp;·&nbsp; <a href="/" style="color:var(--accent)">홈으로</a></p></div>';
   }
 
   async function check() {
