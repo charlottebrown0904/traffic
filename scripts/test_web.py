@@ -189,6 +189,74 @@ _ps = _inspect.getsource(_wx._regions)
 check("got_name = _text(c.name)" in _ps and 'spare.get("name")' in _ps,
       "자료에 이름이 있으면 그것이 이긴다 (덮어쓰지 않는다)")
 
+# ── 첫 화면 '왜 교통량인가' ────────────────────────────────────────
+#
+# 회의 합의점(2026-09-12): "그 검증 과정은 사용자에게 의미 없다. 왜
+# 교통량을 봐야 하는지를 초보도 납득하게 첫 화면에서 설명해야 한다.
+# 지역별 가격-교통량 추이 사례 몇 개 + 신뢰 수치를 간단히 노출."
+#
+# 그림과 숫자는 scripts/build_why.py 가 자료에서 계산해 표시(marker) 사이에
+# 박아 넣는다. **손으로 고치면 자료와 화면이 갈라진다.** 그래서 이 검사는
+# 화면에 적힌 숫자가 지금 why-traffic.json 과 같은지 본다 — 자료를 새로
+# 뽑고 build_why.py 를 안 돌린 날 여기서 걸린다.
+import json as _json
+
+_land = (PUBLIC / "index.html").read_text(encoding="utf-8")
+_why = _json.loads((PUBLIC / "app" / "data" / "why-traffic.json")
+                   .read_text(encoding="utf-8"))
+
+check("<!-- why:start -->" in _land and "<!-- why:end -->" in _land,
+      "첫 화면에 생성 구간 표시가 있다 (build_why.py 가 갈아 끼우는 자리)")
+
+_gen = _land.split("<!-- why:start -->", 1)[1].split("<!-- why:end -->", 1)[0]
+
+check(_gen.count("<figure class=\"why-fig\"") == len(_why["cases"]) == 3,
+      f"사례 그림이 자료와 같은 수다 — {len(_why['cases'])}개")
+for _c in _why["cases"]:
+    check(f"{_c['sigungu']} {_c['name']}" in _gen,
+          f"{_c['sigungu']} {_c['name']} 가 화면에 있다")
+    check("%+.1f%%" % _c["price_cagr"] in _gen,
+          f"{_c['name']} 의 가격 상승률이 자료와 같다 ({_c['price_cagr']:+.1f}%)")
+
+_tr = _why["trust"]
+check(f"{round(_tr['trades'] / 10000):,}만 건" in _gen,
+      f"신뢰 수치가 자료에서 온다 — 실거래 {round(_tr['trades'] / 10000):,}만 건")
+check(f"{_tr['tollgates']:,}곳" in _gen and
+      f"{_tr['year_min']}~{_tr['year_max']}년" in _gen,
+      "영업소 수와 수집 기간도 자료에서 온다")
+
+# 축은 하나여야 한다 — 단위가 다른 두 계열을 한 그림에 올리는 유일한 길이
+# 지수화다. 지수 기준이 100 이 아니면 두 축 그래프를 그린 것이다.
+check(all(c["traffic"][0][1] == 100.0 and c["price"][0][1] == 100.0
+          for c in _why["cases"]),
+      "두 계열 모두 첫 해 = 100 지수다 (축 두 개짜리 그래프가 아니다)")
+
+# 계열이 둘이면 범례는 항상 있고, 색만으로 구분하게 두지 않는다.
+check('class="why-legend"' in _gen and _gen.count("why-end") >= 6,
+      "범례가 있고 끝점에 계열 이름을 직접 적는다")
+check('class="why-table"' in _gen,
+      "표로도 읽을 수 있다 (색을 못 읽는 사람 몫)")
+
+# 고른 사례의 분모. 상위 셋만 보여 주고 "다 이렇습니다" 로 두면 광고가 된다.
+_pool = _why["pool"]
+check(f"{_pool['n']}곳 중 {_pool['negative']}곳" in _gen,
+      f"모든 자리가 그렇지 않다고 분모를 적는다 — {_pool['n']}곳 중 {_pool['negative']}곳")
+check(_pool["negative"] > 0 and _pool["n"] > len(_why["cases"]),
+      "분모가 사례 수보다 크고, 따라오지 않은 자리가 실제로 있다")
+
+# 상관을 인과로 말하지 않는다. 이 한 줄이 빠지면 광고가 된다.
+check("증명은 아닙니다" in _gen,
+      "같이 움직였다는 것이 원인의 증명이 아니라고 적혀 있다")
+check("2~4km" in _land and "정점" in _land,
+      "가까울수록 좋다는 뜻이 아니라는 단서가 있다")
+check("58.6%" in _land and "61.6%" in _land and "국토연구원" in _land,
+      "IC 10km 안 공단 입지 비율의 출처가 적혀 있다")
+
+# 계열 색은 dataviz 검산기를 통과한 값이다. 눈으로 바꾸지 못하게 못을 박는다.
+for _hex in ("#2563C9", "#C2740B", "#4A8AD0", "#B07E33"):
+    check(_hex in _land, f"검산 통과한 계열 색 {_hex} 가 그대로다")
+
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

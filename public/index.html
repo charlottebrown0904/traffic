@@ -96,6 +96,88 @@ ul.what li span{display:block;font-weight:400;font-size:14.5px;color:var(--muted
 .tool-note{font-size:13px;color:var(--muted);text-align:center;margin-top:10px}
 .foot-theme{margin-top:14px}
 
+/* ── 왜 교통량인가 ──
+   계열 두 색은 dataviz 검산기를 통과한 값이다 (밝은 바탕 #FAF7F3 /
+   어두운 바탕 #12100D 각각 명도대·채도·색약 분리·대비 전부 PASS).
+   눈으로 고르지 않고 scripts/validate_palette.js 로 확인했다. */
+:root{ --why-a:#2563C9; --why-b:#C2740B }
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){ --why-a:#4A8AD0; --why-b:#B07E33 }
+}
+:root[data-theme="dark"]{ --why-a:#4A8AD0; --why-b:#B07E33 }
+
+ol.why-steps{list-style:none;display:grid;gap:16px;counter-reset:w;margin-bottom:18px}
+ol.why-steps li{position:relative;padding-left:34px;counter-increment:w}
+ol.why-steps li::before{
+  content:counter(w);position:absolute;left:0;top:2px;
+  width:22px;height:22px;border-radius:7px;
+  background:var(--accent-soft);color:var(--accent);
+  font-size:12.5px;font-weight:800;text-align:center;line-height:22px
+}
+ol.why-steps b{display:block;font-size:16px;font-weight:800}
+ol.why-steps span{display:block;font-size:14.5px;color:var(--muted);margin-top:2px}
+.why-caveat{
+  font-size:14.5px;color:var(--muted);
+  background:var(--surface-2);border-radius:var(--radius);padding:14px 16px
+}
+
+ul.why-kpi{
+  list-style:none;display:grid;grid-template-columns:repeat(3,1fr);gap:10px;
+  margin:22px 0 6px
+}
+ul.why-kpi li{
+  background:var(--surface-2);border-radius:var(--radius);padding:12px 10px;text-align:center
+}
+ul.why-kpi b{display:block;font-size:17px;font-weight:800;letter-spacing:-.02em}
+ul.why-kpi span{display:block;font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.45}
+
+.why-h3{font-size:15px;font-weight:800;margin:22px 0 8px}
+ul.why-legend{list-style:none;display:flex;gap:16px;flex-wrap:wrap;margin-bottom:6px}
+ul.why-legend li{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted)}
+ul.why-legend i{width:14px;height:3px;border-radius:2px;background:var(--why-a)}
+ul.why-legend i.base{height:0;border-top:1px dashed var(--border-strong);border-radius:0}
+ul.why-legend i.b{background:var(--why-b)}
+
+.why-figs{display:grid;gap:6px}
+.why-fig{margin:0;padding:10px 0 2px;border-top:1px solid var(--border)}
+.why-fig figcaption{margin-bottom:2px}
+.why-fig figcaption b{font-size:14.5px;font-weight:800}
+.why-fig figcaption span{display:block;font-size:12.5px;color:var(--muted)}
+/* 글자는 viewBox 와 함께 커진다 — 넓은 화면에서 본문보다 커 보이지 않게
+   그림 폭에 뚜껑을 씌운다 (좁은 화면에서는 100% 로 줄어든다). */
+.why-svg{display:block;width:100%;max-width:420px;height:auto;overflow:visible}
+.why-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;
+  vector-effect:non-scaling-stroke;stroke:var(--why-a)}
+.why-line.b{stroke:var(--why-b)}
+.why-dot{fill:var(--why-a);stroke:var(--surface);stroke-width:2}
+.why-dot.b{fill:var(--why-b)}
+.why-tick{fill:var(--why-a);stroke:none}
+.why-tick.b{fill:var(--why-b)}
+.why-base{stroke:var(--border-strong);stroke-width:1;stroke-dasharray:3 3}
+.why-year{font-size:9px;fill:var(--faint)}
+.why-year.end{text-anchor:end}
+.why-end{font-size:10.5px;font-weight:600;fill:var(--ink)}
+
+.why-table{margin-top:14px;font-size:13.5px}
+.why-table summary{color:var(--accent);font-weight:700;cursor:pointer}
+.why-table table{width:100%;border-collapse:collapse;margin-top:10px}
+.why-table th,.why-table td{
+  padding:7px 6px;border-bottom:1px solid var(--border);text-align:right;
+  font-variant-numeric:tabular-nums
+}
+.why-table thead th{font-size:12px;color:var(--muted);font-weight:700}
+.why-table th[scope="row"]{text-align:left;font-weight:700}
+.why-spread{font-size:14px;color:var(--muted);margin-top:16px;
+  border-left:3px solid var(--brand-warm);padding-left:12px}
+.why-note{font-size:13px;color:var(--faint);margin-top:14px}
+
+@media (max-width:400px){
+  ul.why-kpi{grid-template-columns:1fr;gap:8px}
+  ul.why-kpi li{display:flex;align-items:baseline;gap:8px;text-align:left}
+  ul.why-kpi b{font-size:16px}
+  ul.why-kpi span{margin-top:0}
+}
+
 footer{
   padding:26px 0 34px;text-align:center;font-size:12.5px;color:var(--faint);
   line-height:1.7
@@ -117,6 +199,38 @@ footer a{color:var(--muted)}
     <p class="hero-hint">구글·카카오 계정으로 가입 · 관리자 승인 후 이용</p>
   </div>
 </header>
+
+<section id="why">
+  <div class="wrap">
+    <div class="label">왜 교통량인가</div>
+    <h2>공장이 갈 수 있는 자리부터<br>땅값이 움직입니다</h2>
+    <ol class="why-steps">
+      <li><b>공장에 운송비는 매달 나가는 고정비입니다</b>
+        <span>원자재를 받고 제품을 내보내는 일이 매일 있습니다. 그래서 자리를 고를 때 첫 조건이 됩니다.</span></li>
+      <li><b>그래서 공장은 IC 근처에 모입니다</b>
+        <span>국토연구원 조사에서 국가산업단지의 58.6%, 지방산업단지의 61.6% 가 IC 10km 안에 있었습니다.</span></li>
+      <li><b>모이면 쓸 수 있는 땅이 줄어듭니다</b>
+        <span>공장·창고가 들어올 수 있는 용도지역은 정해져 있습니다. 화물차가 늘어난 자리에서 그 땅의 실거래가도 함께 오른 곳이 많았습니다.</span></li>
+    </ol>
+    <p class="why-caveat">
+      가까울수록 좋다는 뜻은 아닙니다. IC 바로 옆은 소음과 진출입 제약 때문에 오히려 값이 낮고,
+      2~4km 쯤에서 정점을 찍는다는 연구가 있습니다. 거리만으로는 알 수 없어서
+      <strong>얼마나 다니는지</strong>를 함께 봅니다.
+    </p>
+    <!-- why:start -->
+    <ul class="why-kpi"><li><b>1,179만 건</b><span>실거래 신고</span></li><li><b>561곳</b><span>고속도로 영업소</span></li><li><b>2006~2025년</b><span>수집 기간</span></li></ul>
+    <h3 class="why-h3">같이 움직인 자리들</h3>
+    <ul class="why-legend"><li><i class="a"></i>화물 통행량</li><li><i class="b"></i>토지 실거래가</li><li><i class="base"></i>첫 해 = 100</li></ul>
+    <div class="why-figs"><figure class="why-fig"><figcaption><b>화성시 발안</b><span>화물 통행량 연 +2.2% · 실거래가 연 +5.4%</span></figcaption><svg class="why-svg" viewBox="0 0 346 104" role="img" aria-label="화성시 발안 화물 통행량과 토지 실거래가, 2008년을 100 으로 맞춘 지수"><line class="why-base" x1="4.0" y1="76.6" x2="246.0" y2="76.6"/><polyline class="why-line a" points="4.0,76.6 18.2,77.3 32.5,76.4 46.7,73.3 60.9,71.0 75.2,74.9 89.4,76.3 103.6,74.2 117.9,72.6 132.1,72.8 146.4,73.0 160.6,73.1 174.8,71.2 189.1,68.0 203.3,68.7 217.5,67.5 231.8,66.8 246.0,65.7"/><polyline class="why-line b" points="4.0,76.6 18.2,68.9 32.5,57.1 46.7,56.8 60.9,60.5 75.2,62.8 89.4,61.3 103.6,56.9 117.9,50.1 132.1,53.9 146.4,46.8 160.6,50.7 174.8,48.3 189.1,38.5 203.3,32.2 217.5,18.7 231.8,28.2 246.0,29.1"/><circle class="why-dot a" cx="246.0" cy="65.7" r="3.4"/><circle class="why-tick a" cx="256.0" cy="62.7" r="3.4"/><text class="why-end" x="263.0" y="65.7">통행량 141</text><circle class="why-dot b" cx="246.0" cy="29.1" r="3.4"/><circle class="why-tick b" cx="256.0" cy="26.1" r="3.4"/><text class="why-end" x="263.0" y="29.1">실거래가 280</text><text class="why-year" x="4.0" y="98">2008</text><text class="why-year end" x="246.0" y="98">2025</text></svg></figure><figure class="why-fig"><figcaption><b>평택시 북평택</b><span>화물 통행량 연 +7.8% · 실거래가 연 +4.3%</span></figcaption><svg class="why-svg" viewBox="0 0 346 104" role="img" aria-label="평택시 북평택 화물 통행량과 토지 실거래가, 2009년을 100 으로 맞춘 지수"><line class="why-base" x1="4.0" y1="77.3" x2="246.0" y2="77.3"/><polyline class="why-line a" points="4.0,77.3 19.1,62.9 34.2,58.5 49.4,56.6 64.5,54.2 79.6,54.3 94.8,54.5 109.9,50.3 125.0,33.3 140.1,31.5 155.2,29.3 170.4,30.6 185.5,24.1 200.6,20.2 215.8,18.7 230.9,19.5 246.0,18.8"/><polyline class="why-line b" points="4.0,77.3 19.1,67.0 34.2,60.8 49.4,65.7 64.5,67.1 79.6,57.3 94.8,52.5 109.9,56.8 125.0,55.4 140.1,54.2 155.2,61.1 170.4,52.7 185.5,41.2 200.6,47.9 215.8,49.4 230.9,50.8 246.0,48.7"/><circle class="why-dot a" cx="246.0" cy="18.8" r="3.4"/><circle class="why-tick a" cx="256.0" cy="15.8" r="3.4"/><text class="why-end" x="263.0" y="18.8">통행량 502</text><circle class="why-dot b" cx="246.0" cy="48.7" r="3.4"/><circle class="why-tick b" cx="256.0" cy="45.7" r="3.4"/><text class="why-end" x="263.0" y="48.7">실거래가 297</text><text class="why-year" x="4.0" y="98">2009</text><text class="why-year end" x="246.0" y="98">2025</text></svg></figure><figure class="why-fig"><figcaption><b>남양주시 화도</b><span>화물 통행량 연 +3.7% · 실거래가 연 +5.6%</span></figcaption><svg class="why-svg" viewBox="0 0 346 104" role="img" aria-label="남양주시 화도 화물 통행량과 토지 실거래가, 2009년을 100 으로 맞춘 지수"><line class="why-base" x1="4.0" y1="77.3" x2="246.0" y2="77.3"/><polyline class="why-line a" points="4.0,77.3 19.1,60.9 34.2,54.5 49.4,50.4 64.5,54.1 79.6,50.4 94.8,51.7 109.9,45.0 125.0,42.1 140.1,43.2 155.2,43.6 170.4,43.2 185.5,37.6 200.6,37.5 215.8,38.8 230.9,36.8 246.0,40.3"/><polyline class="why-line b" points="4.0,77.3 19.1,68.9 34.2,65.2 49.4,57.0 64.5,67.9 79.6,57.1 94.8,44.7 109.9,52.1 125.0,50.5 140.1,53.5 155.2,40.5 170.4,33.4 185.5,25.6 200.6,27.5 215.8,45.0 230.9,37.1 246.0,18.7"/><circle class="why-dot a" cx="246.0" cy="40.3" r="3.4"/><circle class="why-tick a" cx="256.0" cy="37.3" r="3.4"/><text class="why-end" x="263.0" y="40.3">통행량 248</text><circle class="why-dot b" cx="246.0" cy="18.7" r="3.4"/><circle class="why-tick b" cx="256.0" cy="15.7" r="3.4"/><text class="why-end" x="263.0" y="18.7">실거래가 334</text><text class="why-year" x="4.0" y="98">2009</text><text class="why-year end" x="246.0" y="98">2025</text></svg></figure></div>
+    <details class="why-table"><summary>숫자로 보기</summary><table><thead><tr><th scope="col">자리</th><th scope="col">기간</th><th scope="col">화물 통행량</th><th scope="col">토지 실거래가</th></tr></thead><tbody><tr><th scope="row">화성시 발안</th><td>2008 → 2025</td><td>100 → 141</td><td>100 → 280</td></tr><tr><th scope="row">평택시 북평택</th><td>2009 → 2025</td><td>100 → 502</td><td>100 → 297</td></tr><tr><th scope="row">남양주시 화도</th><td>2009 → 2025</td><td>100 → 248</td><td>100 → 334</td></tr></tbody></table></details>
+    <p class="why-spread">같은 기준(관측 12년 이상 · 화물 일평균 1,500대 이상)을 만족한 영업소 53곳 중 18곳은 화물차가 늘어도 실거래가가 따라오지 않았습니다. 그래서 자리마다 따로 봅니다.</p>
+    <p class="why-note">두 계열은 첫 공통 연도를 100 으로 맞춘 지수입니다. 같이 움직였다는 뜻이고, 교통량이 값을 올렸다는 증명은 아닙니다.</p>
+    <!-- why:end -->
+    <p class="soft" style="margin-top:16px">
+      한 자리씩 직접 보시려면 <a href="/app">지도</a>에서 영업소를 누르면 됩니다.
+    </p>
+  </div>
+</section>
 
 <section>
   <div class="wrap">
