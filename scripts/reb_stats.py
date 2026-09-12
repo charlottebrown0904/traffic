@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -46,53 +47,82 @@ def reach() -> int:
     으로 답합니다 — 그 응답이 왔다는 것 자체가 '닿았다' 는 증거입니다.
     반대로 data.go.kr 은 TCP 연결조차 완성되지 않았습니다
     (docs/finding-geoblock.md).
+
+    경로도 같이 잽니다. 명세서는 `/r-one/openapi/SttsApiTbl` 이라 적었는데
+    첫 실측(2026-09-12)에서 그 주소가 직접·중계기 **양쪽 다** HTML
+    'Page Not Found' 를 돌려줬습니다 — 닿긴 닿았는데 문이 아닌 곳을
+    두드린 것입니다. 그래서 후보 경로를 나란히 두드려 JSON 이 오는 쪽을
+    찾습니다. 판정에 쓰는 것은 '응답이 왔는가' 이고, 경로는 덤입니다.
     """
     import time
 
     import requests
 
-    url = reb.TBL
     q = {"Type": "json", "pIndex": 1, "pSize": 5}
+    candidates = [reb.TBL, reb.TBL + ".do"]
 
-    print("■ 직접 (러너 IP 에서 바로)")
-    t0 = time.time()
-    try:
-        # 중계기를 타지 않도록 requests 를 그대로 쓴다.
-        r = requests.get(url, params=q, timeout=20,
-                         headers={"User-Agent": "redt-research/0.1"})
-        dt = time.time() - t0
-        print(f"   HTTP {r.status_code} · {dt:.2f}초 · {len(r.content):,}바이트")
-        print(f"   {visible(r.text)}")
-        direct_ok = True
-    except Exception as exc:
-        dt = time.time() - t0
-        print(f"   실패 ({dt:.1f}초) — {type(exc).__name__}: {str(exc)[:160]}")
-        direct_ok = False
-        # **개발 상자에서 돌리면 프록시가 막습니다 — 지오블록이 아닙니다.**
-        # 이 둘을 헷갈리면 '해외에서는 안 된다' 는 틀린 결론을 내립니다.
-        proxied = isinstance(exc, requests.exceptions.ProxyError) or "roxy" in str(exc)
-        if proxied:
-            print("   ⚠ 이것은 이 상자의 egress 차단입니다(프록시). 지오블록이 아닙니다.")
-            print("     판정은 **GitHub Actions 러너**에서만 유효합니다 —")
-            print("     Actions → '지가변동률 수집' → mode: reach 로 다시 재십시오.")
-            direct_ok = None
+    def classify(text: str) -> str:
+        """JSON 이면 (코드·메시지), 아니면 걷어낸 HTML 앞부분."""
+        try:
+            payload = json.loads(text, strict=False)
+        except ValueError:
+            return "HTML  " + visible(text, 160)
+        code, msg = reb._result(payload)
+        return f"JSON  code={code or '?'} {msg or ''}".rstrip()
 
-    print("\n■ 중계기 (서울 icn1 경유)")
-    if not relay().enabled:
-        print("   중계기 설정이 없습니다 (REDT_RELAY_URL · REDT_RELAY_TOKEN)")
-        relay_ok = None
-    else:
+    direct_ok = False
+    relay_ok = None
+    good: list[str] = []
+    for url in candidates:
+        print(f"\n● {url}")
+        print("  직접 (러너 IP 에서 바로)")
+        t0 = time.time()
+        try:
+            # 중계기를 타지 않도록 requests 를 그대로 쓴다.
+            r = requests.get(url, params=q, timeout=20,
+                             headers={"User-Agent": "redt-research/0.1"})
+            dt = time.time() - t0
+            kind = classify(r.text)
+            print(f"    HTTP {r.status_code} · {dt:.2f}초 · {len(r.content):,}바이트")
+            print(f"    {kind}")
+            direct_ok = True
+            if kind.startswith("JSON"):
+                good.append(url)
+        except Exception as exc:
+            dt = time.time() - t0
+            print(f"    실패 ({dt:.1f}초) — {type(exc).__name__}: {str(exc)[:160]}")
+            # **개발 상자에서 돌리면 프록시가 막습니다 — 지오블록이 아닙니다.**
+            # 이 둘을 헷갈리면 '해외에서는 안 된다' 는 틀린 결론을 내립니다.
+            proxied = isinstance(exc, requests.exceptions.ProxyError) or "roxy" in str(exc)
+            if proxied:
+                print("    ⚠ 이것은 이 상자의 egress 차단입니다(프록시). 지오블록이 아닙니다.")
+                print("      판정은 **GitHub Actions 러너**에서만 유효합니다 —")
+                print("      Actions → '지가변동률 수집' → mode: reach 로 다시 재십시오.")
+                direct_ok = None
+
+        print("  중계기 (서울 icn1 경유)")
+        if not relay().enabled:
+            print("    중계기 설정이 없습니다 (REDT_RELAY_URL · REDT_RELAY_TOKEN)")
+            continue
         t0 = time.time()
         try:
             resp = reb.get_raw(url, q)
             dt = time.time() - t0
-            print(f"   HTTP {resp.status_code} · {dt:.2f}초 · {len(resp.content):,}바이트")
-            print(f"   {visible(resp.text)}")
+            print(f"    HTTP {resp.status_code} · {dt:.2f}초 · {len(resp.content):,}바이트")
+            print(f"    {classify(resp.text)}")
             relay_ok = True
         except Exception as exc:
             dt = time.time() - t0
-            print(f"   실패 ({dt:.1f}초) — {type(exc).__name__}: {str(exc)[:160]}")
+            print(f"    실패 ({dt:.1f}초) — {type(exc).__name__}: {str(exc)[:160]}")
             relay_ok = False
+
+    print("\n■ 경로")
+    if good:
+        print("   JSON 이 온 경로: " + ", ".join(good))
+        if reb.TBL not in good:
+            print("   ⚠ 코드의 BASE(reb.py) 와 다릅니다 — 고쳐야 합니다.")
+    else:
+        print("   어느 후보도 JSON 을 주지 않았습니다 — 경로를 더 찾아야 합니다.")
 
     print("\n■ 판정")
     if direct_ok is None:
