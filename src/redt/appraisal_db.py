@@ -155,9 +155,9 @@ def _num(v):
 def factor_summary(rows: list[dict] | None = None) -> dict:
     """조건(group_nm)별 격차율 분포 — 화면·문서용 집계. 개별 건은 안 나간다.
 
-    1.00 은 '차이 없음' 이라 평가사가 대개 적지 않는다. 그래서 여기의
-    중앙값은 '무언가 달랐던 건' 의 중앙값이지 전체 평균이 아니다 — 표에
-    그렇게 적는다."""
+    1차 원장(52건)은 1.00('차이 없음') 을 적지 않았고, 2차(164파일)부터는
+    조건마다 1.00 도 적는다. 그래서 eq_1 을 따로 세어 준다 — 1.00 을 뺀
+    분포를 보려면 below_1·above_1 만 보면 된다."""
     rows = load_factors() if rows is None else rows
     by: dict[str, list[float]] = {}
     why: dict[str, list[str]] = {}
@@ -177,6 +177,7 @@ def factor_summary(rows: list[dict] | None = None) -> dict:
                   "min": vals[0], "max": vals[-1],
                   "q1": round(vals[n // 4], 3), "q3": round(vals[(3 * n) // 4], 3),
                   "below_1": sum(1 for v in vals if v < 1), "above_1": sum(1 for v in vals if v > 1),
+                  "eq_1": sum(1 for v in vals if v == 1),
                   "why": sorted(set(why.get(g, [])))[:12]}
     return out
 

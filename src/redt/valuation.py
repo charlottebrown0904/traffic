@@ -509,7 +509,11 @@ def ledger_other_factor(sido: str | None, sigungu: str | None,
         return zone_group(r.get("land_use"))
 
     def ug_of(r):
-        return use_group(r.get("jimok"), r.get("use_situation"))
+        # f_other 는 **비교표준지** 기준 배율이다. 2차 원장(0007)부터 표준지의
+        # 지목·이용상황이 있으니 그것으로 칸을 가른다 — 화면 otherFactorOf 와
+        # 같은 규칙. 1차 원장(없음)은 대상 필지 것으로 물러난다.
+        return use_group(r.get("std_jimok") or r.get("jimok"),
+                         r.get("std_use_situation") or r.get("use_situation"))
 
     tries = []
     if sigungu:
