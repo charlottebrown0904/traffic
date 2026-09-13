@@ -2065,6 +2065,60 @@ _cell = {(r[0], c): v for r in _rb[2] for c, v in zip(_rb[1], r[1])}
 check(_cell[("광대한면", "맹지")] < 1 < _cell[("맹지", "광대한면")],
       "행=표준지 · 열=대상 — 맹지 표준지에서 광대한면으로 가면 값이 커진다")
 
+
+print()
+print("40. 연속지적도 SHP — 좌표계 판별과 필지 중심")
+from redt.collect import cadastral as _CAD                # noqa: E402
+_PRJ_5186 = ('PROJCS["Korea_2000_Korea_Central_Belt_2010",GEOGCS["GCS_Korea_2000",'
+             'DATUM["D_Korea_2000",SPHEROID["GRS_1980",6378137.0,298.257222101]]],'
+             'PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",200000.0],'
+             'PARAMETER["False_Northing",600000.0],PARAMETER["Central_Meridian",127.0],'
+             'PARAMETER["Scale_Factor",1.0],PARAMETER["Latitude_Of_Origin",38.0]]')
+_PRJ_5174 = _PRJ_5186.replace("Korea_2000", "Korean_Datum_1985") \
+                     .replace("GRS_1980", "Bessel_1841") \
+                     .replace("127.0]", "127.0028902777778]")
+# **가산값으로 가르면 안 된다** — 5186 과 5174 가 둘 다 북쪽 가산 60만이다.
+# 데이텀으로 갈라야 하고, 틀리면 전국이 조용히 100~200m 어긋난다.
+check(_CAD.epsg_from_prj(_PRJ_5186) == 5186, "GRS80 · 원점 127 → 5186 (중부 2010)")
+check(_CAD.epsg_from_prj(_PRJ_5174) == 5174, "베셀 · 원점 127.00289 → 5174 (옛 중부)")
+check(_CAD.epsg_from_prj(_PRJ_5186.replace("127.0]", "129.0]")) == 5187, "원점 129 → 5187 (동부)")
+check(_CAD.epsg_from_prj('PROJCS["x"],PARAMETER["False_Easting",1000000.0],'
+                         'PARAMETER["Central_Meridian",127.5]') == 5179, "UTM-K → 5179")
+check(_CAD.epsg_from_prj('PROJCS["x",AUTHORITY["EPSG","5186"]]') == 5186, "파일에 적힌 EPSG 를 먼저 쓴다")
+check(_CAD.epsg_from_prj('PARAMETER["Central_Meridian",127.0]') is None,
+      "데이텀을 모르면 None — 찍지 않는다")
+check(_CAD.epsg_from_prj("") is None, ".prj 가 없으면 None")
+
+# 가짜 SHP 한 장으로 읽기·거르기·나라 밖 버리기를 확인한다.
+import shapefile as _shp                                  # noqa: E402
+import tempfile as _tf, zipfile as _zf                    # noqa: E402
+_d = pathlib.Path(_tf.mkdtemp())
+_base = _d / "LSMD_CONT_LDREG_시험"
+_w = _shp.Writer(str(_base)); _w.field("PNU", "C", 19)
+for _pnu, _dx in (("4376025021100002820", 0), ("4376025021100002140", 300)):
+    _x, _y = 200000 + _dx, 500000 + _dx
+    _w.poly([[[_x, _y], [_x + 50, _y], [_x + 50, _y + 50], [_x, _y + 50], [_x, _y]]])
+    _w.record(_pnu)
+_w.close()
+_base.with_suffix(".prj").write_text(_PRJ_5186, encoding="utf-8")
+_zip = _d / "t.zip"
+with _zf.ZipFile(_zip, "w") as _z:
+    for _e in (".shp", ".dbf", ".shx", ".prj"):
+        _z.write(str(_base.with_suffix(_e)), arcname="a" + _e)
+_got = list(_CAD.centroids_from_zip(_zip))
+check(len(_got) == 2 and all(126 < g[1] < 128 and 36 < g[2] < 38 for g in _got),
+      f"두 필지를 우리나라 안 좌표로 낸다 ({_got[:1]})")
+_one = list(_CAD.centroids_from_zip(_zip, want={"4376025021100002820"}))
+check(len(_one) == 1 and _one[0][0] == "4376025021100002820", "원하는 PNU 만 낸다")
+check(list(_CAD.centroids_from_zip(_zip, want={"0" * 19})) == [], "없는 PNU 는 빈 목록")
+_base.with_suffix(".prj").unlink()
+_zip2 = _d / "t2.zip"
+with _zf.ZipFile(_zip2, "w") as _z:
+    for _e in (".shp", ".dbf", ".shx"):
+        _z.write(str(_base.with_suffix(_e)), arcname="a" + _e)
+check(list(_CAD.centroids_from_zip(_zip2)) == [],
+      ".prj 가 없으면 아무것도 내지 않는다 (틀린 좌표보다 없는 편이 낫다)")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

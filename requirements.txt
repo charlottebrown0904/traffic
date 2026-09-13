@@ -4,6 +4,9 @@ pandas>=2.1
 openpyxl>=3.1
 # 비준표는 옛 .xls(BIFF8) 로 내려온다 — openpyxl 은 이 형식을 못 읽는다.
 xlrd>=2.0
+# 연속지적도는 SHP 로 온다. pyshp 는 순수 파이썬이라 GDAL 없이 러너에서 바로
+# 돌고, 우리는 도형 전체가 아니라 레코드의 경계상자 가운데만 쓰므로 이것으로 족하다.
+pyshp>=2.3
 numpy>=1.26
 duckdb>=0.10
 pyarrow>=14.0
