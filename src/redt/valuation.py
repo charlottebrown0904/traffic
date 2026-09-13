@@ -383,9 +383,13 @@ def haversine_km(lat1, lon1, lat2, lon2) -> float:
     return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
-# 가격 수준 벌점 — 배율이 띠 밖으로 두 배 벗어나면 다른 읍면동만큼(≈1km) 멀다.
-PRICE_BAND = (0.7, 1.4)
-PRICE_PEN_PER_LOG = 3.0
+# 가격 수준 벌점 — 띠 밖으로 벗어난 정도의 로그에 비례. 띠는 **넓게** 둔다:
+# 고치려는 것은 3.6배짜리 표준지가 뽑히는 사고이지, 1.3배와 1.5배를
+# 가리는 일이 아니다. 좁은 띠(0.7~1.4)로 재 보니 안성 27건에서 선정이
+# 5건 바뀌고 ±30% 적중이 6 → 4 로 줄었다 — 멀쩡한 선정까지 흔들었다.
+# 원장 376건에서 평가사가 고른 표준지는 89%(335건)가 0.5~2.0 안이다.
+PRICE_BAND = (0.5, 2.0)
+PRICE_PEN_PER_LOG = 4.0
 
 
 def price_level_penalty(subject_price, std_price) -> tuple[float, float | None]:

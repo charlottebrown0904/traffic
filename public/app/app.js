@@ -5256,12 +5256,13 @@ function individualFactor(subject, std, T) {
 /* 비교표준지 — 실무기준의 순서. 용도지역(세분까지)·구역은 거르고, 나머지는
  * 벌점(거리 km 로 환산)이다. 좌표는 아직 없어 같은 법정동리(PNU 앞 10자리)
  * 가 거리를 대신한다.
- * 가격 수준: 표준지 공시지가 ÷ 대상 개별공시지가 가 0.7~1.4 밖이면 로그
- * 배율 × 3 을 벌점으로 (두 배 벗어나면 다른 읍면동만큼). 원장 376건에서
- * 평가사가 고른 표준지는 중앙 1.05 · 78% 가 띠 안. 좌표 없이 위치 차이를
- * 잡는 자리다 — 3.6배짜리 표준지가 '조건 일치'로 뽑히던 것을 막는다. */
-const PRICE_BAND = [0.7, 1.4];
-const PRICE_PEN_PER_LOG = 3.0;
+ * 가격 수준: 표준지 공시지가 ÷ 대상 개별공시지가 가 띠 밖이면 벗어난
+ * 정도의 로그에 비례해 벌점. 띠는 넓다 — 고치려는 것은 3.6배짜리 표준지가
+ * 뽑히는 사고이지 1.3배와 1.5배를 가리는 일이 아니다 (좁은 띠로 재 보니
+ * 멀쩡한 선정까지 흔들렸다). 원장 376건에서 평가사가 고른 표준지는 89%가
+ * 이 띠 안이다. 좌표 없이 위치 차이를 잡는 자리다. */
+const PRICE_BAND = [0.5, 2.0];
+const PRICE_PEN_PER_LOG = 4.0;
 function priceLevelPenalty(subjectPrice, stdPrice) {
   const a = Number(subjectPrice); const b = Number(stdPrice);
   if (!(a > 0) || !(b > 0)) return [0, null];

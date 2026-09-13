@@ -155,10 +155,11 @@ check([g["pnu"] for g in got] == [peer["pnu"], rich["pnu"]], "공시지가 수�
 check(got[1]["price_ratio"] == 3.57 and "공시지가 수준 3.6배" in got[1]["why"] and got[1]["penalty"] > 1.0,
       f"3.6배는 다른 읍면동보다 큰 벌점 ({got[1]['penalty']})")
 check(got[0]["penalty"] == 0 and got[0]["why"] == "조건 일치", "1.0배는 벌점 없음")
-pen, k = V.price_level_penalty(17100, 61000 * 0.5)
-check(pen > 0 and abs(k - 1.78) < 0.01, "띠(0.7~1.4) 밖이면 로그 배율에 비례")
-check(V.price_level_penalty(17100, 20000) == (0.0, round(20000 / 17100, 12)) or V.price_level_penalty(17100, 20000)[0] == 0,
-      "띠 안이면 벌점 0")
+check(V.price_level_penalty(17100, 61000 * 0.5)[0] == 0,
+      "1.8배는 띠 안 — 벌점 없음 (멀쩡한 선정을 흔들지 않는다)")
+check(V.price_level_penalty(17100, 17100 * 2.5)[0] > 0, "2.5배는 띠 밖 — 벌점")
+check(V.price_level_penalty(17100, 17100 * 0.3)[0] > 0, "0.3배도 띠 밖 — 벌점")
+check(V.price_level_penalty(17100, 20000)[0] == 0, "띠 안이면 벌점 0")
 check(V.price_level_penalty(None, 61000) == (0.0, None) and V.price_level_penalty(17100, None) == (0.0, None),
       "개별공시지가·표준지 공시지가가 없으면 이 벌점은 없다")
 got = V.pick_standard({k2: v for k2, v in subj.items() if k2 != "official_price"}, [rich, peer])
