@@ -769,7 +769,10 @@ def appraise(subject: dict, std: dict, at: dt.date | None = None,
         "at": at.isoformat(),
         "std": {k: std.get(k) for k in ("pnu", "label", "land_use", "jimok", "use_situation",
                                          "road_side", "shape", "slope", "area_m2",
-                                         "price", "base_date", "distance_km")},
+                                         "price", "base_date", "distance_km",
+                                         # 왜 이 표준지인가 — 화면 '비교표준지 선정' 줄과
+                                         # value-test 로그가 같은 말을 쓰게 한다.
+                                         "why", "price_ratio")},
         "time": t,
         "region": {"factor": 1.0, "why": "같은 인근지역에서 표준지를 골랐다 (평가서 41/41 이 1.00)"},
         "individual": indiv,
