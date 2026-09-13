@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import threading
 import time
@@ -291,6 +292,7 @@ def cmd_value_test(args):
     거래사례 갈래에는 이 시군구의 최근 3년 거래가 다 들어가므로 뽑힌 건
     자신도 그 중앙값에 조금 섞인다 (수백 건 중 하나). 결과에 적는다.
     """
+    import math
     import random
     from datetime import date
     from . import valuation as V, appraisal_db
@@ -416,6 +418,7 @@ def cmd_value_test(args):
             line.append(f"{label} {u:,.0f} (실거래/산출 {actual / u:.2f})" if u else f"{label} 보류")
         print("   ▶ " + " · ".join(line))
         out.append({"changed": changed, "unit_off": r_off.get("unit_decided"),
+                    "umd": t.get("umd"), "jibun": t.get("jibun"),
                     "trade_id": t["trade_id"], "pnu": t["pnu"], "deal": f"{t['deal_year']}-{int(t['deal_month']):02d}",
                     "ug": ug, "jimok": t["jimok"],
                     "actual": actual, "official": t["official_price"], "std": stds3[0].get("label"),
@@ -449,6 +452,16 @@ def cmd_value_test(args):
         print(f"가격 수준 벌점 A/B — 표준지가 바뀐 건 {nch}/{len(out)}건")
         print(f"   켠 채 중앙 {on[0]:.2f} · ±30% 안 {on[1]} · 2배 안 {on[2]}")
         print(f"   끈 채 중앙 {offd[0]:.2f} · ±30% 안 {offd[1]} · 2배 안 {offd[2]}")
+        # 바뀐 건만 한 줄씩 — 어느 쪽이 실거래에 가까웠는지 사람이 보게.
+        for o in out:
+            if not o.get("changed") or o.get("hold") or not o["unit"].get("결정") or not o.get("unit_off"):
+                continue
+            ron, roff = o["actual"] / o["unit"]["결정"], o["actual"] / o["unit_off"]
+            better = "켠 쪽" if abs(math.log(ron)) < abs(math.log(roff)) else "끈 쪽"
+            print(f"   · {o.get('umd') or ''} {o.get('jibun') or ''} {o.get('jimok') or ''}"
+                  f" 실거래 {o['actual']:,.0f} · 개별공시 {o['official']:,.0f}"
+                  f" · 켠 {o['unit']['결정']:,.0f}(비 {ron:.2f}) · 끈 {o['unit_off']:,.0f}(비 {roff:.2f})"
+                  f" → {better}")
     # 지목군별 — 어느 칸의 그 밖의 요인이 실거래와 어긋나는지가 다음에 손댈 곳.
     by_ug: dict = {}
     for o in out:
