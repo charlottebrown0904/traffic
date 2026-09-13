@@ -66,6 +66,49 @@
     return table([label || '값', '지수'], rows, { num: [1] });
   }
 
+
+  /* 토지가격비준표 — 읍·면 파일이 여럿이면 지역을 열로 놓고 우리 값 옆에 나란히.
+     bijunpyo_regions 가 없는 옛 valuation.json 은 한 지역짜리 bijunpyo 로 그린다. */
+  function ourIdx(item, target, v) {
+    var t = String(target || '');
+    var tbl = item === '도로접면' ? v.road_index
+      : item === '고저' ? (v.slope_index && v.slope_index['*'])
+      : (item.indexOf('형상') === 0 ? v.shape_index : null);
+    if (!tbl) return null;
+    var hit = (Array.isArray(tbl) ? tbl : Object.keys(tbl).map(function (k) { return [k, tbl[k]]; }))
+      .filter(function (pair) { return t.indexOf(pair[0]) >= 0; })[0];
+    return hit ? hit[1] : null;
+  }
+  function bijunpyoBlock(v) {
+    var regs = (v.bijunpyo_regions && v.bijunpyo_regions.length) ? v.bijunpyo_regions
+      : ((v.bijunpyo && v.bijunpyo.rows) ? [v.bijunpyo] : []);
+    if (!regs.length) return '';
+    var items = [];
+    regs.forEach(function (r) {
+      Object.keys(r.rows || {}).forEach(function (k) { if (items.indexOf(k) < 0) items.push(k); });
+    });
+    var head = ['대상', '우리 값'].concat(regs.map(function (r) { return (r.region || '?') + ' ' + (r.year || ''); }));
+    var numCols = head.map(function (_, i) { return i; }).slice(1);
+    return '<h4>관의 공식 배율과 나란히 — 토지가격비준표</h4>'
+      + '<p>' + E(regs.map(function (r) { return r.source; }).join(' / '))
+      + '. 지세는 보개면 값을 그대로 옮겨 적었고(2026-09-12), 도로접면·형상은 평가서 검산이 있는 우리 값을 씁니다. '
+      + '읍·면마다 배율이 다릅니다(도로접면 광대한면 1.35 vs 1.25) — 어느 한 장이 "정답"은 아니고, 차이가 곧 개별공시지가와 감정평가의 거리입니다.</p>'
+      + items.map(function (item) {
+        var targets = [];
+        regs.forEach(function (r) {
+          (r.rows[item] || []).forEach(function (pair) { if (targets.indexOf(pair[0]) < 0) targets.push(pair[0]); });
+        });
+        var rows = targets.map(function (t) {
+          var ours = ourIdx(item, t, v);
+          return [E(t), ours == null ? null : N(ours, 3)].concat(regs.map(function (r) {
+            var hit = (r.rows[item] || []).filter(function (pair) { return pair[0] === t; })[0];
+            return hit ? N(hit[1], 3) : null;
+          }));
+        });
+        return '<p><b>' + E(item) + '</b></p>' + table(head, rows, { num: numCols });
+      }).join('');
+  }
+
   /* ── 자료 모으기 ─────────────────────────────────────────────
      공개(/app/data)와 비밀(버킷·RPC)을 나눠 부른다. 하나가 없어도
      나머지는 그린다 — 없는 칸은 '—' 로 둔다. */
@@ -176,14 +219,7 @@
               return '<p><b>' + E(k) + '</b></p>' + idxTable(v.slope_index[k], '지세');
             }).join('')
             : '<p><em class="adm-miss">비공개 자료를 못 받았습니다.</em></p>')
-          + ((v.bijunpyo && v.bijunpyo.rows)
-            ? '<h4>관의 공식 배율과 나란히 — 토지가격비준표</h4>'
-              + '<p>' + E(v.bijunpyo.source) + '. 지세는 이 값을 그대로 옮겨 적었고(2026-09-12), '
-              + '도로접면·형상은 평가서 검산이 있는 우리 값을 씁니다. 차이가 곧 개별공시지가와 감정평가의 거리입니다.</p>'
-              + Object.keys(v.bijunpyo.rows).map(function (k) {
-                return '<p><b>' + E(k) + '</b></p>' + idxTable(v.bijunpyo.rows[k], k);
-              }).join('')
-            : '')
+          + bijunpyoBlock(v)
           + '<h4>면적</h4>'
           + (v.area_rules
             ? Object.keys(v.area_rules).map(function (k) {

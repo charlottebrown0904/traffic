@@ -2,7 +2,7 @@
 """토지가격비준표(.xls) → 긴 형식 TSV, 그리고 우리 지수표와의 대조.
 
     PYTHONPATH=src python3 scripts/parse_bijunpyo.py <파일.xls> \
-        --sgg 41550 --sgg-name 안성시 --year 2026 --out data/interim/bijunpyo.tsv
+        --sgg 41550 --sgg-name "안성시 보개면" --year 2026 --out data/bijunpyo/41550_bogae_2026.tsv
     PYTHONPATH=src python3 scripts/parse_bijunpyo.py <파일.xls> --compare
 
 ■ 배율의 **방향** — 이것을 틀리면 모든 값이 뒤집힌다

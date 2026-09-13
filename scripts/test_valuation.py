@@ -59,6 +59,21 @@ for _k, _v in V.SLOPE_INDEX["*"]:
 check(V.SLOPE_INDEX["임야지대"] == V.SLOPE_INDEX["*"],
       "임야지대도 같은 표 — 따로 볼 근거가 생기면 그 줄만 바꾼다")
 
+print()
+print("1-2. 비준표 — 읍·면 파일이 여럿, 지역을 열로")
+_regs = V.bijunpyo_regions()
+check(len(_regs) >= 2, f"비준표 파일 2개 이상 ({len(_regs)})")
+check(_regs and "보개면" in _regs[0]["region"], "보개면(지세 표의 출처)이 맨 앞")
+check(any("원삼면" in r["region"] for r in _regs), "용인시 처인구 원삼면 파일이 있다")
+for _r in _regs:
+    check(set(_r["rows"]) >= {"도로접면", "고저", "형상(주거.공업)"},
+          f"{_r['region']}: 도로·고저·형상 세 항목이 다 있다 (형상 기준 행 후보 정방형/정형)")
+    check(_r["year"] == "2026" and _r["zone"] == "계획관리지역", f"{_r['region']}: 연도·용도지역 라벨")
+_w = [r for r in _regs if "원삼면" in r["region"]]
+check(_w and dict(_w[0]["rows"]["도로접면"]).get("광대한면") == 1.25,
+      "원삼면 도로접면 광대한면 1.25 — 우리 ROAD_INDEX 와 같은 값")
+check(V.bijunpyo_index(path=V.ROOT / "없는파일.tsv") == {}, "파일이 없으면 빈 사전")
+
 print("2. 격차율 — 대상 ÷ 표준지")
 r = V.individual_factor(
     {"land_use": "자연녹지지역", "jimok": "임야", "road_side": "세로(가)", "slope": "완경사"},

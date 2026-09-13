@@ -146,6 +146,8 @@ SHAPE_INDEX = [
 
 # 지세 — **토지가격비준표 값이다** (2026-09-12, 안성시 보개면 2026,
 # 계획관리지역 시트의 '고저' 표에서 표준지=평지 행. data/bijunpyo/).
+# 용인시 처인구 원삼면(2026-09-13)은 완경사 0.93 · 급경사 0.67 · 고지 0.66 ·
+# 저지 0.88 — 3pp 안이라 보개면 값을 그대로 둔다 (저지만 9pp, docs/bijunpyo.md §7).
 #
 # 전에는 평가서에서 읽은 값이었다 (임야 급경사 0.82 · 그 밖 0.88 · 고지
 # 0.95). 급경사·고지 사례가 원장에 몇 건 없어 사실상 기본값에 가까웠고,
@@ -805,37 +807,67 @@ SIDO_NAMES = {"11": "서울", "26": "부산", "27": "대구", "28": "인천", "2
               "46": "전남", "47": "경북", "48": "경남", "50": "제주", "51": "강원", "52": "전북"}
 
 
-BIJUNPYO_TSV = ROOT / "data" / "bijunpyo" / "41550_bogae_2026.tsv"
+BIJUNPYO_DIR = ROOT / "data" / "bijunpyo"
+# 첫 파일 — 지세 표(SLOPE_INDEX)의 출처. 화면 목록에서도 맨 앞에 선다.
+BIJUNPYO_TSV = BIJUNPYO_DIR / "41550_bogae_2026.tsv"
 
-# 우리 지수표와 나란히 보일 비준표 항목. (항목, 기준 행) — 기준 행이 곧
-# '지수 1.00' 이라, 그 행을 꺼내면 우리 표와 같은 기준이 된다.
-_BIJUNPYO_ROWS = (("도로접면", "세로(가)"), ("형상(주거.공업)", "정방형"), ("고저", "평지"))
+# 우리 지수표와 나란히 보일 비준표 항목. (항목, 기준 행 후보) — 기준 행이 곧
+# '지수 1.00' 이라, 그 행을 꺼내면 우리 표와 같은 기준이 된다. 읍·면마다
+# 표 크기가 달라(보개면 형상 6×6 '정방형', 원삼면 2×2 '정형') 후보를 여럿 둔다.
+_BIJUNPYO_ROWS = (("도로접면", ("세로(가)",)),
+                  ("형상(주거.공업)", ("정방형", "정형")),
+                  ("고저", ("평지",)))
+
+
+def bijunpyo_files() -> list[Path]:
+    """data/bijunpyo/*.tsv — 보개면 파일이 있으면 맨 앞, 나머지는 이름순."""
+    if not BIJUNPYO_DIR.is_dir():
+        return []
+    rest = sorted(p for p in BIJUNPYO_DIR.glob("*.tsv") if p != BIJUNPYO_TSV)
+    return ([BIJUNPYO_TSV] if BIJUNPYO_TSV.exists() else []) + rest
 
 
 def bijunpyo_index(zone: str = "계획관리지역", path: Path | None = None) -> dict:
-    """토지가격비준표(안성시 보개면 2026)의 세 항목을 지수 모양으로.
+    """토지가격비준표 한 읍·면의 세 항목을 지수 모양으로.
 
     화면(Admin 격차율 표)에 우리 값과 **나란히** 싣기 위한 것이다 — 관의
     공식 배율이 우리 값과 얼마나 떨어져 있는지를 사람이 보게 한다.
-    파일이 없으면 빈 사전이다. 산출에는 쓰지 않는다 (지세는 이미 그 값을
+    파일이 없으면 빈 사전이다. 산출에는 쓰지 않는다 (지세는 이미 보개면 값을
     SLOPE_INDEX 에 옮겨 적었고, 도로·형상은 평가서 검산이 있는 우리 값을 쓴다).
+    지역·연도는 파일 안(sgg_nm·year 열)에서 읽는다 — 파일명을 믿지 않는다.
     """
     path = path or BIJUNPYO_TSV
     if not path.exists():
         return {}
-    want = {item: base for item, base in _BIJUNPYO_ROWS}
-    out = {item: {} for item in want}
+    bases = {item: cands for item, cands in _BIJUNPYO_ROWS}
+    cells: dict[str, dict[str, dict[str, float]]] = {item: {} for item in bases}
+    region = year = ""
     with open(path, encoding="utf-8") as fh:
         next(fh)
         for line in fh:
             c = line.rstrip("\n").split("\t")
             if len(c) < 8 or c[3] != zone:
                 continue
+            region, year = region or c[1], year or c[2]
             item, std, target, ratio = c[4], c[5], c[6], c[7]
-            if want.get(item) == std:
-                out[item][target] = float(ratio)
-    return {"source": f"토지가격비준표 안성시 보개면 2026 · {zone}",
-            "rows": {k: [[t, v] for t, v in d.items()] for k, d in out.items() if d}}
+            if item in bases and std in bases[item]:
+                cells[item].setdefault(std, {})[target] = float(ratio)
+    rows = {}
+    for item, cands in _BIJUNPYO_ROWS:
+        for base in cands:                       # 후보 순서대로 — 있는 첫 행
+            if cells[item].get(base):
+                rows[item] = [[t, v] for t, v in cells[item][base].items()]
+                break
+    if not rows:
+        return {}
+    return {"region": region, "year": year, "zone": zone,
+            "source": f"토지가격비준표 {region} {year} · {zone}", "rows": rows}
+
+
+def bijunpyo_regions(zone: str = "계획관리지역") -> list[dict]:
+    """읍·면 파일 전부 — 화면이 지역을 열로 놓고 나란히 보인다."""
+    out = [bijunpyo_index(zone, p) for p in bijunpyo_files()]
+    return [d for d in out if d]
 
 
 def tables_for_web(trade: dict | None = None) -> dict:
@@ -859,6 +891,7 @@ def tables_for_web(trade: dict | None = None) -> dict:
         "shape_index": SHAPE_INDEX, "slope_index": SLOPE_INDEX,
         # 관의 공식 배율 — 우리 값 옆에 놓아 보라고 싣는다 (산출에는 안 쓴다).
         "bijunpyo": bijunpyo_index(),
+        "bijunpyo_regions": bijunpyo_regions(),   # 읍·면별 열 — 지역마다 배율이 다르다
         "use_mismatch": {f"{a}|{b}": v for (a, b), v in USE_MISMATCH.items()},
         "special": SPECIAL, "must_match": list(MUST_MATCH), "std_known": list(STD_KNOWN),
         "area_rules": {k: [[lo, (None if hi == math.inf else hi), r, why] for lo, hi, r, why in v]
