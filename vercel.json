@@ -48,6 +48,7 @@
   ],
   "git": {
     "deploymentEnabled": {
+      "main": true,
       "claude/real-estate-traffic-correlation-liujkh": false
     }
   }
