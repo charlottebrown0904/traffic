@@ -2185,6 +2185,17 @@ check(len(set(_mm.values())) == len(_mm), "파일 ID 가 겹치지 않는다")
 check(all(isinstance(v, str) and 20 <= len(v) <= 60 for v in _mm.values()),
       "파일 ID 가 드라이브 모양이다")
 
+# 한 장도 안 맞았을 때 까닭을 가른다 — '코드가 다르다' 와 '이미 채웠다' 는
+# 대처가 다르다. 전남·광주 27장이 통째로 0건인데 로그는 그냥 '새로 채운 것
+# 없음' 이라 까닭을 알 수 없었다 (run 34769401528).
+_why = _cli._cadastral_why_zero(_CAD, _zip, {"43760"})
+check("이미 다 채웠" in _why, f"명부에 있는 코드면 '이미 채웠다' ({_why[:30]})")
+_why = _cli._cadastral_why_zero(_CAD, _zip, {"46110"})
+check("코드가 다릅니다" in _why and "43760" in _why,
+      f"명부에 없는 코드면 '코드가 다르다' 고 도면 코드를 보인다 ({_why[:40]})")
+_why = _cli._cadastral_why_zero(_CAD, _zip2, {"43760"})
+check("필지가 없습니다" in _why, f"좌표계를 못 읽으면 그렇게 말한다 ({_why[:30]})")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

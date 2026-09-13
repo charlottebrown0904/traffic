@@ -584,7 +584,13 @@ def cmd_load_cadastral(args):
         import tempfile
         tmpdir = tempfile.mkdtemp(prefix="cadastral-")
         tmp = Path(tmpdir)
+        # 우리 PNU 의 시군구 앞 5자리 — 한 장도 안 맞을 때 '코드가 다른가' 를
+        # 바로 가리기 위해서다. 전남·광주 27장이 통째로 0건이었다 (run
+        # 34769401528): 지도는 통합 코드로, 우리 명부는 옛 코드로 적혀 있으면
+        # PNU 가 영영 안 맞는데, 수만 필지를 조용히 버리고 끝난다.
+        want_sgg = {p[:5] for p in want}
         done = hit = skipped = 0
+        missed: list[str] = []
         for i, (name, fid) in enumerate(files, 1):
             path = (src / name) if src else (tmp / name)
             try:
@@ -594,6 +600,7 @@ def cmd_load_cadastral(args):
             except Exception as exc:                   # noqa: BLE001
                 print(f"  [{i:>3}/{len(files)}] {name} — 건너뜀 ({type(exc).__name__}: {str(exc)[:80]})")
                 skipped += 1
+                missed.append(name)
                 if fid:
                     path.unlink(missing_ok=True)
                 continue
@@ -603,17 +610,51 @@ def cmd_load_cadastral(args):
             hit += len(rows)
             done += 1
             n_txt = " · ".join(f"{t} +{n:,}" for t, n in got.items() if n) or "새로 채운 것 없음"
-            print(f"  [{i:>3}/{len(files)}] {name} — 맞은 필지 {len(rows):,}개 · {n_txt}"
-                  f" · 남은 것 {len(want):,}")
+            line = (f"  [{i:>3}/{len(files)}] {name} — 맞은 필지 {len(rows):,}개 · {n_txt}"
+                    f" · 남은 것 {len(want):,}")
+            if not rows:
+                line += " · " + _cadastral_why_zero(CAD, path, want_sgg)
+            print(line)
             if fid:
                 path.unlink(missing_ok=True)
             if not want:
                 print("  남은 필지가 없습니다 — 여기서 멈춥니다")
                 break
         std = con.execute("SELECT count(*) FILTER (WHERE lat IS NOT NULL), count(*) FROM std_land").fetchone()
+        gap = con.execute("""
+            SELECT substr(pnu, 1, 2) AS sido, count(*) FROM std_land
+            WHERE pnu IS NOT NULL AND lat IS NULL
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 12
+        """).fetchall()
     shutil.rmtree(tmpdir, ignore_errors=True)
     print(f"\n파일 {done}장 읽음 (건너뜀 {skipped}) · 맞은 필지 {hit:,}개")
+    if missed:
+        print("  건너뛴 파일: " + " · ".join(missed))
     print(f"표준지 좌표 {std[0]:,}/{std[1]:,} ({std[0] / max(std[1], 1):.1%})")
+    if gap:
+        print("  아직 좌표 없는 표준지 (시·도 앞 2자리): "
+              + " · ".join(f"{s}={n:,}" for s, n in gap))
+
+
+def _cadastral_why_zero(CAD, path: Path, want_sgg: set[str]) -> str:
+    """한 필지도 안 맞은 까닭을 한 줄로. 코드가 다른지부터 본다.
+
+    도면의 PNU 앞 5자리가 우리 명부에 아예 없으면 '코드가 다르다' 는 뜻이고,
+    있으면 '이미 다 채웠다' 는 뜻이다. 둘은 대처가 완전히 다르므로 가른다.
+    """
+    import itertools                                  # noqa: PLC0415
+    try:
+        seen = [r[0] for r in itertools.islice(CAD.centroids_from_zip(path), 200)]
+    except Exception as exc:                           # noqa: BLE001
+        return f"도면을 못 읽었습니다 ({type(exc).__name__})"
+    if not seen:
+        return "도면에 필지가 없습니다 (좌표계를 못 읽었을 수 있습니다)"
+    codes = sorted({p[:5] for p in seen})
+    known = [c for c in codes if c in want_sgg]
+    if known:
+        return f"이 시군구는 이미 다 채웠습니다 (코드 {', '.join(known[:3])})"
+    return ("**코드가 다릅니다** — 도면 " + ", ".join(codes[:3])
+            + " 가 우리 명부에 없습니다 (예: " + seen[0] + ")")
 
 
 def cmd_probe_history(args):
