@@ -37,6 +37,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import math
+import os
 import statistics
 from pathlib import Path
 
@@ -388,6 +389,12 @@ def haversine_km(lat1, lon1, lat2, lon2) -> float:
 # 가리는 일이 아니다. 좁은 띠(0.7~1.4)로 재 보니 안성 27건에서 선정이
 # 5건 바뀌고 ±30% 적중이 6 → 4 로 줄었다 — 멀쩡한 선정까지 흔들었다.
 # 원장 376건에서 평가사가 고른 표준지는 89%(335건)가 0.5~2.0 안이다.
+# 거리의 저울. 점수 = 거리(km) × 이 값 + 벌점 이다. 1.0 이면 1km 떨어진
+# 것이 '읍면동 다름'(1.0) 과 같은 값인데, 평가사가 말하는 인근지역은 보통
+# 500m 안이다 — 거리가 너무 싸다. 환경변수 REDT_DIST_WEIGHT 로 바꿔 가며
+# value-test 로 잰다 (같은 표본·같은 원장에서 나란히 돌려야 견줄 수 있다).
+DIST_WEIGHT = float(os.environ.get("REDT_DIST_WEIGHT", "1.0"))
+
 PRICE_BAND = (0.5, 2.0)
 PRICE_PEN_PER_LOG = 4.0
 
@@ -482,7 +489,7 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3,
         dist = None
         if distance and lat is not None and lon is not None and c.get("lat") is not None:
             dist = haversine_km(float(lat), float(lon), float(c["lat"]), float(c["lon"]))
-        score = (dist or 0.0) + pen
+        score = (dist or 0.0) * DIST_WEIGHT + pen
         rows.append({**c, "distance_km": None if dist is None else round(dist, 3),
                      "price_ratio": None if k is None else round(k, 2),
                      "penalty": round(pen, 2), "score": round(score, 3),

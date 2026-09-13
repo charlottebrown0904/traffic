@@ -52,7 +52,7 @@ on:
         description: "law 모드 — 조례 검색어 (쉼표로 여럿 · 비우면 도시계획/군계획 조례 묶음)"
         default: ""
       limit:
-        description: "law 모드 — 처음 n건만 (시험용 · 비우면 전부)"
+        description: "law 모드 — 처음 n건만 (시험용 · 비우면 전부) / value-test 모드 — 거리의 저울 (비우면 1.0)"
         default: ""
 
 # law 모드가 data/ordinance 를 브랜치에 커밋한다 (run 31: 없으면 403).
@@ -126,6 +126,9 @@ jobs:
         if: inputs.mode == 'value-test'
         run: |
           set -o pipefail
+          # 거리의 저울 — 비우면 1.0. 같은 표본에서 값만 바꿔 나란히 돌린다.
+          export REDT_DIST_WEIGHT="${{ inputs.limit || '1.0' }}"
+          echo "거리 저울 REDT_DIST_WEIGHT=$REDT_DIST_WEIGHT"
           python -m redt.cli value-test --sigungu "${{ inputs.sigungu }}" --zone "${{ inputs.zone }}" \
             --n "${{ inputs.n }}" --months "${{ inputs.months || 12 }}" 2>&1 | tee /tmp/stdland.log
 
