@@ -72,6 +72,18 @@ jobs:
           curl -sS --max-time 30 "$BASE/app/data/meta.json" \
             | head -c 120; echo
 
+      # 지도에 거래가 안 보인다는 지적(2026-09-13)이 있어, 화면이 받는
+      # 자료 파일이 실제로 배달되는지 본다. 200 인데 항목이 0이면
+      # 배달은 된 것이고 내용이 빈 것이다 — 갈라 봐야 고칠 곳이 갈린다.
+      - name: 1-B. 화면 자료 파일 (거래 · 영업소)
+        run: |
+          for f in trades.json trades-2025.json trades-2024.json tollgates.json; do
+            code=$(curl -sS -o /tmp/d.json -w '%{http_code}' --max-time 60 "$BASE/app/data/$f" || echo 000)
+            size=$(stat -c%s /tmp/d.json 2>/dev/null || echo 0)
+            n=$(python3 -c "import json;d=json.load(open('/tmp/d.json'));print(len(d))" 2>/dev/null || echo "파싱실패")
+            printf '  %-20s http=%s bytes=%s 항목=%s\n' "$f" "$code" "$size" "$n"
+          done
+
       - name: 2. 응답 헤더 (_headers 가 먹었는가)
         run: |
           curl -sSI --max-time 30 "$BASE/app/" | tr -d '\r' \
