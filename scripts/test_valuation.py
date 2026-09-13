@@ -102,7 +102,8 @@ check(V.region_factor({**_subj, "official_price": None}, _std, 1.0)["factor"] ==
 check(V.region_factor(_subj, {**_std, "price": None}, 1.0)["factor"] == 1.0, "표준지 공시가 없으면 1.000")
 _r = V.region_factor(_subj, {**_std, "jimok": "대", "use_situation": "주거용"}, 1.0)
 check(_r["factor"] == 1.0 and "지목군" in _r["why"], "지목군이 다르면 1.000 — 격차는 지목군 격차율이 맡는다")
-check(V.region_factor({**_subj, "official_price": 500000}, _std, 1.0)["factor"] == V.REGION_MAX, "위로도 상한")
+check(V.region_factor({**_subj, "official_price": 500000}, _std, 1.0)["factor"] == V.REGION_MAX == 1.0,
+      "위로는 올리지 않는다 (상한 1.0 — 전국 실측에서 올리는 쪽이 적중을 깎았다)")
 _a = V.appraise({**_subj, "area_m2": 3054}, {**_std, "base_date": "2026-01-01", "road_side": "맹지", "shape": "부정형", "slope": "완경사"},
                 time={"factor": 0.98, "source": "t"}, other={"factor": 2.44, "q1": 2.0, "q3": 3.0})
 check(_a["parts"]["지역요인"] == V.REGION_MIN and abs(_a["unit_calc"] - 34300 * 0.98 * V.REGION_MIN * _a["individual"]["factor"] * 2.44) < 1,

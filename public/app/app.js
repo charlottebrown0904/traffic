@@ -5397,8 +5397,9 @@ function roundDecided(x) {
  * 개별공시지가에 든 위치로 그 차이를 읽는다. 같은 지목군일 때만, 그리고
  * 울타리 안에서만 — 개별공시지가가 시세를 못 따라간 필지에서 값이 무너지지
  * 않게. 표준지 좌표가 들어오면 이 줄은 1.000 으로 돌아간다. */
+// 전국 254건 실측(2026-09-13): 위로도 열어 두면 적중이 준다 — 내리는 쪽만.
 const REGION_MIN = 0.5;
-const REGION_MAX = 2.0;
+const REGION_MAX = 1.0;
 function regionFactorOf(subject, std, indFactor) {
   const same = { factor: 1.0, ratio: null,
                  why: '같은 인근지역에서 표준지를 골랐다고 봅니다 (평가서 414/414 이 1.00)' };
