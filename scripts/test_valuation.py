@@ -164,6 +164,13 @@ check(V.price_level_penalty(None, 61000) == (0.0, None) and V.price_level_penalt
       "개별공시지가·표준지 공시지가가 없으면 이 벌점은 없다")
 got = V.pick_standard({k2: v for k2, v in subj.items() if k2 != "official_price"}, [rich, peer])
 check(got[0]["penalty"] == 0 and got[1]["penalty"] == 0, "대상 개별공시지가가 없으면 옛 규칙 그대로")
+# 지목군이 다르면 이 벌점은 없다 — 그 격차는 USE_MISMATCH 가 맡는다.
+# (안성 실측: 하천·목장용지가 개별공시지가의 10배에 팔려 엉뚱한 표준지를 골랐다)
+dae = {"pnu": "4376025021100000777", "land_use": "자연녹지지역", "jimok": "대", "use_situation": "주거용",
+       "road_side": "세로(가)", "shape": "부정형", "slope": "완경사", "price": 17100 * 5}
+got = V.pick_standard(subj, [dae])
+check(got[0]["penalty"] == 0.5 and got[0]["price_ratio"] is None,
+      f"지목군이 다르면 가격 수준 벌점 없음 (지목군 벌점 0.5 만) — {got[0]['penalty']}")
 
 print()
 print("5. 시점수정")

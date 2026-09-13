@@ -5290,7 +5290,9 @@ function pickStandard(subject, cands, T, top) {
     const s1 = idxOf(subject.slope, T.slope_index['*']); const s2 = idxOf(c.slope, T.slope_index['*']);
     if (s1 !== null && s2 !== null && s1 !== s2) { pen += 0.3; why.push('지세 다름'); }
     if (umd && String(c.ld || c.pnu || '').slice(0, 10) !== umd) { pen += 1.0; why.push('다른 읍면동'); }
-    const [ppen, k] = priceLevelPenalty(subject.official_price, c.price);
+    // 같은 지목군일 때만 — 지목이 다르면 그 격차는 use_mismatch 가 맡는다.
+    const sameUg = !!ug && useGroupOf(c.jimok, c.use_situation) === ug;
+    const [ppen, k] = sameUg ? priceLevelPenalty(subject.official_price, c.price) : [0, null];
     if (ppen) { pen += ppen; why.push(`공시지가 수준 ${k.toFixed(1)}배`); }
     let dist = null;
     if (subject.lat != null && c.lat != null) dist = haversine(subject.lat, subject.lon, c.lat, c.lon);

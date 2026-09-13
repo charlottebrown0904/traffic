@@ -423,6 +423,8 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3,
     개별공시지가가 대신 채운다 — 괴산읍 동부리 282(개별 17,100원)에
     61,000원짜리 표준지(3.6배)가 '조건 일치'로 뽑혀 3.2배 높게 나온 사례.
     대상 개별공시지가나 표준지 공시지가가 없으면 이 벌점은 없다.
+    지목군이 다른 후보에는 **적용하지 않는다** — 그 격차는 지목 탓이고
+    USE_MISMATCH 가 이미 맡는다.
     price_penalty=False 로 끄면 옛 규칙 그대로다 — value-test 가 이 줄이
     값을 얼마나 바꾸는지 한 실행 안에서 견주는 데 쓴다.
     """
@@ -463,8 +465,13 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3,
         if umd and str(c.get("pnu") or "")[:10] != umd:
             pen += 1.0
             why.append("다른 읍면동")
+        # **같은 지목군일 때만** 가격 수준을 본다. 지목이 다르면 공시지가
+        # 격차의 대부분이 지목 탓이고, 그것은 USE_MISMATCH 가 이미 맡는다 —
+        # 여기서 또 보면 두 번 세고, 하천·구거·목장용지처럼 지목이 값을
+        # 누르는 필지에서 엉뚱하게 싼 표준지를 고른다 (안성 실측 2026-09-13).
+        same_ug = bool(ug) and use_group(c.get("jimok"), c.get("use_situation")) == ug
         ppen, k = (price_level_penalty(subject.get("official_price"), c.get("price"))
-                   if price_penalty else (0.0, None))
+                   if (price_penalty and same_ug) else (0.0, None))
         if ppen:
             pen += ppen
             why.append(f"공시지가 수준 {k:.1f}배")
