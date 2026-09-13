@@ -185,6 +185,14 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # 잡 로그의 끝은 환경변수 덤프라, 요약이 파묻혀 API 로 꺼내 읽기 어렵다.
+      # 마지막에 한 번 더 찍어 로그 꼬리에 남긴다 (사람이 읽는 곳은 실행 요약).
+      - name: 요약 다시 (로그 꼬리에)
+        if: always()
+        run: |
+          echo "───────── 요약 (다시) ─────────"
+          tail -n 16 /tmp/stdland.log 2>/dev/null || echo "(로그 없음)"
+
       - name: 검증 결과 첨부
         if: always() && inputs.mode == 'value-test'
         uses: actions/upload-artifact@v4
