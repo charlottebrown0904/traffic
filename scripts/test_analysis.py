@@ -2196,6 +2196,42 @@ check("코드가 다릅니다" in _why and "43760" in _why,
 _why = _cli._cadastral_why_zero(_CAD, _zip2, {"43760"})
 check("필지가 없습니다" in _why, f"좌표계를 못 읽으면 그렇게 말한다 ({_why[:30]})")
 
+# 코드가 바뀐 곳 — 옛 코드를 이름이 아니라 **셈으로** 찾는다. 전남·광주가
+# 통합되며 시·도 코드를 12 로 새로 받아 표준지 86,642개가 좌표를 못 받았다.
+# 도면은 새 코드(12810…)로 오고 명부는 옛 코드(46840…)로 적혀 있다.
+_d3 = pathlib.Path(_tf.mkdtemp())
+_b3 = _d3 / "s"
+_w3 = _shp.Writer(str(_b3)); _w3.field("PNU", "C", 19)
+_sfx = [f"250211{i:04d}0000" for i in range(60)]       # 뒤 14자리는 그대로
+for _i, _s in enumerate(_sfx):
+    _x, _y = 200000 + _i * 10, 500000 + _i * 10
+    _w3.poly([[[_x, _y], [_x + 5, _y], [_x + 5, _y + 5], [_x, _y + 5], [_x, _y]]])
+    _w3.record("12810" + _s)                            # 도면 = 새 코드
+_w3.close()
+_b3.with_suffix(".prj").write_text(_PRJ_5186, encoding="utf-8")
+_zip3 = _d3 / "LSMD_CONT_LDREG_전남광주_시험군.zip"
+with _zf.ZipFile(_zip3, "w") as _z:
+    for _e in (".shp", ".dbf", ".shx", ".prj"):
+        _z.write(str(_b3.with_suffix(_e)), arcname="c" + _e)
+with _cdb.connect() as _con:
+    for _i, _s in enumerate(_sfx):
+        _con.execute("INSERT INTO std_land (std_id, pnu, year, price) VALUES (?, ?, 2026, 50000)",
+                     [f"j{_i}", "46840" + _s])           # 명부 = 옛 코드
+    _w4 = _CAD.wanted_pnus(_con)
+    check(list(_CAD.centroids_from_zip(_zip3, _w4)) == [],
+          "새 코드 도면은 옛 코드 명부와 한 건도 안 맞는다")
+    _got = _CAD.find_old_prefix(_con, {s for s in _sfx})
+    check(_got["code"] == "46840" and _got["rows"] == 60,
+          f"뒤 14자리로 옛 코드를 찾는다 ({_got['code']} · {_got['rows']}건)")
+    _msg = _cli._cadastral_retry_alias(_CAD, _con, _zip3, _w4)
+    check("46840" in _msg and "60" in _msg, f"찾은 옛 코드로 좌표를 채운다 ({_msg[:60]})")
+    _n = _con.execute("SELECT count(*) FROM std_land WHERE pnu LIKE '46840%' "
+                      "AND lat IS NOT NULL").fetchone()[0]
+    check(_n == 60, f"옛 코드 쪽 표준지에 좌표가 들어갔다 ({_n}/60)")
+    # 뚜렷한 으뜸이 없으면 **아무것도 적지 않는다** — 틀린 짝은 전국을 어긋낸다.
+    _few = _CAD.find_old_prefix(_con, {_sfx[0]})
+    check(_few["code"] is None, "걸린 수가 적으면 코드를 고르지 않는다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

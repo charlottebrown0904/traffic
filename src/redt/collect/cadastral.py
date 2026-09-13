@@ -199,3 +199,61 @@ def apply_xy(con, rows: list[tuple[str, float, float]],
         out[t] = after - before
     con.execute("DROP TABLE IF EXISTS _xy")
     return out
+
+
+# ─────────────────────────────────────────────────────────────────
+# 시군구 코드가 바뀐 곳 — 옛 코드를 자료로 찾는다.
+#
+# 2026년 전남·광주가 통합특별시가 되며 시·도 코드를 12 로 새로 받았다.
+# 연속지적도는 새 코드(무안 12810)로 오는데 우리 표준지 명부는 옛 코드
+# (전남 46 · 광주 29)로 적혀 있어 PNU 가 한 건도 안 맞았다 — 표준지
+# 86,642개가 통째로 좌표를 못 받았다 (run 34771980640). 화성시가 4개 구로
+# 갈린 경기도 같은 종류다.
+#
+# **이름으로 짝짓지 않는다.** 같은 이름의 군이 여럿이고(고성군), 통합·분할
+# 때 경계도 조금씩 움직인다. 대신 PNU 뒤 14자리(읍면동리 5 + 대장 1 + 지번 8)
+# 가 그대로라는 점을 쓴다: 도면의 뒤 14자리를 우리 명부에서 찾아 어느 옛
+# 코드가 가장 많이 걸리는지 센다. 맞는 짝이면 수천 건이 걸리고 틀린 짝이면
+# 거의 안 걸리므로, 짐작이 아니라 **셈으로 갈린다**.
+# ─────────────────────────────────────────────────────────────────
+
+ALIAS_MIN_SHARE = 0.8      # 으뜸 코드가 이만큼은 차지해야 받아들인다
+ALIAS_MIN_ROWS = 50        # 그리고 이만큼은 걸려야 한다 (우연 배제)
+
+
+def find_old_prefix(con, suffixes: set[str], table: str = "std_land") -> dict:
+    """도면 PNU 뒤 14자리로 우리 명부의 옛 시군구 코드를 찾는다.
+
+    돌려주는 것: {"code": 옛 5자리 또는 None, "rows": 걸린 수,
+                  "share": 으뜸이 차지한 몫, "seen": [(코드, 수), …]}
+    """
+    if not suffixes:
+        return {"code": None, "rows": 0, "share": 0.0, "seen": []}
+    con.execute("CREATE OR REPLACE TEMP TABLE _sfx (sfx VARCHAR)")
+    con.executemany("INSERT INTO _sfx VALUES (?)", [(s,) for s in suffixes])
+    seen = con.execute(f"""
+        SELECT substr(t.pnu, 1, 5) AS code, count(*) AS n
+        FROM {table} t JOIN _sfx s ON substr(t.pnu, 6) = s.sfx
+        WHERE t.pnu IS NOT NULL AND t.lat IS NULL
+        GROUP BY 1 ORDER BY 2 DESC LIMIT 5
+    """).fetchall()
+    con.execute("DROP TABLE IF EXISTS _sfx")
+    total = sum(n for _, n in seen)
+    if not seen or total == 0:
+        return {"code": None, "rows": 0, "share": 0.0, "seen": []}
+    code, n = seen[0]
+    share = n / total
+    ok = n >= ALIAS_MIN_ROWS and share >= ALIAS_MIN_SHARE
+    return {"code": code if ok else None, "rows": n, "share": round(share, 3),
+            "seen": [(c, int(k)) for c, k in seen]}
+
+
+def translate(rows: list[tuple[str, float, float]], old_prefix: str,
+              want: set[str]) -> list[tuple[str, float, float]]:
+    """도면 PNU 앞 5자리를 옛 코드로 바꿔 우리 명부와 맞춘다."""
+    out = []
+    for pnu, lon, lat in rows:
+        alt = old_prefix + pnu[5:]
+        if alt in want:
+            out.append((alt, lon, lat))
+    return out

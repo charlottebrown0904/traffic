@@ -613,7 +613,11 @@ def cmd_load_cadastral(args):
             line = (f"  [{i:>3}/{len(files)}] {name} — 맞은 필지 {len(rows):,}개 · {n_txt}"
                     f" · 남은 것 {len(want):,}")
             if not rows:
-                line += " · " + _cadastral_why_zero(CAD, path, want_sgg)
+                why = _cadastral_why_zero(CAD, path, want_sgg)
+                line += " · " + why
+                # 코드가 바뀐 곳이면 옛 코드를 자료로 찾아 다시 맞춘다.
+                if "코드가 다릅니다" in why:
+                    line += "\n      " + _cadastral_retry_alias(CAD, con, path, want)
             print(line)
             if fid:
                 path.unlink(missing_ok=True)
@@ -655,6 +659,30 @@ def _cadastral_why_zero(CAD, path: Path, want_sgg: set[str]) -> str:
         return f"이 시군구는 이미 다 채웠습니다 (코드 {', '.join(known[:3])})"
     return ("**코드가 다릅니다** — 도면 " + ", ".join(codes[:3])
             + " 가 우리 명부에 없습니다 (예: " + seen[0] + ")")
+
+
+def _cadastral_retry_alias(CAD, con, path: Path, want: set[str]) -> str:
+    """코드가 바뀐 도면 — 옛 코드를 찾아 좌표를 다시 맞춘다.
+
+    PNU 뒤 14자리로 옛 시군구 코드를 역추적한다 (cadastral.find_old_prefix).
+    으뜸 코드가 뚜렷하지 않으면 **아무것도 적지 않는다** — 틀린 짝으로
+    좌표를 적으면 전국이 조용히 어긋난다.
+    """
+    try:
+        rows = list(CAD.centroids_from_zip(path))
+    except Exception as exc:                           # noqa: BLE001
+        return f"옛 코드 찾기 실패 ({type(exc).__name__})"
+    got = CAD.find_old_prefix(con, {r[0][5:] for r in rows})
+    if not got["code"]:
+        seen = " · ".join(f"{c}={n:,}" for c, n in got["seen"]) or "걸린 것 없음"
+        return f"옛 코드를 못 골랐습니다 (후보: {seen}) — 그대로 둡니다"
+    alt = CAD.translate(rows, got["code"], want)
+    applied = CAD.apply_xy(con, alt)
+    for r in alt:
+        want.discard(r[0])
+    n_txt = " · ".join(f"{k} +{v:,}" for k, v in applied.items() if v) or "새로 채운 것 없음"
+    return (f"옛 코드 {got['code']} 로 맞췄습니다 ({got['share']:.0%} · {got['rows']:,}건 걸림)"
+            f" → 맞은 필지 {len(alt):,}개 · {n_txt} · 남은 것 {len(want):,}")
 
 
 def cmd_probe_history(args):
