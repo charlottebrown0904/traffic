@@ -217,35 +217,52 @@ def apply_xy(con, rows: list[tuple[str, float, float]],
 # 거의 안 걸리므로, 짐작이 아니라 **셈으로 갈린다**.
 # ─────────────────────────────────────────────────────────────────
 
-ALIAS_MIN_SHARE = 0.8      # 으뜸 코드가 이만큼은 차지해야 받아들인다
+ALIAS_MIN_COVER = 0.5      # 으뜸이 제 필지를 이만큼은 덮어야 한다
+ALIAS_COVER_LEAD = 2.0     # 그리고 버금보다 이만큼은 앞서야 한다
 ALIAS_MIN_ROWS = 50        # 그리고 이만큼은 걸려야 한다 (우연 배제)
 
 
 def find_old_prefix(con, suffixes: set[str], table: str = "std_land") -> dict:
     """도면 PNU 뒤 14자리로 우리 명부의 옛 시군구 코드를 찾는다.
 
-    돌려주는 것: {"code": 옛 5자리 또는 None, "rows": 걸린 수,
-                  "share": 으뜸이 차지한 몫, "seen": [(코드, 수), …]}
+    **몫이 아니라 덮은 비율로 고른다.** 지번 뒤자리는 시군구끼리 우연히
+    잘 겹쳐서, 맞는 짝도 걸린 것의 35~60% 밖에 못 차지한다 (전남·광주 실측
+    2026-09-13: 여수 5,439 대 버금 952). 대신 '그 코드가 가진 좌표 없는
+    필지를 얼마나 덮었나' 를 보면 맞는 짝은 거의 다 덮고 우연히 걸린 코드는
+    조금밖에 못 덮는다 — 이쪽이 훨씬 뚜렷하게 갈린다.
+
+    연도마다 행이 따로 있으므로 **필지(PNU) 단위로 센다.**
+
+    돌려주는 것: {"code": 옛 5자리 또는 None, "rows": 덮은 필지 수,
+                  "cover": 덮은 비율, "seen": [(코드, 덮은 수, 가진 수, 비율), …]}
     """
+    blank = {"code": None, "rows": 0, "cover": 0.0, "seen": []}
     if not suffixes:
-        return {"code": None, "rows": 0, "share": 0.0, "seen": []}
+        return blank
     con.execute("CREATE OR REPLACE TEMP TABLE _sfx (sfx VARCHAR)")
     con.executemany("INSERT INTO _sfx VALUES (?)", [(s,) for s in suffixes])
     seen = con.execute(f"""
-        SELECT substr(t.pnu, 1, 5) AS code, count(*) AS n
-        FROM {table} t JOIN _sfx s ON substr(t.pnu, 6) = s.sfx
-        WHERE t.pnu IS NOT NULL AND t.lat IS NULL
-        GROUP BY 1 ORDER BY 2 DESC LIMIT 5
+        WITH blanks AS (
+            SELECT DISTINCT substr(pnu, 1, 5) AS code, pnu, substr(pnu, 6) AS sfx
+            FROM {table} WHERE pnu IS NOT NULL AND lat IS NULL
+        )
+        SELECT b.code,
+               count(DISTINCT CASE WHEN s.sfx IS NOT NULL THEN b.pnu END) AS hit,
+               count(DISTINCT b.pnu) AS total
+        FROM blanks b LEFT JOIN _sfx s ON b.sfx = s.sfx
+        GROUP BY 1 HAVING hit > 0 ORDER BY hit DESC LIMIT 8
     """).fetchall()
     con.execute("DROP TABLE IF EXISTS _sfx")
-    total = sum(n for _, n in seen)
-    if not seen or total == 0:
-        return {"code": None, "rows": 0, "share": 0.0, "seen": []}
-    code, n = seen[0]
-    share = n / total
-    ok = n >= ALIAS_MIN_ROWS and share >= ALIAS_MIN_SHARE
-    return {"code": code if ok else None, "rows": n, "share": round(share, 3),
-            "seen": [(c, int(k)) for c, k in seen]}
+    if not seen:
+        return blank
+    scored = sorted(((c, int(h), int(n), h / max(n, 1)) for c, h, n in seen),
+                    key=lambda r: r[3], reverse=True)
+    code, hit, _total, cover = scored[0]
+    runner = scored[1][3] if len(scored) > 1 else 0.0
+    ok = (hit >= ALIAS_MIN_ROWS and cover >= ALIAS_MIN_COVER
+          and cover >= runner * ALIAS_COVER_LEAD)
+    return {"code": code if ok else None, "rows": hit, "cover": round(cover, 3),
+            "seen": [(c, h, n, round(v, 3)) for c, h, n, v in scored[:5]]}
 
 
 def translate(rows: list[tuple[str, float, float]], old_prefix: str,

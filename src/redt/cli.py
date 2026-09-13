@@ -674,15 +674,17 @@ def _cadastral_retry_alias(CAD, con, path: Path, want: set[str]) -> str:
         return f"옛 코드 찾기 실패 ({type(exc).__name__})"
     got = CAD.find_old_prefix(con, {r[0][5:] for r in rows})
     if not got["code"]:
-        seen = " · ".join(f"{c}={n:,}" for c, n in got["seen"]) or "걸린 것 없음"
+        seen = " · ".join(f"{c} {h:,}/{n:,}({v:.0%})" for c, h, n, v in got["seen"]) \
+            or "걸린 것 없음"
         return f"옛 코드를 못 골랐습니다 (후보: {seen}) — 그대로 둡니다"
     alt = CAD.translate(rows, got["code"], want)
     applied = CAD.apply_xy(con, alt)
     for r in alt:
         want.discard(r[0])
     n_txt = " · ".join(f"{k} +{v:,}" for k, v in applied.items() if v) or "새로 채운 것 없음"
-    return (f"옛 코드 {got['code']} 로 맞췄습니다 ({got['share']:.0%} · {got['rows']:,}건 걸림)"
-            f" → 맞은 필지 {len(alt):,}개 · {n_txt} · 남은 것 {len(want):,}")
+    return (f"옛 코드 {got['code']} 로 맞췄습니다 (제 필지의 {got['cover']:.0%}"
+            f" · {got['rows']:,}필지 덮음) → 맞은 필지 {len(alt):,}개 · {n_txt}"
+            f" · 남은 것 {len(want):,}")
 
 
 def cmd_probe_history(args):

@@ -2222,15 +2222,19 @@ with _cdb.connect() as _con:
           "새 코드 도면은 옛 코드 명부와 한 건도 안 맞는다")
     _got = _CAD.find_old_prefix(_con, {s for s in _sfx})
     check(_got["code"] == "46840" and _got["rows"] == 60,
-          f"뒤 14자리로 옛 코드를 찾는다 ({_got['code']} · {_got['rows']}건)")
+          f"뒤 14자리로 옛 코드를 찾는다 ({_got['code']} · {_got['rows']}필지)")
     _msg = _cli._cadastral_retry_alias(_CAD, _con, _zip3, _w4)
-    check("46840" in _msg and "60" in _msg, f"찾은 옛 코드로 좌표를 채운다 ({_msg[:60]})")
+    check("46840" in _msg and "60" in _msg, f"찾은 옛 코드로 좌표를 채운다 ({_msg[:70]})")
     _n = _con.execute("SELECT count(*) FROM std_land WHERE pnu LIKE '46840%' "
                       "AND lat IS NOT NULL").fetchone()[0]
     check(_n == 60, f"옛 코드 쪽 표준지에 좌표가 들어갔다 ({_n}/60)")
     # 뚜렷한 으뜸이 없으면 **아무것도 적지 않는다** — 틀린 짝은 전국을 어긋낸다.
     _few = _CAD.find_old_prefix(_con, {_sfx[0]})
     check(_few["code"] is None, "걸린 수가 적으면 코드를 고르지 않는다")
+    # 실제 전남·광주에서 본 모양: 으뜸이 걸린 것의 6할도 안 되지만 제 필지는
+    # 거의 다 덮는다. 몫으로 재면 놓치고 덮은 비율로 재면 잡힌다.
+    check(_CAD.ALIAS_MIN_COVER <= 0.5 and _CAD.ALIAS_COVER_LEAD >= 2.0,
+          "기준은 덮은 비율 5할 · 버금의 2배")
 
 print()
 if fail:
