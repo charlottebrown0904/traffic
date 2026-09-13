@@ -2119,6 +2119,28 @@ with _zf.ZipFile(_zip2, "w") as _z:
 check(list(_CAD.centroids_from_zip(_zip2)) == [],
       ".prj 가 없으면 아무것도 내지 않는다 (틀린 좌표보다 없는 편이 낫다)")
 
+# 끝에서 끝까지 — 좌표 없는 필지를 찾아 채우고, 이미 채운 것은 다시 안 건드린다.
+_dbdir = pathlib.Path(_tf.mkdtemp())
+from redt import config as _cfg2                           # noqa: E402
+from redt import db as _cdb                                # noqa: E402
+_cfg2.DB_PATH = _dbdir / "t.duckdb"
+_cdb.DB_PATH = _dbdir / "t.duckdb"
+with _cdb.connect() as _con:
+    for _i, _pnu in enumerate(("4376025021100002820", "4376025021100002140")):
+        _con.execute("INSERT INTO std_land (std_id, pnu, year, price) VALUES (?, ?, 2026, 50000)",
+                     [f"s{_i}", _pnu])
+    _con.execute("INSERT INTO parcel (pnu, sigungu_cd) VALUES ('4376025021100002820', '43760')")
+    _want = _CAD.wanted_pnus(_con)
+    check(len(_want) == 2, f"좌표 없는 필지만 고른다 ({len(_want)})")
+    _rows = list(_CAD.centroids_from_zip(_zip, _want))
+    _applied = _CAD.apply_xy(_con, _rows)
+    check(_applied.get("std_land") == 2 and _applied.get("parcel") == 1,
+          f"표준지와 필지 두 표에 함께 적는다 ({_applied})")
+    check(_CAD.wanted_pnus(_con) == set(), "다 채우면 남는 것이 없다 (다시 돌려도 일이 없다)")
+    _lon, _lat = _con.execute(
+        "SELECT lon, lat FROM std_land WHERE pnu = '4376025021100002820'").fetchone()
+    check(126 < _lon < 128 and 36 < _lat < 38, f"좌표가 우리나라 안이다 ({_lon:.3f}, {_lat:.3f})")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

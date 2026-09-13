@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import shutil
 import sys
 import threading
 import time
@@ -540,6 +541,78 @@ def cmd_value_test(args):
                                 "months": args.months, "ledger_source": appraisal_db.source(), "rows": out},
                                ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"\n→ {path}")
+
+
+def cmd_load_cadastral(args):
+    """연속지적도 zip 더미 → std_land·parcel 좌표.
+
+    2026-09-13 지시로 사장님이 V-WORLD `연속지적도_전국` 276개 파일(약 7GB)을
+    받아 드라이브에 올리신다. 한 장씩 받아 읽고 지운다 — 디스크는 100MB 를
+    안 넘는다. 중간에 끊겨도 채운 것은 남으니 다시 돌리면 남은 것만 채운다.
+
+    --src  이미 받아 둔 폴더 (러너에서 시험용)
+    --manifest  이름 → 드라이브 파일 ID 인 yaml (기본 config/cadastral_files.yaml)
+    --only  이름에 이 글자가 든 파일만 (예: 충북 · 경기)
+    """
+    from .collect import cadastral as CAD, stdland as SL
+    src = Path(args.src) if args.src else None
+    files: list[tuple[str, str | None]] = []          # (이름, 드라이브 ID)
+    if src:
+        if not src.is_dir():
+            sys.exit(f"{src} 가 폴더가 아닙니다")
+        files = [(p.name, None) for p in sorted(src.glob("*.zip"))]
+    else:
+        mpath = Path(args.manifest or CAD.MANIFEST)
+        if not mpath.exists():
+            sys.exit(f"{mpath} 가 없습니다 — 드라이브 폴더를 공유해 주시면 목록을 만들어 둡니다")
+        man = yaml.safe_load(mpath.read_text(encoding="utf-8")) or {}
+        files = [(str(k), str(v)) for k, v in man.items()]
+    if args.only:
+        files = [f for f in files if args.only in f[0]]
+    if not files:
+        sys.exit("받을 파일이 없습니다")
+
+    with db.connect() as con:
+        want = CAD.wanted_pnus(con)
+        print(f"좌표가 없는 필지 {len(want):,}개 · 파일 {len(files)}장")
+        if not want:
+            print("채울 것이 없습니다 — 이미 다 들어 있습니다")
+            return
+        # **캐시 밖에 받는다.** data/processed 는 통째로 캐시에 올라가는데,
+        # 7GB 짜리 zip 이 거기 남으면 10GB 한도를 하루에 넘긴다.
+        import tempfile
+        tmpdir = tempfile.mkdtemp(prefix="cadastral-")
+        tmp = Path(tmpdir)
+        done = hit = skipped = 0
+        for i, (name, fid) in enumerate(files, 1):
+            path = (src / name) if src else (tmp / name)
+            try:
+                if fid:
+                    SL.drive_download(fid, str(path))
+                rows = [r for r in CAD.centroids_from_zip(path, want)]
+            except Exception as exc:                   # noqa: BLE001
+                print(f"  [{i:>3}/{len(files)}] {name} — 건너뜀 ({type(exc).__name__}: {str(exc)[:80]})")
+                skipped += 1
+                if fid:
+                    path.unlink(missing_ok=True)
+                continue
+            got = CAD.apply_xy(con, rows)
+            for r in rows:
+                want.discard(r[0])
+            hit += len(rows)
+            done += 1
+            n_txt = " · ".join(f"{t} +{n:,}" for t, n in got.items() if n) or "새로 채운 것 없음"
+            print(f"  [{i:>3}/{len(files)}] {name} — 맞은 필지 {len(rows):,}개 · {n_txt}"
+                  f" · 남은 것 {len(want):,}")
+            if fid:
+                path.unlink(missing_ok=True)
+            if not want:
+                print("  남은 필지가 없습니다 — 여기서 멈춥니다")
+                break
+        std = con.execute("SELECT count(*) FILTER (WHERE lat IS NOT NULL), count(*) FROM std_land").fetchone()
+    shutil.rmtree(tmpdir, ignore_errors=True)
+    print(f"\n파일 {done}장 읽음 (건너뜀 {skipped}) · 맞은 필지 {hit:,}개")
+    print(f"표준지 좌표 {std[0]:,}/{std[1]:,} ({std[0] / max(std[1], 1):.1%})")
 
 
 def cmd_probe_history(args):
@@ -2797,6 +2870,12 @@ def main(argv=None):
     p.add_argument("--months", type=int, default=12, help="이 달수 안의 거래에서 뽑는다")
     p.add_argument("--seed", type=int, default=11, help="같은 표본을 다시 뽑기 위한 씨앗")
     p.set_defaults(func=cmd_value_test)
+
+    p = sub.add_parser("load-cadastral", help="연속지적도 zip → 필지 좌표 (std_land·parcel)")
+    p.add_argument("--src", default=None, help="이미 받아 둔 zip 폴더")
+    p.add_argument("--manifest", default=None, help="이름 → 드라이브 파일 ID yaml")
+    p.add_argument("--only", default="", help="이름에 이 글자가 든 파일만 (예: 충북)")
+    p.set_defaults(func=cmd_load_cadastral)
 
     p = sub.add_parser("probe-history",
                        help="과거 날짜 조회 가능 범위 판정 (일별 백필 가능 여부)")

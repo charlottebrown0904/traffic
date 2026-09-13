@@ -136,3 +136,66 @@ def centroids_from_zip(path: Path, want: set[str] | None = None,
                 if not (124.0 <= lon <= 132.0 and 33.0 <= lat <= 39.0):
                     continue
                 yield pnu, round(lon, 6), round(lat, 6)
+
+
+# ─────────────────────────────────────────────────────────────────
+# 적재 — zip 더미를 훑어 std_land·parcel 에 좌표를 채운다.
+#
+# 한 파일씩 받아 → 읽고 → 지운다. 디스크는 100MB 를 안 넘는다. 중간에
+# 끊겨도 이미 채운 필지는 남으므로 다시 돌리면 남은 것만 채운다.
+# ─────────────────────────────────────────────────────────────────
+
+MANIFEST = "config/cadastral_files.yaml"     # 이름 → 드라이브 파일 ID
+
+
+def wanted_pnus(con, tables: tuple[str, ...] = ("std_land", "parcel")) -> set[str]:
+    """좌표가 아직 없는 필지의 PNU. 없는 표는 건너뛴다."""
+    want: set[str] = set()
+    for t in tables:
+        has = con.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = ?", [t]
+        ).fetchone()[0]
+        if not has:
+            continue
+        cols = {r[0] for r in con.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = ?", [t]
+        ).fetchall()}
+        if "pnu" not in cols:
+            continue
+        where = "WHERE pnu IS NOT NULL"
+        if "lat" in cols:
+            where += " AND (lat IS NULL OR lon IS NULL)"
+        for (pnu,) in con.execute(f"SELECT DISTINCT pnu FROM {t} {where}").fetchall():
+            if pnu:
+                want.add(str(pnu))
+    return want
+
+
+def apply_xy(con, rows: list[tuple[str, float, float]],
+             tables: tuple[str, ...] = ("std_land", "parcel")) -> dict:
+    """(PNU, 경도, 위도) 를 표에 적는다. 이미 좌표가 있으면 건드리지 않는다."""
+    if not rows:
+        return {}
+    con.execute("CREATE OR REPLACE TEMP TABLE _xy (pnu VARCHAR, lon DOUBLE, lat DOUBLE)")
+    con.executemany("INSERT INTO _xy VALUES (?, ?, ?)", rows)
+    out = {}
+    for t in tables:
+        has = con.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = ?", [t]
+        ).fetchone()[0]
+        if not has:
+            continue
+        cols = {r[0] for r in con.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_name = ?", [t]
+        ).fetchall()}
+        if "pnu" not in cols or "lat" not in cols or "lon" not in cols:
+            continue
+        before = con.execute(f"SELECT count(*) FROM {t} WHERE lat IS NOT NULL").fetchone()[0]
+        con.execute(f"""
+            UPDATE {t} SET lon = x.lon, lat = x.lat
+            FROM _xy x WHERE {t}.pnu = x.pnu AND ({t}.lat IS NULL OR {t}.lon IS NULL)
+        """)
+        after = con.execute(f"SELECT count(*) FROM {t} WHERE lat IS NOT NULL").fetchone()[0]
+        out[t] = after - before
+    con.execute("DROP TABLE IF EXISTS _xy")
+    return out

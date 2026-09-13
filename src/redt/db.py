@@ -392,6 +392,10 @@ MIGRATIONS = [
     "ALTER TABLE zone_event ADD COLUMN IF NOT EXISTS geocode_level VARCHAR",
     # 예전에 담긴 칸은 전부 core 범위로 훑은 것이다. 빈 값을 그렇게 읽는다.
     "ALTER TABLE parcel_tile ADD COLUMN IF NOT EXISTS scope VARCHAR",
+    # 연속지적도(SHP)에서 필지 중심을 채운다 (2026-09-13). 지번 지오코딩 대신
+    # PNU 로 거래를 필지에 붙이는 길이기도 하다 (#40).
+    "ALTER TABLE parcel ADD COLUMN IF NOT EXISTS lon DOUBLE",
+    "ALTER TABLE parcel ADD COLUMN IF NOT EXISTS lat DOUBLE",
     # 표준지 표는 2026-09-11 첫 적재 시도 뒤 열이 늘었다.
     "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS district VARCHAR",
     "ALTER TABLE std_land ADD COLUMN IF NOT EXISTS district2 VARCHAR",
