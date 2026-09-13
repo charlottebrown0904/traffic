@@ -229,10 +229,13 @@ jobs:
         if: always()
         run: |
           echo "───────── 요약 (다시) ─────────"
-          # tail 은 인자 DB 표에 밀려 집계 줄을 놓친다 — 집계 구간만 꺼낸다.
-          if [ -f /tmp/stdland.log ]; then
+          # value-test 는 인자 DB 표에 밀려 집계 줄을 놓치므로 집계 구간만 꺼내고,
+          # 그 밖의 모드(탐침 등)는 끝부분을 그대로 보인다.
+          if [ ! -f /tmp/stdland.log ]; then
+            echo "(로그 없음)"
+          elif grep -q "실거래 ÷ 산출" /tmp/stdland.log; then
             head -n 3 /tmp/stdland.log
             awk '/실거래 ÷ 산출/,/비공개 인자 DB/' /tmp/stdland.log | head -n 70
           else
-            echo "(로그 없음)"
+            tail -n 30 /tmp/stdland.log
           fi
