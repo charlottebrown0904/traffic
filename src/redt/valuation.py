@@ -535,7 +535,7 @@ def ledger_other_factor(sido: str | None, sigungu: str | None,
 
     tries = []
     if sigungu:
-        tries.append((lambda r: r.get("sigungu", "").startswith(sigungu[:3])
+        tries.append((lambda r: (r.get("sigungu") or "").startswith(sigungu[:3])
                       and zg_of(r) == zg and ug_of(r) == ug, "같은 시군구 · 용도지역군 · 지목군"))
     if sido:
         tries.append((lambda r: r.get("sido") == sido and zg_of(r) == zg and ug_of(r) == ug,
@@ -884,7 +884,7 @@ def tables_for_web(trade: dict | None = None) -> dict:
             other[key] = {"*": ledger_other_factor(None, None, zg, None, ug, rows)}
             for code, name in SIDO_NAMES.items():
                 got = ledger_other_factor(name, None, zg, None, ug, rows)
-                if got.get("level", "").startswith("같은 시·도"):
+                if (got.get("level") or "").startswith("같은 시·도"):
                     other[key][code] = got
     return {
         "road_index": ROAD_INDEX, "road_corner_bonus": ROAD_CORNER_BONUS,

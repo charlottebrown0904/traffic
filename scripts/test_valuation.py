@@ -74,6 +74,21 @@ check(_w and dict(_w[0]["rows"]["도로접면"]).get("광대한면") == 1.25,
       "원삼면 도로접면 광대한면 1.25 — 우리 ROAD_INDEX 와 같은 값")
 check(V.bijunpyo_index(path=V.ROOT / "없는파일.tsv") == {}, "파일이 없으면 빈 사전")
 
+print("1-3. 원장이 비어도 화면용 표는 만들어진다 (run 16 — Supabase 가 끊겼을 때)")
+_keep = V.load_ledger
+V.load_ledger = lambda path=None: []
+try:
+    _t = V.tables_for_web()
+    check(all(c["*"]["n"] == 0 and c["*"]["level"] is None for c in _t["other"].values()),
+          "빈 원장 → 모든 칸 n=0 · level None, 예외 없음")
+    check(_t["bijunpyo_regions"] and _t["slope_index"], "지수표·비준표는 원장과 무관하게 실린다")
+finally:
+    V.load_ledger = _keep
+_row = {"sigungu": None, "sido": "경기", "land_use": "계획관리지역", "jimok": "전", "f_other": "1.2"}
+_got = V.ledger_other_factor("경기", "41550", "계획관리지역", "전", None, [dict(_row) for _ in range(V.MIN_CELL)])
+check(_got["n"] == V.MIN_CELL and (_got["level"] or "").startswith("같은 시·도"),
+      "sigungu 가 None 인 원장 행도 넘어가지 않고 시·도 단계에서 잡힌다")
+
 print("2. 격차율 — 대상 ÷ 표준지")
 r = V.individual_factor(
     {"land_use": "자연녹지지역", "jimok": "임야", "road_side": "세로(가)", "slope": "완경사"},

@@ -348,7 +348,15 @@ def _stdland_files() -> None:
     for stale in list(PS.PREMIUM_DIR.glob("stdland-*.json")) + list(WEB_DATA.glob("stdland-*.json")):
         if stale.name not in keep or stale.parent == WEB_DATA:
             stale.unlink()                          # public/ 에 남은 옛 조각도 걷는다
-    _pwrite("valuation.json", V.tables_for_web(trade=trade_cells))
+    tables = V.tables_for_web(trade=trade_cells)
+    # 원장을 못 읽어 평가선례 칸이 전부 비었으면 (Supabase 가 잠깐 끊긴 run 16),
+    # 버킷의 이전 valuation.json 을 빈 표로 덮어쓰지 않는다 — 표준지 조각만 올린다.
+    ledger_ok = any((c.get("*") or {}).get("n") for c in tables.get("other", {}).values())
+    if ledger_ok or not PS.configured():
+        _pwrite("valuation.json", tables)
+    else:
+        (PS.PREMIUM_DIR / "valuation.json").unlink(missing_ok=True)
+        print("  ⚠ 평가선례 원장이 비어 valuation.json 은 올리지 않습니다 — 버킷의 이전 판을 지킵니다")
     (WEB_DATA / "valuation.json").unlink(missing_ok=True)
     years = sorted(int(y) for y in df["year"].dropna().unique())
     print(f"  표준지 {total:,}필지 · 시군구 조각 {len(keep)}개 · 연도 {years[:1]}~{years[-1:]}"

@@ -89,14 +89,28 @@ def _rest(table: str, select: str = "*") -> list[dict]:
     if key_kind() == "publishable":
         raise RuntimeError("SUPABASE_SERVICE_KEY 에 publishable 키가 들어 있습니다 — RLS 때문에 아무것도 못 읽습니다. "
                            "service_role(eyJ…) 또는 sb_secret_… 키여야 합니다")
+    import time
     out: list[dict] = []
     start = 0
     while True:
         h = dict(_headers())
         h["Range-Unit"] = "items"
         h["Range"] = f"{start}-{start + PAGE - 1}"
-        r = requests.get(f"{base}/rest/v1/{table}", params={"select": select},
-                         headers=h, timeout=30)
+        # 러너에서 연결이 끊기거나(reset) 5xx 가 오면 2·4·8초 뒤 다시 — 한 쪽
+        # 실패로 원장이 비면 그 밖의 요인이 통째로 '자료 없음' 이 된다 (run 16).
+        for i in range(4):
+            try:
+                r = requests.get(f"{base}/rest/v1/{table}", params={"select": select},
+                                 headers=h, timeout=30)
+            except requests.RequestException:
+                if i == 3:
+                    raise
+                time.sleep(2 ** (i + 1))
+                continue
+            if r.status_code >= 500 and i < 3:
+                time.sleep(2 ** (i + 1))
+                continue
+            break
         if r.status_code not in (200, 206):
             raise RuntimeError(f"supabase {table}: HTTP {r.status_code} {r.text[:200]} (키 종류: {key_kind()})")
         rows = r.json()
