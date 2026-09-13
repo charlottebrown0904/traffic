@@ -33,7 +33,12 @@ TOKEN = os.environ.get("TOKEN", "")
 WFS = "https://api.vworld.kr/req/wfs"
 TYPENAME = "lp_pa_cbnd_bubun"
 SIZES = [int(x) for x in os.environ.get("SIZES", "1,10,50,100,200").split(",")]
-SAMPLE_SGG = os.environ.get("SGG", "")          # 비우면 전국에서 섞어 뽑는다
+# 비우거나 all 이면 전국에서 섞어 뽑는다. **all 을 문자로 받는 이유**: 깃헙
+# 액션의 `A == B && '' || C` 는 빈 문자열이 거짓이라 C 로 떨어진다 — 그래서
+# SGG 에 'all' 이 그대로 들어와 `LIKE 'all%'` 로 0건이 됐다 (run 34764942521).
+SAMPLE_SGG = os.environ.get("SGG", "").strip()
+if SAMPLE_SGG.lower() in ("all", "*", "전국"):
+    SAMPLE_SGG = ""
 
 HIDE = re.compile(r'(?i)((?:key|apikey|servicekey)=)[^&"\s<]+')
 
