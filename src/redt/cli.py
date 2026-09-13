@@ -395,7 +395,18 @@ def cmd_value_test(args):
                              ("거래사례만", V.decide_other(None, tc))):
             res[label] = V.appraise(subject, stds3[0], at=today, time=tf, other=other)
         r0 = res["결정"]
+        # 가격 수준 벌점을 끈 선정과 견준다 (2026-09-13). 같은 표본·같은
+        # 그 밖의 요인에서 **선정만** 바꿔 보는 A/B — 원장이 커지면 기록된
+        # 옛 수치와는 견줄 수 없기 때문이다.
+        off = V.pick_standard(subject, cands, top=1, price_penalty=False)
+        changed = bool(off) and off[0].get("pnu") != stds3[0].get("pnu")
+        r_off = (V.appraise(subject, off[0], at=today, time=tf, other=V.decide_other(led, tc))
+                 if changed else r0)
         print("   " + V.render(r0).replace("\n", "\n   "))
+        if changed:
+            print(f"   · 가격 수준 벌점이 표준지를 바꿨다: {off[0].get('label')}"
+                  f" (공시 {off[0].get('price'):,.0f}) → {stds3[0].get('label')}"
+                  f" (공시 {stds3[0].get('price'):,.0f}, 배율 {stds3[0].get('price_ratio')})")
         if len(stds3) > 1:
             print("   다른 후보: " + " · ".join(f"{s.get('label')} ({s.get('road_side')}/{s.get('shape')}/{s.get('slope')}, 벌점 {s['penalty']})"
                                                for s in stds3[1:]))
@@ -404,7 +415,8 @@ def cmd_value_test(args):
             u = r.get("unit_decided")
             line.append(f"{label} {u:,.0f} (실거래/산출 {actual / u:.2f})" if u else f"{label} 보류")
         print("   ▶ " + " · ".join(line))
-        out.append({"trade_id": t["trade_id"], "pnu": t["pnu"], "deal": f"{t['deal_year']}-{int(t['deal_month']):02d}",
+        out.append({"changed": changed, "unit_off": r_off.get("unit_decided"),
+                    "trade_id": t["trade_id"], "pnu": t["pnu"], "deal": f"{t['deal_year']}-{int(t['deal_month']):02d}",
                     "ug": ug, "jimok": t["jimok"],
                     "actual": actual, "official": t["official_price"], "std": stds3[0].get("label"),
                     "std_price": stds3[0].get("price"), "time": tf.get("factor"),
@@ -423,6 +435,20 @@ def cmd_value_test(args):
                   f" · n={len(ratios)} · ±30% 안 {in30} · 2배 안 {in2x}")
         else:
             print(f"실거래 ÷ 산출 [{label}]  산출된 건 없음")
+    # 가격 수준 벌점 A/B — 선정만 바꾼 같은 표본.
+    ab = [(o["actual"] / o["unit"]["결정"], o["actual"] / o["unit_off"])
+          for o in out if not o.get("hold") and o["unit"].get("결정") and o.get("unit_off")]
+    if ab:
+        nch = sum(1 for o in out if o.get("changed"))
+        def _digest(xs):
+            xs = sorted(xs)
+            return (xs[len(xs) // 2], sum(1 for x in xs if 0.7 <= x <= 1.4),
+                    sum(1 for x in xs if 0.5 <= x <= 2.0))
+        on = _digest([a for a, _ in ab])
+        offd = _digest([b for _, b in ab])
+        print(f"가격 수준 벌점 A/B — 표준지가 바뀐 건 {nch}/{len(out)}건")
+        print(f"   켠 채 중앙 {on[0]:.2f} · ±30% 안 {on[1]} · 2배 안 {on[2]}")
+        print(f"   끈 채 중앙 {offd[0]:.2f} · ±30% 안 {offd[1]} · 2배 안 {offd[2]}")
     # 지목군별 — 어느 칸의 그 밖의 요인이 실거래와 어긋나는지가 다음에 손댈 곳.
     by_ug: dict = {}
     for o in out:

@@ -401,7 +401,8 @@ def price_level_penalty(subject_price, std_price) -> tuple[float, float | None]:
     return PRICE_PEN_PER_LOG * abs(math.log(k / edge)), k
 
 
-def pick_standard(subject: dict, candidates: list[dict], top: int = 3) -> list[dict]:
+def pick_standard(subject: dict, candidates: list[dict], top: int = 3,
+                  price_penalty: bool = True) -> list[dict]:
     """후보 표준지에서 비교표준지를 고른다. 점수가 낮을수록 좋다.
 
     점수 = 거리(km) + 불일치 벌점.  벌점은 '그만큼 먼 것과 같다' 로
@@ -418,6 +419,8 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3) -> list[d
     개별공시지가가 대신 채운다 — 괴산읍 동부리 282(개별 17,100원)에
     61,000원짜리 표준지(3.6배)가 '조건 일치'로 뽑혀 3.2배 높게 나온 사례.
     대상 개별공시지가나 표준지 공시지가가 없으면 이 벌점은 없다.
+    price_penalty=False 로 끄면 옛 규칙 그대로다 — value-test 가 이 줄이
+    값을 얼마나 바꾸는지 한 실행 안에서 견주는 데 쓴다.
     """
     zg = zone_group(subject.get("land_use"))
     ug = use_group(subject.get("jimok"), subject.get("use_situation"))
@@ -456,7 +459,8 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3) -> list[d
         if umd and str(c.get("pnu") or "")[:10] != umd:
             pen += 1.0
             why.append("다른 읍면동")
-        ppen, k = price_level_penalty(subject.get("official_price"), c.get("price"))
+        ppen, k = (price_level_penalty(subject.get("official_price"), c.get("price"))
+                   if price_penalty else (0.0, None))
         if ppen:
             pen += ppen
             why.append(f"공시지가 수준 {k:.1f}배")
