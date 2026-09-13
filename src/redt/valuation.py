@@ -817,6 +817,13 @@ def round_decided(x: float) -> int:
 # 표준지가 대상 개별공시지가보다 비쌀 때 그 차이를 지역요인으로 깎는다.
 REGION_MIN = 0.5
 REGION_MAX = 1.0
+# 세 판을 같은 전국 표본(254건)으로 재고 **기본은 끈다** (2026-09-13):
+#   위아래 0.5~2.0   ±30% 안 75 / 끈 채 80   → 나빠짐
+#   내리는 쪽만      ±30% 안 78 / 끈 채 81~83 → 중앙·2배 안은 낫고 ±30% 안은 못함
+# 정확도의 잣대는 ±30% 안이다. 켤 근거가 안 서면 켜지 않는다 — 코드와 A/B
+# 스위치(appraise(region=True) · value-test)는 남겨 두고, 표준지 좌표가 들어와
+# 선정이 평가사 방식으로 돌아가면 그때 다시 잰다.
+REGION_ENABLED = False
 
 
 def region_factor(subject: dict, std: dict, indiv_factor: float | None) -> dict:
@@ -840,7 +847,7 @@ def region_factor(subject: dict, std: dict, indiv_factor: float | None) -> dict:
 
 def appraise(subject: dict, std: dict, at: dt.date | None = None,
              time: dict | None = None, other: dict | None = None,
-             region: bool = True) -> dict:
+             region: bool | None = None) -> dict:
     """다섯 마디를 곱해 산출표를 만든다.
 
     std 에는 표준지 공시지가 price 와 공시기준일 base_date(YYYY-MM-DD)
@@ -859,8 +866,10 @@ def appraise(subject: dict, std: dict, at: dt.date | None = None,
                                   subject.get("use_situation"))
         other = decide_other(led, None)
 
-    reg = region_factor(subject, std, indiv["factor"]) if region else \
-        {"factor": 1.0, "ratio": None, "why": "지역요인 추정을 끔 (A/B)"}
+    use_region = REGION_ENABLED if region is None else region
+    reg = region_factor(subject, std, indiv["factor"]) if use_region else \
+        {"factor": 1.0, "ratio": None,
+         "why": "같은 인근지역에서 표준지를 골랐다고 본다 (평가서 414/414 이 1.00)"}
     parts = {
         "표준지공시지가": price,
         "시점수정": t.get("factor"),

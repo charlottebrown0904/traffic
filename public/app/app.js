@@ -5408,6 +5408,9 @@ function roundDecided(x) {
 // 전국 254건 실측(2026-09-13): 위로도 열어 두면 적중이 준다 — 내리는 쪽만.
 const REGION_MIN = 0.5;
 const REGION_MAX = 1.0;
+// 전국 254건 실측(2026-09-13)에서 ±30% 적중이 켠 채 78 · 끈 채 83 — 기본은 끈다.
+// valuation.REGION_ENABLED 와 같은 값이어야 한다.
+const REGION_ENABLED = false;
 function regionFactorOf(subject, std, indFactor) {
   const same = { factor: 1.0, ratio: null,
                  why: '같은 인근지역에서 표준지를 골랐다고 봅니다 (평가서 414/414 이 1.00)' };
@@ -5428,7 +5431,8 @@ function appraiseNow(subject, std, T, trend) {
   const t = timeFactorOf(std.year, trend, T);
   const ind = individualFactor(subject, std, T);
   const other = otherFactorOf(subject, std, T);
-  const reg = regionFactorOf(subject, std, ind.factor);
+  const reg = REGION_ENABLED ? regionFactorOf(subject, std, ind.factor)
+    : { factor: 1.0, ratio: null, why: '같은 인근지역에서 표준지를 골랐다고 봅니다 (평가서 414/414 이 1.00)' };
   const parts = { '표준지공시지가': std.price || null, '시점수정': t.factor, '지역요인': reg.factor,
                   '개별요인': ind.factor, '그 밖의 요인': other.factor };
   const missing = Object.entries(parts).filter(([, v]) => v === null || v === undefined).map(([k]) => k);

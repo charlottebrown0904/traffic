@@ -292,7 +292,8 @@ def cmd_value_test(args):
     요인은 두 갈래(비공개 평가선례 DB · 우리 거래사례)를 따로도 낸다.
 
     **같은 실행 안에서 A/B 를 낸다** — 선정의 가격 수준 벌점, 지역요인
-    추정. 원장이 커지면 기록된 옛 수치와는 견줄 수 없으므로, 손질 하나를
+    추정. 지역요인은 REGION_ENABLED 와 무관하게 '켠 채' 를 강제로 켜서 잰다
+    (기본이 꺼져 있어도 다음에 켤 근거를 계속 쌓기 위해). 원장이 커지면 기록된 옛 수치와는 견줄 수 없으므로, 손질 하나를
     끄고 켠 차이만이 그 손질의 몫이다.
 
     거래사례 갈래에는 이 시군구의 최근 3~5년 거래가 다 들어가므로 뽑힌 건
@@ -454,12 +455,12 @@ def cmd_value_test(args):
             res = {}
             for label, other in (("결정", V.decide_other(led, tc)), ("평가선례만", V.decide_other(led, None)),
                                  ("거래사례만", V.decide_other(None, tc))):
-                res[label] = V.appraise(subject, stds3[0], at=today, time=tf, other=other)
+                res[label] = V.appraise(subject, stds3[0], at=today, time=tf, other=other, region=True)
             r0 = res["결정"]
             # A/B ① 선정의 가격 수준 벌점을 끈 선정
             off = V.pick_standard(subject, cands, top=1, price_penalty=False)
             changed = bool(off) and off[0].get("pnu") != stds3[0].get("pnu")
-            r_sel_off = (V.appraise(subject, off[0], at=today, time=tf, other=V.decide_other(led, tc))
+            r_sel_off = (V.appraise(subject, off[0], at=today, time=tf, other=V.decide_other(led, tc), region=True)
                          if changed else r0)
             # A/B ② 지역요인 추정을 끈 산출
             r_reg_off = V.appraise(subject, stds3[0], at=today, time=tf, other=V.decide_other(led, tc), region=False)

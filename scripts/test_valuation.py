@@ -106,12 +106,13 @@ check(_r["factor"] == 1.0 and "지목군" in _r["why"], "지목군이 다르면 
 check(V.region_factor({**_subj, "official_price": 500000}, _std, 1.0)["factor"] == V.REGION_MAX == 1.0,
       "위로는 올리지 않는다 (상한 1.0 — 전국 실측에서 올리는 쪽이 적중을 깎았다)")
 _a = V.appraise({**_subj, "area_m2": 3054}, {**_std, "base_date": "2026-01-01", "road_side": "맹지", "shape": "부정형", "slope": "완경사"},
-                time={"factor": 0.98, "source": "t"}, other={"factor": 2.44, "q1": 2.0, "q3": 3.0})
+                time={"factor": 0.98, "source": "t"}, other={"factor": 2.44, "q1": 2.0, "q3": 3.0}, region=True)
 check(_a["parts"]["지역요인"] == V.REGION_MIN and abs(_a["unit_calc"] - 34300 * 0.98 * V.REGION_MIN * _a["individual"]["factor"] * 2.44) < 1,
-      f"산출에 지역요인이 곱해진다 ({_a['unit_calc']:,})")
+      f"region=True 면 산출에 지역요인이 곱해진다 ({_a['unit_calc']:,})")
 _b = V.appraise({**_subj, "area_m2": 3054}, {**_std, "base_date": "2026-01-01"},
-                time={"factor": 0.98, "source": "t"}, other={"factor": 2.44}, region=False)
-check(_b["parts"]["지역요인"] == 1.0, "region=False 면 옛 산출 그대로 (A/B 용)")
+                time={"factor": 0.98, "source": "t"}, other={"factor": 2.44})
+check(_b["parts"]["지역요인"] == 1.0 and V.REGION_ENABLED is False,
+      "기본은 꺼져 있다 — 전국 254건에서 ±30% 적중 78 대 83 (켠 채가 못했다)")
 
 print("1-5. 두 갈래 섞는 무게 — 가까운 칸이 먼 칸을 이긴다")
 _led = {"median": 4.0, "n": 24, "source": "평가선례", "level": "전국 · 용도지역군 · 지목군", "q1": 3, "q3": 5}
