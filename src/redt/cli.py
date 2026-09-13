@@ -589,6 +589,16 @@ def cmd_load_cadastral(args):
         # 34769401528): 지도는 통합 코드로, 우리 명부는 옛 코드로 적혀 있으면
         # PNU 가 영영 안 맞는데, 수만 필지를 조용히 버리고 끝난다.
         want_sgg = {p[:5] for p in want}
+        # 표준지 명부에 실제로 있는 시군구 코드. 도면 코드가 여기 없으면
+        # **그 시군구는 코드가 바뀐 것**이므로 옛 코드를 찾아야 한다.
+        # 있으면 찾을 까닭이 없다 — 0건이면 지번이 안 겹칠 뿐이다.
+        #
+        # 이 가름이 없으면 0건인 파일마다 zip 을 한 번 더 읽고 무거운 조인을
+        # 돌려서, 이미 다 채운 전국 재실행이 90분 한도를 넘겼다
+        # (run 34775855381 은 그래서 접었다).
+        std_sgg = {r[0] for r in con.execute(
+            "SELECT DISTINCT substr(pnu, 1, 5) FROM std_land WHERE pnu IS NOT NULL"
+        ).fetchall() if r[0]}
         done = hit = skipped = 0
         missed: list[str] = []
         for i, (name, fid) in enumerate(files, 1):
@@ -614,12 +624,14 @@ def cmd_load_cadastral(args):
                     f" · 남은 것 {len(want):,}")
             if not rows:
                 line += " · " + _cadastral_why_zero(CAD, path, want_sgg)
-                # **0건이면 늘 옛 코드를 찾아 본다.** 예전에는 '코드가
-                # 다릅니다' 일 때만 찾았는데, 그 판정이 뒤집혀 있어 화성시
-                # 표준지(옛 코드 41590 · 5,801필지)를 고칠 기회를 놓쳤다
-                # (run 34775477007). 찾기 쪽에 엄한 조건이 있으니 늘
-                # 두드려 보는 편이 낫다.
-                line += "\n      " + _cadastral_retry_alias(CAD, con, path, want)
+                # 도면 코드가 표준지 명부에 없을 때만 옛 코드를 찾는다.
+                # 예전에는 '코드가 다릅니다' 판정을 썼는데 그 판정이 뒤집혀
+                # 있어 화성시(옛 코드 41590 · 5,801필지)를 놓쳤고, 그렇다고
+                # 늘 찾자니 전국 재실행이 한도를 넘겼다. 명부에 있는 코드인지
+                # 만 보면 둘 다 피한다 — 화성 도면은 41591 이고 명부는
+                # 41590 이라 '없음' 으로 걸린다.
+                if _cadastral_code_of(CAD, path) not in std_sgg:
+                    line += "\n      " + _cadastral_retry_alias(CAD, con, path, want)
             print(line)
             if fid:
                 path.unlink(missing_ok=True)
@@ -664,6 +676,17 @@ def _cadastral_why_zero(CAD, path: Path, want_sgg: set[str]) -> str:
                 " (명부의 남은 지번이 도면에 없습니다)")
     return ("**코드가 다릅니다** — 도면 " + ", ".join(codes[:3])
             + " 가 우리 명부에 없습니다 (예: " + seen[0] + ")")
+
+
+def _cadastral_code_of(CAD, path: Path) -> str:
+    """도면의 시군구 코드(앞 5자리). 못 읽으면 빈 글자."""
+    import itertools                                  # noqa: PLC0415
+    try:
+        for pnu, _lon, _lat in itertools.islice(CAD.centroids_from_zip(path), 1):
+            return pnu[:5]
+    except Exception:                                  # noqa: BLE001
+        return ""
+    return ""
 
 
 def _cadastral_retry_alias(CAD, con, path: Path, want: set[str]) -> str:

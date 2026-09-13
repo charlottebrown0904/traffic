@@ -2259,6 +2259,13 @@ with _cdb.connect() as _con:
     _hw = _CAD.find_old_prefix(_con, _part)
     check(_hw["code"] == "41590" and _hw["cover"] >= 0.99,
           f"갈라진 시도 제 읍면동 안에서는 다 덮는다 ({_hw['code']} · {_hw['cover']})")
+# 옛 코드 찾기는 **명부에 없는 코드일 때만** 두드린다. 0건마다 두드리면
+# zip 을 한 번 더 읽고 무거운 조인을 돌려 전국 재실행이 90분 한도를 넘긴다
+# (run 34775855381 을 그래서 접었다).
+check(_cli._cadastral_code_of(_CAD, _zip3) == "12810",
+      f"도면의 시군구 코드를 한 건만 읽어 알아낸다 ({_cli._cadastral_code_of(_CAD, _zip3)})")
+check(_cli._cadastral_code_of(_CAD, _zip2) == "",
+      "좌표계를 못 읽으면 코드도 빈 글자")
 
 print()
 if fail:
