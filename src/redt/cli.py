@@ -466,6 +466,12 @@ def cmd_value_test(args):
                          if changed else r0)
             # A/B ② 지역요인 추정을 끈 산출
             r_reg_off = V.appraise(subject, stds3[0], at=today, time=tf, other=V.decide_other(led, tc), region=False)
+            # A/B ③ 표준지 좌표(거리)를 끈 선정 — 좌표가 들어오기 전의 옛 상태다.
+            no_xy = V.pick_standard(subject, cands, top=1, distance=False)
+            xy_changed = bool(no_xy) and no_xy[0].get("pnu") != stds3[0].get("pnu")
+            r_xy_off = (V.appraise(subject, no_xy[0], at=today, time=tf,
+                                   other=V.decide_other(led, tc), region=True)
+                        if xy_changed else r0)
             print("   " + V.render(r0).replace("\n", "\n   "))
             if tlabel and tlabel != "시군구":
                 print(f"   · 시점수정 추세는 {tlabel} 것으로 물러남 ({trend:+.1%}/년)")
@@ -488,9 +494,10 @@ def cmd_value_test(args):
                         "actual": actual, "official": t["official_price"], "std": stds3[0].get("label"),
                         "std_price": stds3[0].get("price"), "time": tf.get("factor"),
                         "region": r0["region"]["factor"], "indiv": r0["individual"]["factor"],
-                        "changed": changed,
+                        "changed": changed, "xy_changed": xy_changed,
                         "unit_sel_off": r_sel_off.get("unit_decided"),
                         "unit_reg_off": r_reg_off.get("unit_decided"),
+                        "unit_xy_off": r_xy_off.get("unit_decided"),
                         "other": {k: r.get("other", {}).get("factor") for k, r in res.items()},
                         "unit": {k: r.get("unit_decided") for k, r in res.items()}})
 
@@ -507,7 +514,8 @@ def cmd_value_test(args):
             print(f"실거래 ÷ 산출 [{label}]  산출된 건 없음")
     # A/B — 같은 표본에서 손질 하나만 끄고 켠 차이.
     for name, key, flag in (("선정의 가격 수준 벌점", "unit_sel_off", "changed"),
-                            ("지역요인 추정", "unit_reg_off", None)):
+                            ("지역요인 추정", "unit_reg_off", None),
+                            ("표준지 좌표로 거리 보기", "unit_xy_off", "xy_changed")):
         pairs = [(o["actual"] / o["unit"]["결정"], o["actual"] / o[key])
                  for o in done if o["unit"].get("결정") and o.get(key)]
         if not pairs:

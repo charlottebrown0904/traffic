@@ -297,4 +297,21 @@ if fail:
     for f in fail:
         print("  -", f)
     sys.exit(1)
+
+# 거리 끄기 — 좌표가 들어오기 전의 옛 선정으로 되돌린다. value-test 가
+# 좌표의 몫을 한 실행 안에서 재는 스위치다 (실행끼리는 원장이 자라 못 견준다).
+_subj = {"land_use": "계획관리지역", "jimok": "전", "lat": 36.80, "lon": 127.90}
+_near = {"pnu": "가까운", "land_use": "계획관리지역", "jimok": "전",
+         "lat": 36.801, "lon": 127.901, "price": 50000}
+_far = {"pnu": "먼데", "land_use": "계획관리지역", "jimok": "전",
+        "lat": 37.20, "lon": 127.20, "price": 50000}
+_on = V.pick_standard(_subj, [_far, _near], top=1)
+_off = V.pick_standard(_subj, [_far, _near], top=1, distance=False)
+check(_on[0]["pnu"] == "가까운", f"좌표를 보면 가까운 표준지를 고른다 ({_on[0]['pnu']})")
+check(_on[0]["distance_km"] is not None and _on[0]["distance_km"] < 1,
+      f"거리가 점수에 들어간다 ({_on[0]['distance_km']}km)")
+check(_off[0]["distance_km"] is None, "끄면 거리를 아예 안 본다")
+check(_off[0]["score"] == 0.0,
+      f"끄면 점수가 벌점만 남는다 (거리 0 · {_off[0]['score']})")
+
 print("전부 통과")

@@ -406,7 +406,7 @@ def price_level_penalty(subject_price, std_price) -> tuple[float, float | None]:
 
 
 def pick_standard(subject: dict, candidates: list[dict], top: int = 3,
-                  price_penalty: bool = True) -> list[dict]:
+                  price_penalty: bool = True, distance: bool = True) -> list[dict]:
     """후보 표준지에서 비교표준지를 고른다. 점수가 낮을수록 좋다.
 
     점수 = 거리(km) + 불일치 벌점.  벌점은 '그만큼 먼 것과 같다' 로
@@ -475,8 +475,12 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3,
         if ppen:
             pen += ppen
             why.append(f"공시지가 수준 {k:.1f}배")
+        # **거리.** 2026-09-13 에 연속지적도로 표준지 좌표를 98% 채우기 전까지
+        # 이 항은 늘 비어 있었다 — 그래서 선정이 속성만 보고 골랐다.
+        # distance=False 로 끄면 그 옛 상태가 된다: value-test 가 좌표의 몫을
+        # **한 실행 안에서** 재는 데 쓴다 (실행끼리는 원장이 자라 못 견준다).
         dist = None
-        if lat is not None and lon is not None and c.get("lat") is not None:
+        if distance and lat is not None and lon is not None and c.get("lat") is not None:
             dist = haversine_km(float(lat), float(lon), float(c["lat"]), float(c["lon"]))
         score = (dist or 0.0) + pen
         rows.append({**c, "distance_km": None if dist is None else round(dist, 3),
