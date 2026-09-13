@@ -45,6 +45,9 @@ on:
       n:
         description: "value-test 모드 — 임의로 뽑을 거래 수"
         default: "5"
+      months:
+        description: "value-test 모드 — 이 달수 안의 거래에서 뽑는다 (거래가 얇은 군은 36~60)"
+        default: "12"
       query:
         description: "law 모드 — 조례 검색어 (쉼표로 여럿 · 비우면 도시계획/군계획 조례 묶음)"
         default: ""
@@ -123,7 +126,8 @@ jobs:
         if: inputs.mode == 'value-test'
         run: |
           set -o pipefail
-          python -m redt.cli value-test --sigungu "${{ inputs.sigungu }}" --zone "${{ inputs.zone }}" --n "${{ inputs.n }}" 2>&1 | tee /tmp/stdland.log
+          python -m redt.cli value-test --sigungu "${{ inputs.sigungu }}" --zone "${{ inputs.zone }}" \
+            --n "${{ inputs.n }}" --months "${{ inputs.months || 12 }}" 2>&1 | tee /tmp/stdland.log
 
       - name: 자치법규 API 탐침
         if: inputs.mode == 'law-probe'
