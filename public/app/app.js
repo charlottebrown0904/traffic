@@ -1920,6 +1920,19 @@ function updateYearNote() {
   const node = document.getElementById('deal-year-note');
   if (!node) return;
   const n = (v) => v.toLocaleString('ko-KR');
+  // **하나도 안 켜져 있으면 그 사실을 먼저 말한다.**
+  //
+  // 처음 화면은 물건 종류가 전부 꺼져 있다(2026-09-04 지시 — "모든
+  // 실거래는 초기 기본설정은 표기 끄는 것"). 그래서 지도에 거래가 한
+  // 점도 안 찍히는데, 예전에는 '보이는 영역 0건' 만 적었다. 끈 것과
+  // 고장 난 것을 화면이 구별해 주지 않으면 사람은 고장으로 읽는다
+  // (2026-09-13 지적: "실거래 물건이 지도에서 표시가 안 되는 것 같습니다").
+  if (!state.activeKinds.size) {
+    node.innerHTML = '실거래가 <strong>꺼져 있습니다</strong> — 바로 위 '
+      + '<strong>물건 종류</strong>에서 토지·공장을 켜면 지도에 찍힙니다.'
+      + ' <em>(처음에는 꺼 둡니다 — 거래 점이 첫 화면을 덮지 않도록)</em>';
+    return;
+  }
   const held = visibleTrades().length;
   const rows = (state.meta.trade_years || []).filter(
     (r) => r.year >= state.yearFrom && r.year <= state.yearTo);

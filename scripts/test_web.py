@@ -327,6 +327,12 @@ check('class="act">지가 추이</th>' in _appidx and "btn-trend" in _appjs and 
       "IC 교통량 표에 '지가 추이' 단추가 있고 팝업을 연다")
 check("최근 5년 YoY" in _appidx and "전년 대비</th>" not in _appidx,
       "'전년 대비' 대신 '최근 5년 YoY' 다")
+# 지적 2026-09-13: "실거래 물건이 지도에서 표시가 안 되는 것 같습니다."
+# 자료는 멀쩡히 배달되고 있었고, 처음에 종류가 전부 꺼져 있는 것이었다
+# (2026-09-04 지시). 끈 것과 고장 난 것을 화면이 갈라 말해야 한다.
+check("state.activeKinds.size" in _appjs and "꺼져 있습니다" in _appjs,
+      "종류가 하나도 안 켜져 있으면 '꺼져 있다' 고 말한다")
+check("물건 종류" in _appjs, "어디를 켜야 하는지 이름으로 가리킨다")
 check('list="rank-index"' in _appidx and 'id="rank-index"' in _appidx and "buildRankIndex" in _appjs,
       "영업소·지역 검색에 색인 목록이 붙어 있다")
 check('id="rank-note" hidden' in _appidx, "IC 교통량의 부가 설명은 접혀 있다")
