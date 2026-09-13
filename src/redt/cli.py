@@ -613,11 +613,13 @@ def cmd_load_cadastral(args):
             line = (f"  [{i:>3}/{len(files)}] {name} — 맞은 필지 {len(rows):,}개 · {n_txt}"
                     f" · 남은 것 {len(want):,}")
             if not rows:
-                why = _cadastral_why_zero(CAD, path, want_sgg)
-                line += " · " + why
-                # 코드가 바뀐 곳이면 옛 코드를 자료로 찾아 다시 맞춘다.
-                if "코드가 다릅니다" in why:
-                    line += "\n      " + _cadastral_retry_alias(CAD, con, path, want)
+                line += " · " + _cadastral_why_zero(CAD, path, want_sgg)
+                # **0건이면 늘 옛 코드를 찾아 본다.** 예전에는 '코드가
+                # 다릅니다' 일 때만 찾았는데, 그 판정이 뒤집혀 있어 화성시
+                # 표준지(옛 코드 41590 · 5,801필지)를 고칠 기회를 놓쳤다
+                # (run 34775477007). 찾기 쪽에 엄한 조건이 있으니 늘
+                # 두드려 보는 편이 낫다.
+                line += "\n      " + _cadastral_retry_alias(CAD, con, path, want)
             print(line)
             if fid:
                 path.unlink(missing_ok=True)
@@ -656,7 +658,10 @@ def _cadastral_why_zero(CAD, path: Path, want_sgg: set[str]) -> str:
     codes = sorted({p[:5] for p in seen})
     known = [c for c in codes if c in want_sgg]
     if known:
-        return f"이 시군구는 이미 다 채웠습니다 (코드 {', '.join(known[:3])})"
+        # 같은 코드에 아직 좌표 없는 필지가 남아 있는데 이 도면과 안 겹쳤다.
+        # 명부의 남은 지번이 지금 도면에 없다는 뜻이다 (폐지·합병·분할).
+        return (f"코드 {', '.join(known[:3])} 는 명부에 있는데 지번이 안 겹칩니다"
+                " (명부의 남은 지번이 도면에 없습니다)")
     return ("**코드가 다릅니다** — 도면 " + ", ".join(codes[:3])
             + " 가 우리 명부에 없습니다 (예: " + seen[0] + ")")
 

@@ -228,8 +228,12 @@ def find_old_prefix(con, suffixes: set[str], table: str = "std_land") -> dict:
     **몫이 아니라 덮은 비율로 고른다.** 지번 뒤자리는 시군구끼리 우연히
     잘 겹쳐서, 맞는 짝도 걸린 것의 35~60% 밖에 못 차지한다 (전남·광주 실측
     2026-09-13: 여수 5,439 대 버금 952). 대신 '그 코드가 가진 좌표 없는
-    필지를 얼마나 덮었나' 를 보면 맞는 짝은 거의 다 덮고 우연히 걸린 코드는
-    조금밖에 못 덮는다 — 이쪽이 훨씬 뚜렷하게 갈린다.
+    필지를 얼마나 덮었나' 를 보면 훨씬 뚜렷하게 갈린다.
+
+    **분모는 이 도면에 있는 읍·면·동으로 한정한다.** 한 시가 여러 구로
+    갈리면 구 파일 하나는 옛 시의 일부만 덮으므로(화성시 → 4개 구, 각
+    1/4) 시 전체를 분모로 두면 맞는 짝도 5할을 못 넘긴다. 도면에 실제로
+    담긴 읍·면·동만 세면 맞는 짝은 다시 1에 가까워진다.
 
     연도마다 행이 따로 있으므로 **필지(PNU) 단위로 센다.**
 
@@ -239,17 +243,21 @@ def find_old_prefix(con, suffixes: set[str], table: str = "std_land") -> dict:
     blank = {"code": None, "rows": 0, "cover": 0.0, "seen": []}
     if not suffixes:
         return blank
-    con.execute("CREATE OR REPLACE TEMP TABLE _sfx (sfx VARCHAR)")
-    con.executemany("INSERT INTO _sfx VALUES (?)", [(s,) for s in suffixes])
+    con.execute("CREATE OR REPLACE TEMP TABLE _sfx (sfx VARCHAR, umd VARCHAR)")
+    con.executemany("INSERT INTO _sfx VALUES (?, ?)",
+                    [(s, s[:3]) for s in suffixes])
     seen = con.execute(f"""
         WITH blanks AS (
-            SELECT DISTINCT substr(pnu, 1, 5) AS code, pnu, substr(pnu, 6) AS sfx
+            SELECT DISTINCT substr(pnu, 1, 5) AS code, pnu,
+                   substr(pnu, 6) AS sfx, substr(pnu, 6, 3) AS umd
             FROM {table} WHERE pnu IS NOT NULL AND lat IS NULL
-        )
+        ), umds AS (SELECT DISTINCT umd FROM _sfx)
         SELECT b.code,
                count(DISTINCT CASE WHEN s.sfx IS NOT NULL THEN b.pnu END) AS hit,
                count(DISTINCT b.pnu) AS total
-        FROM blanks b LEFT JOIN _sfx s ON b.sfx = s.sfx
+        FROM blanks b
+        JOIN umds u ON b.umd = u.umd
+        LEFT JOIN _sfx s ON b.sfx = s.sfx
         GROUP BY 1 HAVING hit > 0 ORDER BY hit DESC LIMIT 8
     """).fetchall()
     con.execute("DROP TABLE IF EXISTS _sfx")

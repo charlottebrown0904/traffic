@@ -2189,7 +2189,10 @@ check(all(isinstance(v, str) and 20 <= len(v) <= 60 for v in _mm.values()),
 # 대처가 다르다. 전남·광주 27장이 통째로 0건인데 로그는 그냥 '새로 채운 것
 # 없음' 이라 까닭을 알 수 없었다 (run 34769401528).
 _why = _cli._cadastral_why_zero(_CAD, _zip, {"43760"})
-check("이미 다 채웠" in _why, f"명부에 있는 코드면 '이미 채웠다' ({_why[:30]})")
+check("지번이 안 겹칩니다" in _why,
+      f"코드는 있는데 0건이면 '지번이 안 겹친다' 고 한다 ({_why[:34]})")
+_why = _cli._cadastral_why_zero(_CAD, _zip, set())
+check("코드가 다릅니다" in _why, f"명부에 없는 코드면 '코드가 다르다' ({_why[:24]})")
 _why = _cli._cadastral_why_zero(_CAD, _zip, {"46110"})
 check("코드가 다릅니다" in _why and "43760" in _why,
       f"명부에 없는 코드면 '코드가 다르다' 고 도면 코드를 보인다 ({_why[:40]})")
@@ -2243,6 +2246,19 @@ with _cdb.connect() as _con:
     _big = _CAD.find_old_prefix(_con, set(_sfx))
     check(_big["code"] == "46840",
           f"작은 우연 일치(1필지)가 큰 정답(60필지)을 제치지 않는다 ({_big['code']})")
+    # **갈라진 시** — 화성시가 4개 구로 나뉘어 구 파일 하나는 옛 시의 1/4만
+    # 덮는다. 시 전체를 분모로 두면 맞는 짝도 5할을 못 넘겨 놓친다
+    # (run 34775477007). 분모를 도면에 있는 읍·면·동으로 한정하면 잡힌다.
+    _con.execute("DELETE FROM std_land WHERE pnu LIKE '41650%'")
+    def _sfx14(umd, k):        # 읍면동 3 + 리 2 + 대장 1 + 본번 4 + 부번 4
+        return f"{umd}011{k:04d}0000"
+    for _k in range(180):                                  # 옛 시 = 읍면동 3곳
+        _con.execute("INSERT INTO std_land (std_id, pnu, year, price) VALUES (?, ?, 2026, 1)",
+                     [f"h{_k}", "41590" + _sfx14(100 + _k // 60, _k)])
+    _part = {_sfx14(100, _k) for _k in range(60)}           # 도면 = 그 중 한 곳
+    _hw = _CAD.find_old_prefix(_con, _part)
+    check(_hw["code"] == "41590" and _hw["cover"] >= 0.99,
+          f"갈라진 시도 제 읍면동 안에서는 다 덮는다 ({_hw['code']} · {_hw['cover']})")
 
 print()
 if fail:
