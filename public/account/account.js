@@ -287,9 +287,46 @@
       '<p style="display:flex;gap:.5rem;flex-wrap:wrap">' +
       (ok ? '<a class="btn" href="/app">지도 보기</a>' +
             '<a class="btn ghost" href="/board">게시판 가기</a>' : "") +
+      '<button class="btn ghost" id="edit-profile" aria-expanded="false">프로필 수정</button>' +
       '<button class="btn ghost" id="out">로그아웃</button></p>' +
+      // 프로필 수정 (지시 2026-09-13, 슬라이드 2): 표시 이름만 받는다. 사진은 받지
+      // 않는다 — 저장 공간 한도가 걸리면 넣지 말라는 지시였고, 이름은 공간을 안 쓴다.
+      '<form id="profile-form" class="pform" hidden>' +
+      '<div class="field"><label for="pf-name">표시 이름</label>' +
+      '<input id="pf-name" type="text" maxlength="20" autocomplete="nickname" required value="' +
+      window.SBUtil.esc(p.nickname || "") + '"></div>' +
+      '<p style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">' +
+      '<button class="btn sm" type="submit">저장</button>' +
+      '<button class="btn sm ghost" type="button" id="pf-cancel">취소</button>' +
+      '<span class="note-in" id="pf-msg"></span></p>' +
+      '<p class="note">게시판과 화면에 보이는 이름입니다. 2~20자. 사진은 아직 받지 않습니다.</p>' +
+      "</form>" +
       '<div id="members" style="margin-top:1.5rem"></div>' +
       "</div>";
+
+    var form = document.getElementById("profile-form");
+    var toggle = document.getElementById("edit-profile");
+    toggle.addEventListener("click", function () {
+      form.hidden = !form.hidden;
+      toggle.setAttribute("aria-expanded", String(!form.hidden));
+      if (!form.hidden) document.getElementById("pf-name").focus();
+    });
+    document.getElementById("pf-cancel").addEventListener("click", function () {
+      form.hidden = true; toggle.setAttribute("aria-expanded", "false");
+    });
+    form.addEventListener("submit", async function (e) {
+      e.preventDefault();
+      var v = document.getElementById("pf-name").value.trim();
+      var msg = document.getElementById("pf-msg");
+      if (v.length < 2 || v.length > 20) { msg.textContent = "이름은 2~20자로 적어 주세요."; return; }
+      msg.textContent = "저장하는 중…";
+      // 본인 행만 고칠 수 있다(RLS). 등급·상태 열은 트리거가 막으므로 이름만 간다.
+      var r = await window.SB.from("profile").update({ nickname: v }).eq("id", u.id)
+        .select("nickname").single();
+      if (r.error) { msg.textContent = "저장하지 못했습니다 — " + r.error.message; return; }
+      me.profile = Object.assign({}, p, { nickname: r.data.nickname });
+      accountView(me);
+    });
 
     document.getElementById("out").addEventListener("click", async function () {
       await window.SBUtil.signOut();

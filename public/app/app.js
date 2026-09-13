@@ -18,7 +18,7 @@ const API = CONFIG.apiBase || '';
 const state = {
   meta: null, tollgates: [], trades: [], series: {}, traffic: null, chart: null,
   rank: { year: null, vehicle: 'total', sort: 'volume', q: '', coordsOnly: false },
-  trend: { id: null, scale: 'index', base: null, on: new Set() },
+  trend: { id: null, scale: 'index', base: null, on: new Set(), ready: false },
   activeTiers: new Set([0, 1, 2, 3, 'new', 'none']),
   // 용도지역 배경은 기본으로 켜 둔다 — 요청된 화면이다.
   // 용도지역 색면은 **꺼진 채로 시작한다** (요구사항 2026-09-08).
@@ -667,7 +667,7 @@ function trafficDisabled(message) {
   const tab = document.querySelector('.tab[data-view="rank"]');
   if (tab) tab.hidden = true;
   const note = $('#rank-note');
-  if (note) note.textContent = message;
+  if (note) { note.textContent = message; note.hidden = false; }
 }
 
 function buildRank() {
@@ -706,8 +706,70 @@ function buildRank() {
   $('#rank-search').addEventListener('input', rerender);
 
   renderVehicleTables();
+  buildRankIndex();
+  // '지가 추이' 단추 — 행마다 리스너를 붙이지 않고 표 하나에서 받는다.
+  $('#rank-table tbody').addEventListener('click', (e) => {
+    const btn = e.target.closest('.btn-trend');
+    if (btn && !btn.disabled) openTrendPopup(btn.dataset.tg);
+  });
   state.rank.vehicle = 'g:total';
   renderRank();
+}
+
+/* 검색 색인 (지시 2026-09-13). 영업소 이름과 지역(시·도, 시·군·구)을 목록으로
+   내려 준다 — 적어도 되고 목록에서 골라도 된다. 검색은 여전히 부분 일치라
+   '경기도' 를 고르면 경기도 영업소가 전부 남는다. */
+function buildRankIndex() {
+  const list = $('#rank-index');
+  if (!list) return;
+  const rows = (state.traffic || {}).rows || [];
+  const names = [...new Set(rows.map((r) => r.name).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'ko'));
+  const regions = new Set();
+  rows.forEach((r) => {
+    if (r.sido) regions.add(r.sido);
+    if (r.sido && r.sigungu) regions.add(`${r.sido} ${r.sigungu}`);
+  });
+  const regionList = [...regions].sort((a, b) => a.localeCompare(b, 'ko'));
+  list.innerHTML =
+    names.map((n) => `<option value="${escapeHtml(n)}" label="영업소">`).join('') +
+    regionList.map((n) => `<option value="${escapeHtml(n)}" label="지역">`).join('');
+}
+
+/* 최근 5년의 전년 대비 증감률 (지시 2026-09-13: '전년 대비' 한 칸 대신
+   '최근 5년 YoY'). 왼쪽이 오래된 해. 값이 없는 해는 null 로 둔다 — 0 이 아니다. */
+function rankYoy(row, yearIdx, codes, typeIdx, years) {
+  const out = [];
+  for (let k = 4; k >= 0; k -= 1) {
+    const yi = yearIdx - k;
+    const cur = yi >= 0 ? rankValue(row, yi, codes, typeIdx) : null;
+    const prev = yi - 1 >= 0 ? rankValue(row, yi - 1, codes, typeIdx) : null;
+    out.push({
+      year: years[yi],
+      v: cur != null && prev != null && prev > 0 && cur > 0 ? cur / prev - 1 : null,
+    });
+  }
+  return out;
+}
+
+/* 다섯 막대 하나로. 위로 뻗으면 증가, 아래면 감소. ±15% 에서 자른다 —
+   한 해의 개통 효과(수백 %)가 나머지 넷을 납작하게 만들지 않게. */
+function yoyBars(yoy) {
+  const W = 46; const H = 20; const mid = H / 2; const bw = 6; const gap = 4; const cap = 0.15;
+  const bars = yoy.map((p, i) => {
+    const x = i * (bw + gap) + 1;
+    if (p.v == null) return `<circle cx="${x + bw / 2}" cy="${mid}" r="1.2" class="none"/>`;
+    const h = Math.max(1, Math.min(Math.abs(p.v), cap) / cap * (mid - 1));
+    const y = p.v >= 0 ? mid - h : mid;
+    return `<rect x="${x}" y="${y.toFixed(1)}" width="${bw}" height="${h.toFixed(1)}" class="${p.v >= 0 ? 'up' : 'down'}"/>`;
+  }).join('');
+  const title = yoy.map((p) => `${p.year || '?'}년 ${p.v == null ? '—' : (p.v >= 0 ? '+' : '') + (p.v * 100).toFixed(1) + '%'}`).join(' · ');
+  const last = yoy[yoy.length - 1];
+  const lastTxt = last && last.v != null
+    ? `<span class="delta ${last.v >= 0 ? 'up' : 'down'} last">${last.v >= 0 ? '+' : ''}${(last.v * 100).toFixed(1)}%</span>`
+    : '<span class="hint last">—</span>';
+  return `<span class="yoy" title="${escapeHtml(title)}"><svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-label="${escapeHtml(title)}">`
+    + `<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" class="base"/>${bars}</svg>${lastTxt}</span>`;
 }
 
 /* ── 차종 고르기 (요구사항 2026-09-09) ──────────────────────────
@@ -893,6 +955,8 @@ function renderRank() {
       value,
       growth: prev && prev > 0 ? value / prev - 1 : null,
       share: all && all > 0 ? value / all : null,
+      yoy: rankYoy(r, yearIdx, codes, typeIdx, data.years),
+      hasTrend: !!(state.chart && state.chart.rows && state.chart.rows[r.id]),
     });
   });
 
@@ -907,10 +971,9 @@ function renderRank() {
   const body = $('#rank-table tbody');
   body.innerHTML = rows.map((r, i) => {
     const width = Math.max(2, (r.value / max) * 100);
-    const g = r.growth == null
-      ? '<span class="hint">—</span>'
-      : `<span class="delta ${r.growth >= 0 ? 'up' : 'down'}">` +
-        `${r.growth >= 0 ? '+' : ''}${(r.growth * 100).toFixed(1)}%</span>`;
+    const trendBtn = r.hasTrend
+      ? `<button type="button" class="btn-trend" data-tg="${escapeHtml(r.id)}">지가 추이</button>`
+      : '<button type="button" class="btn-trend" disabled title="이 영업소는 추이 자료가 없습니다">지가 추이</button>';
     const region = [r.sido, r.sigungu].filter(Boolean).join(' ') ||
                    '<span class="hint">미상</span>';
     return `<tr>
@@ -918,19 +981,21 @@ function renderRank() {
       <td>${escapeHtml(r.name)}</td>
       <td>${region}</td>
       <td class="num bar"><span style="width:${width}%"></span><b>${num(r.value)}</b></td>
-      <td class="num">${g}</td>
+      <td class="act">${trendBtn}</td>
+      <td class="num">${yoyBars(r.yoy)}</td>
       <td class="num">${r.share == null ? '—' : (r.share * 100).toFixed(1) + '%'}</td>
     </tr>`;
   }).join('');
 
+  // 부가 설명은 뺐다 (지시 2026-09-13). 한 줄 요약은 표 제목 옆 툴팁으로만 남긴다.
   const missing = data.rows.length - rows.length;
-  $('#rank-note').innerHTML =
-    `<strong>${state.rank.year}년 · ${escapeHtml(label)}</strong> — ` +
-    `${data.unit || '일평균 통행량 (대/일)'}. 영업소 ${rows.length}개` +
-    (missing > 0 ? ` (그해 자료가 없는 ${missing}개 제외)` : '') + '.<br>' +
-    escapeHtml(data.note || '') +
-    ' 순위는 통행량일 뿐 투자 가치가 아닙니다 — 통행이 많은 IC 는 대개 서울에 가깝고,' +
-    ' 그 값은 이미 땅값에 반영돼 있습니다.';
+  const h2 = document.querySelector('#view-rank h2');
+  if (h2) {
+    h2.title = `${state.rank.year}년 · ${label} — ${data.unit || '일평균 통행량 (대/일)'}. 영업소 ${rows.length}개` +
+      (missing > 0 ? ` (그해 자료가 없는 ${missing}개 제외)` : '');
+  }
+  const note = $('#rank-note');
+  if (note) { note.hidden = true; note.textContent = ''; }
 }
 
 function renderVehicleTables() {
@@ -1097,6 +1162,45 @@ function buildTrend() {
   });
 
   selectTrend(list[0].id);
+  state.trend.ready = true;
+  initTrendDialog();
+}
+
+/* ── 추이 비교 팝업 (지시 2026-09-13, 슬라이드 3) ──
+   IC 교통량 표의 '지가 추이' 단추가 연다. #view-trend 의 내용물(.trend-wrap)을
+   <dialog> 안으로 옮겨 띄우고 닫으면 제자리로 돌려 놓는다 — 화면을 복제하지
+   않으므로 리스너·상태가 하나다. <dialog> 를 모르는 브라우저에서는 예전처럼
+   #trend 화면으로 간다. */
+function initTrendDialog() {
+  const dlg = $('#trend-dialog');
+  if (!dlg) return;
+  const putBack = () => {
+    const wrap = dlg.querySelector('.trend-wrap');
+    const home = $('#view-trend');
+    if (wrap && home) home.appendChild(wrap);
+  };
+  $('#trend-dialog-close').addEventListener('click', () => dlg.close());
+  dlg.addEventListener('close', putBack);
+  // 바깥(배경)을 누르면 닫힌다. 안쪽 클릭은 target 이 dialog 자신이 아니다.
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.close(); });
+}
+
+function openTrendPopup(id) {
+  const dlg = $('#trend-dialog');
+  const wrap = document.querySelector('#view-trend .trend-wrap');
+  if (!state.trend.ready) return;
+  if (!dlg || !wrap || typeof dlg.showModal !== 'function') {
+    location.hash = 'trend';
+    showHiddenView();
+    selectTrend(id);
+    return;
+  }
+  $('#trend-dialog-body').appendChild(wrap);
+  if (!dlg.open) dlg.showModal();
+  selectTrend(id);
+  const info = trendCandidates().find((c) => c.id === id);
+  $('#trend-dialog-title').textContent =
+    `추이 비교 — ${info ? info.name : id}${info && info.region ? ' · ' + info.region : ''}`;
 }
 
 /* 영업소를 바꾸면 계열 구성이 달라진다. 켜둔 계열 중 남아 있는 것은 유지하고,

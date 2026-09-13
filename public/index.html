@@ -66,6 +66,25 @@ h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin-bottom:10px}
   padding:15px 20px;border-radius:12px
 }
 .hero-hint{font-size:13px;color:#e6d5c4;margin:14px 0 0}
+/* 첫 화면의 로그인 단추 (2026-09-13). /account 의 .btn-oauth 와 같은 생김새 —
+   갈색 판 위라 흰 바탕을 그대로 쓴다. */
+.auth-row{display:grid;gap:10px;max-width:340px;margin:0 auto}
+.btn-oauth{
+  display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
+  padding:14px 18px;border-radius:12px;border:1px solid #E2D6C8;
+  background:#FFF8F0;color:#3A2A1E;font:inherit;font-size:16px;font-weight:800;cursor:pointer
+}
+.btn-oauth:hover{background:#F6ECE0}
+.btn-oauth:disabled{opacity:.55;cursor:default}
+.btn-oauth .ic{width:19px;height:19px;flex:0 0 auto}
+.btn-oauth.kakao{background:#FEE500;border-color:#F5DC00;color:#191600}
+.btn-oauth.kakao:hover{background:#F5DC00}
+.auth-row .hero-link,.auth-row .tool-link{margin-top:0}
+.tool-auth .auth-row{margin-top:22px}
+.tool-auth .btn-oauth{background:var(--surface);color:var(--ink);border-color:var(--border-strong)}
+.tool-auth .btn-oauth.kakao{background:#FEE500;color:#191600;border-color:#F5DC00}
+.auth-err{font-size:13px;color:#ffd9d0;text-align:center;margin-top:8px}
+.tool-auth .auth-err{color:var(--danger,#B3261E)}
 
 .tool-link{
   display:flex;align-items:center;justify-content:center;gap:8px;
@@ -241,10 +260,17 @@ section a{color:var(--accent);text-underline-offset:2px}
     <h1>토지 고고</h1>
     <p class="sub">고속도로 IC 교통량과 그 주변 토지·공장 실거래가를<br>지도 한 장에서 봅니다</p>
 
-    <a class="hero-link" href="/account?next=%2Fapp">
-      회원 가입하고 보기 <span aria-hidden="true">→</span>
-    </a>
-    <p class="hero-hint">구글·카카오 계정으로 가입 · 관리자 승인 후 이용</p>
+    <!-- 첫 화면에서 바로 로그인·가입 (지시 2026-09-13, 슬라이드 2). 한 단계를
+         뺐다 — 예전에는 '회원 가입하고 보기' 를 눌러 /account 로 간 뒤 거기서
+         구글·카카오를 골랐다. 이제 그 두 단추가 여기 선다. 아래 링크는 스크립트가
+         없을 때의 길이고, /lib/landing-auth.js 가 단추로 바꾼다. 이미 로그인한
+         사람에게는 '지도 보기' 가 뜬다. -->
+    <div class="hero-auth" data-auth>
+      <a class="hero-link" href="/account?next=%2Fapp">
+        회원 가입하고 보기 <span aria-hidden="true">→</span>
+      </a>
+    </div>
+    <p class="hero-hint">구글·카카오 계정으로 바로 시작 · 관리자 승인 후 이용</p>
   </div>
 </header>
 
@@ -411,9 +437,11 @@ section a{color:var(--accent);text-underline-offset:2px}
       구글 또는 카카오 계정으로 <strong>가입하면 모든 기능이 무료입니다</strong>.
       아직 만들어 가는 중이라 승인제로 받고 있습니다.
     </p>
-    <a class="tool-link" href="/account?next=%2Fapp">
-      회원 가입하고 보기 <span aria-hidden="true">→</span>
-    </a>
+    <div class="tool-auth" data-auth>
+      <a class="tool-link" href="/account?next=%2Fapp">
+        회원 가입하고 보기 <span aria-hidden="true">→</span>
+      </a>
+    </div>
   </div>
 </section>
 
@@ -426,5 +454,11 @@ section a{color:var(--accent);text-underline-offset:2px}
   <div class="foot-theme" data-theme-switch></div>
 </footer>
 
+<!-- 로그인 단추용 (2026-09-13). 첫 화면은 이것 없이도 완성돼 있다 — 단추가
+     못 뜨면 위 링크가 그대로 /account 로 간다. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" defer></script>
+<script src="/app/supabase.js?v=20260905a" defer></script>
+<script src="/lib/supabase-init.js?v=20260905a" defer></script>
+<script src="/lib/landing-auth.js?v=20260913a" defer></script>
 </body>
 </html>

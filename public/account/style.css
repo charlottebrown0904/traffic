@@ -123,3 +123,8 @@
 .st-approved{background:var(--ok-soft); color:var(--ok)}
 .st-rejected{background:var(--block-soft); color:var(--block)}
 .note-in{color:var(--faint); font-weight:400}
+
+/* 프로필 수정 (2026-09-13) */
+.pform{margin:.25rem 0 1rem; padding:.9rem 1rem; border:1px solid var(--border); border-radius:10px; background:var(--surface-2)}
+.pform .field{margin-bottom:.6rem}
+.pform .note{margin-top:.5rem}

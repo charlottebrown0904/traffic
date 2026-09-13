@@ -313,10 +313,32 @@ check("감정평가가 아니며" in _land and "담보·소송·과세·보상" 
 # 첫 화면이 광고하는 탭은 지도앱에 **서 있어야** 한다. 숨은 탭을
 # 광고하면 가입한 사람이 그 화면을 못 찾는다.
 _appidx = (PUBLIC / "app" / "index.html").read_text(encoding="utf-8")
-for _view, _name in (("rank", "교통량 순위"), ("trend", "추이 비교")):
-    _tag = re.search(r'<button class="tab"[^>]*data-view="%s"[^>]*>' % _view, _appidx)
-    check(bool(_tag) and "hidden" not in _tag.group(0),
-          f"지도앱에 '{_name}' 탭이 서 있다")
+_appjs = (PUBLIC / "app" / "app.js").read_text(encoding="utf-8")
+# 지시 2026-09-13 (슬라이드 3): 탭 이름은 'IC 교통량', '추이 비교' 탭은 접고
+# 표의 '지가 추이' 단추가 팝업으로 연다. 첫 화면이 광고하는 화면은 서 있어야 한다.
+_tag = re.search(r'<button class="tab"[^>]*data-view="rank"[^>]*>([^<]*)</button>', _appidx)
+check(bool(_tag) and "hidden" not in _tag.group(0) and _tag.group(1).strip() == "IC 교통량",
+      "지도앱에 'IC 교통량' 탭이 서 있다")
+_tag = re.search(r'<button class="tab"[^>]*data-view="trend"[^>]*>', _appidx)
+check(bool(_tag) and "hidden" in _tag.group(0), "'추이 비교' 탭은 접혀 있다 (단추가 연다)")
+check('id="view-trend"' in _appidx and 'id="trend-dialog"' in _appidx,
+      "추이 비교 화면과 팝업 틀이 있다")
+check('class="act">지가 추이</th>' in _appidx and "btn-trend" in _appjs and "openTrendPopup" in _appjs,
+      "IC 교통량 표에 '지가 추이' 단추가 있고 팝업을 연다")
+check("최근 5년 YoY" in _appidx and "전년 대비</th>" not in _appidx,
+      "'전년 대비' 대신 '최근 5년 YoY' 다")
+check('list="rank-index"' in _appidx and 'id="rank-index"' in _appidx and "buildRankIndex" in _appjs,
+      "영업소·지역 검색에 색인 목록이 붙어 있다")
+check('id="rank-note" hidden' in _appidx, "IC 교통량의 부가 설명은 접혀 있다")
+
+# 지시 2026-09-13 (슬라이드 2): 첫 화면에서 바로 구글·카카오로 시작한다.
+# 스크립트가 없어도 예전 링크가 남아 있어야 한다.
+check(_land.count("data-auth") >= 2, "첫 화면 두 곳에 로그인 단추 자리가 있다")
+check("/lib/landing-auth.js" in _land and 'href="/account?next=%2Fapp"' in _land,
+      "로그인 단추 스크립트와 스크립트 없을 때의 링크가 함께 있다")
+check((PUBLIC / "lib" / "landing-auth.js").exists(), "landing-auth.js 가 있다")
+_acc = (PUBLIC / "account" / "account.js").read_text(encoding="utf-8")
+check("프로필 수정" in _acc and 'update({ nickname: v })' in _acc, "내 계정에 프로필 수정(이름)이 있다")
 
 
 # ── 지역 태그 설명 (지시 2026-09-12 2차) ────────────────────────────
