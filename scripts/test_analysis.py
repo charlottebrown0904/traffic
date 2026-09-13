@@ -2235,6 +2235,14 @@ with _cdb.connect() as _con:
     # 거의 다 덮는다. 몫으로 재면 놓치고 덮은 비율로 재면 잡힌다.
     check(_CAD.ALIAS_MIN_COVER <= 0.5 and _CAD.ALIAS_COVER_LEAD >= 2.0,
           "기준은 덮은 비율 5할 · 버금의 2배")
+    # 작은 우연 일치가 큰 정답을 제치지 못하게 — 화순에서 41650 2/2(100%) 가
+    # 46790 3,789/3,790(100%) 을 밀어내 정답을 놓쳤다 (run 34773692211).
+    _con.execute("INSERT INTO std_land (std_id, pnu, year, price) VALUES "
+                 "('x1', '41650" + _sfx[0] + "', 2026, 1)")
+    _con.execute("UPDATE std_land SET lat = NULL, lon = NULL WHERE pnu LIKE '46840%'")
+    _big = _CAD.find_old_prefix(_con, set(_sfx))
+    check(_big["code"] == "46840",
+          f"작은 우연 일치(1필지)가 큰 정답(60필지)을 제치지 않는다 ({_big['code']})")
 
 print()
 if fail:

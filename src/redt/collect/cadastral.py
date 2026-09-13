@@ -255,12 +255,18 @@ def find_old_prefix(con, suffixes: set[str], table: str = "std_land") -> dict:
     con.execute("DROP TABLE IF EXISTS _sfx")
     if not seen:
         return blank
-    scored = sorted(((c, int(h), int(n), h / max(n, 1)) for c, h, n in seen),
-                    key=lambda r: r[3], reverse=True)
+    # **작은 후보는 줄 세우기 전에 뺀다.** 덮은 비율로만 세우면 2필지가
+    # 걸린 우연 일치가 100% 로 1등이 되어 3,790필지짜리 정답을 제친다
+    # (화순 실측: 41650 2/2 가 46790 3,789/3,790 을 밀어냈다).
+    big = [(c, int(h), int(n), h / max(n, 1)) for c, h, n in seen
+           if int(h) >= ALIAS_MIN_ROWS]
+    if not big:
+        return {**blank, "seen": [(c, int(h), int(n), round(h / max(n, 1), 3))
+                                  for c, h, n in seen][:5]}
+    scored = sorted(big, key=lambda r: r[3], reverse=True)
     code, hit, _total, cover = scored[0]
     runner = scored[1][3] if len(scored) > 1 else 0.0
-    ok = (hit >= ALIAS_MIN_ROWS and cover >= ALIAS_MIN_COVER
-          and cover >= runner * ALIAS_COVER_LEAD)
+    ok = cover >= ALIAS_MIN_COVER and cover >= runner * ALIAS_COVER_LEAD
     return {"code": code if ok else None, "rows": hit, "cover": round(cover, 3),
             "seen": [(c, h, n, round(v, 3)) for c, h, n, v in scored[:5]]}
 
