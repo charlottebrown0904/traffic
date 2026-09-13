@@ -383,6 +383,24 @@ def haversine_km(lat1, lon1, lat2, lon2) -> float:
     return 2 * r * math.asin(min(1.0, math.sqrt(a)))
 
 
+# 가격 수준 벌점 — 배율이 띠 밖으로 두 배 벗어나면 다른 읍면동만큼(≈1km) 멀다.
+PRICE_BAND = (0.7, 1.4)
+PRICE_PEN_PER_LOG = 3.0
+
+
+def price_level_penalty(subject_price, std_price) -> tuple[float, float | None]:
+    """(벌점, 배율). 배율 = 표준지 공시지가 ÷ 대상 개별공시지가. 어느 쪽이든 없으면 (0, None)."""
+    a, b = _num(subject_price), _num(std_price)
+    if not a or not b or a <= 0 or b <= 0:
+        return 0.0, None
+    k = b / a
+    lo, hi = PRICE_BAND
+    if lo <= k <= hi:
+        return 0.0, k
+    edge = hi if k > hi else lo
+    return PRICE_PEN_PER_LOG * abs(math.log(k / edge)), k
+
+
 def pick_standard(subject: dict, candidates: list[dict], top: int = 3) -> list[dict]:
     """후보 표준지에서 비교표준지를 고른다. 점수가 낮을수록 좋다.
 
@@ -392,6 +410,14 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3) -> list[d
 
     용도지역군과 MUST_MATCH 구역은 **거른다** (벌점이 아니다). 그것이
     다른 표준지는 아무리 가까워도 후보가 아니다.
+
+    **가격 수준** (2026-09-13): 표준지 공시지가 ÷ 대상 개별공시지가 가
+    PRICE_BAND(0.7~1.4) 밖이면 로그 배율에 비례한 벌점을 더한다. 원장
+    376건에서 평가사가 고른 표준지는 이 배율이 중앙 1.05 · 사분위 0.99~1.24
+    · 78% 가 0.7~1.4 안이었다. 좌표가 없어 위치 차이를 못 보는 자리를
+    개별공시지가가 대신 채운다 — 괴산읍 동부리 282(개별 17,100원)에
+    61,000원짜리 표준지(3.6배)가 '조건 일치'로 뽑혀 3.2배 높게 나온 사례.
+    대상 개별공시지가나 표준지 공시지가가 없으면 이 벌점은 없다.
     """
     zg = zone_group(subject.get("land_use"))
     ug = use_group(subject.get("jimok"), subject.get("use_situation"))
@@ -430,11 +456,16 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3) -> list[d
         if umd and str(c.get("pnu") or "")[:10] != umd:
             pen += 1.0
             why.append("다른 읍면동")
+        ppen, k = price_level_penalty(subject.get("official_price"), c.get("price"))
+        if ppen:
+            pen += ppen
+            why.append(f"공시지가 수준 {k:.1f}배")
         dist = None
         if lat is not None and lon is not None and c.get("lat") is not None:
             dist = haversine_km(float(lat), float(lon), float(c["lat"]), float(c["lon"]))
         score = (dist or 0.0) + pen
         rows.append({**c, "distance_km": None if dist is None else round(dist, 3),
+                     "price_ratio": None if k is None else round(k, 2),
                      "penalty": round(pen, 2), "score": round(score, 3),
                      "why": ", ".join(why) or "조건 일치"})
     rows.sort(key=lambda r: r["score"])

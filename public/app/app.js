@@ -5255,7 +5255,21 @@ function individualFactor(subject, std, T) {
 
 /* 비교표준지 — 실무기준의 순서. 용도지역(세분까지)·구역은 거르고, 나머지는
  * 벌점(거리 km 로 환산)이다. 좌표는 아직 없어 같은 법정동리(PNU 앞 10자리)
- * 가 거리를 대신한다. */
+ * 가 거리를 대신한다.
+ * 가격 수준: 표준지 공시지가 ÷ 대상 개별공시지가 가 0.7~1.4 밖이면 로그
+ * 배율 × 3 을 벌점으로 (두 배 벗어나면 다른 읍면동만큼). 원장 376건에서
+ * 평가사가 고른 표준지는 중앙 1.05 · 78% 가 띠 안. 좌표 없이 위치 차이를
+ * 잡는 자리다 — 3.6배짜리 표준지가 '조건 일치'로 뽑히던 것을 막는다. */
+const PRICE_BAND = [0.7, 1.4];
+const PRICE_PEN_PER_LOG = 3.0;
+function priceLevelPenalty(subjectPrice, stdPrice) {
+  const a = Number(subjectPrice); const b = Number(stdPrice);
+  if (!(a > 0) || !(b > 0)) return [0, null];
+  const k = b / a;
+  if (k >= PRICE_BAND[0] && k <= PRICE_BAND[1]) return [0, k];
+  const edge = k > PRICE_BAND[1] ? PRICE_BAND[1] : PRICE_BAND[0];
+  return [PRICE_PEN_PER_LOG * Math.abs(Math.log(k / edge)), k];
+}
 function pickStandard(subject, cands, T, top) {
   const zg = zoneGroupOf(subject.land_use, T);
   const ug = useGroupOf(subject.jimok, subject.use_situation);
@@ -5275,9 +5289,12 @@ function pickStandard(subject, cands, T, top) {
     const s1 = idxOf(subject.slope, T.slope_index['*']); const s2 = idxOf(c.slope, T.slope_index['*']);
     if (s1 !== null && s2 !== null && s1 !== s2) { pen += 0.3; why.push('지세 다름'); }
     if (umd && String(c.ld || c.pnu || '').slice(0, 10) !== umd) { pen += 1.0; why.push('다른 읍면동'); }
+    const [ppen, k] = priceLevelPenalty(subject.official_price, c.price);
+    if (ppen) { pen += ppen; why.push(`공시지가 수준 ${k.toFixed(1)}배`); }
     let dist = null;
     if (subject.lat != null && c.lat != null) dist = haversine(subject.lat, subject.lon, c.lat, c.lon);
     rows.push({ ...c, distance_km: dist === null ? null : Math.round(dist * 1000) / 1000,
+                price_ratio: k === null ? null : Math.round(k * 100) / 100,
                 penalty: Math.round(pen * 100) / 100, score: Math.round(((dist || 0) + pen) * 1000) / 1000,
                 why: why.join(', ') || '조건 일치' });
   });

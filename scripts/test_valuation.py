@@ -142,6 +142,28 @@ check([p["pnu"] for p in picked] == [same["pnu"]],
       "용도지역이 다르거나 개발제한구역이 한쪽에만 있으면 아무리 가까워도 뺀다")
 check(picked[0]["distance_km"] is not None and picked[0]["penalty"] > 0, "거리와 벌점을 함께 적는다")
 
+# 가격 수준 — 괴산읍 동부리 282 사례. 조건이 전부 같은 두 표준지, 하나는
+# 대상 개별공시지가(17,100)의 3.6배(61,000), 하나는 1.0배(17,000). 좌표가 없다.
+subj = {"pnu": "4376025021100000001", "land_use": "자연녹지지역", "jimok": "전", "use_situation": "과수원",
+        "road_side": "세로(가)", "shape": "부정형", "slope": "완경사", "official_price": 17100}
+rich = {"pnu": "4376025021100000405", "land_use": "자연녹지지역", "jimok": "전", "use_situation": "전",
+        "road_side": "세로(가)", "shape": "부정형", "slope": "완경사", "price": 61000}
+peer = {"pnu": "4376025021100000900", "land_use": "자연녹지지역", "jimok": "전", "use_situation": "전",
+        "road_side": "세로(가)", "shape": "부정형", "slope": "완경사", "price": 17000}
+got = V.pick_standard(subj, [rich, peer])
+check([g["pnu"] for g in got] == [peer["pnu"], rich["pnu"]], "공시지가 수준이 맞는 표준지가 먼저 (3.6배짜리는 뒤)")
+check(got[1]["price_ratio"] == 3.57 and "공시지가 수준 3.6배" in got[1]["why"] and got[1]["penalty"] > 1.0,
+      f"3.6배는 다른 읍면동보다 큰 벌점 ({got[1]['penalty']})")
+check(got[0]["penalty"] == 0 and got[0]["why"] == "조건 일치", "1.0배는 벌점 없음")
+pen, k = V.price_level_penalty(17100, 61000 * 0.5)
+check(pen > 0 and abs(k - 1.78) < 0.01, "띠(0.7~1.4) 밖이면 로그 배율에 비례")
+check(V.price_level_penalty(17100, 20000) == (0.0, round(20000 / 17100, 12)) or V.price_level_penalty(17100, 20000)[0] == 0,
+      "띠 안이면 벌점 0")
+check(V.price_level_penalty(None, 61000) == (0.0, None) and V.price_level_penalty(17100, None) == (0.0, None),
+      "개별공시지가·표준지 공시지가가 없으면 이 벌점은 없다")
+got = V.pick_standard({k2: v for k2, v in subj.items() if k2 != "official_price"}, [rich, peer])
+check(got[0]["penalty"] == 0 and got[1]["penalty"] == 0, "대상 개별공시지가가 없으면 옛 규칙 그대로")
+
 print()
 print("5. 시점수정")
 t = V.time_factor(dt.date(2026, 1, 1), dt.date(2026, 9, 10), monthly_rates=[0.1] * 8)

@@ -364,7 +364,7 @@ def cmd_value_test(args):
                    "sigungu": t.get("sigungu"), "land_use": t["land_use"], "jimok": t["jimok"],
                    "use_situation": t["use_situation"], "road_side": t["road_side"],
                    "shape": t["shape"], "slope": t["slope"], "area_m2": t.get("deal_area_m2") or t["area_m2"],
-                   "lat": t["lat"], "lon": t["lon"]}
+                   "official_price": t.get("official_price"), "lat": t["lat"], "lon": t["lon"]}
         stds3 = V.pick_standard(subject, cands, top=3)
         zg, ug = V.zone_group(t["land_use"]), V.use_group(t["jimok"], t["use_situation"])
         led = V.ledger_other_factor(subject["sido"], subject["sigungu"], t["land_use"],
