@@ -283,44 +283,75 @@ def cmd_value_test(args):
 
     2026-09-11 지시: "경기도 안성시 계획관리 지역 최근 거래된 1필지를 임의
     선택하여 현재 가치를 분석해 보고, 실제 거래된 가격과 비교해 볼 것."
+    2026-09-13 지시: "우리는 전국 필지를 봐야 하니 정확도를 올릴 방법을
+    찾아서 스스로 업그레이드." — --sigungu all 이면 전국에서 임의로 뽑아
+    시·도별 · 지목군별로 적는다. 정확도를 올리는 손질은 이 표가 재판한다.
 
     한 건이면 운이다. 그래서 같은 조건에서 n건을 임의로 뽑아 하나하나
     산출표를 적고, 실거래단가 ÷ 결정단가 의 중앙값도 적는다. 그 밖의
-    요인은 두 갈래(비공개 평가선례 DB · 우리 거래사례)를 따로도 낸다 —
-    어느 쪽이 실거래에 가까운지가 다음에 손댈 곳이다.
+    요인은 두 갈래(비공개 평가선례 DB · 우리 거래사례)를 따로도 낸다.
 
-    거래사례 갈래에는 이 시군구의 최근 3년 거래가 다 들어가므로 뽑힌 건
+    **같은 실행 안에서 A/B 를 낸다** — 선정의 가격 수준 벌점, 지역요인
+    추정. 원장이 커지면 기록된 옛 수치와는 견줄 수 없으므로, 손질 하나를
+    끄고 켠 차이만이 그 손질의 몫이다.
+
+    거래사례 갈래에는 이 시군구의 최근 3~5년 거래가 다 들어가므로 뽑힌 건
     자신도 그 중앙값에 조금 섞인다 (수백 건 중 하나). 결과에 적는다.
     """
     import math
     import random
     from datetime import date
     from . import valuation as V, appraisal_db
-    code, zone = args.sigungu, args.zone
+    code, zone = str(args.sigungu).strip(), args.zone
+    nationwide = code.lower() in ("all", "*", "")
     today = date.today()
+    ym = today.year * 12 + today.month
+
+    def _clean(d):
+        return {k: (None if (v is None or (isinstance(v, float) and np.isnan(v))) else v)
+                for k, v in d.items()}
+
+    def _digest(xs):
+        xs = sorted(xs)
+        if not xs:
+            return None
+        return (xs[len(xs) // 2], sum(1 for x in xs if 0.7 <= x <= 1.4),
+                sum(1 for x in xs if 0.5 <= x <= 2.0), len(xs))
+
+    out = []
     with db.connect(read_only=True) as con:
-        # 가장 최근 연도 — 다만 그 해가 반쪽이면(run 15: 2026 이 3필지) 그 전 해로.
-        years = con.execute("SELECT year, count(*) FROM std_land WHERE sigungu_cd LIKE ? "
-                            "GROUP BY year ORDER BY year DESC", [code + "%"]).fetchall()
-        if not years:
+        # ── 표준지 후보 — 시군구마다 게으르게 (전국이면 뽑힌 시군구만 읽는다) ──
+        std_cache: dict = {}
+
+        def stds_for(sgg: str):
+            if sgg in std_cache:
+                return std_cache[sgg]
+            # 가장 최근 연도 — 다만 그 해가 반쪽이면(run 15: 2026 이 3필지) 그 전 해로.
+            years = con.execute("SELECT year, count(*) FROM std_land WHERE sigungu_cd LIKE ? "
+                                "GROUP BY year ORDER BY year DESC", [sgg + "%"]).fetchall()
+            if not years:
+                std_cache[sgg] = (None, [])
+                return std_cache[sgg]
+            fullest = max(n for _, n in years)
+            year_max = next((y for y, n in years if n >= fullest * 0.5), years[0][0])
+            stds = con.execute("SELECT * FROM std_land WHERE sigungu_cd LIKE ? AND year=?",
+                               [sgg + "%", int(year_max)]).fetchdf()
+            cands = []
+            for r in stds.to_dict("records"):
+                c = _clean(r)
+                c["label"] = f"{c.get('ld_name') or ''} {c.get('jibun') or ''}".strip() or c.get("pnu")
+                c["base_date"] = f"{int(year_max)}-01-01"
+                cands.append(c)
+            std_cache[sgg] = (int(year_max), cands)
+            return std_cache[sgg]
+
+        if not nationwide and stds_for(code)[0] is None:
             sys.exit(f"std_land 에 {code} 표준지가 없습니다. load-stdland --vworld 를 먼저.")
-        fullest = max(n for _, n in years)
-        year_max = next((y for y, n in years if n >= fullest * 0.5), years[0][0])
-        if year_max != years[0][0]:
-            print(f"  {years[0][0]}년 표준지는 {years[0][1]}필지뿐이라 {year_max}년({dict(years)[year_max]}필지)을 씁니다")
-        stds = con.execute("SELECT * FROM std_land WHERE sigungu_cd LIKE ? AND year=?",
-                           [code + "%", int(year_max)]).fetchdf()
-        cands = []
-        for r in stds.to_dict("records"):
-            c = {k: (None if (v is None or (isinstance(v, float) and np.isnan(v))) else v)
-                 for k, v in r.items()}
-            c["label"] = f"{c.get('ld_name') or ''} {c.get('jibun') or ''}".strip() or c.get("pnu")
-            c["base_date"] = f"{int(year_max)}-01-01"
-            cands.append(c)
-        ym = today.year * 12 + today.month
-        rows = con.execute("""
+
+        # ── 거래 표본 ────────────────────────────────────────────────
+        base_sql = f"""
             SELECT t.trade_id, t.deal_year, t.deal_month, t.price_per_m2, t.price_krw,
-                   t.area_m2 AS deal_area_m2, t.sigungu, t.umd, t.jibun, t.lat, t.lon,
+                   t.area_m2 AS deal_area_m2, t.sigungu_cd, t.sigungu, t.umd, t.jibun, t.lat, t.lon,
                    pc.pnu, pc.jimok, pc.land_use, pc.use_situation, pc.area_m2,
                    pc.road_side, pc.shape, pc.slope, pc.official_price, pc.stdr_year
             FROM trade t
@@ -330,147 +361,172 @@ def cmd_value_test(args):
               AND NOT coalesce(t.is_cancelled, FALSE)
               AND NOT coalesce(t.is_share_deal, FALSE)
               AND t.geocode_level = 'parcel'
-              AND t.sigungu_cd = ? AND pc.land_use LIKE ?
+              {"" if nationwide else "AND t.sigungu_cd = ?"} AND pc.land_use LIKE ?
               AND t.price_per_m2 > 0 AND pc.official_price > 0
               AND (t.deal_year * 12 + t.deal_month) >= ?
               -- 거래면적이 필지면적의 절반~두 배 밖이면 지번 지오코딩이 옆 필지에
               -- 떨어진 것일 수 있다 (run 7: 14㎡ 거래가 254㎡ 필지에 붙었다).
               AND t.area_m2 BETWEEN pc.area_m2 * 0.5 AND pc.area_m2 * 2.0
             QUALIFY row_number() OVER (PARTITION BY pc.pnu ORDER BY t.deal_year DESC, t.deal_month DESC) = 1
-            """, [code, f"%{zone}%", ym - args.months]).fetchdf()
-        # 시점수정 — 같은 시군구·용도지역군의 최근 12개월 중앙단가 ÷ 그 전 12개월.
-        tr = con.execute("""
-            SELECT deal_year * 12 + deal_month AS ym, price_per_m2
-            FROM trade WHERE kind = 'land' AND NOT coalesce(is_cancelled, FALSE)
-              AND sigungu_cd = ? AND land_use LIKE ? AND price_per_m2 > 0
-              AND (deal_year * 12 + deal_month) >= ?
-            """, [code, f"%{zone}%", ym - 24]).fetchdf()
-        recent = tr[tr.ym >= ym - 12].price_per_m2.median() if len(tr) else None
-        before = tr[tr.ym < ym - 12].price_per_m2.median() if len(tr) else None
-        trend = (float(recent) / float(before) - 1.0) if recent and before else None
+        """
+        params = ([] if nationwide else [code]) + [f"%{zone}%", ym - args.months]
+        if nationwide:
+            # 전국에서 n건 — SQL 안에서 뽑는다 (수만 건을 다 들고 오지 않게).
+            sql = f"SELECT * FROM ({base_sql}) USING SAMPLE reservoir({int(args.n)} ROWS) REPEATABLE ({int(args.seed)})"
+        else:
+            sql = base_sql
+        rows = con.execute(sql, params).fetchdf()
+
+        # ── 시점수정 — 또래 실거래 추세. 시군구 → 시·도 → 전국으로 물러난다 ──
+        trend_cache: dict = {}
+
+        def trend_for(sgg: str):
+            if sgg in trend_cache:
+                return trend_cache[sgg]
+            got = (None, None, None, None)
+            for area, label in ((sgg, "시군구"), (sgg[:2], "시·도"), ("", "전국")):
+                tr = con.execute("""
+                    SELECT deal_year * 12 + deal_month AS ym, price_per_m2
+                    FROM trade WHERE kind = 'land' AND NOT coalesce(is_cancelled, FALSE)
+                      AND sigungu_cd LIKE ? AND land_use LIKE ? AND price_per_m2 > 0
+                      AND (deal_year * 12 + deal_month) >= ?
+                    """, [area + "%", f"%{zone}%", ym - 24]).fetchdf()
+                recent = tr[tr.ym >= ym - 12].price_per_m2.median() if len(tr) else None
+                before = tr[tr.ym < ym - 12].price_per_m2.median() if len(tr) else None
+                if recent and before and len(tr) >= 20:
+                    got = (float(recent) / float(before) - 1.0, float(recent), float(before), label)
+                    break
+            trend_cache[sgg] = got
+            return got
+
         groups = [(name, likes[0]) for name, likes in V.ZONE_GROUPS]
         trade_cells = V.trade_other_factor(con, groups)
 
-    print(f"표준지 {len(cands):,}필지 ({int(year_max)}년) · 후보 거래 {len(rows):,}건"
-          f" (최근 {args.months}개월 · {zone} · 필지 붙은 것 · 필지당 한 건 · 면적 맞는 것)")
-    print(f"원장: {appraisal_db.source()} · 평가서 {len(V.load_ledger())}건"
-          f" · 또래 추세 {'—' if trend is None else f'{trend:+.1%}/년'}"
-          f" (최근 12개월 중앙 {recent and round(recent):,} ÷ 그 전 {before and round(before):,})")
-    if not len(rows):
-        sys.exit("견줄 거래가 없습니다 — --months 를 늘리거나 --zone 을 바꾸세요.")
-    picked = random.Random(args.seed).sample(rows.to_dict("records"), min(args.n, len(rows)))
-    out = []
-    for t in picked:
-        t = {k: (None if (isinstance(v, float) and np.isnan(v)) else v) for k, v in t.items()}
-        subject = {"pnu": t["pnu"], "sido": "경기" if code.startswith("41") else None,
-                   "sigungu": t.get("sigungu"), "land_use": t["land_use"], "jimok": t["jimok"],
-                   "use_situation": t["use_situation"], "road_side": t["road_side"],
-                   "shape": t["shape"], "slope": t["slope"], "area_m2": t.get("deal_area_m2") or t["area_m2"],
-                   "official_price": t.get("official_price"), "lat": t["lat"], "lon": t["lon"]}
-        stds3 = V.pick_standard(subject, cands, top=3)
-        zg, ug = V.zone_group(t["land_use"]), V.use_group(t["jimok"], t["use_situation"])
-        led = V.ledger_other_factor(subject["sido"], subject["sigungu"], t["land_use"],
-                                    t["jimok"], t["use_situation"])
-        # 그 밖의 요인은 표준지 공시지가를 시세 수준으로 올리는 배율이라
-        # **표준지의** 지목군 칸을 본다 (구거를 대 표준지로 평가하면서
-        # 전·답 배율을 곱하면 두 번 센다 — run 10). 표준지 지목군이 없으면
-        # 대상의 것, 그것도 없으면 합친 칸.
-        tc = None
-        if stds3:
-            ug_std = V.use_group(stds3[0].get("jimok"), stds3[0].get("use_situation"))
-            tc = V.trade_cell(trade_cells, code, zg, ug_std or ug)
-        base = date(int(year_max), 1, 1)
-        tf = V.time_factor(base, today, annual_trend=trend) if trend is not None else V.time_factor(base, today)
-        actual = float(t["price_per_m2"])
-        head = (f"\n━━ {t['deal_year']}.{int(t['deal_month']):02d} 거래 · {t.get('umd') or ''} {t.get('jibun') or ''}"
-                f" · {t['jimok']} · {t['land_use']} · {t['road_side']} · {t['shape']} · {t['slope']}"
-                f" · 거래면적 {subject['area_m2']:,.0f}㎡"
-                f"\n   실거래단가 {actual:,.0f}원/㎡ · 개별공시지가 {t['official_price']:,.0f}원/㎡"
-                f" (배율 {actual / t['official_price']:.2f})")
-        print(head)
-        if not stds3:
-            print("   비교표준지 없음 — 같은 용도지역 세분의 표준지가 이 시군구에 없다")
-            out.append({"trade_id": t["trade_id"], "actual": actual, "hold": True})
-            continue
-        res = {}
-        for label, other in (("결정", V.decide_other(led, tc)), ("평가선례만", V.decide_other(led, None)),
-                             ("거래사례만", V.decide_other(None, tc))):
-            res[label] = V.appraise(subject, stds3[0], at=today, time=tf, other=other)
-        r0 = res["결정"]
-        # 가격 수준 벌점을 끈 선정과 견준다 (2026-09-13). 같은 표본·같은
-        # 그 밖의 요인에서 **선정만** 바꿔 보는 A/B — 원장이 커지면 기록된
-        # 옛 수치와는 견줄 수 없기 때문이다.
-        off = V.pick_standard(subject, cands, top=1, price_penalty=False)
-        changed = bool(off) and off[0].get("pnu") != stds3[0].get("pnu")
-        r_off = (V.appraise(subject, off[0], at=today, time=tf, other=V.decide_other(led, tc))
-                 if changed else r0)
-        print("   " + V.render(r0).replace("\n", "\n   "))
-        if changed:
-            print(f"   · 가격 수준 벌점이 표준지를 바꿨다: {off[0].get('label')}"
-                  f" (공시 {off[0].get('price'):,.0f}) → {stds3[0].get('label')}"
-                  f" (공시 {stds3[0].get('price'):,.0f}, 배율 {stds3[0].get('price_ratio')})")
-        if len(stds3) > 1:
-            print("   다른 후보: " + " · ".join(f"{s.get('label')} ({s.get('road_side')}/{s.get('shape')}/{s.get('slope')}, 벌점 {s['penalty']})"
-                                               for s in stds3[1:]))
-        line = []
-        for label, r in res.items():
-            u = r.get("unit_decided")
-            line.append(f"{label} {u:,.0f} (실거래/산출 {actual / u:.2f})" if u else f"{label} 보류")
-        print("   ▶ " + " · ".join(line))
-        out.append({"changed": changed, "unit_off": r_off.get("unit_decided"),
-                    "umd": t.get("umd"), "jibun": t.get("jibun"),
-                    "trade_id": t["trade_id"], "pnu": t["pnu"], "deal": f"{t['deal_year']}-{int(t['deal_month']):02d}",
-                    "ug": ug, "jimok": t["jimok"],
-                    "actual": actual, "official": t["official_price"], "std": stds3[0].get("label"),
-                    "std_price": stds3[0].get("price"), "time": tf.get("factor"),
-                    "indiv": r0["individual"]["factor"],
-                    "other": {k: r.get("other", {}).get("factor") for k, r in res.items()},
-                    "unit": {k: r.get("unit_decided") for k, r in res.items()}})
+        scope = "전국" if nationwide else code
+        print(f"{scope} · 후보 거래 {len(rows):,}건"
+              f" (최근 {args.months}개월 · {zone} · 필지 붙은 것 · 필지당 한 건 · 면적 맞는 것)")
+        print(f"원장: {appraisal_db.source()} · 평가서 {len(V.load_ledger())}건"
+              f" · 거래사례 칸 {len(trade_cells):,}개 (시군구·시·도·전국)")
+        if not len(rows):
+            sys.exit("견줄 거래가 없습니다 — --months 를 늘리거나 --zone 을 바꾸세요.")
+        picked = (rows.to_dict("records") if nationwide
+                  else random.Random(args.seed).sample(rows.to_dict("records"), min(args.n, len(rows))))
+
+        for t in picked:
+            t = _clean(t)
+            sgg = str(t.get("sigungu_cd") or code)[:5]
+            year_max, cands = stds_for(sgg)
+            subject = {"pnu": t["pnu"], "sido": V.SIDO_NAMES.get(sgg[:2]),
+                       "sigungu": t.get("sigungu"), "land_use": t["land_use"], "jimok": t["jimok"],
+                       "use_situation": t["use_situation"], "road_side": t["road_side"],
+                       "shape": t["shape"], "slope": t["slope"], "area_m2": t.get("deal_area_m2") or t["area_m2"],
+                       "official_price": t.get("official_price"), "lat": t["lat"], "lon": t["lon"]}
+            actual = float(t["price_per_m2"])
+            head = (f"\n━━ {t['deal_year']}.{int(t['deal_month']):02d} 거래 · {t.get('sigungu') or sgg} {t.get('umd') or ''} {t.get('jibun') or ''}"
+                    f" · {t['jimok']} · {t['land_use']} · {t['road_side']} · {t['shape']} · {t['slope']}"
+                    f" · 거래면적 {subject['area_m2']:,.0f}㎡"
+                    f"\n   실거래단가 {actual:,.0f}원/㎡ · 개별공시지가 {t['official_price']:,.0f}원/㎡"
+                    f" (배율 {actual / t['official_price']:.2f})")
+            print(head)
+            if not cands:
+                print(f"   비교표준지 없음 — std_land 에 {sgg} 표준지가 없다")
+                out.append({"trade_id": t["trade_id"], "sgg": sgg, "actual": actual, "hold": True})
+                continue
+            stds3 = V.pick_standard(subject, cands, top=3)
+            zg, ug = V.zone_group(t["land_use"]), V.use_group(t["jimok"], t["use_situation"])
+            led = V.ledger_other_factor(subject["sido"], subject["sigungu"], t["land_use"],
+                                        t["jimok"], t["use_situation"])
+            # 그 밖의 요인은 표준지 공시지가를 시세 수준으로 올리는 배율이라
+            # **표준지의** 지목군 칸을 본다 (구거를 대 표준지로 평가하면서
+            # 전·답 배율을 곱하면 두 번 센다 — run 10). 표준지 지목군이 없으면
+            # 대상의 것, 그것도 없으면 합친 칸.
+            tc = None
+            if stds3:
+                ug_std = V.use_group(stds3[0].get("jimok"), stds3[0].get("use_situation"))
+                tc = V.trade_cell(trade_cells, sgg, zg, ug_std or ug)
+            trend, recent, before, tlabel = trend_for(sgg)
+            base = date(int(year_max), 1, 1)
+            tf = V.time_factor(base, today, annual_trend=trend) if trend is not None else V.time_factor(base, today)
+            if not stds3:
+                print("   비교표준지 없음 — 같은 용도지역 세분의 표준지가 이 시군구에 없다")
+                out.append({"trade_id": t["trade_id"], "sgg": sgg, "actual": actual, "hold": True})
+                continue
+            res = {}
+            for label, other in (("결정", V.decide_other(led, tc)), ("평가선례만", V.decide_other(led, None)),
+                                 ("거래사례만", V.decide_other(None, tc))):
+                res[label] = V.appraise(subject, stds3[0], at=today, time=tf, other=other)
+            r0 = res["결정"]
+            # A/B ① 선정의 가격 수준 벌점을 끈 선정
+            off = V.pick_standard(subject, cands, top=1, price_penalty=False)
+            changed = bool(off) and off[0].get("pnu") != stds3[0].get("pnu")
+            r_sel_off = (V.appraise(subject, off[0], at=today, time=tf, other=V.decide_other(led, tc))
+                         if changed else r0)
+            # A/B ② 지역요인 추정을 끈 산출
+            r_reg_off = V.appraise(subject, stds3[0], at=today, time=tf, other=V.decide_other(led, tc), region=False)
+            print("   " + V.render(r0).replace("\n", "\n   "))
+            if tlabel and tlabel != "시군구":
+                print(f"   · 시점수정 추세는 {tlabel} 것으로 물러남 ({trend:+.1%}/년)")
+            if changed:
+                print(f"   · 가격 수준 벌점이 표준지를 바꿨다: {off[0].get('label')}"
+                      f" (공시 {off[0].get('price'):,.0f}) → {stds3[0].get('label')}"
+                      f" (공시 {stds3[0].get('price'):,.0f}, 배율 {stds3[0].get('price_ratio')})")
+            if len(stds3) > 1:
+                print("   다른 후보: " + " · ".join(f"{s.get('label')} ({s.get('road_side')}/{s.get('shape')}/{s.get('slope')}, 벌점 {s['penalty']})"
+                                                   for s in stds3[1:]))
+            line = []
+            for label, r in res.items():
+                u = r.get("unit_decided")
+                line.append(f"{label} {u:,.0f} (실거래/산출 {actual / u:.2f})" if u else f"{label} 보류")
+            print("   ▶ " + " · ".join(line))
+            out.append({"trade_id": t["trade_id"], "pnu": t["pnu"], "sgg": sgg, "sido": subject["sido"],
+                        "umd": t.get("umd"), "jibun": t.get("jibun"),
+                        "deal": f"{t['deal_year']}-{int(t['deal_month']):02d}",
+                        "ug": ug, "jimok": t["jimok"],
+                        "actual": actual, "official": t["official_price"], "std": stds3[0].get("label"),
+                        "std_price": stds3[0].get("price"), "time": tf.get("factor"),
+                        "region": r0["region"]["factor"], "indiv": r0["individual"]["factor"],
+                        "changed": changed,
+                        "unit_sel_off": r_sel_off.get("unit_decided"),
+                        "unit_reg_off": r_reg_off.get("unit_decided"),
+                        "other": {k: r.get("other", {}).get("factor") for k, r in res.items()},
+                        "unit": {k: r.get("unit_decided") for k, r in res.items()}})
+
+    # ── 집계 ─────────────────────────────────────────────────────────
     print()
+    done = [o for o in out if not o.get("hold")]
+    print(f"산출 {len(done)}/{len(out)}건 (보류 {len(out) - len(done)})")
     for label in ("결정", "평가선례만", "거래사례만"):
-        ratios = sorted(o["actual"] / o["unit"][label] for o in out
-                        if not o.get("hold") and o["unit"].get(label))
-        if ratios:
-            mid = ratios[len(ratios) // 2]
-            in30 = sum(1 for x in ratios if 0.7 <= x <= 1.4)
-            in2x = sum(1 for x in ratios if 0.5 <= x <= 2.0)
-            print(f"실거래 ÷ 산출 [{label}]  중앙 {mid:.2f} · 범위 {ratios[0]:.2f}~{ratios[-1]:.2f}"
-                  f" · n={len(ratios)} · ±30% 안 {in30} · 2배 안 {in2x}")
+        d = _digest([o["actual"] / o["unit"][label] for o in done if o["unit"].get(label)])
+        if d:
+            mid, in30, in2x, n = d
+            print(f"실거래 ÷ 산출 [{label}]  중앙 {mid:.2f} · n={n} · ±30% 안 {in30} · 2배 안 {in2x}")
         else:
             print(f"실거래 ÷ 산출 [{label}]  산출된 건 없음")
-    # 가격 수준 벌점 A/B — 선정만 바꾼 같은 표본.
-    ab = [(o["actual"] / o["unit"]["결정"], o["actual"] / o["unit_off"])
-          for o in out if not o.get("hold") and o["unit"].get("결정") and o.get("unit_off")]
-    if ab:
-        nch = sum(1 for o in out if o.get("changed"))
-        def _digest(xs):
-            xs = sorted(xs)
-            return (xs[len(xs) // 2], sum(1 for x in xs if 0.7 <= x <= 1.4),
-                    sum(1 for x in xs if 0.5 <= x <= 2.0))
-        on = _digest([a for a, _ in ab])
-        offd = _digest([b for _, b in ab])
-        print(f"가격 수준 벌점 A/B — 표준지가 바뀐 건 {nch}/{len(out)}건")
+    # A/B — 같은 표본에서 손질 하나만 끄고 켠 차이.
+    for name, key, flag in (("선정의 가격 수준 벌점", "unit_sel_off", "changed"),
+                            ("지역요인 추정", "unit_reg_off", None)):
+        pairs = [(o["actual"] / o["unit"]["결정"], o["actual"] / o[key])
+                 for o in done if o["unit"].get("결정") and o.get(key)]
+        if not pairs:
+            continue
+        on, offd = _digest([a for a, _ in pairs]), _digest([b for _, b in pairs])
+        moved = (sum(1 for o in done if o.get(flag)) if flag
+                 else sum(1 for o in done if o.get("region") not in (None, 1.0)))
+        print(f"A/B {name} — 값이 바뀐 건 {moved}/{len(done)}건")
         print(f"   켠 채 중앙 {on[0]:.2f} · ±30% 안 {on[1]} · 2배 안 {on[2]}")
         print(f"   끈 채 중앙 {offd[0]:.2f} · ±30% 안 {offd[1]} · 2배 안 {offd[2]}")
-        # 바뀐 건만 한 줄씩 — 어느 쪽이 실거래에 가까웠는지 사람이 보게.
-        for o in out:
-            if not o.get("changed") or o.get("hold") or not o["unit"].get("결정") or not o.get("unit_off"):
-                continue
-            ron, roff = o["actual"] / o["unit"]["결정"], o["actual"] / o["unit_off"]
-            better = "켠 쪽" if abs(math.log(ron)) < abs(math.log(roff)) else "끈 쪽"
-            print(f"   · {o.get('umd') or ''} {o.get('jibun') or ''} {o.get('jimok') or ''}"
-                  f" 실거래 {o['actual']:,.0f} · 개별공시 {o['official']:,.0f}"
-                  f" · 켠 {o['unit']['결정']:,.0f}(비 {ron:.2f}) · 끈 {o['unit_off']:,.0f}(비 {roff:.2f})"
-                  f" → {better}")
-    # 지목군별 — 어느 칸의 그 밖의 요인이 실거래와 어긋나는지가 다음에 손댈 곳.
-    by_ug: dict = {}
-    for o in out:
-        if o.get("hold") or not o["unit"].get("결정"):
+    # 지목군별 · 시·도별 — 어느 칸이 실거래와 어긋나는지가 다음에 손댈 곳.
+    for title, keyf in (("지목군", lambda o: o.get("ug") or "(없음)"), ("시·도", lambda o: o.get("sido") or "?")):
+        by: dict = {}
+        for o in done:
+            if o["unit"].get("결정"):
+                by.setdefault(keyf(o), []).append(o["actual"] / o["unit"]["결정"])
+        if title == "시·도" and len(by) <= 1:
             continue
-        by_ug.setdefault(o.get("ug") or "(없음)", []).append(o["actual"] / o["unit"]["결정"])
-    for ug_name, rs in sorted(by_ug.items(), key=lambda kv: -len(kv[1])):
-        rs.sort()
-        print(f"   {ug_name:<6s} n={len(rs):>2d} 중앙 {rs[len(rs) // 2]:.2f} ({rs[0]:.2f}~{rs[-1]:.2f})")
+        print(f"{title}별 (결정):")
+        for k, rs in sorted(by.items(), key=lambda kv: -len(kv[1])):
+            d = _digest(rs)
+            print(f"   {k:<6s} n={d[3]:>3d} 중앙 {d[0]:.2f} · ±30% 안 {d[1]} · 2배 안 {d[2]}")
     if appraisal_db.configured():
         fs = appraisal_db.factor_summary()
         if fs:
@@ -479,9 +535,8 @@ def cmd_value_test(args):
                 print(f"   {g:<7s} n={v['n']:>2d} 중앙 {v['median']:.2f} ({v['min']:.2f}~{v['max']:.2f})"
                       f" ↓{v['below_1']} ↑{v['above_1']}")
     path = PROCESSED / "value_test.json"
-    path.write_text(json.dumps({"at": today.isoformat(), "sigungu": code, "zone": zone,
-                                "std_year": int(year_max), "trend": trend,
-                                "ledger_source": appraisal_db.source(), "rows": out},
+    path.write_text(json.dumps({"at": today.isoformat(), "sigungu": "all" if nationwide else code, "zone": zone,
+                                "months": args.months, "ledger_source": appraisal_db.source(), "rows": out},
                                ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"\n→ {path}")
 
@@ -2735,7 +2790,7 @@ def main(argv=None):
 
     p = sub.add_parser("value-test",
                        help="현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다")
-    p.add_argument("--sigungu", default="41550", help="시군구 코드 5자리 (기본 안성시)")
+    p.add_argument("--sigungu", default="41550", help="시군구 코드 5자리 (기본 안성시) · all 이면 전국에서 뽑는다")
     p.add_argument("--zone", default="계획관리", help="용도지역 조각 (LIKE)")
     p.add_argument("--n", type=int, default=5, help="임의로 뽑을 거래 수")
     p.add_argument("--months", type=int, default=12, help="이 달수 안의 거래에서 뽑는다")

@@ -5359,10 +5359,14 @@ function otherFactorOf(subject, std, T) {
     const o = cell && (cell[sido] || cell['*']);
     if (o && o.median) { ledger = { ...o, ug }; break; }
   }
+  // 시군구 → 시·도 → 전국 순 (valuation.trade_cell 과 같은 순서). 거래가
+  // 얇은 군에서 칸이 비어 평가선례 전국 칸까지 물러나던 것을 막는다.
   let trade = null;
-  for (const key of [...ugs.map((ug) => `${code}|${zg}|${ug}`), `${code}|${zg}|*`]) {
-    const o = (T.trade || {})[key];
-    if (o && o.median) { trade = o; break; }
+  outer: for (const area of [code, sido, '*']) {
+    for (const key of [...ugs.map((ug) => `${area}|${zg}|${ug}`), `${area}|${zg}|*`]) {
+      const o = (T.trade || {})[key];
+      if (o && o.median) { trade = o; break outer; }
+    }
   }
   const have = [ledger, trade].filter(Boolean);
   if (!have.length) return { factor: null, basis: '자료 없음', sources: [] };
@@ -5387,22 +5391,47 @@ function roundDecided(x) {
   return Math.round(x / unit) * unit;
 }
 
+/* 지역요인 — 개별공시지가로 추정한다 (valuation.region_factor 와 같은 규칙).
+ * 평가서 414건 전부 1.000 인 것은 평가사가 같은 인근지역에서 표준지를 고르기
+ * 때문이다. 우리는 좌표가 없어 그렇게 못 고르므로, 군이 비준표로 만든
+ * 개별공시지가에 든 위치로 그 차이를 읽는다. 같은 지목군일 때만, 그리고
+ * 울타리 안에서만 — 개별공시지가가 시세를 못 따라간 필지에서 값이 무너지지
+ * 않게. 표준지 좌표가 들어오면 이 줄은 1.000 으로 돌아간다. */
+const REGION_MIN = 0.5;
+const REGION_MAX = 2.0;
+function regionFactorOf(subject, std, indFactor) {
+  const same = { factor: 1.0, ratio: null,
+                 why: '같은 인근지역에서 표준지를 골랐다고 봅니다 (평가서 414/414 이 1.00)' };
+  const a = Number(subject.official_price); const b = Number(std.price);
+  if (!(a > 0) || !(b > 0) || !(indFactor > 0)) return same;
+  const ugS = useGroupOf(subject.jimok, subject.use_situation);
+  const ugD = useGroupOf(std.jimok, std.use_situation);
+  if (!ugS || ugS !== ugD) return { ...same, why: '지목군이 달라 지역요인은 보지 않습니다 — 그 격차는 지목군 격차율이 맡습니다' };
+  const k = a / (b * indFactor);
+  const f = Math.min(Math.max(k, REGION_MIN), REGION_MAX);
+  const won = (v) => Math.round(v).toLocaleString('ko-KR');
+  let why = `대상 개별공시지가 ${won(a)} ÷ (표준지 ${won(b)} × 개별요인 ${indFactor.toFixed(3)}) = ${k.toFixed(2)}`;
+  if (f !== k) why += ` → ${f > k ? '하한' : '상한'} ${f.toFixed(2)}`;
+  return { factor: Math.round(f * 1000) / 1000, ratio: Math.round(k * 1000) / 1000, why };
+}
+
 function appraiseNow(subject, std, T, trend) {
   const t = timeFactorOf(std.year, trend, T);
   const ind = individualFactor(subject, std, T);
   const other = otherFactorOf(subject, std, T);
-  const parts = { '표준지공시지가': std.price || null, '시점수정': t.factor, '지역요인': 1.0,
+  const reg = regionFactorOf(subject, std, ind.factor);
+  const parts = { '표준지공시지가': std.price || null, '시점수정': t.factor, '지역요인': reg.factor,
                   '개별요인': ind.factor, '그 밖의 요인': other.factor };
   const missing = Object.entries(parts).filter(([, v]) => v === null || v === undefined).map(([k]) => k);
   let unit = null; let decided = null; let range = null; let total = null;
   if (!missing.length) {
-    unit = std.price * t.factor * 1.0 * ind.factor * other.factor;
+    unit = std.price * t.factor * reg.factor * ind.factor * other.factor;
     decided = roundDecided(unit);
     if (subject.area_m2) total = decided * Number(subject.area_m2);
-    if (other.q1 && other.q3) range = [roundDecided(std.price * t.factor * ind.factor * other.q1),
-                                       roundDecided(std.price * t.factor * ind.factor * other.q3)];
+    if (other.q1 && other.q3) range = [roundDecided(std.price * t.factor * reg.factor * ind.factor * other.q1),
+                                       roundDecided(std.price * t.factor * reg.factor * ind.factor * other.q3)];
   }
-  return { subject, std, time: t, individual: ind, other, parts, missing,
+  return { subject, std, time: t, region: reg, individual: ind, other, parts, missing,
            unit_calc: unit, unit_decided: decided,
            range, total_krw: total, warnings: ind.warnings };
 }
@@ -5456,8 +5485,8 @@ function renderValuation(res) {
     ? '<em>자료 없음</em>'
     : `<b>${f3(res.time.factor)}</b><span class="pcv-desc">${e(res.time.source)}`
       + `${res.time.months ? ` · ${res.time.months}개월` : ''}</span>`]);
-  rows.push(['지역요인 비교', '<b>1.000</b><span class="pcv-desc">대상과 비교표준지가 '
-    + '같은 인근지역에 있어 지역요인은 대등합니다</span>']);
+  const reg = res.region || { factor: 1.0, why: '' };
+  rows.push(['지역요인 비교', `<b>${f3(reg.factor)}</b><span class="pcv-desc">${e(reg.why || '')}</span>`]);
 
   /* 격차율은 평가서처럼 조건마다 '대상 / 비교표준지 × 격차율' 을 적는다.
      네 칸 표로 그렸더니 상세 칸(23rem)보다 넓어져 글자가 옆으로 넘쳤다

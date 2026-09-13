@@ -613,6 +613,7 @@ TRADE_OTHER_SQL = """
 -- 바로 그쪽이라, 3년으로 묶어 두면 고시가 허락한 표본을 스스로 버린다.
 WITH r AS (
     SELECT t.sigungu_cd,
+           left(t.sigungu_cd, 2) AS sido,
            CASE {zone_case} ELSE NULL END AS zg,
            CASE
              WHEN pc.jimok = '임야' THEN '임야'
@@ -636,7 +637,18 @@ WITH r AS (
 -- 지목군 칸과, 지목군을 합친 칸('*') 을 함께 낸다. 하천·구거·체육용지처럼
 -- 지목군이 없는 땅은 합친 칸으로 물러난다 (안성 검증 run 9: 27건 중 5건이
 -- 이것 때문에 보류였다).
-SELECT sigungu_cd, zg,
+-- **세 층을 한 번에 낸다** (2026-09-13): 시군구 · 시·도 · 전국. 거래가 얇은
+-- 군은 시군구 칸이 비어 평가선례의 전국 칸(n=24, 3.3)까지 물러났다 —
+-- 괴산 자연녹지 임야가 그랬다. 실거래÷개별공시지가는 절대 단가보다
+-- 지역을 넘어 옮기기 쉬운 값이라(공시지가에 이미 지역이 들어 있다),
+-- 시·도 칸이 전국 칸보다 낫고 전국 칸이 없는 것보다 낫다.
+SELECT CASE WHEN grouping(sigungu_cd) = 0 THEN sigungu_cd
+            WHEN grouping(sido) = 0 THEN sido
+            ELSE '*' END AS area,
+       CASE WHEN grouping(sigungu_cd) = 0 THEN '시군구'
+            WHEN grouping(sido) = 0 THEN '시·도'
+            ELSE '전국' END AS level,
+       zg,
        CASE WHEN grouping(ug) = 1 THEN '*' ELSE ug END AS ug,
        count(*) AS n,
        quantile_cont(ratio, 0.5) AS median,
@@ -649,7 +661,9 @@ WHERE zg IS NOT NULL
   AND deal_year >= CASE WHEN zg IN ('관리', '농림') THEN {from_year_nonurban}
                         ELSE {from_year_urban} END
   AND ratio BETWEEN 0.3 AND 20
-GROUP BY GROUPING SETS ((sigungu_cd, zg, ug), (sigungu_cd, zg))
+GROUP BY GROUPING SETS ((sigungu_cd, zg, ug), (sigungu_cd, zg),
+                        (sido, zg, ug), (sido, zg),
+                        (zg, ug), (zg))
 HAVING count(*) >= 10 AND (grouping(ug) = 1 OR ug IS NOT NULL)
 """
 
@@ -682,19 +696,31 @@ def trade_other_factor(con, groups: list[tuple[str, str]],
         from_year_nonurban=this_year - y_non)).fetchdf()
     out = {}
     for r in df.itertuples(index=False):
-        out[f"{r.sigungu_cd}|{r.zg}|{r.ug}"] = {
+        out[f"{r.area}|{r.zg}|{r.ug}"] = {
             "median": round(float(r.median), 2), "q1": round(float(r.q1), 2),
             "q3": round(float(r.q3), 2), "n": int(r.n), "source": "거래사례",
-            "level": "시군구" if r.ug != "*" else "시군구 · 지목군 합침",
+            "level": r.level if r.ug != "*" else f"{r.level} · 지목군 합침",
         }
     return out
 
 
-def trade_cell(cells: dict, sigungu_cd: str, zg: str | None, ug: str | None) -> dict | None:
-    """지목군 칸 → 지목군 합친 칸 순으로 찾는다."""
+def trade_cell(cells: dict, sigungu_cd: str | None, zg: str | None, ug: str | None) -> dict | None:
+    """시군구(지목군 → 합침) → 시·도(지목군 → 합침) → 전국 순으로 찾는다.
+
+    화면 otherFactorOf 와 같은 순서여야 한다 — 어긋나면 CLI 검산과 화면이
+    다른 값을 낸다."""
     if not zg:
         return None
-    return cells.get(f"{sigungu_cd}|{zg}|{ug}") or cells.get(f"{sigungu_cd}|{zg}|*")
+    areas = []
+    if sigungu_cd:
+        areas.append(str(sigungu_cd)[:5])
+        areas.append(str(sigungu_cd)[:2])
+    areas.append("*")
+    for a in areas:
+        got = cells.get(f"{a}|{zg}|{ug}") or cells.get(f"{a}|{zg}|*")
+        if got:
+            return got
+    return None
 
 
 def decide_other(ledger: dict | None, trade: dict | None) -> dict:
@@ -740,8 +766,50 @@ def round_decided(x: float) -> int:
     return int(round(x / unit) * unit)
 
 
+# 지역요인 — 개별공시지가로 추정한다 (2026-09-13).
+#
+# 평가서는 414건 전부 지역요인 1.000 이다: 평가사는 같은 인근지역에서
+# 표준지를 고른다. 우리는 좌표가 없어 그렇게 못 고른다. 괴산읍 동부리
+# 282(개별공시 17,100)에 같은 리의 표준지 214(공시 34,300, 맹지)가 뽑혔고,
+# 도로 차이를 개별요인 1.25 로 보정한 뒤에도 표준지 쪽이 2.5배였다 —
+# 같은 인근지역이라면 그렇게 벌어질 수 없다. 그 차이가 지역요인이다.
+#
+#   지역요인 = 대상 개별공시지가 ÷ (표준지 공시지가 × 개별요인)
+#
+# 군이 비준표로 만든 개별공시지가에는 위치가 이미 들어 있으니, 좌표
+# 대신 그것으로 인근지역 차이를 읽는다. 두 가지 울타리:
+#   · 같은 지목군일 때만 — 지목이 다르면 격차의 대부분이 지목 탓이고
+#     그것은 USE_MISMATCH 가 맡는다 (두 번 세지 않게).
+#   · REGION_MIN~REGION_MAX 로 자른다 — 개별공시지가가 시세를 못 따라간
+#     필지(안성 하천 9.8배 · 목장용지 11배 실측)에서 값이 무너지지 않게.
+# 표준지 좌표가 들어와 같은 인근지역을 직접 고를 수 있게 되면 이 줄은
+# 1.000 으로 돌아가야 한다 — 그때가 이 추정의 은퇴다.
+REGION_MIN = 0.5
+REGION_MAX = 2.0
+
+
+def region_factor(subject: dict, std: dict, indiv_factor: float | None) -> dict:
+    """(factor, why, ratio). 어느 값이든 없으면 1.000 — 지어내지 않는다."""
+    same = {"factor": 1.0, "ratio": None,
+            "why": "같은 인근지역에서 표준지를 골랐다고 본다 (평가서 414/414 이 1.00)"}
+    a, b = _num(subject.get("official_price")), _num(std.get("price"))
+    if not a or not b or a <= 0 or b <= 0 or not indiv_factor:
+        return same
+    ug_s = use_group(subject.get("jimok"), subject.get("use_situation"))
+    ug_d = use_group(std.get("jimok"), std.get("use_situation"))
+    if not ug_s or ug_s != ug_d:
+        return {**same, "why": "지목군이 달라 지역요인은 보지 않는다 — 그 격차는 지목군 격차율이 맡는다"}
+    k = a / (b * indiv_factor)
+    f = min(max(k, REGION_MIN), REGION_MAX)
+    why = (f"대상 개별공시지가 {a:,.0f} ÷ (표준지 {b:,.0f} × 개별요인 {indiv_factor:.3f}) = {k:.2f}")
+    if f != k:
+        why += f" → {'하한' if f > k else '상한'} {f:.2f}"
+    return {"factor": round(f, 3), "ratio": round(k, 3), "why": why}
+
+
 def appraise(subject: dict, std: dict, at: dt.date | None = None,
-             time: dict | None = None, other: dict | None = None) -> dict:
+             time: dict | None = None, other: dict | None = None,
+             region: bool = True) -> dict:
     """다섯 마디를 곱해 산출표를 만든다.
 
     std 에는 표준지 공시지가 price 와 공시기준일 base_date(YYYY-MM-DD)
@@ -760,10 +828,12 @@ def appraise(subject: dict, std: dict, at: dt.date | None = None,
                                   subject.get("use_situation"))
         other = decide_other(led, None)
 
+    reg = region_factor(subject, std, indiv["factor"]) if region else \
+        {"factor": 1.0, "ratio": None, "why": "지역요인 추정을 끔 (A/B)"}
     parts = {
         "표준지공시지가": price,
         "시점수정": t.get("factor"),
-        "지역요인": 1.0,
+        "지역요인": reg["factor"],
         "개별요인": indiv["factor"],
         "그 밖의 요인": other.get("factor"),
     }
@@ -773,13 +843,13 @@ def appraise(subject: dict, std: dict, at: dt.date | None = None,
     total = None
     lo = hi = None
     if not missing:
-        unit = price * t["factor"] * 1.0 * indiv["factor"] * other["factor"]
+        unit = price * t["factor"] * reg["factor"] * indiv["factor"] * other["factor"]
         decided = round_decided(unit)
         area = _num(subject.get("area_m2"))
         total = int(decided * area) if area else None
         if other.get("q1") and other.get("q3"):
-            lo = round_decided(price * t["factor"] * indiv["factor"] * other["q1"])
-            hi = round_decided(price * t["factor"] * indiv["factor"] * other["q3"])
+            lo = round_decided(price * t["factor"] * reg["factor"] * indiv["factor"] * other["q1"])
+            hi = round_decided(price * t["factor"] * reg["factor"] * indiv["factor"] * other["q3"])
     return {
         "at": at.isoformat(),
         "std": {k: std.get(k) for k in ("pnu", "label", "land_use", "jimok", "use_situation",
@@ -789,7 +859,7 @@ def appraise(subject: dict, std: dict, at: dt.date | None = None,
                                          # value-test 로그가 같은 말을 쓰게 한다.
                                          "why", "price_ratio")},
         "time": t,
-        "region": {"factor": 1.0, "why": "같은 인근지역에서 표준지를 골랐다 (평가서 41/41 이 1.00)"},
+        "region": reg,
         "individual": indiv,
         "other": other,
         "parts": parts,
@@ -817,7 +887,7 @@ def render(result: dict) -> str:
     t = result["time"]
     lines.append(f"  시점수정    {t['factor'] if t['factor'] is not None else '(자료 없음)'}"
                  f"   {t['source']}" + (f" · {t['months']}개월" if t.get("months") else ""))
-    lines.append(f"  지역요인    1.000   {result['region']['why']}")
+    lines.append(f"  지역요인    {result['region']['factor']:.3f}   {result['region']['why']}")
     ind = result["individual"]
     lines.append(f"  개별요인    {ind['factor']:.3f}   [{ind['kind']}]")
     for it in ind["items"]:

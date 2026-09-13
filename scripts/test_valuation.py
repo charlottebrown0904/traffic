@@ -89,6 +89,28 @@ _got = V.ledger_other_factor("경기", "41550", "계획관리지역", "전", Non
 check(_got["n"] == V.MIN_CELL and (_got["level"] or "").startswith("같은 시·도"),
       "sigungu 가 None 인 원장 행도 넘어가지 않고 시·도 단계에서 잡힌다")
 
+print("1-4. 지역요인 — 개별공시지가로 추정 (같은 지목군 · 울타리 안)")
+_subj = {"land_use": "자연녹지지역", "jimok": "전", "use_situation": "과수원", "official_price": 17100}
+_std = {"land_use": "자연녹지지역", "jimok": "전", "use_situation": "전", "price": 34300}
+_r = V.region_factor(_subj, _std, 1.25)
+check(abs(_r["ratio"] - 17100 / (34300 * 1.25)) < 1e-3 and _r["factor"] == V.REGION_MIN,
+      f"동부리 282: 0.40 은 하한 {V.REGION_MIN} 에 걸린다 ({_r['factor']})")
+check("하한" in _r["why"] and "17,100" in _r["why"], "사유에 계산과 하한을 적는다")
+_r = V.region_factor({**_subj, "official_price": 30000}, _std, 1.0)
+check(abs(_r["factor"] - round(30000 / 34300, 3)) < 1e-9, "울타리 안이면 비율 그대로")
+check(V.region_factor({**_subj, "official_price": None}, _std, 1.0)["factor"] == 1.0, "개별공시지가 없으면 1.000")
+check(V.region_factor(_subj, {**_std, "price": None}, 1.0)["factor"] == 1.0, "표준지 공시가 없으면 1.000")
+_r = V.region_factor(_subj, {**_std, "jimok": "대", "use_situation": "주거용"}, 1.0)
+check(_r["factor"] == 1.0 and "지목군" in _r["why"], "지목군이 다르면 1.000 — 격차는 지목군 격차율이 맡는다")
+check(V.region_factor({**_subj, "official_price": 500000}, _std, 1.0)["factor"] == V.REGION_MAX, "위로도 상한")
+_a = V.appraise({**_subj, "area_m2": 3054}, {**_std, "base_date": "2026-01-01", "road_side": "맹지", "shape": "부정형", "slope": "완경사"},
+                time={"factor": 0.98, "source": "t"}, other={"factor": 2.44, "q1": 2.0, "q3": 3.0})
+check(_a["parts"]["지역요인"] == V.REGION_MIN and abs(_a["unit_calc"] - 34300 * 0.98 * V.REGION_MIN * _a["individual"]["factor"] * 2.44) < 1,
+      f"산출에 지역요인이 곱해진다 ({_a['unit_calc']:,})")
+_b = V.appraise({**_subj, "area_m2": 3054}, {**_std, "base_date": "2026-01-01"},
+                time={"factor": 0.98, "source": "t"}, other={"factor": 2.44}, region=False)
+check(_b["parts"]["지역요인"] == 1.0, "region=False 면 옛 산출 그대로 (A/B 용)")
+
 print("2. 격차율 — 대상 ÷ 표준지")
 r = V.individual_factor(
     {"land_use": "자연녹지지역", "jimok": "임야", "road_side": "세로(가)", "slope": "완경사"},
@@ -241,6 +263,14 @@ with _db.connect() as con:
     cells = V.trade_other_factor(con, [(n, likes[0]) for n, likes in V.ZONE_GROUPS])
 c1 = cells.get("41550|관리|전·답")
 c2 = cells.get("41550|관리|*")
+check(cells.get("41|관리|전·답") is not None and cells.get("*|관리|전·답") is not None,
+      "시·도 칸과 전국 칸도 함께 나온다 (거래가 얇은 군의 물러날 자리)")
+check(cells["41|관리|전·답"]["level"] == "시·도" and cells["*|관리|*"]["level"].startswith("전국"),
+      "칸에 층 이름이 적힌다")
+check(V.trade_cell(cells, "41999", "관리", "전·답") is cells["41|관리|전·답"],
+      "시군구 칸이 없으면 시·도 칸으로 물러난다")
+check(V.trade_cell(cells, "43760", "관리", "전·답") is cells["*|관리|전·답"],
+      "시·도 칸도 없으면 전국 칸")
 check(c1 and c1["n"] == 10 and 2.5 <= c1["median"] <= 2.8, f"지목군 칸 (면적 안 맞는 건은 뺀다) — {c1}")
 check(c2 and c2["n"] == 12 and c2["level"].endswith("합침"), f"지목군 합친 칸 — {c2}")
 check("41550|관리|None" not in cells and "41550|관리|?" not in cells, "지목군 없는 행이 제 칸을 만들지 않는다")
