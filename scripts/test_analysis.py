@@ -2141,6 +2141,50 @@ with _cdb.connect() as _con:
         "SELECT lon, lat FROM std_land WHERE pnu = '4376025021100002820'").fetchone()
     check(126 < _lon < 128 and 36 < _lat < 38, f"좌표가 우리나라 안이다 ({_lon:.3f}, {_lat:.3f})")
 
+# 명령 자체를 돌려 본다. 조각만 시험했더니 명령 안의 NameError 를 놓쳤다
+# (run 34769041450 — cli.py 에 Path 가 없어 259장이 통째로 못 돌았다).
+import argparse as _ap                                     # noqa: E402
+from redt import cli as _cli                                # noqa: E402
+_src = pathlib.Path(_tf.mkdtemp())
+_b2 = _src / "s"
+_w2 = _shp.Writer(str(_b2)); _w2.field("PNU", "C", 19)
+_new = ("4376025021100009990", "4376025021100009991")
+for _i, _pnu in enumerate(_new):
+    _x, _y = 200000 + _i * 200, 500000 + _i * 200
+    _w2.poly([[[_x, _y], [_x + 50, _y], [_x + 50, _y + 50], [_x, _y + 50], [_x, _y]]])
+    _w2.record(_pnu)
+_w2.close()
+_b2.with_suffix(".prj").write_text(_PRJ_5186, encoding="utf-8")
+with _zf.ZipFile(_src / "LSMD_CONT_LDREG_시험_시험군.zip", "w") as _z:
+    for _e in (".shp", ".dbf", ".shx", ".prj"):
+        _z.write(str(_b2.with_suffix(_e)), arcname="b" + _e)
+for _e in (".shp", ".dbf", ".shx", ".prj"):
+    _b2.with_suffix(_e).unlink()
+with _cdb.connect() as _con:
+    for _i, _pnu in enumerate(_new):
+        _con.execute("INSERT INTO std_land (std_id, pnu, year, price) VALUES (?, ?, 2026, 50000)",
+                     [f"n{_i}", _pnu])
+_cli.cmd_load_cadastral(_ap.Namespace(src=str(_src), manifest=None, only=None))
+with _cdb.connect(read_only=True) as _con:
+    _n = _con.execute("SELECT count(*) FROM std_land WHERE pnu IN (?, ?) AND lat IS NOT NULL",
+                      list(_new)).fetchone()[0]
+check(_n == 2, f"명령이 폴더를 훑어 좌표를 채운다 ({_n}/2)")
+try:
+    _cli.cmd_load_cadastral(_ap.Namespace(src=None, manifest=str(_src / "없다.yaml"), only=None))
+    check(False, "목록이 없으면 멈춘다")
+except SystemExit as _e:
+    check("없습니다" in str(_e), f"목록이 없으면 까닭을 말하고 멈춘다 ({str(_e)[:40]})")
+
+# 드라이브 목록 — 이름과 파일 ID 가 성한지.
+_man = pathlib.Path("config/cadastral_files.yaml")
+_mm = yaml.safe_load(_man.read_text(encoding="utf-8")) or {}
+check(len(_mm) == 259, f"시·군·구 259장이 적혀 있다 ({len(_mm)})")
+check(all(k.startswith("LSMD_CONT_LDREG_") and k.endswith(".zip") for k in _mm),
+      "이름이 모두 연속지적도 zip 이다")
+check(len(set(_mm.values())) == len(_mm), "파일 ID 가 겹치지 않는다")
+check(all(isinstance(v, str) and 20 <= len(v) <= 60 for v in _mm.values()),
+      "파일 ID 가 드라이브 모양이다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
