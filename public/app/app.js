@@ -5375,7 +5375,15 @@ function otherFactorOf(subject, std, T) {
     return { factor: o.median, q1: o.q1, q3: o.q3, n: o.n, sources: have,
              basis: `${o.source} 기준 (n=${o.n}, ${o.level})` };
   }
-  const w = have.map((o) => Math.min(Number(o.n), 30));
+  // 무게 = min(건수, 상한) × 층 계수 (valuation._other_weight 와 같은 규칙).
+  // 거래사례 100 · 평가선례 30 / 시군구 1 · 시·도 0.5 · 전국 0.25.
+  const weightOf = (o) => {
+    const cap = o.source === '거래사례' ? 100 : 30;
+    const lv = String(o.level || '');
+    const mult = lv.includes('시군구') ? 1 : (lv.includes('시·도') ? 0.5 : (lv.includes('전국') ? 0.25 : 1));
+    return Math.max(Math.min(Number(o.n) || 0, cap) * mult, 0.5);
+  };
+  const w = have.map(weightOf);
   const lg = have.reduce((acc, o, i) => acc + w[i] * Math.log(o.median), 0) / w.reduce((a, b) => a + b, 0);
   const f = Math.round(Math.exp(lg) * 100) / 100;
   const q1 = Math.min(...have.map((o) => o.q1 || f));

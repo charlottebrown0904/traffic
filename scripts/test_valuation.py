@@ -13,6 +13,7 @@
 import datetime as dt
 import os
 import pathlib
+import math
 import sys
 
 os.environ.setdefault("VWORLD_KEY", "test-key")
@@ -111,6 +112,16 @@ check(_a["parts"]["지역요인"] == V.REGION_MIN and abs(_a["unit_calc"] - 3430
 _b = V.appraise({**_subj, "area_m2": 3054}, {**_std, "base_date": "2026-01-01"},
                 time={"factor": 0.98, "source": "t"}, other={"factor": 2.44}, region=False)
 check(_b["parts"]["지역요인"] == 1.0, "region=False 면 옛 산출 그대로 (A/B 용)")
+
+print("1-5. 두 갈래 섞는 무게 — 가까운 칸이 먼 칸을 이긴다")
+_led = {"median": 4.0, "n": 24, "source": "평가선례", "level": "전국 · 용도지역군 · 지목군", "q1": 3, "q3": 5}
+_trd = {"median": 2.0, "n": 300, "source": "거래사례", "level": "시군구", "q1": 1.5, "q3": 2.5}
+_d = V.decide_other(_led, _trd)
+check(abs(V._other_weight(_trd) - 100.0) < 1e-9 and abs(V._other_weight(_led) - 6.0) < 1e-9,
+      "거래사례 시군구 300건 → 100 · 평가선례 전국 24건 → 6")
+check(2.0 < _d["factor"] < 2.3, f"결정이 거래사례 쪽에 붙는다 ({_d['factor']})")
+_d2 = V.decide_other({**_led, "level": "같은 시군구 · 용도지역군 · 지목군", "n": 30}, {**_trd, "n": 30})
+check(abs(_d2["factor"] - math.sqrt(8.0)) < 0.02, "같은 층·같은 건수면 기하평균 그대로")
 
 print("2. 격차율 — 대상 ÷ 표준지")
 r = V.individual_factor(

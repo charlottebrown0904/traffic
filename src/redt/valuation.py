@@ -723,6 +723,31 @@ def trade_cell(cells: dict, sigungu_cd: str | None, zg: str | None, ug: str | No
     return None
 
 
+# 두 갈래를 섞는 무게 (2026-09-13 전국 254건 실측에서 정했다).
+#
+#   거래사례만  중앙 0.98 · ±30% 안 82 · 2배 안 148
+#   결정(섞음)  중앙 0.93 · ±30% 안 78 · 2배 안 150
+#   평가선례만  중앙 0.87 · ±30% 안 64 · 2배 안 133
+#
+# 거래사례 칸은 그 시군구의 수백 건이고 평가선례는 대개 시·도·전국으로
+# 물러난 스물 몇 건인데, 건수를 30 에서 자르면 둘이 비슷한 무게가 되어
+# 먼 칸이 가까운 칸을 끌어내렸다. 무게 = min(건수, 상한) × 층 계수.
+# 층 계수는 시군구 1 · 시·도 0.5 · 전국 0.25 — 멀리서 온 값은 그만큼만.
+_OTHER_N_CAP = {"거래사례": 100.0, "평가선례": 30.0}
+_OTHER_LEVEL = (("시군구", 1.0), ("시·도", 0.5), ("전국", 0.25))
+
+
+def _other_weight(s: dict) -> float:
+    n = min(float(s.get("n") or 0), _OTHER_N_CAP.get(s.get("source"), 30.0))
+    level = str(s.get("level") or "")
+    mult = 1.0
+    for key, m in _OTHER_LEVEL:
+        if key in level:
+            mult = m
+            break
+    return max(n * mult, 0.5)
+
+
 def decide_other(ledger: dict | None, trade: dict | None) -> dict:
     """두 갈래에서 하나를 정한다.
 
@@ -738,14 +763,14 @@ def decide_other(ledger: dict | None, trade: dict | None) -> dict:
         return {"factor": s["median"], "q1": s.get("q1"), "q3": s.get("q3"),
                 "basis": f"{s['source']} 기준 (n={s['n']}, {s.get('level') or '시군구'})",
                 "sources": have}
-    w = [min(float(s["n"]), 30.0) for s in have]
+    w = [_other_weight(s) for s in have]
     lg = sum(wi * math.log(s["median"]) for wi, s in zip(w, have)) / sum(w)
     f = math.exp(lg)
     q1 = min(s.get("q1") or f for s in have)
     q3 = max(s.get("q3") or f for s in have)
     return {"factor": round(f, 2), "q1": round(q1, 2), "q3": round(q3, 2),
-            "basis": " · ".join(f"{s['source']} {s['median']} (n={s['n']})" for s in have)
-            + " → 건수 가중 기하평균",
+            "basis": " · ".join(f"{s['source']} {s['median']} (n={s['n']}, {s.get('level') or '시군구'})" for s in have)
+            + " → 건수·층 가중 기하평균",
             "sources": have}
 
 
