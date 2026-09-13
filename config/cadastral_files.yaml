@@ -1,0 +1,302 @@
+# 연속지적도(V-WORLD `연속지적도_전국`) → 드라이브 파일 ID.
+#
+# `redt load-cadastral` 이 이 목록대로 한 장씩 받아 읽고 지운다. 값은 구글
+# 드라이브 파일 ID 다 (공유 링크 .../file/d/<이 값>/view).
+#
+# **시·군·구 단위 260장만 적는다.** 드라이브에는 시·도 통합본 16장
+# (LSMD_CONT_LDREG_경기.zip 800MB 등)도 함께 있지만 같은 땅을 한 번 더 받는
+# 것이라 뺐다 — 합계 276장 중 260장. 통합본이 필요하면 그때 이 파일에 적는다.
+#
+# 이름은 드라이브에 올라간 파일 이름 그대로다. `--only 충북` 처럼 이름 조각으로
+# 거를 수 있다.
+
+# ── 서울 (25)
+LSMD_CONT_LDREG_서울_강남구.zip: 1Jf1beqRUaia6HilF2UYwepB_LZsap6So
+LSMD_CONT_LDREG_서울_강동구.zip: 1oWgv_xtx_3VwZ6-1kF25T586bSZ2Q0lj
+LSMD_CONT_LDREG_서울_강북구.zip: 1RRpcuJTGI_BSQGWubAGGXlnxh5ORrBLF
+LSMD_CONT_LDREG_서울_강서구.zip: 10F7FAgeKtP38UnVPaSglhe8drVEE9gtt
+LSMD_CONT_LDREG_서울_관악구.zip: 1z5ggFrp9FRPVBbNcbCUadRENyY2AGlrg
+LSMD_CONT_LDREG_서울_광진구.zip: 1uYkqxV2ul9_9W0QhEajDd7NZBaUrEBfO
+LSMD_CONT_LDREG_서울_구로구.zip: 1MS7i89wNLIR6TclXDU5_SE1vS7Gwwina
+LSMD_CONT_LDREG_서울_금천구.zip: 1AYeu3rlIWyMkEaTuCNQwPc7vw58Sgvv_
+LSMD_CONT_LDREG_서울_노원구.zip: 1GVwANttEFY-uR6bmKGXmlCQLHggQ8GDM
+LSMD_CONT_LDREG_서울_도봉구.zip: 1WqkvOtMV-JfSODQ8GfYJdvH92WzB4OOf
+LSMD_CONT_LDREG_서울_동대문구.zip: 1vgp9JYWmQdOdghC8PQDqM9nLh_oLHtOR
+LSMD_CONT_LDREG_서울_동작구.zip: 1u5TtGfMQwHJuaXyKCMrCpozjkl6piFFg
+LSMD_CONT_LDREG_서울_마포구.zip: 1zCd_yXyBbBoRVIpE-IANY6SRgKCb_YlY
+LSMD_CONT_LDREG_서울_서대문구.zip: 1nVzGWEVyBWlxkUGEZZQPuJHzkVU9Sk4Y
+LSMD_CONT_LDREG_서울_서초구.zip: 1Jt9l5h5yf2VSgaQ5XuQManBiLmhXrjwz
+LSMD_CONT_LDREG_서울_성동구.zip: 19vOmBZ1Y5i5hxESvPUfdHJTC9ZDH-BFE
+LSMD_CONT_LDREG_서울_성북구.zip: 1lZFDQaqRMMgTMcQBRABfo4rzNUTKHQTl
+LSMD_CONT_LDREG_서울_송파구.zip: 1Og0wYwoXEjNtgouiQjCghLbvIMTufLpb
+LSMD_CONT_LDREG_서울_양천구.zip: 1DHsW2Bb9JJFmHX7KAlsNC5es-o5nzg1k
+LSMD_CONT_LDREG_서울_영등포구.zip: 10s3p8VKs6ef8OhM6Y2jkXfq-Y9fsG5q-
+LSMD_CONT_LDREG_서울_용산구.zip: 1-AFaBb0T577bs9oV2XhmZEgDyP11g3Ns
+LSMD_CONT_LDREG_서울_은평구.zip: 1nZ-T-pgRP2zotHKHuYj6c8CAu0qr-jBS
+LSMD_CONT_LDREG_서울_종로구.zip: 1XhgjyOSUcP5F-SEc_yRh4228xrKLNBRN
+LSMD_CONT_LDREG_서울_중구.zip: 1ugYFHNKRQcqjfdfY0mZM5Pr01amQ7Hpu
+LSMD_CONT_LDREG_서울_중랑구.zip: 1n9oVgwIAi-OB1y34qdAuDW1fJ37h7yfR
+
+# ── 부산 (16)
+LSMD_CONT_LDREG_부산_강서구.zip: 1zSdbsbjwJH1iBrEkf4Lm8oD-kR-rcHm6
+LSMD_CONT_LDREG_부산_금정구.zip: 1o1i6p2ieACHKdaOIuvuEW_x-f4JysKNi
+LSMD_CONT_LDREG_부산_기장군.zip: 1WcNmx9mI4PeEW2uqcpuwNgO0MBQfvb2G
+LSMD_CONT_LDREG_부산_남구.zip: 1-p3iVjTDf84ct20VZAfCAJeVTDHFCWKF
+LSMD_CONT_LDREG_부산_동구.zip: 1gn2ZCozbSKu05ORXX0eo0pUDsOQ6UweS
+LSMD_CONT_LDREG_부산_동래구.zip: 1RG4x3UmYA9PVxgmEbbOH_Y51smvPbGTE
+LSMD_CONT_LDREG_부산_부산진구.zip: 1BzK9cNI9GrDqtqSS8MEOy-61gaFleit7
+LSMD_CONT_LDREG_부산_북구.zip: 1gYerEA02XyEDaSxKafUu-PTCbbkKZwyZ
+LSMD_CONT_LDREG_부산_사상구.zip: 11-mJLOC0ni46tZ6edMQDc1GKsLMypo4k
+LSMD_CONT_LDREG_부산_사하구.zip: 1LKIIQc1si1PTsqMwNlyvvb_Gfi9CkgMh
+LSMD_CONT_LDREG_부산_서구.zip: 1F3LL7BQqpPRAQ90t36tcjD0zoC02uQx1
+LSMD_CONT_LDREG_부산_수영구.zip: 1nrlDqmk0ynTB8-A3KQ6fTlFCzkvciOt-
+LSMD_CONT_LDREG_부산_연제구.zip: 1W3mpVyxxHqlXI4KoNzl2lgSYr-9RKnoz
+LSMD_CONT_LDREG_부산_영도구.zip: 11OegBLRph3bbqgwEje_KWKIig1fNs9QL
+LSMD_CONT_LDREG_부산_중구.zip: 1StK9NT4SxUZ-dgR7uH9deS2ykOj-Cgg_
+LSMD_CONT_LDREG_부산_해운대구.zip: 182TjkfrdddgafNiJ_uWuK7GFRKFOlsdT
+
+# ── 대구 (9 · 군위군 포함)
+LSMD_CONT_LDREG_대구_군위군.zip: 1B4EOweAtdqLAWVp_l82vfWOwswiex2ig
+LSMD_CONT_LDREG_대구_남구.zip: 1BUEfu0DVAEc0zK11ceprPIHUseC3wnf8
+LSMD_CONT_LDREG_대구_달서구.zip: 1W8DPNquCCUWr1R5BdMhNOzkhIic3Ex63
+LSMD_CONT_LDREG_대구_달성군.zip: 1qBtEqQVj-aGD5KI71FQH6pNZU1j9N18n
+LSMD_CONT_LDREG_대구_동구.zip: 1JOjQliL0SVTAl0xG35Nrz7SWEOP3nmeT
+LSMD_CONT_LDREG_대구_북구.zip: 10dCm-6Q5eyDN84OESmk190K5oGCIShkz
+LSMD_CONT_LDREG_대구_서구.zip: 1TByJtoY2UHtypq3Pn8u885zaWcDtSic_
+LSMD_CONT_LDREG_대구_수성구.zip: 1tcmS5VQxHZ03pFTt3pbBgI3XGTL3HTsH
+LSMD_CONT_LDREG_대구_중구.zip: 1XmKdAZ4zi704XDtlMPKxWXn2hugrvsUx
+
+# ── 인천 (14 · 2026 개편 구 포함)
+LSMD_CONT_LDREG_인천_강화군.zip: 1yGI54cjnMzJTbKxrJAvlGgPR8Urb7muh
+LSMD_CONT_LDREG_인천_검단구.zip: 1fzC3yXLsedOeQxrtyv1uzAvcysQ_sqZk
+LSMD_CONT_LDREG_인천_계양구.zip: 1rslBSAdZGlcXOnWE9-tQufSbqQDaiCok
+LSMD_CONT_LDREG_인천_남동구.zip: 12qaCWowV5-2W4mzu_jr86DTNX2Ime4es
+LSMD_CONT_LDREG_인천_동구.zip: 1gqQj3A1D5u-SWlc4ZHqyKdsZt8xwH3ZQ
+LSMD_CONT_LDREG_인천_미추홀구.zip: 1Zlk-C_ikWeP3-3ChR5awmbpmmVFpFIcW
+LSMD_CONT_LDREG_인천_부평구.zip: 1B-tqzZQ2Fuv0GtGI6SQO_T_bqcdBjVrO
+LSMD_CONT_LDREG_인천_서구.zip: 1Si7pKjdqihEF0d8SOL8HNz6s43aAe_Vg
+LSMD_CONT_LDREG_인천_서해구.zip: 1s8_1zGrtgXr5eEIutgNqSJjBjaTyNSJK
+LSMD_CONT_LDREG_인천_연수구.zip: 1Nn-iGey2GXAA3S-igUNrU74SZcAY0xU8
+LSMD_CONT_LDREG_인천_영종구.zip: 1r4FNpJ48PYeirs8rAYicv9GUaVyuqafk
+LSMD_CONT_LDREG_인천_옹진군.zip: 1fd1Owa-X0c4bp4r-PuHxRsQCR5s4dYNy
+LSMD_CONT_LDREG_인천_제물포구.zip: 1026QO-C0JXEOpUVblVHIUo_ag0yOFir7
+LSMD_CONT_LDREG_인천_중구.zip: 1UmCfmD7DYM_eNNlOyxnQ7zE1FTKoQtm8
+
+# ── 대전 (5)
+LSMD_CONT_LDREG_대전_대덕구.zip: 1G-mpk4_Kq0AANL88ZUHsH5TJWT5vYvVi
+LSMD_CONT_LDREG_대전_동구.zip: 1LuE0nzLIqGNIwILf8Pypq8LNWi9uhi1Y
+LSMD_CONT_LDREG_대전_서구.zip: 1nf_kT9epkOtvBscbhXD7xqnSggOeSutU
+LSMD_CONT_LDREG_대전_유성구.zip: 1p8hevRUSluGcH3EMoa7GJZY47JvkY4Br
+LSMD_CONT_LDREG_대전_중구.zip: 1RUvnDLQnrrJ4kanmSs7pKsQDmo99uPih
+
+# ── 울산 (5)
+LSMD_CONT_LDREG_울산_남구.zip: 1i7Iizgqw9LugGr-TGZFfS6NaTth1QlDs
+LSMD_CONT_LDREG_울산_동구.zip: 1RWasaw3qkPL-aWQdk--uzr8oxbS6LQ-_
+LSMD_CONT_LDREG_울산_북구.zip: 1toBjGrJHzzGhe9c_t7MwO1OqK3Q75rWF
+LSMD_CONT_LDREG_울산_울주군.zip: 1HYXKgjZ0MKmEf_DS2m5puAJtRgan6d_U
+LSMD_CONT_LDREG_울산_중구.zip: 1aPvuusuTQqwHauVeOeB4AmNqaUqeXugc
+
+# ── 세종 (1)
+LSMD_CONT_LDREG_세종시.zip: 1VaZdMqTrY-g04LXO09aYteuTqm7OnWIP
+
+# ── 경기 (48)
+LSMD_CONT_LDREG_경기_가평군.zip: 1KUNF5fmGy4djnT3FzeNbtRLLJKFvqRdi
+LSMD_CONT_LDREG_경기_고양시_덕양구.zip: 1b4wjXd4xo2mgmk0DnsicJOLyErkg0I-Q
+LSMD_CONT_LDREG_경기_고양시_일산동구.zip: 1ZLVIga0wsqFMA6BCozkSgqBVIw_iBXof
+LSMD_CONT_LDREG_경기_고양시_일산서구.zip: 15u3XcYP9mm74swuSXOso9W9lDLav_kW0
+LSMD_CONT_LDREG_경기_과천시.zip: 15Yx2hFg2WnhJcYLWkdlD4M-fnbFAElxy
+LSMD_CONT_LDREG_경기_광명시.zip: 1O0lLADlJ5-sfRkGdA1oAsV7W8Mpfxeby
+LSMD_CONT_LDREG_경기_광주시.zip: 1oWohzvFAsRTybJamu7ZcjVD8wEW9-Avn
+LSMD_CONT_LDREG_경기_구리시.zip: 1Qw0hcWj0Sn6vfM-wpLfR_jHcDNmUgF5T
+LSMD_CONT_LDREG_경기_군포시.zip: 15D4L5JcqpGAgo4SrNY_KOZBWD5qHLDLY
+LSMD_CONT_LDREG_경기_김포시.zip: 1fgUOW7YGI_wNDHi-b9Wwq5AIKMRTCd8c
+LSMD_CONT_LDREG_경기_남양주시.zip: 1VTynD-ey4mTi6xd35TBRaRM9D6Civu5g
+LSMD_CONT_LDREG_경기_동두천시.zip: 1C99px7YIoLl6jyxSwhw6X1oG1Ov6vSZx
+LSMD_CONT_LDREG_경기_부천시_소사구.zip: 12-Ttc_UMySyBgdpd_cOJH0u6E3gkHEYK
+LSMD_CONT_LDREG_경기_부천시_오정구.zip: 14vC9HMPhBehxU4mFWs9f2h-r67Ni4P_L
+LSMD_CONT_LDREG_경기_부천시_원미구.zip: 1rmeyH3sDPv1XsRaToH54jBfH2j9wt2SB
+LSMD_CONT_LDREG_경기_성남시_분당구.zip: 1r1LWlLNE8gekWt_F-_quFYy6PqmoenSV
+LSMD_CONT_LDREG_경기_성남시_수정구.zip: 1JozINUpZ7crJKXeLDa8yQfc56aOp9yLA
+LSMD_CONT_LDREG_경기_성남시_중원구.zip: 1huaQUeyAzSZIvLHjHhKW9NB4dX4cF4MU
+LSMD_CONT_LDREG_경기_수원시_권선구.zip: 1BQS4I10tZZxPD_Or7XFBmsh4v876q1Xk
+LSMD_CONT_LDREG_경기_수원시_영통구.zip: 18xVMP-ZVVmrfNRSJNCbAZlI29sGRIexo
+LSMD_CONT_LDREG_경기_수원시_장안구.zip: 1m-EWfb8w6_qgoI8actlbPlI6DSQPv8PE
+LSMD_CONT_LDREG_경기_수원시_팔달구.zip: 1Y6-TRpkyG_NalcWAVvM-WLPEFOlfkCNQ
+LSMD_CONT_LDREG_경기_시흥시.zip: 1A5891z-ygP3GG0rKdoqwzDqZtoJ6TzMM
+LSMD_CONT_LDREG_경기_안산시_단원구.zip: 1hSG25XoaVsItZ0rnOUVfgBCOnE9az4k2
+LSMD_CONT_LDREG_경기_안산시_상록구.zip: 1bLJHxPnCIph8Njwv82rNEubsQA_WWfNQ
+LSMD_CONT_LDREG_경기_안성시.zip: 1XO3bEabx8fnDGe03VkdLiJ-wEm-cfVax
+LSMD_CONT_LDREG_경기_안양시_동안구.zip: 1570Swj1P2BTR514kLfn0ctnolu70daD7
+LSMD_CONT_LDREG_경기_안양시_만안구.zip: 1NavtZDk2ZFnmmC3CNh0amzT_rVZ0qXKC
+LSMD_CONT_LDREG_경기_양주시.zip: 1sYuzeZ1B_qPgewRZbTS9KoaGtIiClRWk
+LSMD_CONT_LDREG_경기_양평군.zip: 1WfwbLdLDrgBDwe7IosUdbWiwDexOKOuF
+LSMD_CONT_LDREG_경기_여주시.zip: 1GYsB8cKfkEZu-OYg2JqXNpSoojj2JCn9
+LSMD_CONT_LDREG_경기_연천군.zip: 1AaJwtzfUBc_HhwUOcnVe9v-q8HAe4Rzi
+LSMD_CONT_LDREG_경기_오산시.zip: 1230voWU41ZnsCFNAULwMrFue1_bJt-FC
+LSMD_CONT_LDREG_경기_용인시_기흥구.zip: 1p0Dokrhd246Ja7pXRTuF1YsY44elzEsF
+LSMD_CONT_LDREG_경기_용인시_수지구.zip: 1I0YU3T64UZJqcqACTMo1mdFHV8rxtvHA
+LSMD_CONT_LDREG_경기_용인시_처인구.zip: 1vyBADXIoPiNGY3XI3vmdangIQ9Sn3pnQ
+LSMD_CONT_LDREG_경기_의왕시.zip: 1jKubB-FVIPioiWsBuOKPwr56a42WyvAU
+LSMD_CONT_LDREG_경기_의정부시.zip: 1neBhIJeygl4-YqgjSylmvQ0I6yh-1Jrx
+LSMD_CONT_LDREG_경기_이천시.zip: 1oZ8wQ66I3p4BeLDpHA7ZH6fop-1bqe9q
+LSMD_CONT_LDREG_경기_파주시.zip: 1v0ZAQHcdKIN-MBPrNrwUgQ7tKoI_PMQ8
+LSMD_CONT_LDREG_경기_평택시.zip: 1EXLj0yHSTQm-Gji9KfTIwJdGSa6Aq5kU
+LSMD_CONT_LDREG_경기_포천시.zip: 1Mkn4eww2VmDUAFgOy0yjo6Yw40S0XPRs
+LSMD_CONT_LDREG_경기_하남시.zip: 12ZHlWMY1vKzTAYf0v6R6L0SrLEu9naap
+LSMD_CONT_LDREG_경기_화성시_동탄구.zip: 1_DUSdod4eum2S3eebPUaZdta7GCJB8Ll
+LSMD_CONT_LDREG_경기_화성시_만세구.zip: 1VQpSHIt15J3MxR2x_fIVM-PePLhd7wgb
+LSMD_CONT_LDREG_경기_화성시_병점구.zip: 1kX3VUmTs0ugNjHFogNJ7lDkBdnQhb4bw
+LSMD_CONT_LDREG_경기_화성시_효행구.zip: 1gBgWHijh7fmOE7EuYCmXCzq8c4SazBJF
+
+# ── 강원특별자치도 (18)
+LSMD_CONT_LDREG_강원_강릉시.zip: 1o_Ig2XHA4pUKCz63jm3MIt3FRh5hpmvX
+LSMD_CONT_LDREG_강원_고성군.zip: 1Bw6k3r3Vne05ctsTuRVGcabIZhfwEfsp
+LSMD_CONT_LDREG_강원_동해시.zip: 1MxXiY_uLztKr9O3O3Yj-_ZnJndxSNHKr
+LSMD_CONT_LDREG_강원_삼척시.zip: 1YAMImGgMCYy8AVxC-1t1qZXhhmCR0v7o
+LSMD_CONT_LDREG_강원_속초시.zip: 1zUXhLVOO_dZyG40WG2r6PksFfqk_0JQD
+LSMD_CONT_LDREG_강원_양구군.zip: 1lJL_wyQ_0rnACn6OMCGyC5B0Sowi7xzq
+LSMD_CONT_LDREG_강원_양양군.zip: 1IeiNdNOnEFyLefFA8fk-c36ODIpY8rFg
+LSMD_CONT_LDREG_강원_영월군.zip: 11z3fUeGzEo8vyxUAuvOgC9Wcupk8Sk4V
+LSMD_CONT_LDREG_강원_원주시.zip: 1t021txaeTYAMJu097HSQDee7lTVYjy2A
+LSMD_CONT_LDREG_강원_인제군.zip: 1xfMXl0qioW-8w7lr31gZZAQW2Gcct8PZ
+LSMD_CONT_LDREG_강원_정선군.zip: 1p6Fi0pMg3c8-jGutiMMaZwZP9tUK6m0x
+LSMD_CONT_LDREG_강원_철원군.zip: 1IQBXRHpDyOaxSGPizVEPB1OJ4PS_5Xn4
+LSMD_CONT_LDREG_강원_춘천시.zip: 1Xd4dR-nbPhLufWobWBHQh3C1oByq2IY-
+LSMD_CONT_LDREG_강원_태백시.zip: 1a3yUJl8R-aMxcr2KnJZ5jwpIB30UVYLr
+LSMD_CONT_LDREG_강원_평창군.zip: 1mHU8S2zKq-wFUz0ceVjboaAUUpbBcQdq
+LSMD_CONT_LDREG_강원_홍천군.zip: 1htyPfbJrjKwUMetA5wY6djxP_-aHM1eI
+LSMD_CONT_LDREG_강원_화천군.zip: 1ihDqaHwyxCvJkh0KDvcez-LKsC0EZCQh
+LSMD_CONT_LDREG_강원_횡성군.zip: 18O5cw0rLAWgDO1eBmg5zZ7gO9iSqn-wb
+
+# ── 충북 (14)
+LSMD_CONT_LDREG_충북_괴산군.zip: 1ENzVyTjoajqFsQVaMVO4FYvYPs5mB0x7
+LSMD_CONT_LDREG_충북_단양군.zip: 1oMawV8ja47VpMiIBgCiqgS0RnwZ3Au2q
+LSMD_CONT_LDREG_충북_보은군.zip: 11tAvemSe5DJuSP7IlMukQmUFK2FJ0Yoh
+LSMD_CONT_LDREG_충북_영동군.zip: 1YiSHa70bJOrW0d2bVYsFrsa2MIL3oKVi
+LSMD_CONT_LDREG_충북_옥천군.zip: 1xNm3wC2iPFtcjamUyP_SxtLmCzNltfS5
+LSMD_CONT_LDREG_충북_음성군.zip: 19r8XYdJqO5a481MjcUkadD-dKdwiBjoW
+LSMD_CONT_LDREG_충북_제천시.zip: 1kpTSZC_Q2uHiQ53OqczNyhbjqWNp1YAT
+LSMD_CONT_LDREG_충북_증평군.zip: 11ymysKkcaLE4Vhqpc1BQgR0B9d4fsLx_
+LSMD_CONT_LDREG_충북_진천군.zip: 1q9Pjuopi8akN8EUzHiDjNEQJa3cQrQLX
+LSMD_CONT_LDREG_충북_청주시_상당구.zip: 1Jf3INnOxXDb4Dn43UmNQ-_SKwNlFMJy1
+LSMD_CONT_LDREG_충북_청주시_서원구.zip: 1lJBATMjrf2HT9Vec3VCSmrJmJ3WC-qDz
+LSMD_CONT_LDREG_충북_청주시_청원구.zip: 1HcL0suhTEL0gvMxxvqmyuyzu2JkbiIsa
+LSMD_CONT_LDREG_충북_청주시_흥덕구.zip: 1aLiuwPaOzlSPHEeeNGy5fNiLlL5WeK4n
+LSMD_CONT_LDREG_충북_충주시.zip: 1y_1BJ_t-N6RTzu087xMA98Z2vx4YBi5S
+
+# ── 충남 (16)
+LSMD_CONT_LDREG_충남_계룡시.zip: 1CgGB3VMy6VtcX1rsxvVUVGwwDnvSoEtP
+LSMD_CONT_LDREG_충남_공주시.zip: 14e7FBdZfhmg7Rhe3l_u4tMI5JGHFHDFi
+LSMD_CONT_LDREG_충남_금산군.zip: 1a_BtBFasUKl016Xk0DRIDmEUKf5Ice63
+LSMD_CONT_LDREG_충남_논산시.zip: 1XhuvQ9TR8bF6owKpcE2YC3ilhQR7uVyC
+LSMD_CONT_LDREG_충남_당진시.zip: 1jdEWGvq3kFhs9PsfXrkC5Wa-vky5nCf6
+LSMD_CONT_LDREG_충남_보령시.zip: 1Y7KuC27hvKo0FT4R5Xm5Q1E3lix9osxf
+LSMD_CONT_LDREG_충남_부여군.zip: 1SfYKp3GTBFIIjDSs_9GWykt1dDIbPh4t
+LSMD_CONT_LDREG_충남_서산시.zip: 1f4LvCIrr0AzBqyGSxgVyGSUADq6QiqKK
+LSMD_CONT_LDREG_충남_서천군.zip: 1A5U3tNv6SDGm8x6Wtpei01cGBkrvVN7j
+LSMD_CONT_LDREG_충남_아산시.zip: 1ogkaP5g56PXlqUnqEVNx5nKNgY_L9R46
+LSMD_CONT_LDREG_충남_예산군.zip: 17xGZWPWZfghSdoEJWoRbdZLQiSWpNBtx
+LSMD_CONT_LDREG_충남_천안시_동남구.zip: 1mTT1buncQ43FuufSUbA1Ih6zj0tmXqh5
+LSMD_CONT_LDREG_충남_천안시_서북구.zip: 1b2fd-83oCkkUfYRguSEvg1Wb_OxIh5HJ
+LSMD_CONT_LDREG_충남_청양군.zip: 1yb149dtH_cB3rheXyv1uMHoUcdvGRBuw
+LSMD_CONT_LDREG_충남_태안군.zip: 1JiR1dtwvtMy-id4G66H3zWAf9rQr0xuL
+LSMD_CONT_LDREG_충남_홍성군.zip: 1UV8IlDWaey6-41ZAAXOBEV-BP4rUoqRJ
+
+# ── 전북특별자치도 (15)
+LSMD_CONT_LDREG_전북_고창군.zip: 1o9CHBRV7OfUNk7p2L7PZgQl8yQPR6mPu
+LSMD_CONT_LDREG_전북_군산시.zip: 14JaJxWsy2XdWBstPsiM-NR35Ag9R6u_B
+LSMD_CONT_LDREG_전북_김제시.zip: 10mxBZTtrRTk_sa72w7USL_WDcjyIzv24
+LSMD_CONT_LDREG_전북_남원시.zip: 1BNV6pKYctsZLaGJamZ2t42WhD4UTNwQa
+LSMD_CONT_LDREG_전북_무주군.zip: 1-1k_rfSC21q0FJGuUZf3AyfzMA7f2x73
+LSMD_CONT_LDREG_전북_부안군.zip: 1XzgVKyZ2x1rRnTGxqOfEow7ptpeZWs6B
+LSMD_CONT_LDREG_전북_순창군.zip: 1SIfQZufMVyZ3usvN67Ujaf7yz6H77qVO
+LSMD_CONT_LDREG_전북_완주군.zip: 17O03T8R9Eo5tMkfPhXARZwg-5WkNhYfO
+LSMD_CONT_LDREG_전북_익산시.zip: 18LFlJP_3ZN8nASycqFsfNZfaHvVPDwXU
+LSMD_CONT_LDREG_전북_임실군.zip: 1U2A9MxhU308bTCt4FkVqSg2ISUQksQ6F
+LSMD_CONT_LDREG_전북_장수군.zip: 1bCTQGwNS7wFcNUYwMW7riNGsBBadpHBR
+LSMD_CONT_LDREG_전북_전주시_덕진구.zip: 1kFUifUV6YBGSFxxbF9R53ZkzxdECFPzU
+LSMD_CONT_LDREG_전북_전주시_완산구.zip: 1yNNgKMnooWsig7iHw9hq2YQErc3yqGil
+LSMD_CONT_LDREG_전북_정읍시.zip: 1D46eG1eT-gpPla3fy86NyFUcuKKddOya
+LSMD_CONT_LDREG_전북_진안군.zip: 1BMrsjJv2rnWhJtqoAmwvGJchOQbWWOA3
+
+# ── 전남·광주통합특별시 (27)
+LSMD_CONT_LDREG_전남광주_강진군.zip: 13yt_BJbJ0c0aGpZj-dwGQnbyB1-HT0LT
+LSMD_CONT_LDREG_전남광주_고흥군.zip: 1gS9jTB8-bEvZSqdfeZGI-aMO07n72Xif
+LSMD_CONT_LDREG_전남광주_곡성군.zip: 1ElWiuBWYslG_qMHdhpqVjlDuw6lLbEuz
+LSMD_CONT_LDREG_전남광주_광산구.zip: 1TXXM_Nm-Czk73UIqc7rvPI-HqXsmV6mh
+LSMD_CONT_LDREG_전남광주_광양시.zip: 1h4lRKujE5UbzcRqYpg1fFu9sYVNg0-Gl
+LSMD_CONT_LDREG_전남광주_구례군.zip: 18SuhK7Hflcm36AyXVVKO0g3TWEWUOJNt
+LSMD_CONT_LDREG_전남광주_나주시.zip: 1ZSbj7Vq0o5XroGnrWt9_ay5yk6NsmqAF
+LSMD_CONT_LDREG_전남광주_남구.zip: 1zYTyDswJ99_ntgOZzQS6lAvipLTyBVrq
+LSMD_CONT_LDREG_전남광주_담양군.zip: 1GYhxPhaRjDbBEIXGU_JWhyOi4d_pN-dg
+LSMD_CONT_LDREG_전남광주_동구.zip: 1qzIcsGJavCJFuLHFmZiLL6mlC5zwOJ3F
+LSMD_CONT_LDREG_전남광주_목포시.zip: 1h-syyiwEx_hAU0J156zFfWMhp24i4Pll
+LSMD_CONT_LDREG_전남광주_무안군.zip: 16vvljJAFK_Vtlfb6fY97ytNiIftn3_QX
+LSMD_CONT_LDREG_전남광주_보성군.zip: 10rgl5QypldnjYdl0s0yHbJKXsBqUgSFc
+LSMD_CONT_LDREG_전남광주_북구.zip: 15PUOblqn1nlubSKEl002LSLHtLQxkYWA
+LSMD_CONT_LDREG_전남광주_서구.zip: 1UZrl4khYPtomaqLM-EtgYuJGGQxlc8_E
+LSMD_CONT_LDREG_전남광주_순천시.zip: 1eg2iopaX_KFUAC8Oblw1CXaq5ZzJfUui
+LSMD_CONT_LDREG_전남광주_신안군.zip: 1Dt_fPROtJXsdURi7wU0-Z0yZ8OCIljJ6
+LSMD_CONT_LDREG_전남광주_여수시.zip: 1TJ_Wo8TByRTUgfr8oAS11Wh3xgpsfIL9
+LSMD_CONT_LDREG_전남광주_영광군.zip: 16erYEshGZYvCfIWZv-W2YlFt8QeLGUey
+LSMD_CONT_LDREG_전남광주_영암군.zip: 1wHyvgTGgkdu0tdieaj1FLbS8lvrkjh2y
+LSMD_CONT_LDREG_전남광주_완도군.zip: 1ygZ6IaALxnjX7_nXgjEnMjc_yqgRq3Dy
+LSMD_CONT_LDREG_전남광주_장성군.zip: 1jS_Yuk9Jodg0DKObe3vPut0XUGnuMK_n
+LSMD_CONT_LDREG_전남광주_장흥군.zip: 1-YbDKYw-ThxCJCf7uKiKy4xprxORTndR
+LSMD_CONT_LDREG_전남광주_진도군.zip: 1gLEqdUjovDaYnnM0ZkPcEGjZvUUcNtCJ
+LSMD_CONT_LDREG_전남광주_함평군.zip: 1M9X9_SxU4GwXErmTqAnrEMPR-hwqcmHL
+LSMD_CONT_LDREG_전남광주_해남군.zip: 1FR83ygMNdkHDQ5QRZAFeyrvCDeaIzpeI
+LSMD_CONT_LDREG_전남광주_화순군.zip: 1WLZWXtEv2j3595iMDp_zGD001fu9wS74
+
+# ── 경북 (23 · 군위군은 대구로 갔다)
+LSMD_CONT_LDREG_경북_경산시.zip: 1mZy-1QKj8X0zroU4bXbCIREYog1iXg35
+LSMD_CONT_LDREG_경북_경주시.zip: 1gzjBow2zFYewrx4EGYD77NUXzjHQ3TtF
+LSMD_CONT_LDREG_경북_고령군.zip: 1EwlM_8puSM01X-CGX-qRs9kBM4GZQ4fn
+LSMD_CONT_LDREG_경북_구미시.zip: 1Jq4Z2iyzeTHFc1-gKh7VO4CjXri3y5hW
+LSMD_CONT_LDREG_경북_김천시.zip: 1lAjwrlLjpahsp8frltf48VRXUbDIvHy4
+LSMD_CONT_LDREG_경북_문경시.zip: 127W10pSwMxGXd3eVI9ej23jJ-0hA2Eeh
+LSMD_CONT_LDREG_경북_봉화군.zip: 1iJEeLK2nduLWojutp7ZHskn95YmFDghm
+LSMD_CONT_LDREG_경북_상주시.zip: 1lJicu10fovvW4EDXVG8WaSD_S6JazMd3
+LSMD_CONT_LDREG_경북_성주군.zip: 1w2DAaAHLXZaYtCDos7u0GtkKGBFerBNN
+LSMD_CONT_LDREG_경북_안동시.zip: 1UtvlNjtwFbbXXdXr2tU5oVyP8GLvFoZE
+LSMD_CONT_LDREG_경북_영덕군.zip: 1iSbB99pcPc9VMcKlcoXkECqRcVlKk545
+LSMD_CONT_LDREG_경북_영양군.zip: 1ny0GiQJVvEyGVDsdFDsZIx0mCRZdfRp-
+LSMD_CONT_LDREG_경북_영주시.zip: 16O3xv_VaQ2zQrhwid0GT5tm_afdWCAYp
+LSMD_CONT_LDREG_경북_영천시.zip: 1ezi3Wa9bN8694wngY_OsoBeL0ft5_lCA
+LSMD_CONT_LDREG_경북_예천군.zip: 1T1L1HWrXcivUyumu3TSNw9C9ydQVUyR5
+LSMD_CONT_LDREG_경북_울릉군.zip: 1mEu-243YVVTLQQMq28_lg0ohUJbdbol3
+LSMD_CONT_LDREG_경북_울진군.zip: 1Qc22TblVDKPTuNr0w224sfZWG_q3sjPe
+LSMD_CONT_LDREG_경북_의성군.zip: 1Lu2Fvfu5W6NfgHEFkWp5yTa8BavvjUE-
+LSMD_CONT_LDREG_경북_청도군.zip: 1ZIFRvwgFIkM9GArSZCO6vZlpdJIuzn0k
+LSMD_CONT_LDREG_경북_청송군.zip: 13h41jXKbajsEdbCWB3bsPZ2520G1K_AJ
+LSMD_CONT_LDREG_경북_칠곡군.zip: 1YYH-aCtqrNEKo8CrQe9utedbmkkOcY1w
+LSMD_CONT_LDREG_경북_포항시_남구.zip: 1hEslZ3ung94aQxRLA0AkhPRtQ4KzvuIJ
+LSMD_CONT_LDREG_경북_포항시_북구.zip: 1VrCasd5m8hqvyTPJA-RYk2grfeEnwGAn
+
+# ── 경남 (22)
+LSMD_CONT_LDREG_경남_거제시.zip: 1p0aKNfZwYSPb2phISqSrhdGYob_v2-BX
+LSMD_CONT_LDREG_경남_거창군.zip: 1FWpNNgW1w-8d2DOBQKkmQFG2UF0tLqx9
+LSMD_CONT_LDREG_경남_고성군.zip: 1Hve1TO2zdAlOsU_ZoPWbezo0llcMkG0w
+LSMD_CONT_LDREG_경남_김해시.zip: 1_hv-EBty1Vrg6zgCovSrRS1UuWEzG1dz
+LSMD_CONT_LDREG_경남_남해군.zip: 1xML_SpyF-5fOguA7LJpyV6Y2c7TsA1d4
+LSMD_CONT_LDREG_경남_밀양시.zip: 14pgHQ5fmuTiuyp_6dsI-TFVs-LkT5FgP
+LSMD_CONT_LDREG_경남_사천시.zip: 1FPsgjUV6aDz7ReCug2Sx-lU4D9jo6JC3
+LSMD_CONT_LDREG_경남_산청군.zip: 12HmhpNOlzdyZ7oogfRgnQzrvWt99hCS6
+LSMD_CONT_LDREG_경남_양산시.zip: 1SkM7wUozcLk7yenCTTmPz8jhdKaYpVYh
+LSMD_CONT_LDREG_경남_의령군.zip: 1euZdQjVMp5hvxtKJY1U26AHAKQx5L5xb
+LSMD_CONT_LDREG_경남_진주시.zip: 1U52WOCqVJmIrXzTS_hqgdx4tBZL9weXF
+LSMD_CONT_LDREG_경남_창녕군.zip: 1HtRIyYzS4C181HEKzX6lE1CjMo9btr9b
+LSMD_CONT_LDREG_경남_창원시_마산합포구.zip: 1Q4LVoveA0w_uWxWFNPJLulkmdzetEYWf
+LSMD_CONT_LDREG_경남_창원시_마산회원구.zip: 1IWr6QsidLoGNNfBDZPql7ap38FzMn8Vb
+LSMD_CONT_LDREG_경남_창원시_성산구.zip: 1LIZU-vQaV54RAX4C6MK8iN4g7O_YXzSo
+LSMD_CONT_LDREG_경남_창원시_의창구.zip: 1rrv8L2537jrKBu_1m5zec1UTBhkPnJFx
+LSMD_CONT_LDREG_경남_창원시_진해구.zip: 1cd0Bktf-R1XAwhtLdhuuByHiFck9boM1
+LSMD_CONT_LDREG_경남_통영시.zip: 1UNiPvtVjjhBM9Cc1Wxjx340Dlj4tTL_b
+LSMD_CONT_LDREG_경남_하동군.zip: 1JbkEDc9rc5UMtLhWN41b2xVKFUbElh1_
+LSMD_CONT_LDREG_경남_함안군.zip: 1sScCoJnGA_7oME-Z3mK5-KX8yJi5MFss
+LSMD_CONT_LDREG_경남_함양군.zip: 1zy49q1RGWec_AqS7SjAKGzqDY6S4XS0r
+LSMD_CONT_LDREG_경남_합천군.zip: 1aiEj6J9d7lbBoYdK3N---5XHBgXyrkvg
+
+# ── 제주 (2)
+LSMD_CONT_LDREG_제주_서귀포시.zip: 1cm5k-TvlcLjQCC0d5CEmLFdQpVEgKM5t
+LSMD_CONT_LDREG_제주_제주시.zip: 1KQblt3-p6GgnxYJWtD4rxwuBiWbFIoIl
