@@ -760,13 +760,20 @@ def cmd_ecos(args):
         if not rows:
             print("  (없습니다 — 코드를 다시 보십시오)")
             return
+        # 목록은 나무를 평평하게 편 것이라 길다. 이름으로 걸러서 본다.
+        shown = 0
         for r in rows:
             cd = r.get("ITEM_CODE") or r.get("STAT_CODE") or ""
             nm = r.get("ITEM_NAME") or r.get("STAT_NAME") or ""
+            if args.find and args.find not in nm:
+                continue
             cyc = r.get("CYCLE") or ""
             span = f" {r.get('START_TIME','')}~{r.get('END_TIME','')}".rstrip()
             print(f"  {cd:<12} {cyc:<2} {nm}{span if span.strip() else ''}")
-        print(f"  — {len(rows)}건")
+            shown += 1
+        if args.find and not shown:
+            print(f"  ('{args.find}' 가 이름에 든 것이 없습니다 — 받은 것은 {len(rows)}건)")
+        print(f"  — 보인 {shown}건 / 받은 {len(rows)}건")
         return
 
     print(f"ECOS {args.start}~{args.end} · 계열 {len(names)}개")
@@ -3308,6 +3315,8 @@ def main(argv=None):
                    help="코드를 물어본다 — 표 코드 또는 top (추측하지 않는다)")
     p.add_argument("--items", action="store_true",
                    help="--browse 와 함께: 표 목록 대신 그 표의 항목 목록")
+    p.add_argument("--find", default="",
+                   help="--browse 와 함께: 이름에 이 말이 든 것만 (목록이 길다)")
     p.set_defaults(func=cmd_ecos)
 
     p = sub.add_parser("factor-cells", help="미래 가치 인자 — 조합 칸 세기 (+ 추정)")

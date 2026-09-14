@@ -68,12 +68,15 @@ def rows(name: str, start: str, end: str, timeout: int = 60) -> list[dict]:
 #   StatisticTableList  표 목록 (부모 코드를 주면 그 아래)
 #   StatisticItemList   그 표의 항목 목록 — ITEM_CODE 가 우리가 쓸 값이다
 
-def list_url(kind: str, code: str, rows: int = 200) -> str:
+# 통계표 목록은 나무를 **평평하게 펴서** 한 번에 준다. 200건에서 자르면
+# 앞쪽(통화·금리)만 보이고 국민계정까지 못 내려간다. 넉넉히 받아 둔다.
+def list_url(kind: str, code: str, rows: int = 2000) -> str:
     return f"{BASE}/{kind}/{KEY_SLOT}/json/kr/1/{rows}" + (f"/{code}" if code else "")
 
 
-def _list(kind: str, code: str, key: str, timeout: int = 60) -> list[dict]:
-    res = http.get_json(list_url(kind, code), {}, timeout=timeout)
+def _list(kind: str, code: str, key: str, timeout: int = 60,
+          rows: int = 2000) -> list[dict]:
+    res = http.get_json(list_url(kind, code, rows), {}, timeout=timeout)
     if isinstance(res, dict) and "RESULT" in res:
         raise RuntimeError(f"ECOS: {res['RESULT'].get('MESSAGE', res['RESULT'])}")
     return ((res or {}).get(key) or {}).get("row") or []

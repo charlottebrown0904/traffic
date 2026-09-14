@@ -9,7 +9,10 @@
 #   vworld  시군구별 속성 조회로 적재 (ldCode 5자리 · 연도)
 #   value-test  현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다
 #   factor-cells 미래 가치 인자 — 조합 칸 세기 (+ query=estimate 면 추정까지)
-#   ecos        한국은행 ECOS 금리·물가·성장률 (query=probe 면 받아만 보고 안 쌓는다)
+#   ecos        한국은행 ECOS 금리·물가·성장률
+#               query: (비움)=전부 적재 · probe=받아만 봄 · browse:CODE=표 목록
+#                      items:CODE=항목 목록 · find:말=이름으로 표 찾기
+#                      findin:CODE,말=그 표의 항목을 이름으로 찾기
 #   law-probe   국가법령정보센터 자치법규 API 탐침 (조례 한 건, LAW_OC 필요)
 #   law         전국 도시계획조례 → data/ordinance/ 관심 조문 (브랜치에 커밋)
 #
@@ -190,6 +193,8 @@ jobs:
             probe)    ARGS="--probe" ;;
             browse:*) ARGS="--browse ${Q#browse:}" ;;
             items:*)  ARGS="--browse ${Q#items:} --items" ;;
+            find:*)   ARGS="--browse top --find ${Q#find:}" ;;
+            findin:*) C="${Q#findin:}"; ARGS="--browse ${C%%,*} --find ${C#*,}" ;;
             "")       ARGS="" ;;
             *)        ARGS="--series $Q" ;;
           esac
