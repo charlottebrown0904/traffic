@@ -250,14 +250,18 @@ got, lab = V.pick_rates(TBL, "41111", "자연녹지지역")
 check(got == TBL["41|녹지지역"] and "시·도" in lab, f"시군구 칸이 없으면 시·도 — {lab}")
 # 지역 이름 잇기 — 짐작으로 잇지 않는다.
 REG = [{"code": "41550", "name": "안성시", "sido": "경기도"}, {"code": "11140", "name": "중구", "sido": "서울특별시"},
-       {"code": "26110", "name": "중구", "sido": "부산광역시"}, {"code": "41111", "name": "장안구", "sido": "경기도"},
-       {"code": "41110", "name": "수원시", "sido": "경기도"}]
+       {"code": "26110", "name": "중구", "sido": "부산광역시"}, {"code": "41111", "name": "수원시 장안구", "sido": "경기도"},
+       {"code": "41110", "name": "수원시", "sido": "경기도"}, {"code": "41463", "name": "용인시 수지구", "sido": "경기도"}]
 check(V.match_region("안성시", REG) == "41550" and V.match_region("안성", REG) == "41550"
       and V.match_region("경기 안성시", REG) == "41550", "시군구 이름 — 안성시·안성·경기 안성시")
 check(V.match_region("중구", REG) is None and V.match_region("부산 중구", REG) == "26110",
       "이름이 겹치는 구는 시도 없이는 잇지 않는다")
 check(V.match_region("경기", REG) == "41" and V.match_region("전국", REG) == "*" and V.match_region("수원 장안구", REG) == "41111",
       "시도·전국·'시 구' 꼴")
+# 부동산원은 구 이름만 준다 (run 11: '장안구' · '수지구'). 우리 이름의 마지막 마디로 잇는다.
+check(V.match_region("장안구", REG) == "41111" and V.match_region("수지구", REG) == "41463"
+      and V.match_region("시지역", REG) is None and V.match_region("None", REG) is None,
+      "구 이름만 와도 잇고, '시지역' 같은 묶음은 잇지 않는다")
 
 print()
 print("6. 그 밖의 요인 — 원장에서, 물러난 단계를 밝힌다")

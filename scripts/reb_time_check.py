@@ -15,5 +15,6 @@ print(f"시점수정 칸 {m.get('n', 0):,}개 · {m.get('first')}~{m.get('last')
 if m.get("note"):
     print("  ", m["note"])
 print("못 이은 지역:", m.get("unmatched"))
+print("  그 GRP_ID 표본:", m.get("unmatched_ids"))
 for k in ("41550|녹지지역", "41550|계획관리지역", "41550|*", "41|녹지지역", "*|녹지지역", "*|*"):
     print(" ", k, got["rates"].get(k))

@@ -67,7 +67,9 @@ jobs:
       # DB 캐시(redt-data-*)를 되살려 landprice_index 에 넣고 새 키로 보관한다.
       # 그러면 analyze(export-web) 가 그 캐시를 이어받아 valuation.json 에
       # 지가변동률을 싣는다. 표준지 공시기준일이 그해 1월 1일이므로 from 은
-      # 보통 그해 01 이면 된다 — 한 달이 1,600행쯤이라 두 표 합쳐 스무 장 안이다.
+      # 보통 그해 01 이면 된다 — 한 달이 2,700행쯤이라 열 달이 스무 장 안이다.
+      # 지역별 표(A_2024_00903)는 안 받는다: run 11 에서 보니 법정동 단위라 한 달이
+      # 만 행이고, 용도지역별 표에 시도·시군구·구가 다 들어 있어 쓸 데가 없다.
       - name: 이전 수집분 복원
         if: inputs.mode == 'load'
         uses: actions/cache/restore@v4
@@ -82,7 +84,7 @@ jobs:
         run: |
           test -f data/processed/redt.duckdb || { echo "::error::복원된 DB 가 없습니다 — collect 를 먼저"; exit 1; }
           PYTHONPATH=src python -m redt.cli load-landprice \
-            --tables "지가변동률_용도지역_월,지가변동률_지역_월" --region "" \
+            --tables "지가변동률_용도지역_월" --region "" \
             --start "${{ inputs.from }}" --end "${{ inputs.to }}" \
             --max-pages "${{ inputs.max_pages }}"
           PYTHONPATH=src python scripts/reb_time_check.py

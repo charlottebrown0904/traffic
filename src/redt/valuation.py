@@ -661,10 +661,15 @@ def match_region(grp_nm: str, regions: list[dict]) -> str | None:
             continue
         bare = name[:-1] if name[-1] in "시군구" and len(name) > 2 else name
         sido_short = SIDO_NAMES.get(r["code"][:2], "")
+        # 우리 이름은 '수원시 장안구' 꼴(시와 구를 붙여 쓴다)이고 부동산원은
+        # '장안구' 만 준다 (run 11 · 275개 지역 이름). 마지막 마디로도 잇는다.
+        toks = str(r["name"]).split()
+        last = toks[-1] if toks else name
         cands = {name, bare, sido_short + name, sido_short + bare,
-                 _norm(r["sido"]) + name, _norm(r["sido"]) + bare}
-        # '수원 장안구' 처럼 시 이름이 앞에 붙는 꼴 — 시 이름은 코드 앞 4자리가
-        # 같은 '시' 행에서 온다.
+                 _norm(r["sido"]) + name, _norm(r["sido"]) + bare, _norm(last)}
+        # '수원 장안구' 꼴 (시 이름의 '시' 를 뗀 채 구를 붙여 쓰는 표기).
+        if len(toks) >= 2 and toks[0][-1] in "시군":
+            cands.add(_norm(toks[0][:-1] + toks[-1]))
         if g == name or g == bare or g in cands:
             hits.append(r)
         elif g.endswith(name) and (sido_short and g.startswith(sido_short)):
@@ -712,7 +717,7 @@ def time_rates_for_web(con, since: str | None = None) -> dict:
     if not has:
         return {"rates": {}, "meta": {"n": 0, "note": "landprice_index 표가 없다"}}
     rows = con.execute("""
-        SELECT statbl, period, grp_nm, cls_nm, itm_nm, value FROM landprice_index
+        SELECT statbl, period, grp_nm, cls_nm, itm_nm, value, grp_id FROM landprice_index
         WHERE statbl IN (?, ?) AND length(period) = 6
     """, [RONE_TBL_ZONE, RONE_TBL_REGION]).fetchall()
     if not rows:
@@ -724,7 +729,8 @@ def time_rates_for_web(con, since: str | None = None) -> dict:
     rates: dict = {}
     unmatched: dict = {}
     cache: dict = {}
-    for statbl, period, grp, cls, itm, val in rows:
+    unmatched_ids: dict = {}
+    for statbl, period, grp, cls, itm, val, gid in rows:
         if period < since or val is None:
             continue
         # 지가변동률 표에는 '지가변동률' 항목 하나뿐이지만, 지수가 섞여 오면 뺀다.
@@ -735,6 +741,7 @@ def time_rates_for_web(con, since: str | None = None) -> dict:
         key = cache[grp]
         if key is None:
             unmatched[grp] = unmatched.get(grp, 0) + 1
+            unmatched_ids.setdefault(grp, set()).add(str(gid))
             continue
         c = "*" if statbl == RONE_TBL_REGION else _norm(cls)
         if statbl == RONE_TBL_ZONE and c not in {v for _, v in RONE_CLASS} | {"관리(통합)지역"}:
@@ -747,7 +754,8 @@ def time_rates_for_web(con, since: str | None = None) -> dict:
     meta = {"n": len(rates), "since": since, "first": used_p[0] if used_p else None,
             "last": used_p[-1] if used_p else None,
             "source": "한국부동산원 부동산통계정보(R-ONE) 지가변동률 · 월",
-            "unmatched": sorted(unmatched, key=lambda k: -unmatched[k])[:30],
+            "unmatched": sorted(unmatched, key=lambda k: -unmatched[k])[:40],
+            "unmatched_ids": {k: sorted(v)[:4] for k, v in unmatched_ids.items()},
             "regions": len(regions)}
     return {"rates": rates, "meta": meta}
 
