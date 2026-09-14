@@ -3833,6 +3833,23 @@ const lpUmdPending = new Set();
 let lpRosterCache = {};
 const lpRosterPending = new Set();
 
+/* **못 받은 조각을 기억한다.** 이것이 없으면 조각 하나가 404 일 때
+ * 화면이 통째로 멎는다 (2026-09-14, 사장님 화면에서 실제로 났다).
+ *
+ * 까닭은 이렇다. 받아 오는 함수는 끝에서 다시 그리기를 부르고, 다시
+ * 그리기는 z12 이상이면 또 받아 오기를 부른다. 성공하면 캐시에 들어가
+ * 두 번째에는 '받을 것 없음' 으로 끝나지만, **실패하면 캐시에도 대기에도
+ * 안 남아** 같은 조각을 영원히 다시 부른다. 실패가 빠를수록(404) 더
+ * 빨리 돈다 — 주 스레드가 그 고리에 갇혀 타이머 하나 못 돌고,
+ * 브라우저가 '응답 없는 페이지' 를 띄운다.
+ *
+ * 그래서 두 가지를 같이 둔다. 못 받은 것은 한동안 다시 안 부르고,
+ * **하나도 새로 못 받았으면 다시 그리지 않는다.** 둘 중 하나만 있어도
+ * 고리는 끊기지만, 둘 다 두어야 '잠시 뒤 다시' 도 안전해진다. */
+const LP_RETRY_MS = 60000;
+const lpFailed = new Map();          // 조각 열쇠 → 마지막으로 못 받은 때
+const lpFresh = (k) => Date.now() - (lpFailed.get(k) || 0) >= LP_RETRY_MS;
+
 /* 지금 열려 있는 말풍선의 태그 열쇠. 없으면 null.
  *
  * 보고된 문제(2026-09-10): "태그 클릭 시 정보가 나오는데 너무 민감한
@@ -4066,20 +4083,27 @@ function lpRosterChunks() {
 /* 화면에 걸치는 명부 조각을 받아 둔다. */
 async function lpLoadRoster() {
   const want = lpRosterChunks().filter(
-    (c) => !lpRosterCache[c.p] && !lpRosterPending.has(c.p));
+    (c) => !lpRosterCache[c.p] && !lpRosterPending.has(c.p)
+           && lpFresh(`r|${c.p}`));
   if (!want.length) return;
   want.forEach((c) => lpRosterPending.add(c.p));
+  let got = 0;
   await Promise.all(want.map(async (c) => {
     try {
       const r = await fetchData(`${c.f}`, { cache: 'no-cache' });
-      if (r.ok) lpRosterCache[c.p] = await r.json();
+      if (r.ok) {
+        lpRosterCache[c.p] = await r.json();
+        lpFailed.delete(`r|${c.p}`);
+        got += 1;
+      } else { lpFailed.set(`r|${c.p}`, Date.now()); }
     } catch (e) {
       // 못 받아도 지도는 거래 있는 곳만으로 계속 돈다.
+      lpFailed.set(`r|${c.p}`, Date.now());
     } finally {
       lpRosterPending.delete(c.p);
     }
   }));
-  drawLandPrice();
+  if (got) drawLandPrice();
 }
 
 /* 아직 오는 중이면 시군구로 물러난다 — 빈 화면을 보여주느니 덜 자세한
@@ -4383,11 +4407,13 @@ async function lpLoadUmd() {
   lpGroups().forEach((g) => {
     lpUmdChunks(g).forEach((c) => {
       const key = `${g}|${c.p}`;
-      if (!lpUmdCache[key] && !lpUmdPending.has(key)) want.push({ key, f: c.f });
+      if (!lpUmdCache[key] && !lpUmdPending.has(key) && lpFresh(key))
+        want.push({ key, f: c.f });
     });
   });
   if (!want.length) return;
   want.forEach((w) => lpUmdPending.add(w.key));
+  let got = 0;
   await Promise.all(want.map(async (w) => {
     try {
       // **절대 경로여야 한다.** 상대 경로는 …/app 에서 404 가 나고,
@@ -4401,14 +4427,18 @@ async function lpLoadUmd() {
         const cells = payload.cells || [];
         cells.headPop = payload.head_pop || {};
         lpUmdCache[w.key] = cells;
-      }
+        lpFailed.delete(w.key);
+        got += 1;
+      } else { lpFailed.set(w.key, Date.now()); }
     } catch (e) {
       // 못 받아도 지도는 시군구로 계속 돈다.
+      lpFailed.set(w.key, Date.now());
     } finally {
       lpUmdPending.delete(w.key);
     }
   }));
-  drawLandPrice();
+  // **새로 받은 것이 없으면 다시 안 그린다.** 그리면 곧장 여기로 돌아온다.
+  if (got) drawLandPrice();
 }
 
 /* 최근 추이 꺾은선. 말풍선 안에 들어가는 작은 그림이다.
