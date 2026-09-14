@@ -748,8 +748,15 @@ def cmd_ecos(args):
         code = args.browse if args.browse != "top" else ""
         what = "항목" if args.items else "표"
         print(f"ECOS {what} 목록 — {code or '최상위'}")
-        rows = (ecos.items(code, timeout=int(args.timeout)) if args.items
-                else ecos.tables(code, timeout=int(args.timeout)))
+        try:
+            rows = (ecos.items(code, timeout=int(args.timeout)) if args.items
+                    else ecos.tables(code, timeout=int(args.timeout)))
+        except RuntimeError as exc:
+            # 코드를 찾으러 온 길에서 역추적을 띄우면 찾는 일이 멈춘다.
+            # 상류가 한 말만 보이고, 다음에 무엇을 해 볼지 적어 준다.
+            print(f"  {exc}")
+            print("  — 이 코드가 없다는 뜻입니다. --browse top 으로 위에서부터 내려오십시오.")
+            return
         if not rows:
             print("  (없습니다 — 코드를 다시 보십시오)")
             return
