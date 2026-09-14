@@ -264,6 +264,23 @@ const FAKE_LEAFLET = () => {
   };
 };
 
+/* 화면 자료가 **버킷으로 옮겨 갔다** (2026-09-14). app.js 의 fetchData 는
+ * 먼저 supabase 공개 버킷을 부르고, 못 받으면 배포 쪽(/app/data)으로
+ * 물러난다. 검사판은 바깥으로 못 나가므로 버킷 요청이 그대로 매달린다 —
+ * 아래 라우트 없이는 검사가 통과도 실패도 안 하고 **멈춘다.**
+ *
+ * 404 를 준다. 끊지(abort) 않는 까닭은 fetchData 가 `r.ok` 를 보기
+ * 때문이다 — 404 면 곧바로 /app/data 로 물러나고, 그 길은 이 파일이 이미
+ * 전부 가로채고 있다. 200 에 빈 몸을 주면 '받았다' 로 읽혀 JSON 이 깨진다. */
+const BUCKET_PAT = '**/storage/v1/object/public/appdata/**';
+const STUB_PATS = ['**/lib/supabase-init.js*', '**/app/supabase.js*',
+                   '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'];
+async function stubCommon(pg) {
+  for (const pat of STUB_PATS)
+    await pg.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
+  await pg.route(BUCKET_PAT, (r) => r.fulfill({ status: 404, body: '' }));
+}
+
 (async () => {
   const srv = spawn('python3', ['-m', 'http.server', String(PORT),
                                 '--directory', path.join(ROOT, 'public')],
@@ -272,9 +289,7 @@ const FAKE_LEAFLET = () => {
   const browser = await chromium.launch({ executablePath: chromiumPath() });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    for (const pat of ['**/lib/supabase-init.js*', '**/app/supabase.js*',
-                       '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'])
-      await page.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
+    await stubCommon(page);
 
     // 영업소 하나를 '통행량 미공개' 로 표시해 내려준다. 실제 자료에는
     // 마도(805)처럼 도로공사 TCS 에 통행량이 없는 민자 영업소가 들어
@@ -1708,13 +1723,45 @@ const FAKE_LEAFLET = () => {
     // 눌러야만 알 수 있으면 스무 건을 견주는 데 스무 번을 눌러야 한다.
     // 부동산플래닛처럼 핀에 값을 적되, **당겨 봤을 때만** 적는다.
     {
-      const pinRead = async () => page.evaluate(() => {
+      /* **시간을 못박는다.** 2026-09-14: 이 아래에서 배율을 12 이상으로
+       * 올리면 검사판 렌더러가 CPU 300% 로 몇 분씩 돌고 안 끝났다 —
+       * 자바스크립트는 다 끝나고(핸들러·레이아웃 모두 통과) 그 뒤 그리기
+       * 단계에서 멎는다. 표식 수와는 무관하다 — 그때 drawn 은 0이었다.
+       *
+       * **원인은 아직 못 밝혔다.** '가짜 지도가 세계 경계를 내놓는 탓'
+       * 이라는 가설은 bbox 를 좁혀 시험해 보니 틀렸다. 처음 멎는 배율이
+       * 12 라는 것은 실거래 표기(14)와 무관하다는 뜻이다.
+       *
+       * 진짜 화면에서도 같은 일이 나는지는 **아직 모른다** — 배포가
+       * 뜨는 것과 app.js 가 제 값으로 나가는 것까지만 확인했고, 사람이
+       * 지도를 z12 이상으로 당겨 보는 것은 확인하지 않았다.
+       *
+       * 밝히기 전까지라도 **검사가 영원히 매달리면 안 된다.** 매달리면
+       * 아무 판정도 못 내고 다른 검사까지 못 돈다. 시간을 넘기면 그
+       * 자리를 실패로 적고 넘어간다 — 조용히 넘기지는 않는다. */
+      const PIN_READ_MS = 20000;
+      const withLimit = (p, ms, what) => Promise.race([
+        p, new Promise((_, rej) => setTimeout(
+          () => rej(new Error(`${what}: ${ms}ms 안에 안 끝났습니다`)), ms)),
+      ]);
+      const pinReadRaw = async () => page.evaluate(() => {
         const on = window.__mapOn || {};
         (on.zoomend || []).forEach((f) => f());
         (on.moveend || []).forEach((f) => f());
         return { peek: window.__pins || {},
                  html: (window.__tradeStyles || []).map((o) => o.html) };
       });
+      const pinRead = async () => {
+        try { return await withLimit(pinReadRaw(), PIN_READ_MS, '핀 다시 그리기'); }
+        catch (e) {
+          // 렌더러가 멎으면 **그 뒤 모든 호출이 똑같이 매달린다.** 계속
+          // 이어 봐야 같은 시간초과만 쌓이므로, 한 번 적고 여기서 끝낸다.
+          // 붉은 등으로 끝나는 것이 매달린 채 끝나지 않는 것보다 낫다.
+          check('배율을 올려도 화면이 안 멎는다', false, e.message);
+          console.log('\n검사를 여기서 멈춥니다 — 렌더러가 응답하지 않습니다.');
+          process.exit(1);
+        }
+      };
       // 켜 놓고 본다 (앞 절이 종류 필터를 다 켜 두었다).
       await page.evaluate(() => { window.__zoom = 11; });
       const far = await pinRead();
@@ -1723,8 +1770,21 @@ const FAKE_LEAFLET = () => {
             && far.html.every((h) => /trade-mark/.test(h)),
             `labelled=${far.peek.labelled} · ${(far.html[0] || '').slice(0, 50)}`);
 
+      /* **배율을 올리는 데 시간이 걸리면 안 된다.** 2026-09-14 에 이
+       * 한 줄이 검사를 통째로 멈춰 세웠다 — 렌더러가 CPU 133% 로 13분을
+       * 돌고도 안 끝났다. 까닭은 devVecTiles() 에 경계 검사가 없어서,
+       * 가짜 지도가 내놓는 세계 경계에서 z16 이면 두 겹 반복이 65,536²
+       * = 43억 바퀴를 돌았기 때문이다 (cadTileList 에는 그 검사가 있었다).
+       *
+       * 그래서 '무엇을 그렸나' 가 아니라 **얼마나 걸렸나** 를 본다. 앞으로
+       * 어디에 비슷한 반복이 생겨도 이 한 줄이 잡는다. 3초는 느린 검사판
+       * 기준으로도 넉넉하다 — 정상은 수십 ms 다. */
+      const zoomT0 = Date.now();
       await page.evaluate(() => { window.__zoom = 16; });
       const near = await pinRead();
+      const zoomMs = Date.now() - zoomT0;
+      check('배율을 z16 으로 올려도 화면이 안 멎는다 (칸 세기가 폭발하지 않는다)',
+            zoomMs < 3000, `${zoomMs}ms`);
       check('당겨 보면 핀에 값이 적힌다',
             near.peek.labelled === true
             && near.html.some((h) => /class="trade-pin/.test(h)),
@@ -4080,9 +4140,7 @@ const FAKE_LEAFLET = () => {
      * 아니라 안 본 것이다. */
     {
       const page2 = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-      for (const pat of ['**/lib/supabase-init.js*', '**/app/supabase.js*',
-                         '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'])
-        await page2.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
+      await stubCommon(page2);
 
       const META = path.join(ROOT, 'public', 'app', 'data', 'meta.json');
       const meta = JSON.parse(fs.readFileSync(META, 'utf8'));
@@ -4491,9 +4549,7 @@ const FAKE_LEAFLET = () => {
     {
       // 앞 절이 page 를 닫았다 — 새 페이지로 본다.
       const pg = await browser.newPage({ viewport: { width: 420, height: 900 } });
-      for (const pat of ['**/lib/supabase-init.js*', '**/app/supabase.js*',
-                         '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'])
-        await pg.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
+      await stubCommon(pg);
       await pg.route('**/app/config.js*', (r) => r.fulfill({
         status: 200, contentType: 'application/javascript',
         body: fs.readFileSync(path.join(ROOT, 'public', 'app', 'config.js'), 'utf8')
@@ -4593,9 +4649,7 @@ const FAKE_LEAFLET = () => {
       // 안 넣으면 관문이 막아 #detail 이 아예 안 그려진다 (page2 와 같은 길).
       const pg = await browser.newPage({ viewport: { width: 390, height: 844 } });
       // 진짜 supabase 스크립트가 내 가짜를 덮어써 관문이 막는다 — 비운다.
-      for (const pat of ['**/lib/supabase-init.js*', '**/app/supabase.js*',
-                         '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'])
-        await pg.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
+      await stubCommon(pg);
       await pg.addInitScript(FAKE_LEAFLET);
       await pg.addInitScript(() => {
         window.SB = {};
