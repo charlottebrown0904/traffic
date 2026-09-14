@@ -74,6 +74,11 @@ const ALLOW = {
   // 그래서 param 이 아니라 pathKey 로 둔다. 부르는 쪽은 자리표를 넣고,
   // 키는 여기서만 채운다 — 열쇠는 중계기 밖으로 안 나간다.
   "ecos.bok.or.kr":  { pathKey: "__KEY__",  env: "ECOS_KEY" },
+  // 한전 빅데이터 플랫폼 — 시군구 × 계약종별 × 월 전력사용량 (산업용이
+  // 곧 '공장이 도는가' 다). 키는 한전에서 따로 받아 KEPCO_KEY 로 둔다.
+  // optional 인 까닭: 키를 받기 전에도 주소가 살아 있는지, 무엇을 요구하는지
+  // 두드려 볼 수 있어야 한다 — 거절 메시지도 답이다.
+  "bigdata.kepco.co.kr": { param: "apiKey", env: "KEPCO_KEY", optional: true },
   // 국가법령정보센터 Open API (자치법규 조례). OC 는 가입 아이디인데 키처럼
   // 다룬다 — 호출 측이 들고 있지 않게 중계기가 끼워 넣는다.
   // keepClient: 호출 측이 OC 를 실어 보냈으면 그것을 살린다. 법제처 본문(DRF)은

@@ -2512,6 +2512,52 @@ check("산업단지" in _out and "한 건도 못 골랐습니다" in _out,
       "빈 갈래는 까닭과 함께 소리를 낸다")
 check("zones_housing.csv" in _out, "무엇을 읽었는지 원천 파일 이름을 밝힌다")
 
+print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")
+from redt.collect import indicators as _IND               # noqa: E402
+
+# 포털 화면 구조를 모르고 시작하므로 링크 모양만 믿는다. 흔한 두 모양을 준다.
+_fake = '''
+<ul><li><a href="/data/15012345/openapi.do?recommendDataYn=Y" class="tit">
+  <span>한국전력공사</span>_지역별 <em>전력사용량</em></a></li>
+<li><a href="https://www.data.go.kr/data/15098765/fileData.do">행정안전부_지방세 징수 현황</a></li>
+<li><a href="/data/15012345/openapi.do">한국전력공사_지역별 전력사용량</a></li>
+<li><a href="/other/link.do">관계없는 링크</a></li></ul>
+'''
+_saved_http_get = _IND.http.get
+try:
+    class _R:
+        text = _fake; status_code = 200; headers = {"content-type": "text/html"}
+    _IND.http.get = lambda *a, **k: _R()
+    _rows = _IND.search_portal("전력")
+    check(len(_rows) == 2, f"같은 데이터셋 번호는 한 번만 센다 ({len(_rows)}건)")
+    _e = next(r for r in _rows if r["id"] == "15012345")
+    check(_e["kind"] == "openapi" and "전력사용량" in _e["title"]
+          and "<" not in _e["title"],
+          f"태그를 벗기고 제목을 얻는다 ({_e['title']!r})")
+    check(any(r["kind"] == "fileData" for r in _rows), "파일 유형도 가려낸다")
+
+    # 하나도 못 뽑으면 빈 목록이 아니라 화면 앞부분을 남긴다 — 다음 판의 실마리.
+    _R.text = "<html><body>구조가 다른 화면</body></html>"
+    _none = _IND.search_portal("아무것도")
+    check(len(_none) == 1 and "_raw_head" in _none[0],
+          "못 뽑으면 화면 앞부분을 남긴다 (조용한 빈 목록이 아니다)")
+
+    # 두드리기는 죽지 않는다 — 예외도 결과로 담는다.
+    def _boom(*a, **k):
+        raise RuntimeError("연결 안 됨")
+    _IND.http.get = _boom
+    _k = _IND.knock({"name": "x", "url": "https://example.invalid/", "params": {}})
+    check("error" in _k and "연결 안 됨" in _k["error"], "후보가 죽어도 탐침은 이어진다")
+finally:
+    _IND.http.get = _saved_http_get
+
+# 포털 표준 봉투를 한 겹 벗겨 열쇠를 보인다.
+_env = '{"response":{"header":{"resultCode":"00"},"body":{"totalCount":3,"items":{"item":[{"pmsDay":"20240103","totArea":"1200.5","mainPurpsCdNm":"공장"}]}}}}'
+_keys = _IND._top_keys(_env)
+check("item.pmsDay" in _keys and "body.totalCount" in _keys,
+      f"봉투 속 항목 열쇠까지 보인다 ({len(_keys)}개)")
+check(_IND._top_keys("<xml/>") == [], "JSON 이 아니면 빈 목록")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

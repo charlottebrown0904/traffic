@@ -86,6 +86,8 @@ RELAYED_HOSTS = {
     # 인증키가 **경로 한 칸**에 들어간다 — 자리표 __KEY__ 를 넣어 부르면
     # 중계기가 채운다 (api/relay.js 의 pathKey).
     "ecos.bok.or.kr",
+    # 한전 빅데이터 플랫폼 — 시군구·계약종별·월 전력사용량 (api/relay.js 와 짝).
+    "bigdata.kepco.co.kr",
     # 자치법규(조례) Open API — 시군 도시계획조례의 건폐율·용적률·개발행위 기준.
     "www.law.go.kr",
     # 토지·주택가격비준표 열람 서비스 — 개별공시지가 산정에 쓰는 공식

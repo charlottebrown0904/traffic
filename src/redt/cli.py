@@ -723,6 +723,23 @@ def _cadastral_retry_alias(CAD, con, path: Path, want: set[str]) -> str:
             f" · 남은 것 {len(want):,}")
 
 
+def cmd_probe_indicators(args):
+    """지역 지표 원천 탐침 — 법인지방소득세 · 산업용 전력 · 건축허가 (2026-09-14).
+
+    엔드포인트를 추측하지 않는다. 포털 검색 페이지를 읽어 데이터셋 번호를
+    뽑고, 알고 있는 후보는 직접 두드린다. 결과를 JSON 으로 남겨 다음 판에서
+    적재기를 쓴다.
+    """
+    from .collect import indicators
+    result = indicators.probe(timeout=int(args.timeout))
+    print(indicators.describe(result))
+    out = PROCESSED / "indicators_probe.json"
+    PROCESSED.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(result, ensure_ascii=False, indent=1, default=str),
+                   encoding="utf-8")
+    print(f"\n→ {out}")
+
+
 def cmd_ecos(args):
     """한국은행 ECOS — 시장 층 계열을 받아 market_series 에 쌓는다.
 
@@ -3321,6 +3338,11 @@ def main(argv=None):
                    choices=["total", "freight", "passenger", "mid"])
     p.add_argument("--top", type=int, default=25, help="표에 찍을 상위 개수")
     p.set_defaults(func=cmd_rank)
+
+    p = sub.add_parser("probe-indicators",
+                       help="지역 지표 원천 탐침 — 법인지방소득세·산업용 전력·건축허가")
+    p.add_argument("--timeout", default="40")
+    p.set_defaults(func=cmd_probe_indicators)
 
     p = sub.add_parser("ecos", help="한국은행 ECOS — 금리·물가·성장률 (시장 층)")
     p.add_argument("--start", default="2000")
