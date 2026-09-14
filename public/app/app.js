@@ -3018,23 +3018,47 @@ function drawAdminShape(geom, fullName) {
   }
 }
 
+/* 브이월드가 주는 이름. 시군구·읍면동은 full_nm 이 통째로 온다고 실측해
+   두었는데(vworld-render run 1) **리(lt_c_adri)는 아직 안 봤다.** 없으면
+   있는 이름 칸을 이어 붙인다 — 이름이 없다고 경계까지 안 그리면 안 된다. */
+function adminName(props) {
+  const p = props || {};
+  if (p.full_nm) return String(p.full_nm);
+  const parts = ['sido_nm', 'sigg_nm', 'emd_nm', 'ri_nm',
+                 'sido_kor_nm', 'sig_kor_nm', 'emd_kor_nm', 'ri_kor_nm']
+    .map((k) => p[k]).filter(Boolean).map(String);
+  return [...new Set(parts)].join(' ') || null;
+}
+
 async function showAdminShape(at, levelKey) {
   const lat = Number(at[0]).toFixed(6);
   const lon = Number(at[1]).toFixed(6);
-  const level = (levelKey === 'umd' || levelKey === 'ri') ? 'umd'
-    : (levelKey === 'sido' ? 'sido' : 'sigungu');
+  // **리는 리로 묻는다** (2026-09-15). 예전에는 여기서 'ri' 를 'umd' 로
+  // 접어 버려서, 덕봉리를 눌러도 양성면 전체가 잡혔다. 서버에 리 경계가
+  // 없는 줄 알고 그랬는데 실제로는 있었다(lt_c_adri). 시의 동처럼 리가
+  // 없는 자리는 서버가 읍면동으로 물러나 답한다.
+  const level = levelKey === 'ri' ? 'ri'
+    : (levelKey === 'umd' ? 'umd'
+      : (levelKey === 'sido' ? 'sido' : 'sigungu'));
   const key = `${level}|${lat}|${lon}`;
   adminAsked = key;
-  if (adminCache.has(key)) { drawAdminShape(adminCache.get(key)); return; }
+  if (adminCache.has(key)) {
+    // 예전에는 여기서 이름을 안 넘겨, 같은 자리를 두 번째 누르면 경계만
+    // 그려지고 이름표가 사라졌다. 이름도 같이 담아 둔다.
+    const hit = adminCache.get(key) || {};
+    drawAdminShape(hit.geom, hit.name);
+    return;
+  }
   try {
     const resp = await fetch(
       `/api/tile?mode=admin&level=${level}&lat=${lat}&lon=${lon}`);
     if (!resp.ok) return;
     const d = await resp.json();
-    adminCache.set(key, d.geom || null);
+    const name = adminName(d.props);
+    adminCache.set(key, { geom: d.geom || null, name });
     // 기다리는 사이에 다른 태그를 눌렀으면 그린 것을 덮지 않는다.
     if (adminAsked !== key) return;
-    drawAdminShape(d.geom, (d.props || {}).full_nm);
+    drawAdminShape(d.geom, name);
   } catch (err) { /* 경계가 안 와도 값은 그대로 보인다 */ }
 }
 
@@ -5086,9 +5110,17 @@ async function loadParcelStats() {
   return parcelStatsLoading;
 }
 
-/* 값 → 또래 안 백분위. 분위 경계 사이를 선형으로 읽는다. */
+/* 값 → 또래 안 백분위. 분위 경계 사이를 선형으로 읽는다.
+ *
+ * **음수도 값이다.** 2026-09-15 까지 이 줄이 `!(v >= 0)` 이었다. '숫자인가'
+ * 를 묻자고 쓴 것인데 0보다 작은 것까지 같이 걸렀다 — 땅값이 내린 동네의
+ * 시장 동향이 전부 '조사 안 됨' 으로 찍혔다. 추세가 있는 3,073묶음 중
+ * 1,019(33%)이 음수이고, 전국 분포(trend_q)의 하한도 -0.84 라 분포 자체가
+ * 음수를 품고 있다. 즉 견줄 자리가 멀쩡히 있는데 버리고 있었다.
+ *
+ * 묻고 싶었던 것은 '유한한 숫자인가' 다. 그것만 묻는다. */
 function pctFromQuantiles(v, breaks) {
-  if (!Array.isArray(breaks) || breaks.length < 2 || !(v >= 0)) return null;
+  if (!Array.isArray(breaks) || breaks.length < 2 || !Number.isFinite(v)) return null;
   if (v <= breaks[0]) return 0;
   const last = breaks.length - 1;
   if (v >= breaks[last]) return 1;
@@ -5101,6 +5133,8 @@ function pctFromQuantiles(v, breaks) {
   }
   return 1;
 }
+
+window.__pctFromQuantiles = (v, breaks) => pctFromQuantiles(v, breaks);
 
 /* 우리 다섯 묶음 중 이 용도지역이 어디에 드는가. */
 function parcelGroup(landUse) {

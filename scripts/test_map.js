@@ -2379,6 +2379,48 @@ async function stubCommon(pg) {
     check('리 칸에는 인구를 안 적는다',
           !/<em>/.test(lpRi.html.find((h) => /사송리/.test(h)) || ''),
           (lpRi.html.find((h) => /사송리/.test(h)) || '없음').slice(0, 90));
+    // ── 행정구역 경계 (2026-09-15) ────────────────────────────────
+    // 리 태그를 눌렀는데 **면 전체**가 잡혔다. 화면이 'ri' 를 'umd' 로
+    // 접어 물었기 때문이고, 그렇게 한 까닭은 "브이월드에 리 경계가 없다"
+    // 는 단정이었다. 물어보니 있었다 (GetCapabilities 실측: lt_c_adri 리).
+    // 단정이 코드 주석으로 굳으면 아무도 다시 안 물어본다 — 그래서 검사가
+    // **무엇을 물었는지**를 본다.
+    {
+      const adminAsked = [];
+      await page.route('**/api/tile?mode=admin*', (r) => {
+        adminAsked.push(r.request().url());
+        return r.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            level: 'ri', got: 'ri', n: 1,
+            geom: { type: 'Polygon',
+                    coordinates: [[[127.3, 37.0], [127.4, 37.0], [127.4, 37.1], [127.3, 37.0]]] },
+            props: { full_nm: '경기도 안성시 양성면 덕봉리' },
+          }),
+        });
+      });
+      const fired = await page.evaluate(async () => {
+        // 가짜 표식이 이미 진짜 Leaflet 처럼 openPopup() 에서 popupopen 을
+        // 울린다 — 새 장치를 얹을 이유가 없다.
+        const marks = (window.__map.groups || []).flatMap((g) => g._items)
+          .filter((m) => m.options && m.options.pane === 'lpPane'
+                         && m.__handlers && (m.__handlers.popupopen || []).length);
+        if (!marks.length) return { none: true };
+        marks[0].openPopup();
+        await new Promise((ok) => setTimeout(ok, 250));
+        // 열어 둔 채 넘어가면 뒤 검사가 다른 화면을 본다.
+        marks[0].closePopup();
+        return { n: marks.length };
+      });
+      check('리 태그를 누르면 리 경계를 묻는다 (면으로 접지 않는다)',
+            adminAsked.length > 0 && /level=ri(&|$)/.test(adminAsked[0]),
+            fired.none ? '태그에 popupopen 이 안 붙어 있다'
+                       : (adminAsked[0] || '아무것도 안 물었다'));
+      await page.unroute('**/api/tile?mode=admin*');
+    }
+
+
     // 한 마디짜리 동은 자기 이름으로 맞으므로 붙는다.
     check('동 칸에는 자기 인구가 붙는다 (28,000명 → 2.8만)',
           /<em>2\.8만<\/em>/.test(lpRi.html.find((h) => /정자동/.test(h)) || ''),
@@ -3358,6 +3400,31 @@ async function stubCommon(pg) {
           /연 \+7\.2%/.test(pc.html),
           (pc.html.match(/연 [+-][0-9.]+%[^<]*/) || ['없음'])[0]);
     check('몇 해를 본 것인지 적는다', /최근 6년/.test(pc.html));
+    // **내린 동네도 견줄 자리가 있다.** 2026-09-15 까지 백분위 함수가
+    // 음수를 통째로 버려(`!(v >= 0)`) 땅값이 내린 곳의 시장 동향이 전부
+    // '조사 안 됨' 으로 찍혔다 — 추세가 있는 칸의 33%가 그랬다. 전국
+    // 분포(trend_q)의 하한이 -0.84 라 견줄 자리는 멀쩡히 있었다.
+    const pq = await page.evaluate(() => {
+      const q = [-0.84, -0.08, -0.03, -0.01, 0.01, 0.03, 0.05, 0.07, 0.1, 0.16, 1.82];
+      const f = window.__pctFromQuantiles;
+      // 상한은 1.82 다 — 0.2 는 한참 안쪽이라 '위' 가 아니다 (내 첫 기대치가
+      // 틀려 검사가 잡았다). 분포 밖을 보려면 2.0 을 준다.
+      return { neg: f(-0.043, q), low: f(-0.9, q), zero: f(0, q),
+               mid: f(0.2, q), high: f(2.0, q),
+               nan: f(NaN, q), undef: f(undefined, q), short: f(0.1, [0.5]) };
+    });
+    check('내린 곳도 백분위가 나온다 (음수를 버리지 않는다)',
+          typeof pq.neg === 'number' && pq.neg > 0 && pq.neg < 0.5,
+          `연 -4.3% → ${pq.neg}`);
+    check('분포 하한 아래는 0, 상한 위는 1',
+          pq.low === 0 && pq.high === 1, `${pq.low} · ${pq.high}`);
+    check('분포 안이면 사이 값 (0.2 는 상한 1.82 안쪽이라 1 이 아니다)',
+          pq.mid > 0.8 && pq.mid < 1, String(pq.mid));
+    check('0도 값이다 (내림도 오름도 아닌 곳)',
+          typeof pq.zero === 'number', String(pq.zero));
+    check('숫자가 아니면 여전히 비운다 (1.00 으로 메우지 않는다)',
+          pq.nan === null && pq.undef === null && pq.short === null,
+          `${pq.nan} · ${pq.undef} · ${pq.short}`);
     // 축 설명에서 **재는 방법**을 뺐다 (2026-09-12 지시 '노하우는 숨긴다').
     // 몇 km 안의 어느 차종인지, 또래를 무슨 열쇠로 묶고 얇으면 어디로
     // 물러나는지는 곧 만드는 법이다. 뜻과 주의만 남긴다.

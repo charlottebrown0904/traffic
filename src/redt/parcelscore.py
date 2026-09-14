@@ -410,11 +410,22 @@ def build(groups: list[tuple[str, str]], urban: dict | None = None) -> dict:
     for code, counts in sigungu.items():
         zone_pct[code] = _cum(counts)
 
-    with_trend = sum(1 for v in peers.values() if "trend" in v)
+    # **분모를 맞춘다.** 예전에는 peers 전체로 나눠 '26%' 가 찍혔는데,
+    # peers 에는 지목군까지 붙은 칸(41550|보전녹지|임야)이 들어 있고 그런
+    # 칸은 **설계상** 추세를 갖지 않는다 — 추세 열쇠는 '코드|용도지역군'
+    # 하나뿐이고 화면(pickTrend)도 그것만 찾는다. 그래서 그 수치는 덮개가
+    # 얇아 보이게 만드는 거짓 신호였다. 화면이 실제로 보는 칸으로 센다.
+    zone_keys = [k for k in peers if k.count("|") == 1]
+    with_trend = sum(1 for k in zone_keys if "trend" in peers[k])
+    neg = sum(1 for k in zone_keys
+              if isinstance(peers[k].get("trend"), (int, float)) and peers[k]["trend"] < 0)
     print(f"  필지 진단 또래 {len(peers):,}묶음"
           f" (시군구·시도·전국 3단계) · 시군구 사다리 {len(zone_pct):,}곳")
-    print(f"  가격 추세 {with_trend:,}묶음 ({with_trend / max(1, len(peers)):.0%})"
-          f" · 최근 {TREND_YEARS}년 · 전국 분포 {len(trend_q)}분위")
+    print(f"  가격 추세 {with_trend:,}/{len(zone_keys):,}칸"
+          f" ({with_trend / max(1, len(zone_keys)):.0%} · 코드|용도지역군 칸 기준)"
+          f" · 그중 내린 곳 {neg:,} ({neg / max(1, with_trend):.0%})"
+          f" · 최근 {TREND_YEARS}년 · 전국 분포 {len(trend_q)}분위"
+          f" [{trend_q[0] if trend_q else '-'} ~ {trend_q[-1] if trend_q else '-'}]")
     return {
         "axes": AXES,
         "min_peer": MIN_PEER,

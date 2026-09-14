@@ -231,8 +231,16 @@ const ADMIN_LAYERS = {
   sido: "lt_c_adsido",
   sigungu: "lt_c_adsigg",
   umd: "lt_c_ademd",
-  ri: "lt_c_ademd",          // 리 단위 경계는 없다 — 읍면동으로 답한다
+  // **리 경계는 있다** (2026-09-15, GetCapabilities 실측: `lt_c_adri  리`).
+  // 여기 'lt_c_ademd' 를 넣고 "리 단위 경계는 없다" 고 적어 둔 것은 틀린
+  // 단정이었다 — 그래서 리를 눌러도 면 전체가 잡혔다. 물어보니 177개
+  // 레이어 안에 멀쩡히 있었다.
+  ri: "lt_c_adri",
 };
+
+// 시에는 리가 없다 (조원동 같은 행정동·법정동). 그런 자리에서 리를 물으면
+// 빈 답이 오므로 읍면동으로 한 번 물러난다 — 아래 adminShape 가 한다.
+const ADMIN_FALLBACK = { ri: "umd" };
 
 // ── 배경 지도 (요구사항 2026-09-09) ─────────────────────────────
 //
@@ -768,8 +776,9 @@ function sendShapes(res, items, whole_) {
  */
 async function adminShape(req, res) {
   const level = String(req.query.level || "sigungu");
-  const typename = ADMIN_LAYERS[level];
-  if (!typename) return fail(res, 400, "level 은 sido·sigungu·umd·ri 여야 합니다");
+  if (!ADMIN_LAYERS[level]) {
+    return fail(res, 400, "level 은 sido·sigungu·umd·ri 여야 합니다");
+  }
   const lat = Number(req.query.lat);
   const lon = Number(req.query.lon);
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
@@ -781,7 +790,7 @@ async function adminShape(req, res) {
   }
   // 약 10m 짜리 상자. 점 하나로 물으면 WFS 가 빈 상자로 읽는다.
   const d = 0.0001;
-  const out = await callVworld({
+  const ask = (typename) => callVworld({
     SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
     TYPENAME: typename,
     BBOX: [lon - d, lat - d, lon + d, lat + d].join(","),
@@ -791,6 +800,9 @@ async function adminShape(req, res) {
     DOMAIN: process.env.VWORLD_REFERER
       || `https://${(req.headers || {}).host || "toji.fyi"}/`,
   }, VWORLD_WFS, (req.headers || {}).host);
+
+  let got = level;
+  let out = await ask(ADMIN_LAYERS[level]);
   if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
   if (!out.upstream) {
     return fail(res, out.timedOut ? 504 : 502,
@@ -802,7 +814,20 @@ async function adminShape(req, res) {
   catch (err) {
     return fail(res, 502, "브이월드가 행정구역 대신 다른 것을 줬습니다");
   }
-  const feats = Array.isArray(body && body.features) ? body.features : [];
+  let feats = Array.isArray(body && body.features) ? body.features : [];
+  // 리가 없는 자리(시의 동)면 한 단계 물러나 읍면동을 준다. 빈 경계를
+  // 주면 화면에서 '눌렀는데 아무 일도 안 난다' 가 된다.
+  const back = ADMIN_FALLBACK[level];
+  if (!feats.length && back && ADMIN_LAYERS[back]) {
+    const out2 = await ask(ADMIN_LAYERS[back]);
+    if (out2.upstream) {
+      try {
+        const body2 = await out2.upstream.json();
+        const f2 = Array.isArray(body2 && body2.features) ? body2.features : [];
+        if (f2.length) { feats = f2; got = back; }
+      } catch (err) { /* 물러난 쪽이 안 와도 위의 빈 답을 그대로 준다 */ }
+    }
+  }
   const first = feats[0] || null;
   res.setHeader("cache-control", CACHE_OK);
   // 이름 칸은 실호출로 확인했다 (vworld-render run 1):
@@ -813,6 +838,9 @@ async function adminShape(req, res) {
   // 서버를 또 고쳐야 한다.
   return res.status(200).json({
     level,
+    // 실제로 답한 단계. 리를 물었는데 동으로 물러났으면 여기서 갈린다 —
+    // 화면이 '리 경계' 라고 말해 놓고 면을 그리는 일이 없게.
+    got,
     n: feats.length,
     geom: first ? round6(first.geometry) : null,
     props: first ? (first.properties || {}) : null,
