@@ -122,11 +122,11 @@ def detail(dataset_id: str, kind: str = "openapi", timeout: int = 40) -> dict:
     # 화면이 'http://' 없이 쓰거나 입력칸(value=)에 넣어 둔 것이다. 스킴을
     # 선택으로 두고, 못 잡으면 주소가 있을 법한 낱말 둘레를 그대로 남긴다.
     out["endpoints"] = sorted(set(re.findall(
-        r"(?:https?://)?(?:apis\.data\.go\.kr|api\.odcloud\.kr|api\.data\.go\.kr)/[A-Za-z0-9_./\-]+",
+        r"(?:https?://)?(?:apis\.data\.go\.kr|api\.odcloud\.kr|api\.data\.go\.kr)/[A-Za-z0-9_./\-{}]+",
         page)))[:20]
-    out["excerpts"] = _around(page, ("End Point", "endPoint", "요청주소", "apis.data.go.kr",
-                                     "fn_fileDataDown", "fileDownload", "atchFileId",
-                                     "미리보기", "활용신청"), width=260, limit=6)
+    # 3차에서 '활용신청' 발췌가 앞을 다 차지해 주소 발췌가 밀렸다. 주소가 먼저다.
+    out["excerpts"] = _around(page, ("apis.data.go.kr", "End Point", "endPoint", "요청주소",
+                                     "서비스URL", "fn_fileDataDown"), width=320, limit=8)
     out["operations"] = sorted(set(re.findall(r"\b(get[A-Z][A-Za-z0-9]+)\b", page)))[:40]
     out["downloads"] = sorted(set(re.findall(
         r"fileDownload\.do\?[^\"'<>\s]*atchFileId=[^\"'<>\s]+", page)))[:10]
@@ -155,32 +155,78 @@ def _around(page: str, words: tuple, width: int = 260, limit: int = 6) -> list[s
     return out
 
 
+def _decode_table(raw: bytes) -> str | None:
+    """CSV 바이트를 글자로. 한국 공공 파일은 cp949 가 흔하다."""
+    for enc in ("utf-8-sig", "cp949", "utf-8"):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return None
+
+
 def fetch_head(url: str, timeout: int = 60) -> dict:
     """파일 내려받기가 **로그인 없이** 되는지 — 머리만 받아 본다.
 
-    포털 파일은 회원만 받는 것도 있다. 그러면 HTML(로그인 화면)이 오고,
-    되는 것이면 CSV 머리가 온다. 둘을 content-type 과 첫 줄로 가른다.
+    3차(run 34806071394)에서 셋 다 200 이 왔는데 머리가 base64 글자였다.
+    중계기가 텍스트 아닌 content-type 은 base64 로 감싸 보내기 때문이다
+    (api/relay.js · x-relay-encoding). 그 머리표를 보고 풀어 읽는다.
+    x-relay-bytes 가 진짜 크기다 — 중계기 함수는 큰 몸통을 못 넘기므로
+    이 값이 '중계기로 받을 수 있는가' 를 정한다.
     """
     try:
         resp = http.get_once(url, {}, timeout=timeout)
     except Exception as exc:                          # noqa: BLE001
         return {"url": url, "error": f"{type(exc).__name__}: {exc}"[:300]}
-    body = resp.content[:4000]
-    text = None
-    for enc in ("utf-8-sig", "cp949", "utf-8"):
+    raw = resp.content
+    relayed_b64 = resp.headers.get("x-relay-encoding") == "base64"
+    if relayed_b64:
+        import base64
         try:
-            text = body.decode(enc)
-            break
-        except UnicodeDecodeError:
-            continue
+            raw = base64.b64decode(raw)
+        except Exception:                             # noqa: BLE001
+            pass
+    text = _decode_table(raw[:6000])
+    lines = text.splitlines() if text else []
+    first = lines[0] if lines else ""
     return {"url": url, "status": resp.status_code,
-            "content_type": resp.headers.get("content-type", ""),
-            "disposition": resp.headers.get("content-disposition", "")[:160],
-            "length": resp.headers.get("content-length", ""),
-            "head": (text or repr(body[:200]))[:700],
+            "content_type": resp.headers.get("x-relay-content-type") or resp.headers.get("content-type", ""),
+            "relayed_base64": relayed_b64,
+            "bytes": resp.headers.get("x-relay-bytes") or resp.headers.get("content-length", ""),
+            "header": first[:400],
+            "rows": [ln[:200] for ln in lines[1:4]],
             "looks_like": ("html" if (text or "").lstrip().lower().startswith(("<!doctype", "<html"))
-                           else "table" if text and ("," in text.splitlines()[0] if text.splitlines() else False)
+                           else "table" if "," in first or "\t" in first
                            else "binary" if text is None else "other")}
+
+
+def fetch_direct(url: str, timeout: int = 20, limit: int = 65536) -> dict:
+    """중계기 **없이** 러너에서 바로 받아 본다 — 큰 파일을 위해.
+
+    중계기(Vercel 함수)는 몸통 크기에 한도가 있어 수십 MB 파일은 못 넘긴다.
+    포털 파일 내려받기가 해외 IP 에도 열려 있으면 러너가 직접 받는 길이
+    생긴다. 열려 있는지는 두드려 봐야 안다 — API 는 막혔지만 파일은
+    다를 수 있다.
+    """
+    try:
+        resp = http._sess().get(url, stream=True, timeout=timeout,
+                                headers={"User-Agent": "redt-research/0.1"})
+        chunk = b""
+        for part in resp.iter_content(16384):
+            chunk += part
+            if len(chunk) >= limit:
+                break
+        resp.close()
+        text = _decode_table(chunk[:4000])
+        first = (text or "").splitlines()[0] if text else ""
+        return {"url": url, "status": resp.status_code,
+                "content_type": resp.headers.get("content-type", ""),
+                "length": resp.headers.get("content-length", ""),
+                "got": len(chunk), "header": first[:300],
+                "looks_like": ("html" if (text or "").lstrip().lower().startswith(("<!doctype", "<html"))
+                               else "table" if "," in first else "other")}
+    except Exception as exc:                          # noqa: BLE001
+        return {"url": url, "error": f"{type(exc).__name__}: {exc}"[:200]}
 
 
 def _top_keys(text: str) -> list[str]:
@@ -243,14 +289,18 @@ def probe(timeout: int = 40) -> dict:
 
     # 상세에서 나온 내려받기 링크는 머리만 실제로 받아 본다 — 로그인 없이
     # 되는지가 '러너가 대신 받을 수 있는가' 를 정한다.
-    downloads = []
+    downloads, direct = [], []
     for d in details:
         for u in d.get("downloads", [])[:1]:
             full = "https://www.data.go.kr/cmm/cmm/" + u.lstrip("/")
             got = fetch_head(full, timeout=timeout)
             got["dataset"] = d["id"]
             downloads.append(got)
-    return {"portal": found, "candidates": knocked, "details": details, "downloads": downloads}
+            dd = fetch_direct(full)
+            dd["dataset"] = d["id"]
+            direct.append(dd)
+    return {"portal": found, "candidates": knocked, "details": details,
+            "downloads": downloads, "direct": direct}
 
 
 def describe(result: dict) -> str:
@@ -289,14 +339,26 @@ def describe(result: dict) -> str:
             lines.append(f"       발췌 {x[:230]}")
         if "_raw_head" in d:
             lines.append(f"       (주소를 못 뽑았습니다) {d['_raw_head'][:200]}")
-    lines.append("\n── 내려받기 시험 (로그인 없이 되는가) ──")
+    lines.append("\n── 내려받기 시험 · 중계기 경유 (로그인 없이 되는가) ──")
     for g in result.get("downloads", []):
         if "error" in g:
             lines.append(f"  ✗ {g.get('dataset')}  {g['error']}")
             continue
         lines.append(f"  {g['status']} {g.get('dataset')}  {g['looks_like']:<6} "
-                     f"{g['content_type'][:40]}  {g['disposition'][:60]}  {g['length']}")
-        lines.append(f"       머리: {re.sub(chr(10), ' | ', g['head'])[:220]}")
+                     f"{g['content_type'][:40]}  {g['bytes']}바이트"
+                     f"{'  (base64 풀었음)' if g.get('relayed_base64') else ''}")
+        lines.append(f"       머리: {g['header'][:300]}")
+        for r in g.get("rows", [])[:2]:
+            lines.append(f"       행:   {r[:200]}")
+    lines.append("\n── 내려받기 시험 · 러너 직접 (미국에서 열려 있는가) ──")
+    for g in result.get("direct", []):
+        if "error" in g:
+            lines.append(f"  ✗ {g.get('dataset')}  {g['error']}")
+            continue
+        lines.append(f"  {g['status']} {g.get('dataset')}  {g['looks_like']:<6} "
+                     f"{g['content_type'][:40]}  길이 {g['length'] or '?'} · 받은 {g['got']:,}")
+        if g.get("header"):
+            lines.append(f"       머리: {g['header'][:200]}")
     lines.append("\n── 후보 두드리기 ──")
     for k in result["candidates"]:
         if "error" in k:

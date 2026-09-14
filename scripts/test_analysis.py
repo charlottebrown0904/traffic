@@ -2599,6 +2599,24 @@ try:
 finally:
     _IND.http.get_once = _saved_once
 
+# 중계기가 base64 로 감싼 cp949 CSV 를 풀어 읽는다 (3차에서 머리를 못 읽은 까닭).
+import base64 as _b64                                      # noqa: E402
+_csv_cp949 = "판매년월,시도,시군구,계약종별,사용량\n2025-01,경기도,안성시,산업용,114549\n".encode("cp949")
+class _RB:
+    content = _b64.b64encode(_csv_cp949); status_code = 200
+    headers = {"x-relay-encoding": "base64", "x-relay-content-type": "application/octet-stream",
+               "x-relay-bytes": str(len(_csv_cp949)), "content-type": "text/plain"}
+_saved_once2 = _IND.http.get_once
+try:
+    _IND.http.get_once = lambda *a, **k: _RB()
+    _fh = _IND.fetch_head("https://x/")
+    check(_fh["relayed_base64"] and _fh["header"].startswith("판매년월,시도"),
+          f"중계기가 감싼 base64 를 풀고 cp949 로 읽는다 ({_fh['header'][:20]!r})")
+    check(_fh["looks_like"] == "table" and _fh["bytes"] == str(len(_csv_cp949)),
+          "표로 알아보고 진짜 크기를 x-relay-bytes 에서 읽는다")
+finally:
+    _IND.http.get_once = _saved_once2
+
 # 포털 표준 봉투를 한 겹 벗겨 열쇠를 보인다.
 _env = '{"response":{"header":{"resultCode":"00"},"body":{"totalCount":3,"items":{"item":[{"pmsDay":"20240103","totArea":"1200.5","mainPurpsCdNm":"공장"}]}}}}'
 _keys = _IND._top_keys(_env)
