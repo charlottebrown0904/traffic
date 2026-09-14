@@ -35,10 +35,19 @@ jobs:
         if: inputs.probe == 'geocode-mask'
         env:
           PYTHONPATH: src
-          # 지오코더는 **중계기가 아니라 키를 직접** 쓴다
-          # (collect/geocode.py 의 geocode_one → keys().require('vworld')).
-          # 첫 판이 이것을 안 줘서 죽었다.
-          VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
+          # **이름이 둘 다 어긋나 있었다.**
+          #
+          # 1) 이 워크플로는 RELAY_URL 을 주는데 redt 라이브러리는
+          #    REDT_RELAY_URL 을 읽는다 (config.Relay). 이름이 다르면
+          #    중계기가 꺼진 것으로 보고 vworld 를 직접 부른다.
+          # 2) geocode_one 이 keys().require('vworld') 로 **먼저 막는다.**
+          #    그런데 api.vworld.kr 은 중계기가 열쇠를 갈아 끼우는 곳이라
+          #    (api/relay.js 의 VWORLD_KEY) 우리 쪽 값은 쓰이지 않는다.
+          #    require 를 통과시킬 자리표만 준다 — 중계기가 지운다
+          #    (relay.js 의 STRIP 에 'key' 가 있다).
+          REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+          REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+          VWORLD_KEY: relay-replaces-this
         run: |
           set -o pipefail
           python scripts/geocode_mask_probe.py 2>&1 | tee /tmp/probe.log
