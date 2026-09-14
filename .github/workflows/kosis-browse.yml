@@ -24,7 +24,7 @@ on:
         description: "이름으로 찾을 말 (쉼표). 주면 인구 적재는 건너뛰고 찾기만 한다"
         default: ""
       peek:
-        description: "표 속을 열어 본다 — orgId,tblId[,맛보기해[,주기[,더줄축]]]"
+        description: "표 속 열어 보기 — orgId,tblId[,맛보기해[,주기[,더줄축]]] · 여럿은 ; 로"
         default: ""
 
 jobs:
@@ -67,10 +67,15 @@ jobs:
         if: inputs.peek != ''
         continue-on-error: true
         run: |
-          IFS=, read -r ORG TBL YEAR PRD OBJ <<< "${{ inputs.peek }}"
-          python -m redt.cli kosis-peek --org "$ORG" --table "$TBL" \
-            --year "${YEAR:-}" --prd "${PRD:-Y}" --obj "${OBJ:-}" \
-            2>&1 | tee data/raw/kosis_peek.txt
+          : > data/raw/kosis_peek.txt
+          # 한 판에 여러 표를 연다 — 표 하나에 한 판씩 쓰면 하루가 간다.
+          # 한 표가 막혀도 나머지는 본다 (|| true).
+          echo "${{ inputs.peek }}" | tr ';' '\n' | while IFS=, read -r ORG TBL YEAR PRD OBJ; do
+            [ -n "$ORG" ] || continue
+            python -m redt.cli kosis-peek --org "$ORG" --table "$TBL" \
+              --year "${YEAR:-}" --prd "${PRD:-Y}" --obj "${OBJ:-}" \
+              2>&1 | tee -a data/raw/kosis_peek.txt || true
+          done
 
       # 검색으로 확인한 표를 실제로 받아 본다. 이 엔드포인트는 아직
       # 실호출로 검증되지 않았으므로, 응답 앞부분을 그대로 찍는다.
