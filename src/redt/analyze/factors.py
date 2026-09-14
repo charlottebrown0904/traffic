@@ -244,3 +244,39 @@ def multipliers(fit) -> pd.DataFrame:
                              "p": round(float(fit.pvalues[inter]), 3),
                              "겹친 몫": round(math.exp(b[inter]), 3)})
     return pd.DataFrame(rows)
+
+
+# 개발사건을 갈래로 나누는 말. **칸이 아니라 갈래를 봐야 한다.**
+#
+# 2026-09-14. 첫 실행에서 산단·택지 조합이 **한 칸도** 안 나왔다. 사건이
+# 없는 줄 알았는데 그게 아니었다. zones_housing.csv 189건은 모두 좌표가
+# 있는 도시개발사업인데, 적재기가 type 칸에 넣은 것이 bizMthSeNm —
+# 수용 · 환지 · 수용+환지, 즉 **땅을 어떻게 확보하는가** 였다. 사업의
+# 갈래가 아니다. 그래서 '택지|주택|도시개발' 로 훑으면 하나도 안 걸린다.
+#
+# 연속지적도에서 배운 것과 같은 종류의 일이다: **0 은 소리를 내야 한다.**
+# 갈래를 파일 이름(source)까지 함께 보고 정하고, 어느 갈래가 비었는지
+# 부르는 쪽이 반드시 말하게 한다.
+ZONE_MATCH = {
+    "ind": "산업단지|산단|농공|industrial",
+    "hsg": "택지|주택|도시개발|신도시|housing|residential",
+}
+
+
+def split_zones(zones: pd.DataFrame) -> dict:
+    """zone_event → {갈래: 사건표}. type 과 source 를 **함께** 본다.
+
+    적재기는 유형 칸이 없으면 파일 이름을 type 에 넣고, 있으면 그 칸을
+    그대로 넣는다. 그 칸이 갈래가 아닐 수도 있으므로(수용·환지) 파일
+    이름도 같이 훑는다. 둘 중 하나만 걸려도 그 갈래다.
+    """
+    out = {}
+    if zones is None or len(zones) == 0:
+        return {k: pd.DataFrame() for k in ZONE_MATCH}
+    z = pd.DataFrame(zones)
+    tag = (z.get("type", pd.Series("", index=z.index)).astype("string").fillna("")
+           + " " +
+           z.get("source", pd.Series("", index=z.index)).astype("string").fillna(""))
+    for key, pat in ZONE_MATCH.items():
+        out[key] = z[tag.str.contains(pat, case=False, na=False)]
+    return out

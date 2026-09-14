@@ -751,7 +751,7 @@ def cmd_factor_cells(args):
               AND deal_year BETWEEN ? AND ?
         """, [int(args.since), int(args.until)]).fetchdf()
         zones = con.execute("""
-            SELECT type, lat, lon, year(designated_date) AS year
+            SELECT type, source, lat, lon, year(designated_date) AS year
             FROM zone_event WHERE lat IS NOT NULL AND designated_date IS NOT NULL
         """).fetchdf()
         ics = con.execute("""
@@ -768,9 +768,29 @@ def cmd_factor_cells(args):
           if not pan.empty else "패널이 비었습니다")
     if pan.empty:
         return
-    ev = {"ic": ics,
-          "ind": zones[zones["type"].str.contains("산업", na=False)],
-          "hsg": zones[zones["type"].str.contains("택지|주택|도시개발", na=False)]}
+    ev = {"ic": ics, **FA.split_zones(zones)}
+
+    # **비어 있는 갈래는 반드시 소리를 낸다.** 안 그러면 '사건이 없는 동네'
+    # 와 '우리가 못 읽은 사건' 이 조합 표에서 똑같이 생겼다. 첫 실행에서
+    # 산단·택지가 한 칸도 없었던 것이 그 경우였다.
+    print("\n── 갈래별 사건 ──")
+    for key, name, _r in FA.TREATMENTS:
+        if key not in ev:
+            continue
+        n = len(ev[key])
+        note = ""
+        if n == 0:
+            kinds = sorted(set(zones.get("source", pd.Series(dtype=str)).dropna())) \
+                if len(zones) else []
+            note = ("  ⚠ 한 건도 못 골랐습니다 — 원천 파일: "
+                    + (", ".join(kinds) if kinds else "없음"))
+        print(f"  {name:<10} {n:>5,}건{note}")
+    if len(zones):
+        got = sorted(set(pd.concat([ev[k] for k in FA.ZONE_MATCH if k in ev]).index))
+        miss = len(zones) - len(got)
+        if miss:
+            print(f"  ⚠ 어느 갈래에도 안 든 개발사건 {miss:,}건")
+
     pan = FA.mark(pan, ev, FA.pop_flags(ry))
 
     print("\n── 조합 칸 (추정보다 이 표가 먼저다) ──")

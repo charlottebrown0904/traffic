@@ -2370,6 +2370,87 @@ _last = _pf[_pf["year"] == 2020]
 check(int(_last["d_pop"].sum()) == 5,
       f"인구는 상위 4분의 1만 켠다 ({int(_last['d_pop'].sum())}/20)")
 
+# 갈래 나누기 — **실제로 들어온 모양**으로 시험한다.
+#
+# zones_housing.csv 189건의 type 칸에는 bizMthSeNm(수용·환지)가 들어 있다.
+# 사업 방식이지 갈래가 아니다. type 만 훑으면 도시개발사업이 한 건도 안
+# 걸려 산단·택지 조합이 통째로 사라진다 — 실제로 그렇게 사라졌다.
+_z = _pd.DataFrame([
+    {"type": "수용", "source": "zones_housing.csv", "lat": 37.0, "lon": 127.0, "year": 2015},
+    {"type": "환지", "source": "zones_housing.csv", "lat": 37.1, "lon": 127.1, "year": 2016},
+    {"type": "일반산업단지", "source": "zones_ind.csv", "lat": 36.9, "lon": 127.2, "year": 2014},
+    {"type": "", "source": "zones_etc.csv", "lat": 36.5, "lon": 127.5, "year": 2013},
+])
+_sp = _FA.split_zones(_z)
+check(len(_sp["hsg"]) == 2,
+      f"사업방식(수용·환지)이 유형 칸에 와도 파일 이름으로 택지를 찾는다 ({len(_sp['hsg'])})")
+check(len(_sp["ind"]) == 1, f"산단은 유형 칸으로 찾는다 ({len(_sp['ind'])})")
+check(len(_sp["ind"]) + len(_sp["hsg"]) == 3, "어느 갈래에도 안 드는 것은 안 넣는다")
+check(all(len(v) == 0 for v in _FA.split_zones(_pd.DataFrame()).values()),
+      "사건이 없으면 빈 표를 준다 (터지지 않는다)")
+# source 칸이 아예 없어도 type 만으로 굴러가야 한다.
+_sp2 = _FA.split_zones(_z.drop(columns=["source"]))
+check(len(_sp2["ind"]) == 1 and len(_sp2["hsg"]) == 0,
+      "source 가 없으면 type 만 본다")
+
+# **명령을 실제로 돌려 본다.** 조각만 시험해서 Path 임포트 하나를 놓쳤던
+# 일이 있었다 (run 34769041450). 여기서도 같은 실수를 하지 않으려면 stub
+# 연결로 cmd_factor_cells 를 통째로 한 번 굴려야 한다.
+import contextlib as _ctx                              # noqa: E402
+import types as _types                                 # noqa: E402
+from redt import cli as _cli2, db as _db2              # noqa: E402
+
+_ROWS = {
+    "FROM trade": _pd.DataFrame([
+        {"umd_cd": f"S{i%6:02d}|동{i%9}", "deal_year": 2010 + (i % 12),
+         "price_per_m2": 100000 * (1 + i % 7),
+         "lat": 36.8 + 0.01 * (i % 9), "lon": 127.0 + 0.01 * (i % 9),
+         "sigungu_cd": f"S{i%6:02d}"} for i in range(900)]),
+    # 실제로 들어 있는 모양 그대로 — 유형 칸이 사업방식(수용·환지)이다.
+    "FROM zone_event": _pd.DataFrame([
+        {"type": "수용", "source": "zones_housing.csv",
+         "lat": 36.81, "lon": 127.01, "year": 2013},
+        {"type": "환지", "source": "zones_housing.csv",
+         "lat": 36.85, "lon": 127.05, "year": 2016}]),
+    "FROM tollgate": _pd.DataFrame([{"lat": 36.82, "lon": 127.02, "year": 2014}]),
+    "FROM region_year": _pd.DataFrame(columns=["sigungu_cd", "year", "metric", "value"]),
+}
+
+
+class _Cur:
+    def __init__(self, d): self.d = d
+    def fetchdf(self): return self.d
+
+
+class _Con:
+    def execute(self, sql, params=None):
+        for key, val in _ROWS.items():
+            if key in sql:
+                return _Cur(val.copy())
+        raise AssertionError(sql[:80])
+
+
+@_ctx.contextmanager
+def _fake_connect(*a, **k):
+    yield _Con()
+
+
+_real_connect, _db2.connect = _db2.connect, _fake_connect
+_buf = io.StringIO()
+try:
+    with contextlib.redirect_stdout(_buf):
+        _cli2.cmd_factor_cells(_types.SimpleNamespace(
+            since="2010", until="2025", min_n=1, estimate=False))
+    _out = _buf.getvalue()
+finally:
+    _db2.connect = _real_connect
+
+check("택지지구" in _out and "IC 신설 + 택지지구" in _out,
+      "명령이 끝까지 돌고 택지 조합이 표에 선다")
+check("산업단지" in _out and "한 건도 못 골랐습니다" in _out,
+      "빈 갈래는 까닭과 함께 소리를 낸다")
+check("zones_housing.csv" in _out, "무엇을 읽었는지 원천 파일 이름을 밝힌다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
