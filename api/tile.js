@@ -711,8 +711,12 @@ async function adminShape(req, res) {
   const feats = Array.isArray(body && body.features) ? body.features : [];
   const first = feats[0] || null;
   res.setHeader("cache-control", CACHE_OK);
-  // 이름 칸이 무엇인지 모르므로 **속성을 통째로** 넘긴다. 화면이
-  // 골라 쓴다 — 여기서 이름을 하나 찍으면 그 추측이 굳어 버린다.
+  // 이름 칸은 실호출로 확인했다 (vworld-render run 1):
+  //   시군구  sig_cd sig_kor_nm sig_eng_nm full_nm cat_cde cat_nam
+  //   읍면동  emd_cd emd_kor_nm emd_eng_nm full_nm cat_cde cat_nam
+  // full_nm 이 '경기도 평택시 안중읍' 처럼 통째로 온다. 그래도 속성은
+  // **통째로** 넘긴다 — 여기서 하나만 골라 찍으면 다른 칸이 필요해질 때
+  // 서버를 또 고쳐야 한다.
   return res.status(200).json({
     level,
     n: feats.length,

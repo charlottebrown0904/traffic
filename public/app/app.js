@@ -2726,16 +2726,23 @@ function clearAdminShape() {
   if (adminLayer) adminLayer.clearLayers();
 }
 
-function drawAdminShape(geom) {
+function drawAdminShape(geom, fullName) {
   if (!adminLayer || !geom) return;
   adminLayer.clearLayers();
-  L.geoJSON(geom, {
+  const shape = L.geoJSON(geom, {
     // 면을 옅게 깔고 테두리를 굵게. 값 태그가 위에 앉으므로 채움은
     // 아주 옅어야 한다 — 진하면 읽던 숫자가 묻힌다.
     style: { color: '#1D4ED8', weight: 3, opacity: .9,
              fillColor: '#3B82F6', fillOpacity: .12 },
     interactive: false,
   }).addTo(adminLayer);
+  // 전체 이름은 브이월드가 준다 ('경기도 평택시 안중읍'). 태그에는
+  // 짧은 이름만 적혀 있어서, 어느 시도의 어느 구인지가 여기서 붙는다.
+  if (fullName) {
+    shape.bindTooltip(String(fullName), {
+      permanent: true, direction: 'center', className: 'admin-name',
+    });
+  }
 }
 
 async function showAdminShape(at, levelKey) {
@@ -2754,7 +2761,7 @@ async function showAdminShape(at, levelKey) {
     adminCache.set(key, d.geom || null);
     // 기다리는 사이에 다른 태그를 눌렀으면 그린 것을 덮지 않는다.
     if (adminAsked !== key) return;
-    drawAdminShape(d.geom);
+    drawAdminShape(d.geom, (d.props || {}).full_nm);
   } catch (err) { /* 경계가 안 와도 값은 그대로 보인다 */ }
 }
 

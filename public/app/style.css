@@ -1911,3 +1911,17 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   white-space: nowrap;
 }
 .dev-part input { margin: 0; }
+
+/* 고른 행정구역의 전체 이름 (2026-09-14) — 브이월드의 full_nm.
+   면 가운데에 상주하므로 값 태그를 가리지 않게 옅고 작게 둔다. */
+.leaflet-tooltip.admin-name {
+  background: rgba(29, 78, 216, .88);
+  border: 0;
+  box-shadow: none;
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 600;
+  padding: .12rem .4rem;
+  white-space: nowrap;
+}
+.leaflet-tooltip.admin-name::before { display: none; }

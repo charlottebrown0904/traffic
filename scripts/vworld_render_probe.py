@@ -44,6 +44,9 @@ SPOTS = [
     ("화성 향남", 37.0, 126.93),
     ("안산 반월", 37.30, 126.80),
     ("아산 탕정", 36.80, 127.08),
+    # 첨단산업단지가 세 자리 모두 빈 그림이었다 (1차). 층이 죽은 것과
+    # '그 자리에 없는 것' 을 가르려면 **있는 자리**를 하나 넣어야 한다.
+    ("성남 판교", 37.402, 127.108),
 ]
 
 
@@ -67,6 +70,22 @@ def call(url: str, params: dict, timeout: int = 60):
                         params={"target": target})
 
 
+def png_bytes(raw: bytes) -> bytes:
+    """**중계기는 그림을 base64 로 감싸 보낸다** (글자가 아닌 몸통은 전부).
+
+    처음엔 그것을 모르고 그대로 Pillow 에 넣어 '열 수 없음' 이 아홉 줄
+    나왔다 — 층이 죽은 줄로 읽힐 뻔했다. PNG 머리(\x89PNG)가 아니면
+    base64 로 보고 풀어 본다.
+    """
+    if raw[:4] == b"\x89PNG":
+        return raw
+    import base64                                      # noqa: PLC0415
+    try:
+        return base64.b64decode(raw, validate=False)
+    except Exception:                                  # noqa: BLE001
+        return raw
+
+
 def painted(raw: bytes) -> int | str:
     """칠해진 화소 수. Pillow 가 없으면 '?' 를 돌려준다."""
     try:
@@ -74,7 +93,7 @@ def painted(raw: bytes) -> int | str:
     except ImportError:
         return "?"
     try:
-        im = Image.open(io.BytesIO(raw)).convert("RGBA")
+        im = Image.open(io.BytesIO(png_bytes(raw))).convert("RGBA")
     except Exception:                                  # noqa: BLE001
         return "열 수 없음"
     return sum(1 for p in im.getdata() if p[3] > 8)
