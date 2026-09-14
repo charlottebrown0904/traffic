@@ -3216,6 +3216,9 @@ def cmd_load_tax_kosis(args):
             print(f"  못 이은 이름 {len(st['unmatched'])}개: "
                   + " · ".join(f"{a}({b})" for a, b in top))
         ind.describe_local_tax_kosis(con)
+        # 법인세분은 시도까지만 갈린다 — 시군구 총액을 안분할 재료다.
+        print()
+        ind.load_local_tax_corp(con, [y for y in years if y >= "2010"])
 
 
 def cmd_load_rail(args):

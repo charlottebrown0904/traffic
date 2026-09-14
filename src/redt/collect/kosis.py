@@ -384,6 +384,28 @@ def fetch_meta(org_id: str, tbl_id: str, kind: str = "OBJ",
     return _rows(body)
 
 
+def fetch_table_auto(org_id: str, tbl_id: str, start: str, end: str,
+                     prd_se: str = "Y", *, max_axes: int = 5,
+                     quiet: bool = True) -> list[dict]:
+    """축이 몇 개인지 모르는 표를 **늘려 가며** 받는다.
+
+    표마다 분류축 수가 다르고 모자라면 KOSIS 는 200 에 err 20(objL 누락)을
+    실어 보낸다. 축 이름을 하나씩 추측해 판을 태우지 말고 objL2 → objL2,
+    objL3 → … 로 늘린다. 맛보기(kosis-peek)가 쓰던 재주를 적재도 쓴다.
+    """
+    last = None
+    for n in range(1, max_axes + 1):
+        obj = {f"objL{i}": "ALL" for i in range(2, n + 1)}
+        try:
+            return fetch_table(org_id, tbl_id, start, end, prd_se,
+                               obj=obj or None, quiet=quiet)
+        except KosisError as exc:
+            last = exc
+            if "20" not in str(exc):      # 축 문제가 아니면 더 늘려도 헛일
+                raise
+    raise last or KosisError("축을 못 맞췄다")
+
+
 def fetch_table(org_id: str, tbl_id: str, start: str, end: str,
                 prd_se: str = "Y", obj_l1: str = "ALL",
                 itm_id: str = "ALL", *, obj: dict | None = None,

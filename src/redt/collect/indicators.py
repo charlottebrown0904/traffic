@@ -1616,12 +1616,18 @@ KOSIS_TAX_NAME = re.compile(r"^\s*1-\d+\.\s*(.+?)\s*$")
 # 검색은 한 번에 스무 건만 준다. 그래서 **시도 이름 자체**로도 찾는다 —
 # 첫 판(run 95)이 표를 열셋만 찾아 서울·부산·대구·세종이 통째로 빠졌다.
 # 시도 이름은 우리가 이미 아는 것이라 추측이 아니다.
-KOSIS_TAX_TERMS = (
-    "징수실적", "지방소득세", "지방세통계", "시군구별 징수",
-    "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시",
-    "대전광역시", "울산광역시", "세종특별자치시", "경기도", "강원",
-    "충청북도", "충청남도", "전북", "전라남도", "경상북도", "경상남도",
-    "제주특별자치도",
+_TAX_SIDO = ("서울특별시", "부산광역시", "대구광역시", "인천광역시",
+             "광주광역시", "대전광역시", "울산광역시", "세종특별자치시",
+             "경기도", "강원특별자치도", "충청북도", "충청남도",
+             "전북특별자치도", "전라남도", "경상북도", "경상남도",
+             "제주특별자치도")
+# 시도 이름만으로 물으면 그 시도의 표가 수백 개라 우리 것이 스무 건 안에
+# 안 든다 — 2판(run 96)에서 부산·대구·세종이 그렇게 빠졌다. **'징수실적'
+# 을 붙여** 물으면 같은 스무 건이 우리 쪽으로 좁혀진다.
+KOSIS_TAX_TERMS = tuple(
+    ["징수실적", "지방소득세", "지방세통계", "시군구별 징수"]
+    + [f"{s} 징수실적" for s in _TAX_SIDO]
+    + list(_TAX_SIDO)
 )
 
 # 이름이 바뀌거나 없어진 시군구. **지어내지 않고 적어 둔다.**
@@ -1764,8 +1770,7 @@ def load_local_tax_kosis(con, years: list[str], *, code_map: dict | None = None,
                 log(f"  ⏱ 시간 예산({max_seconds}초)에 멈춘다 — 다음 판이 이어받는다")
                 return st
             try:
-                rows = kosis.fetch_table(KOSIS_TAX_ORG, tbl, y, y,
-                                         obj={"objL2": "ALL"}, quiet=True)
+                rows = kosis.fetch_table_auto(KOSIS_TAX_ORG, tbl, y, y)
             except kosis.KosisError as exc:
                 # 그 해에 자료가 없는 표가 있다 (세종은 2012년부터).
                 # 오류로 세되 '받았다' 로 남겨 다시 묻지 않는다.
@@ -1817,3 +1822,76 @@ def describe_local_tax_kosis(con, log=print) -> None:
         GROUP BY 1 ORDER BY 2 DESC LIMIT 12
     """).fetchall()
     log(f"  세목 {len(items)}개(상위): " + " · ".join(f"{a}({b:,})" for a, b in items))
+
+
+# ── 지방소득세 법인세분 (시도 × 세원별) ─────────────────────────────
+#
+# 시군구 표의 세목은 '지방소득세' 하나로 개인분·법인분이 합쳐져 있다.
+# 갈린 것은 이 표뿐이고, 지역 축이 **시도까지**다 (§5-4·§5-6).
+#
+#   DT_11007_A646  '8-2. 과세유형별 지방소득세 과세현황'  2010~2024
+#     축  15110AA3 시도별 · 15110AR9 세원별(법인세분 …)
+#
+# 시군구 고유의 법인 활동은 여기서 못 얻는다. 그래도 싣는 까닭은 시군구
+# 총액을 **시도 법인 비중으로 안분**할 재료가 되기 때문이다. 안분한 값은
+# 안분한 값이라고 이름에 남긴다 — 나중에 원자료로 착각하지 않게.
+KOSIS_CORP_TBL = "DT_11007_A646"
+
+
+def load_local_tax_corp(con, years: list[str], *, code_map: dict | None = None,
+                        log=print) -> dict:
+    """시도 × 세원별 지방소득세. 열쇠는 시도 코드 두 자리다."""
+    from . import kosis                                  # noqa: PLC0415
+    if code_map is None:
+        code_map = build_code_map(con)
+    codes = sido_codes(code_map)
+    st = {"calls": 0, "rows": 0, "failed": 0, "unmatched": {}, "items": set()}
+    done = {r[0] for r in con.execute(
+        "SELECT key FROM series_crawl WHERE source = 'kosis_tax_corp'").fetchall()}
+    for y in years:
+        key = f"{KOSIS_CORP_TBL}:{y}"
+        if key in done:
+            continue
+        try:
+            rows = kosis.fetch_table_auto(KOSIS_TAX_ORG, KOSIS_CORP_TBL, y, y)
+        except Exception as exc:                         # noqa: BLE001
+            st["failed"] += 1
+            if st["failed"] <= 3:
+                log(f"  ✗ {y}: {type(exc).__name__} {str(exc)[:120]}")
+            continue
+        st["calls"] += 1
+        recs = []
+        for r in rows:
+            sido = str(r.get("C1_NM", "")).strip()
+            item = str(r.get("C2_NM", "")).strip()
+            raw = r.get("DT")
+            if not sido or not item or sido in ("합계", "계", "전국"):
+                continue
+            try:
+                val = float(str(raw).replace(",", ""))
+            except (TypeError, ValueError):
+                continue
+            code = codes.get(_sido_key(sido))
+            if not code:
+                st["unmatched"][sido] = st["unmatched"].get(sido, 0) + 1
+                continue
+            st["items"].add(item)
+            recs.append((code, y, val * 1000.0,
+                         f"local_tax_corp:{item}", "원", "KOSIS 지방세통계"))
+        if recs:
+            con.executemany(
+                "INSERT OR REPLACE INTO region_series"
+                " (sigungu_cd, period, value, metric, unit, source)"
+                " VALUES (?,?,?,?,?,?)", recs)
+            st["rows"] += len(recs)
+        con.execute(
+            "INSERT OR REPLACE INTO series_crawl (source, key, n, done_at)"
+            " VALUES ('kosis_tax_corp', ?, ?, current_timestamp)",
+            [key, len(recs)])
+    log(f"지방소득세 세원별 — 호출 {st['calls']} · 행 {st['rows']:,}"
+        f" · 실패 {st['failed']}")
+    if st["items"]:
+        log(f"  세원: {' · '.join(sorted(st['items']))}")
+    if st["unmatched"]:
+        log(f"  못 이은 시도: {st['unmatched']}")
+    return st
