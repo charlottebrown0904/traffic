@@ -67,6 +67,13 @@ const ALLOW = {
   // 그러면 호출 측이 키를 들고 있어야 한다 — 키는 중계기에만 둔다는 원칙과
   // 어긋난다. env 를 지정하면 STRIP 이 들어온 키를 지우고 우리 것으로 덮는다.
   "kosis.kr":        { param: "apiKey",     env: "KOSIS_KEY" },
+  // 한국은행 ECOS — 금리·물가·성장률 (미래 가치의 시장 층).
+  //
+  // **이곳만 키를 쿼리가 아니라 경로 한 칸에 넣는다.**
+  //   /api/StatisticSearch/{인증키}/json/kr/1/100/{표}/{주기}/{시작}/{끝}/{항목}
+  // 그래서 param 이 아니라 pathKey 로 둔다. 부르는 쪽은 자리표를 넣고,
+  // 키는 여기서만 채운다 — 열쇠는 중계기 밖으로 안 나간다.
+  "ecos.bok.or.kr":  { pathKey: "__KEY__",  env: "ECOS_KEY" },
   // 국가법령정보센터 Open API (자치법규 조례). OC 는 가입 아이디인데 키처럼
   // 다룬다 — 호출 측이 들고 있지 않게 중계기가 끼워 넣는다.
   // keepClient: 호출 측이 OC 를 실어 보냈으면 그것을 살린다. 법제처 본문(DRF)은
@@ -151,10 +158,23 @@ module.exports = async function handler(req, res) {
     // 자리표(__via_relay__)는 키가 없을 때도 반드시 지운다 — 그대로
     // 상류에 닿으면 '인증키가 유효하지 않다(290)' 가 되어, 키가 없다는
     // 사실이 키가 틀렸다는 오류로 둔갑한다.
-    const given = target.searchParams.get(rule.param);
+    const given = rule.param ? target.searchParams.get(rule.param) : null;
     for (const name of STRIP) target.searchParams.delete(name);
-    if (secret && !(rule.keepClient && given && given !== "__via_relay__")) {
+    if (rule.param && secret
+        && !(rule.keepClient && given && given !== "__via_relay__")) {
       target.searchParams.set(rule.param, secret);
+    }
+    // 경로에 키를 넣는 곳 (ECOS). 자리표가 없으면 **부르지 않는다** —
+    // 자리표 없이 보내면 키 없는 주소가 그대로 상류에 닿아, 키가 없다는
+    // 사실이 '인증키가 유효하지 않다' 로 둔갑한다.
+    if (rule.pathKey) {
+      if (!target.pathname.includes(rule.pathKey)) {
+        return deny(res, 400, `경로에 ${rule.pathKey} 자리표가 없습니다`);
+      }
+      if (secret) {
+        target.pathname = target.pathname.split(rule.pathKey)
+          .join(encodeURIComponent(secret));
+      }
     }
   }
 

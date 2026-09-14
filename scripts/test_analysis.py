@@ -289,6 +289,24 @@ check(not (_allow - _client),
 check(not (_client - _allow),
       f"클라이언트에만 있는 호스트가 없다 ({sorted(_client - _allow)})")
 
+# ECOS 만 인증키가 **경로 한 칸**에 들어간다. 자리표 규칙이 세 곳에서
+# 어긋나면 키 없는 주소가 상류에 닿아 '인증키가 유효하지 않다' 가 된다 —
+# 키가 없다는 사실이 키가 틀렸다는 오류로 둔갑한다.
+from redt.collect import ecos as _EC                      # noqa: E402
+check('"ecos.bok.or.kr":  { pathKey: "__KEY__"' in _relay,
+      "중계기가 ECOS 를 경로 주입으로 다룬다")
+check(_EC.KEY_SLOT in _EC.url("722Y001", "M", "200001", "202512", "0101000"),
+      "부르는 쪽이 자리표를 넣는다")
+check(_EC.KEY_SLOT == "__KEY__", f"자리표가 중계기와 같다 ({_EC.KEY_SLOT})")
+# 자리표가 없으면 중계기가 400 으로 막는다 (키 없는 호출이 상류로 새지 않게).
+check("자리표가 없습니다" in _relay, "자리표 없는 호출은 막는다")
+# 키를 쿼리로 넣는 규칙에는 param 이, 경로로 넣는 규칙에는 pathKey 가 있어야 한다.
+import re as _re2                                          # noqa: E402
+_rules = _re2.findall(r'"([a-z0-9.\-]+)":\s*\{([^}]*)\}', _relay)
+_bad = [h for h, body in _rules
+        if "env:" in body and "param:" not in body and "pathKey:" not in body]
+check(not _bad, f"모든 규칙이 키 넣는 자리를 밝힌다 ({_bad})")
+
 # ────────────────────────────────────────────────────────────────
 print("\n6. 거리 밴드 설정 — 영향범위 5km, 대조 밴드 존재")
 

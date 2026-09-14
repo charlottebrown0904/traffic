@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -152,6 +152,16 @@ jobs:
           python -m redt.cli load-cadastral \
             ${{ inputs.query && format('--only {0}', inputs.query) || '' }} 2>&1 | tee /tmp/stdland.log
 
+      # 미래 가치 인자 — 열여섯 조합에 각각 몇 동네가 있는지 먼저 센다.
+      # 그 표가 어떤 교차항을 세울 수 있는지 정한다 (docs/future-value.md §2-3).
+      - name: 인자 조합 칸 세기
+        if: inputs.mode == 'factor-cells'
+        run: |
+          set -o pipefail
+          python -m redt.cli factor-cells \
+            --since "${{ inputs.years || '2010' }}" --until "${{ inputs.n || '2025' }}" \
+            ${{ inputs.query == 'estimate' && '--estimate' || '' }} 2>&1 | tee /tmp/stdland.log
+
       - name: 자치법규 API 탐침
         if: inputs.mode == 'law-probe'
         run: |
@@ -189,7 +199,7 @@ jobs:
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells'
         uses: actions/cache/save@v4
         with:
           path: |

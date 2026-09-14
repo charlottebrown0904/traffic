@@ -82,6 +82,10 @@ RELAYED_HOSTS = {
     "www.vworld.kr",
     "data.ex.co.kr",
     "kosis.kr",
+    # 한국은행 ECOS — 금리·물가·성장률 (미래 가치의 시장 층). 이곳만
+    # 인증키가 **경로 한 칸**에 들어간다 — 자리표 __KEY__ 를 넣어 부르면
+    # 중계기가 채운다 (api/relay.js 의 pathKey).
+    "ecos.bok.or.kr",
     # 자치법규(조례) Open API — 시군 도시계획조례의 건폐율·용적률·개발행위 기준.
     "www.law.go.kr",
     # 토지·주택가격비준표 열람 서비스 — 개별공시지가 산정에 쓰는 공식
