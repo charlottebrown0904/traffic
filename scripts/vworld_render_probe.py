@@ -138,15 +138,29 @@ def main() -> None:
     print("\n" + "=" * 72)
     print("산업단지 층 — 전국에 몇 건인가 · 지정일이 있는가")
     print("=" * 72)
+    # 계획도로와 사업지구도 같이 본다 (2026-09-14 지시):
+    #   "계획도로는 확장인지, 신규인지 구분은 안될까요? 완공된 것은
+    #    표기 안하는 것이 좋을 것 같습니다."
+    #   "산업단지 택지사업지구의 색상은 의미가 있나요?"
+    # 둘 다 **속성에 무엇이 오는가**로만 답할 수 있다. 구분(신설·확장)과
+    # 단계(집행·미집행)가 칸으로 오면 거르고 색을 우리가 정할 수 있고,
+    # 안 오면 못 한다 — 지어내지 않는다.
     for name, label in (("lt_c_wgisiegug", "국가산업단지"),
                         ("lt_c_wgisieilban", "일반산업단지"),
                         ("lt_c_wgisiedosi", "첨단산업단지"),
-                        ("lt_c_wgisienong", "농공단지")):
+                        ("lt_c_wgisienong", "농공단지"),
+                        ("lt_c_upisuq151", "도시계획(도로)"),
+                        ("lt_c_lhzone", "사업지구경계도"),
+                        ("lt_c_damdan", "단지경계")):
         try:
             resp = call(WFS, {
                 "SERVICE": "WFS", "REQUEST": "GetFeature", "VERSION": "1.1.0",
                 "TYPENAME": name,
-                "BBOX": "124.0,33.0,132.0,39.0",      # 한반도 전체
+                # 계획도로는 전국이면 수십만 건이라 상한에 걸려 속성만
+                # 보고 끝난다. 한 도시(화성 향남 언저리)로 좁힌다.
+                "BBOX": ("126.85,36.95,127.05,37.10"
+                         if name in ("lt_c_upisuq151", "lt_c_damdan")
+                         else "124.0,33.0,132.0,39.0"),
                 "SRSNAME": "EPSG:4326", "OUTPUT": "application/json",
                 "MAXFEATURES": "1000", "RESULTTYPE": "results",
                 "DOMAIN": "https://toji.fyi/",
@@ -163,7 +177,12 @@ def main() -> None:
             date_like = [k for k in props
                          if any(w in k.lower() for w in ("dt", "date", "ymd", "de"))]
             print(f"    날짜로 보이는 칸: {date_like or '없음'}")
-            print(f"    값: {dict(list(props.items())[:8])}")
+            print(f"    값: {dict(list(props.items())[:12])}")
+            # 서로 다른 값이 몇 가지인지 — 한 가지뿐이면 거를 재료가 안 된다.
+            for k in sorted(props):
+                vals = {str((f.get("properties") or {}).get(k)) for f in feats}
+                if 1 < len(vals) <= 12:
+                    print(f"      {k}: {sorted(vals)}")
 
     # WFS 도 한 자리 — 행정구역 한 덩이가 오는가 (mode=admin 의 길).
     print("\n" + "=" * 72)
