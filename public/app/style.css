@@ -1925,3 +1925,18 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   white-space: nowrap;
 }
 .leaflet-tooltip.admin-name::before { display: none; }
+
+/* 개발 층 범례 (요구사항 2026-09-14) — 색이 뜻하는 단계를 적는다. */
+.dev-legend {
+  padding: .3rem .5rem .4rem;
+  margin-top: -.2rem;
+  border-radius: .5rem;
+  background: var(--surface-2, rgba(255, 255, 255, .78));
+  font-size: .72rem;
+}
+.dev-leg-row { display: flex; flex-wrap: wrap; align-items: center; gap: .2rem .5rem; }
+.dev-leg-row + .dev-leg-row { margin-top: .2rem; }
+.dev-leg-row > b { margin-right: .2rem; }
+.dev-leg { display: inline-flex; align-items: center; gap: .22rem; white-space: nowrap; }
+.dev-leg > i { width: .7rem; height: .7rem; border-radius: .18rem; display: inline-block; }
+.dev-leg.is-off { opacity: .5; }

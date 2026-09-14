@@ -32,6 +32,9 @@ const state = {
   // 값이다. 네 갈래를 따로 껐다 켤 수 있다.
   develop: false,
   devParts: { industry: true, housing: true, planroad: true, rail: true },
+  // "완공된 것은 표기 안하는 것이 좋을 것 같습니다" (2026-09-14).
+  // 기본으로 감춘다 — 이미 난 길과 끝난 지구는 앞으로의 값과 상관이 없다.
+  devDone: false,
   // 필지 경계선 (요구사항 2026-09-10). **기본은 켬** — 땅을 보는
   // 사람에게 경계는 배경이 아니라 본문이다. 껐다 켠 것은 기억한다.
   cadastral: (() => {
@@ -1752,6 +1755,7 @@ function buildMap() {
     drawLandPrice();
   });
   // 닫으면 그때 다시 그린다 — 열려 있는 동안 밀린 갱신을 여기서 갚는다.
+  map.on('moveend', () => { if (state.develop) drawDevVec(); });
   map.on('popupclose', (e) => {
     const cls = ((e.popup || {}).options || {}).className;
     if (cls !== 'lp-pop') return;
@@ -1766,6 +1770,7 @@ function buildMap() {
   // 배율이 바뀌면 인구를 묶는 단위가 바뀐다 (시도 → 시군 → 구).
   // 다시 그리지 않으면 확대해 들어가도 전국 원 17개가 그대로 남는다.
   map.on('zoomend', () => {
+    if (state.develop) drawDevVec();
     drawLandPrice();
     // 범례의 원 크기와 '몇 만 이하' 도 단위에 맞춰 다시 그린다.
     // 자료가 오기 전이면 그릴 것이 없다.
@@ -2626,21 +2631,55 @@ function toggleZoning(on) {
  * 점으로, 개통 예정(오늘 이후)은 점선으로 구분한다.
  */
 const DEV_PARTS = [
-  { key: 'industry', label: '산업단지', tile: 'industry',
-    note: '국가·일반·첨단·농공' },
-  { key: 'housing', label: '택지·사업지구', tile: 'housing',
-    note: 'LH 사업지구 · 단지경계' },
-  { key: 'planroad', label: '계획도로', tile: 'planroad',
-    note: '도시계획 신설·확장' },
-  { key: 'rail', label: '철도역', tile: null, note: '우리 자료 405곳' },
+  { key: 'industry', label: '산업단지', tile: 'industry', vec: null,
+    note: '국가·일반·첨단·농공 — 층이 곧 색이다' },
+  { key: 'housing', label: '택지·사업지구', tile: null, vec: 'zone',
+    note: '색은 사업 단계: 지구지정→개발계획→실시계획→부분준공→준공' },
+  { key: 'planroad', label: '계획도로', tile: null, vec: 'planroad',
+    note: '색은 집행 단계: 미집행·부분집행·집행완료' },
+  { key: 'rail', label: '철도역', tile: null, vec: null,
+    note: '우리 자료 405곳' },
 ];
+
+/* 단계별 색 (2026-09-14 지시: "산업단지 택지사업지구의 색상은 의미가
+ * 있나요?").
+ *
+ * 브이월드 색은 **단계**를 뜻한다 — 확인했다(vworld-render run 4).
+ *   사업지구  cat_nam  지구지정 · 개발계획 · 실시계획 · 부분준공 · 준공
+ *   계획도로  exc_nam  미집행 · 부분집행 · 집행완료
+ *
+ * 그런데 브이월드 색은 **무엇이 이른 단계인지**를 말해 주지 않는다. 땅을
+ * 보는 사람에게 중요한 것은 '아직 안 된 것' 이므로, 이른 단계일수록 진하게
+ * 우리가 다시 칠한다. 완공(준공·집행완료)은 기본으로 감춘다.
+ *
+ * ※ 계획도로에 **신설/확장을 가르는 칸은 없다.** 도시계획도로는 '계획선'
+ *   이라 그 구분을 안 담는다 — 지어내지 않는다. 대신 집행 단계가 그 자리를
+ *   대신한다: 미집행이 아직 안 난 길이다.
+ */
+const DEV_STAGE = {
+  '지구지정': { color: '#7C3AED', rank: 1 },
+  '개발계획': { color: '#2563EB', rank: 2 },
+  '실시계획': { color: '#0891B2', rank: 3 },
+  '부분준공': { color: '#65A30D', rank: 4 },
+  '준공': { color: '#9CA3AF', rank: 5, done: true },
+  '미집행': { color: '#DC2626', rank: 1 },
+  '부분집행': { color: '#EA580C', rank: 2 },
+  '집행완료': { color: '#9CA3AF', rank: 3, done: true },
+};
+
+function devStage(p) {
+  return String(p.cat_nam || p.exc_nam || '').trim();
+}
 const DEVELOP_MIN_ZOOM = 10;
 
-/** 지금 켜진 타일 갈래를 하나의 layer 열쇠로 접는다. */
+/** 지금 켜진 타일 갈래를 하나의 layer 열쇠로 접는다.
+ *
+ * 계획도로와 택지·사업지구는 **그림이 아니라 도형**으로 받는다 — 브이월드가
+ * 이미 칠해서 주는 그림으로는 완공된 것을 걸러 낼 수 없기 때문이다. 그래서
+ * 타일로 남은 것은 산업단지뿐이다. */
 function devTileKey() {
   const on = DEV_PARTS.filter((p) => p.tile && state.devParts[p.key]);
   if (!on.length) return null;
-  if (on.length === DEV_PARTS.filter((p) => p.tile).length) return 'develop';
   return on.length === 1 ? on[0].tile : on.map((p) => p.tile).join('+');
 }
 
@@ -2655,8 +2694,6 @@ function drawDevelop() {
   if (!map || !developLayer) return;
   developLayer.clearLayers();
   const key = devTileKey();
-  // 여럿을 '+' 로 이은 열쇠는 서버가 모른다. 그때는 갈래마다 한 장씩
-  // 깐다 — 셋 중 둘만 켠 드문 경우라 호출이 크게 늘지 않는다.
   const keys = key === null ? []
     : (key.includes('+') ? key.split('+') : [key]);
   keys.forEach((k) => {
@@ -2665,11 +2702,145 @@ function drawDevelop() {
       maxZoom: 19,
       minZoom: DEVELOP_MIN_ZOOM,
       opacity: .55,
-      attribution: '산업단지·지구·계획도로 © 국토교통부 브이월드',
+      attribution: '산업단지 © 국토교통부 브이월드',
     }).addTo(developLayer);
   });
   drawRail();
-  window.__develop = { on: state.develop, key, parts: { ...state.devParts } };
+  drawDevVec();
+  updateDevLegend();
+  window.__develop = { on: state.develop, key, parts: { ...state.devParts },
+                       done: state.devDone };
+}
+
+/* ── 계획도로·택지지구를 도형으로 (2026-09-14 지시) ───────────────────
+ *
+ * 연속지적도와 같은 길이다 — 화면에 걸치는 타일 칸마다 따로 받아 두면
+ * 조금 움직여도 겹치는 칸은 다시 안 부른다. 배율 12 아래에서는 안 부른다:
+ * 얕을수록 한 칸에 든 도형이 기하급수로 늘어 상한에 걸리고, 그러면 선이
+ * 군데군데 빠진다 — 빠진 선은 없는 선보다 나쁘다.
+ */
+const DEVVEC_MIN_ZOOM = 12;
+const DEVVEC_MAX_TILES = 10;
+const devVecCache = new Map();      // 'kind/z/x/y' → {items}
+const devVecAsked = new Set();
+let devVecLayer = null;
+
+function devVecTiles() {
+  const z = map.getZoom();
+  if (z < DEVVEC_MIN_ZOOM) return [];
+  const b = map.getBounds();
+  const n = 2 ** z;
+  const xy = (lat, lon) => [
+    Math.floor((lon + 180) / 360 * n),
+    Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180)
+      + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n),
+  ];
+  const [x0, y0] = xy(b.getNorth(), b.getWest());
+  const [x1, y1] = xy(b.getSouth(), b.getEast());
+  const out = [];
+  for (let x = x0; x <= x1; x += 1) {
+    for (let y = y0; y <= y1; y += 1) {
+      if (x >= 0 && y >= 0 && x < n && y < n) out.push([z, x, y]);
+    }
+  }
+  return out.slice(0, DEVVEC_MAX_TILES);
+}
+
+function devVecKinds() {
+  return DEV_PARTS.filter((p) => p.vec && state.devParts[p.key])
+    .map((p) => p.vec);
+}
+
+function drawDevVec() {
+  if (!map) return;
+  if (!devVecLayer) devVecLayer = L.layerGroup().addTo(map);
+  devVecLayer.clearLayers();
+  if (!state.develop) return;
+  const kinds = devVecKinds();
+  if (!kinds.length) return;
+  const tiles = devVecTiles();
+  let drawn = 0;
+  kinds.forEach((kind) => {
+    tiles.forEach(([z, x, y]) => {
+      const key = `${kind}/${z}/${x}/${y}`;
+      const got = devVecCache.get(key);
+      if (got) { drawn += paintDevVec(kind, got); return; }
+      if (devVecAsked.has(key)) return;
+      devVecAsked.add(key);
+      fetch(`/api/tile?mode=devvec&kind=${kind}&z=${z}&x=${x}&y=${y}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          devVecAsked.delete(key);
+          if (!d) return;
+          devVecCache.set(key, d.items || []);
+          if (state.develop) drawDevVec();
+        })
+        .catch(() => { devVecAsked.delete(key); });
+    });
+  });
+  window.__devvec = { kinds, tiles: tiles.length, drawn,
+                      cached: devVecCache.size };
+}
+
+function paintDevVec(kind, items) {
+  let n = 0;
+  items.forEach((it) => {
+    const stage = devStage(it.p || {});
+    const spec = DEV_STAGE[stage];
+    // 완공된 것은 기본으로 감춘다 (지시). 켜면 회색으로 보인다.
+    if (spec && spec.done && !state.devDone) return;
+    const color = (spec && spec.color) || '#6B7280';
+    const road = kind === 'planroad';
+    L.geoJSON(it.g, {
+      style: {
+        color,
+        weight: road ? 3 : 2,
+        opacity: .9,
+        fillColor: color,
+        fillOpacity: road ? .25 : .18,
+      },
+    }).bindTooltip(devVecTip(kind, it.p || {}, stage),
+                   { direction: 'top', sticky: true })
+      .addTo(devVecLayer);
+    n += 1;
+  });
+  return n;
+}
+
+function devVecTip(kind, p, stage) {
+  if (kind === 'planroad') {
+    return `<b>${escapeHtml(p.atr_nam || '계획도로')}</b>`
+      + (p.pmi_nam ? `<br>${escapeHtml(p.pmi_nam)}` : '')
+      + (stage ? `<br><b>${escapeHtml(stage)}</b>` : '');
+  }
+  return `<b>${escapeHtml(p.zonename || '사업지구')}</b>`
+    + (stage ? `<br><b>${escapeHtml(stage)}</b>` : '');
+}
+
+/* 범례 — 색이 무엇을 뜻하는지 화면이 스스로 말해야 한다. */
+function updateDevLegend() {
+  const box = document.getElementById('dev-legend');
+  if (!box) return;
+  const kinds = devVecKinds();
+  box.hidden = !state.develop || !kinds.length;
+  if (box.hidden) { box.innerHTML = ''; return; }
+  const rows = [];
+  if (kinds.includes('zone')) {
+    rows.push(['택지·사업지구',
+      ['지구지정', '개발계획', '실시계획', '부분준공', '준공']]);
+  }
+  if (kinds.includes('planroad')) {
+    rows.push(['계획도로', ['미집행', '부분집행', '집행완료']]);
+  }
+  box.innerHTML = rows.map(([title, stages]) =>
+    `<div class="dev-leg-row"><b>${escapeHtml(title)}</b>`
+    + stages.map((s) => {
+      const spec = DEV_STAGE[s] || {};
+      const off = spec.done && !state.devDone;
+      return `<span class="dev-leg${off ? ' is-off' : ''}">`
+        + `<i style="background:${spec.color}"></i>${escapeHtml(s)}`
+        + (off ? ' (감춤)' : '') + '</span>';
+    }).join('') + '</div>').join('');
 }
 
 /* 철도 — 우리 자료. 역은 점, 개통 예정은 테두리를 달리한다. */
@@ -2707,7 +2878,11 @@ function toggleDevelop(on) {
   state.develop = on;
   if (!map || !developLayer) return;
   if (on) { developLayer.addTo(map); railLayer.addTo(map); }
-  else { developLayer.remove(); railLayer.remove(); }
+  else {
+    developLayer.remove();
+    railLayer.remove();
+    if (devVecLayer) devVecLayer.clearLayers();
+  }
   drawDevelop();
 }
 
@@ -6823,6 +6998,24 @@ function wireFind() {
       lab.appendChild(span);
       dparts.appendChild(lab);
     });
+    // 완공된 것 보기 (기본 끔 — 지시: "완공된 것은 표기 안하는 것이
+    // 좋을 것 같습니다"). 끄고 감추는 것이 기본이고, 궁금하면 켠다.
+    const dlab = document.createElement('label');
+    dlab.className = 'dev-part';
+    dlab.title = '준공·집행완료까지 회색으로 보인다';
+    const dbox2 = document.createElement('input');
+    dbox2.type = 'checkbox';
+    dbox2.id = 'dev-done';
+    dbox2.checked = !!state.devDone;
+    dbox2.addEventListener('change', () => {
+      state.devDone = dbox2.checked;
+      drawDevelop();
+    });
+    const dspan = document.createElement('span');
+    dspan.textContent = '완공 보기';
+    dlab.appendChild(dbox2);
+    dlab.appendChild(dspan);
+    dparts.appendChild(dlab);
   }
   if (dbox) {
     dbox.checked = state.develop;

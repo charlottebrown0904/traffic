@@ -1479,14 +1479,18 @@ const FAKE_LEAFLET = () => {
       rail: ((window.state.rail || {}).stations || []).length,
       parts: document.getElementById('dev-parts')
         ? document.getElementById('dev-parts').children.length : 0,
+      done: window.state.devDone,
       hidden: document.getElementById('dev-parts')
         ? document.getElementById('dev-parts').hidden : null,
     }));
     check('개발은 꺼진 채로 시작한다', devBefore.on === false,
           `on=${devBefore.on}`);
-    check('개발 갈래 칸이 넷이고 처음엔 접혀 있다',
-          devBefore.parts === 4 && devBefore.hidden === true,
+    // 갈래 넷 + '완공 보기' 한 칸 = 다섯 (2026-09-14 지시로 늘었다).
+    check('개발 갈래 칸이 다섯이고 처음엔 접혀 있다',
+          devBefore.parts === 5 && devBefore.hidden === true,
           `${devBefore.parts}개 · hidden=${devBefore.hidden}`);
+    check('완공 보기는 꺼진 채로 시작한다', devBefore.done === false,
+          `done=${devBefore.done}`);
     check('철도역이 실려 있다 (rail.json)', devBefore.rail >= 300,
           `${devBefore.rail}곳`);
 
@@ -1502,11 +1506,39 @@ const FAKE_LEAFLET = () => {
       return { on: d.on, key: d.key, tiles,
                hidden: document.getElementById('dev-parts').hidden };
     });
-    check('개발을 켜면 develop 한 장으로 부른다 (갈래마다 안 부른다)',
-          devAfter.on === true && devAfter.key === 'develop',
-          `key=${devAfter.key}`);
+    check('개발을 켜면 켜진다', devAfter.on === true, `on=${devAfter.on}`);
     check('켜면 갈래 칸이 펼쳐진다', devAfter.hidden === false,
           `hidden=${devAfter.hidden}`);
+
+    /* 계획도로·택지지구는 **그림이 아니라 도형**이다 (2026-09-14 지시).
+       브이월드가 이미 칠해서 주는 그림으로는 완공된 것을 못 거른다.
+       그래서 타일로 남은 것은 산업단지뿐이고, 나머지 둘은 WFS 로 받아
+       화면이 거르고 우리 색으로 그린다. */
+    check('타일로 남은 것은 산업단지뿐이다', devAfter.key === 'industry',
+          `key=${devAfter.key}`);
+    const devLeg = await page.evaluate(() => {
+      const box = document.getElementById('dev-legend');
+      return { hidden: box.hidden, text: (box.textContent || '').trim() };
+    });
+    check('색이 뜻하는 단계를 범례가 적는다',
+          !devLeg.hidden && devLeg.text.includes('지구지정')
+          && devLeg.text.includes('미집행'),
+          devLeg.text.slice(0, 80));
+    check('완공은 기본으로 감춘다고 범례가 말한다',
+          devLeg.text.includes('준공 (감춤)')
+          && devLeg.text.includes('집행완료 (감춤)'),
+          devLeg.text.slice(-60));
+
+    // '완공 보기' 를 켜면 감춤 표시가 사라진다.
+    await page.evaluate(() => {
+      const b = document.getElementById('dev-done');
+      b.checked = true;
+      b.dispatchEvent(new Event('change'));
+    });
+    await page.waitForTimeout(300);
+    const legOn = await page.evaluate(() =>
+      (document.getElementById('dev-legend').textContent || '').includes('(감춤)'));
+    check('완공 보기를 켜면 감춤 표시가 사라진다', legOn === false);
 
     // 갈래 하나를 끄면 열쇠가 좁아진다 — 산업단지를 뺀다.
     await page.evaluate(() => {
@@ -1516,8 +1548,8 @@ const FAKE_LEAFLET = () => {
     });
     await page.waitForTimeout(200);
     const devNarrow = await page.evaluate(() => (window.__develop || {}).key);
-    check('갈래를 끄면 그만큼만 부른다',
-          devNarrow === 'housing+planroad', `key=${devNarrow}`);
+    check('산업단지를 끄면 부를 타일이 없다', devNarrow === null,
+          `key=${devNarrow}`);
     await page.click('#develop-bg');      // 원래대로 끄고 다음 절로
     await page.waitForTimeout(200);
 

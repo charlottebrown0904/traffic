@@ -662,6 +662,100 @@ async function parcelLines(req, res) {
   return sendLines(res, geoms, feats.length < PARCEL_VEC_MAX);
 }
 
+/* 개발 층을 **도형으로** 준다 (2026-09-14 지시).
+ *
+ *   "계획도로는 확장인지, 신규인지 구분은 안될까요? 완공된 것은 표기
+ *    안하는 것이 좋을 것 같습니다."
+ *   "산업단지 택지사업지구의 색상은 의미가 있나요?"
+ *
+ * 두 물음의 답이 속성에 있었다 (vworld-render run 4):
+ *
+ *   lt_c_upisuq151  exc_nam  미집행 · 부분집행 · **집행완료**
+ *                   atr_nam  광로2류 … 소로3류 (폭 등급)
+ *                   pmi_nam  주간선도로 · 보조간선도로 · 집산도로 …
+ *                   ※ 신설/확장을 가르는 칸은 **없다.** 도시계획도로는
+ *                     '계획선' 이라 그 구분을 안 담는다. 대신 집행 단계가
+ *                     그 자리를 대신한다 — 미집행이 아직 안 난 길이다.
+ *   lt_c_lhzone     cat_nam  지구지정 · 개발계획 · 실시계획 · 부분준공 · **준공**
+ *                   ※ 브이월드 색은 이 단계를 뜻한다. 의미가 있다.
+ *
+ * 그림(WMS)으로는 못 거른다 — 브이월드가 이미 칠해서 준다. 그래서 이
+ * 둘만 도형(WFS)으로 받아 화면이 거르고 우리 색으로 그린다. 연속지적도
+ * 에서 쓰던 길과 같다.
+ */
+const DEV_VEC = {
+  planroad: {
+    typename: "lt_c_upisuq151",
+    keep: ["exc_nam", "atr_nam", "pmi_nam", "grad_se"],
+  },
+  zone: {
+    typename: "lt_c_lhzone",
+    keep: ["cat_nam", "zonename", "zonecode"],
+  },
+};
+const DEV_VEC_MIN_ZOOM = 12;
+const DEV_VEC_MAX = 600;
+
+async function developShapes(req, res) {
+  const want = String(req.query.kind || "");
+  const spec = DEV_VEC[want];
+  if (!spec) return fail(res, 400, "kind 는 planroad·zone 이어야 합니다");
+  const z = whole(String(req.query.z ?? ""));
+  const y = whole(String(req.query.y ?? ""));
+  const x = whole(String(req.query.x ?? ""));
+  if (z === null || y === null || x === null) {
+    return fail(res, 400, "z·y·x 가 0 이상의 정수여야 합니다");
+  }
+  if (z < DEV_VEC_MIN_ZOOM || z > MAX_ZOOM) {
+    return fail(res, 400, `z 는 ${DEV_VEC_MIN_ZOOM}~${MAX_ZOOM} 이어야 합니다`);
+  }
+  const span = 2 ** z;
+  if (y >= span || x >= span) return fail(res, 400, "그 배율의 격자 밖입니다");
+  const [w, s, e, n] = degBbox(z, x, y);
+  if (n < KOREA.latMin || s > KOREA.latMax ||
+      e < KOREA.lonMin || w > KOREA.lonMax) {
+    return sendShapes(res, [], true);
+  }
+  const out = await callVworld({
+    SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
+    TYPENAME: spec.typename,
+    BBOX: [w, s, e, n].join(","),
+    SRSNAME: "EPSG:4326",
+    OUTPUT: "application/json",
+    MAXFEATURES: String(DEV_VEC_MAX), RESULTTYPE: "results",
+    DOMAIN: process.env.VWORLD_REFERER
+      || `https://${(req.headers || {}).host || "toji.fyi/"}`,
+  }, VWORLD_WFS, (req.headers || {}).host);
+  if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
+  if (!out.upstream) {
+    return fail(res, out.timedOut ? 504 : 502,
+      out.timedOut ? `브이월드 응답 없음 (${TIMEOUT_MS / 1000}초 초과)`
+                   : "브이월드 호출 실패");
+  }
+  let body;
+  try { body = await out.upstream.json(); }
+  catch (err) { return fail(res, 502, "브이월드가 도형 대신 다른 것을 줬습니다"); }
+  const feats = Array.isArray(body && body.features) ? body.features : [];
+  const items = [];
+  for (const f of feats) {
+    const g = round6((f || {}).geometry);
+    if (!g) continue;
+    const src = (f || {}).properties || {};
+    // **쓸 칸만 넘긴다.** 스물세 칸을 다 보내면 한 칸이 수백 KB 가 된다.
+    const props = {};
+    for (const k of spec.keep) {
+      if (src[k] != null) props[k] = src[k];
+    }
+    items.push({ g, p: props });
+  }
+  return sendShapes(res, items, feats.length < DEV_VEC_MAX);
+}
+
+function sendShapes(res, items, whole_) {
+  res.setHeader("cache-control", CACHE_OK);
+  return res.status(200).json({ n: items.length, whole: whole_, items });
+}
+
 /* 누른 자리가 속한 행정구역 한 덩이를 돌려준다.
  *
  * 아주 작은 상자로 물어 그 자리를 감싸는 폴리곤을 받는다. 경계선 바로
@@ -983,6 +1077,10 @@ module.exports = async function handler(req, res) {
   // 누른 자리가 속한 행정구역 한 덩이.
   if (mode === "admin") {
     return adminShape(req, res);
+  }
+  // 개발 층을 도형으로 — 화면이 완공된 것을 걸러 낼 수 있게.
+  if (mode === "devvec") {
+    return developShapes(req, res);
   }
 
   const z = whole(String(req.query.z ?? ""));
