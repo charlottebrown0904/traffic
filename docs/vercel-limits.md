@@ -175,3 +175,30 @@ rokaf-lmp 8 · quant 5). toji-gogo 가 배포당 65MB 이고 나머지는 더 �
 
 **작업 폴더에는 파일이 남는다** — git 이 안 따라갈 뿐이다. 지역에서
 `make web` 으로 만든 것을 그대로 열어 볼 수 있다.
+
+
+## 배포가 막힌 진짜 까닭 — **내가 vercel.json 을 깨뜨렸다** (정정)
+
+앞에서 "가장 최근 배포가 ERROR 이고 빌드 로그가 한 줄도 없다 … 한도를
+넘겨 배포가 막힌 그 증상이다" 라고 적었다. **틀렸다.** 배포 상세를 열어
+보니 까닭이 또렷하게 적혀 있었다.
+
+    The `vercel.json` schema validation failed with the following message:
+    should NOT have additional property `_ignoreCommand`
+
+`vercel.json` 에 `ignoreCommand` 를 넣으면서 **까닭을 `_ignoreCommand`
+라는 배열로 같이 적어 뒀다.** JSON 에는 주석이 없으니 밑줄 붙인 열쇠를
+주석 삼은 것인데, **vercel.json 은 스키마가 엄격해서 모르는 속성이 하나만
+있어도 배포를 통째로 거절한다.**
+
+그래서 700401a 이후 main 으로 간 배포가 전부 ERROR 였다. 한도와는 **아무
+상관이 없었다.** 빌드 로그가 비어 있던 것도 그 때문이다 — 설정을 읽다
+막혔으니 빌드가 시작조차 안 했다.
+
+**배운 것 둘.**
+
+1. `vercel.json` 에는 **주석을 넣을 자리가 없다.** 까닭은 문서에만 둔다.
+2. '빌드 로그가 없는 ERROR' 를 보고 원인을 짐작하지 말고 **배포 상세의
+   `errorMessage` 를 읽는다.** 거기 한 줄로 적혀 있었는데, 나는 그것을
+   안 읽고 '한도 탓' 이라는 그럴듯한 이야기를 먼저 만들었다. 앞서 26.76GB
+   산수를 우연으로 맞춘 것과 같은 잘못이다.

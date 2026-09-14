@@ -3,18 +3,6 @@
   "framework": null,
   "buildCommand": null,
   "installCommand": null,
-  "_ignoreCommand": [
-    "배포 저장소가 10GB 한도를 260% 넘겼다 (26.76GB, 2026-09-14).",
-    "까닭은 배포 하나가 65MB 인데(public/app/data 가 그중 64MB) 그것이",
-    "**푸시마다** 쌓이기 때문이다. 그런데 최근 백 커밋 중 사이트를 건드린",
-    "것은 열일곱뿐이다 — 여든셋은 docs/ 나 src/ 만 고쳤는데도 65MB 짜리",
-    "배포를 하나씩 남겼다. 26.76GB 중 22.2GB 가 그 헛배포다.",
-    "",
-    "그래서 public/ · api/ · vercel.json 이 안 바뀌었으면 짓지 않는다.",
-    "git diff 는 바뀐 것이 없으면 0(건너뜀), 있으면 1(짓는다)을 준다.",
-    "HEAD^ 가 없는 첫 배포에서는 git 이 실패해 0 이 아닌 값을 주므로",
-    "**짓는 쪽으로 넘어진다** — 안전한 쪽이 기본값이다."
-  ],
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- public api vercel.json",
   "outputDirectory": "public",
   "regions": [
