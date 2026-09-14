@@ -386,15 +386,21 @@ def fetch_meta(org_id: str, tbl_id: str, kind: str = "OBJ",
 
 def fetch_table_auto(org_id: str, tbl_id: str, start: str, end: str,
                      prd_se: str = "Y", *, max_axes: int = 5,
-                     quiet: bool = True) -> list[dict]:
+                     min_axes: int = 1, quiet: bool = True) -> list[dict]:
     """축이 몇 개인지 모르는 표를 **늘려 가며** 받는다.
 
     표마다 분류축 수가 다르고 모자라면 KOSIS 는 200 에 err 20(objL 누락)을
     실어 보낸다. 축 이름을 하나씩 추측해 판을 태우지 말고 objL2 → objL2,
     objL3 → … 로 늘린다. 맛보기(kosis-peek)가 쓰던 재주를 적재도 쓴다.
     """
+    #
+    # **적게 물어도 200 이 온다.** DT_11007_A646 은 축이 셋(시도·징수방법·
+    # 세원)인데 objL1+objL2 만 줘도 거절하지 않고 **두 축짜리 표**를 준다.
+    # 그래서 자동으로 멈추면 세원별(법인세분)을 영영 못 본다 — 실제로 한 번
+    # 그렇게 받아 '세원: 보통징수·신고납부·특별징수' 가 나왔다. 축이 몇 개인지
+    # 아는 표는 min_axes 로 바닥을 정해 준다.
     last = None
-    for n in range(1, max_axes + 1):
+    for n in range(max(1, min_axes), max_axes + 1):
         obj = {f"objL{i}": "ALL" for i in range(2, n + 1)}
         try:
             return fetch_table(org_id, tbl_id, start, end, prd_se,

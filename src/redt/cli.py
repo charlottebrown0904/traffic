@@ -3221,6 +3221,11 @@ def cmd_load_tax_kosis(args):
         ind.describe_local_tax_kosis(con)
         # 법인세분은 시도까지만 갈린다 — 시군구 총액을 안분할 재료다.
         print()
+        # 지난 판이 **두 축짜리**를 받아 놓고 '받았다' 로 남겼다. 그대로
+        # 두면 이어받기가 그 해를 건너뛰어 세원이 영영 안 온다. 세 축으로
+        # 고친 뒤이므로 한 번 지우고 다시 받는다.
+        con.execute("DELETE FROM series_crawl WHERE source = 'kosis_tax_corp'")
+        con.execute("DELETE FROM region_series WHERE metric LIKE 'local_tax_corp:%'")
         ind.load_local_tax_corp(con, [y for y in years if y >= "2010"])
 
 

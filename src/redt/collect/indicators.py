@@ -1836,6 +1836,12 @@ def describe_local_tax_kosis(con, log=print) -> None:
 # 총액을 **시도 법인 비중으로 안분**할 재료가 되기 때문이다. 안분한 값은
 # 안분한 값이라고 이름에 남긴다 — 나중에 원자료로 착각하지 않게.
 KOSIS_CORP_TBL = "DT_11007_A646"
+# 이 표는 축이 **셋**이다 (시도별 · 징수방법별 · 세원별). 둘만 물어도
+# 200 이 오는데 그때는 세원 축이 통째로 빠진다 — run 98 에서 '보통징수 ·
+# 신고납부 · 특별징수' 만 받았다. 바닥을 셋으로 못박는다.
+KOSIS_CORP_AXES = 3
+# 시도 칸에 섞여 오는 소계 행. 시도가 아니므로 싣지 않는다.
+KOSIS_CORP_SKIP = ("합계", "계", "전국", "총계", "시계", "군계", "구계", "지방")
 
 
 def load_local_tax_corp(con, years: list[str], *, code_map: dict | None = None,
@@ -1853,7 +1859,8 @@ def load_local_tax_corp(con, years: list[str], *, code_map: dict | None = None,
         if key in done:
             continue
         try:
-            rows = kosis.fetch_table_auto(KOSIS_TAX_ORG, KOSIS_CORP_TBL, y, y)
+            rows = kosis.fetch_table_auto(KOSIS_TAX_ORG, KOSIS_CORP_TBL, y, y,
+                                          min_axes=KOSIS_CORP_AXES)
         except Exception as exc:                         # noqa: BLE001
             st["failed"] += 1
             if st["failed"] <= 3:
@@ -1863,9 +1870,14 @@ def load_local_tax_corp(con, years: list[str], *, code_map: dict | None = None,
         recs = []
         for r in rows:
             sido = str(r.get("C1_NM", "")).strip()
-            item = str(r.get("C2_NM", "")).strip()
+            # 축이 셋이라 C2·C3 중 어느 쪽이 세원인지는 표가 정한다.
+            # **'법인세분' 이 든 쪽**을 세원으로 삼고, 다른 쪽은 이름에
+            # 같이 적는다 — 징수방법까지 알면 나중에 가려 쓸 수 있다.
+            c2 = str(r.get("C2_NM", "")).strip()
+            c3 = str(r.get("C3_NM", "")).strip()
+            item, how = (c3, c2) if c3 else (c2, "")
             raw = r.get("DT")
-            if not sido or not item or sido in ("합계", "계", "전국"):
+            if not sido or not item or sido in KOSIS_CORP_SKIP:
                 continue
             try:
                 val = float(str(raw).replace(",", ""))
@@ -1875,9 +1887,10 @@ def load_local_tax_corp(con, years: list[str], *, code_map: dict | None = None,
             if not code:
                 st["unmatched"][sido] = st["unmatched"].get(sido, 0) + 1
                 continue
-            st["items"].add(item)
+            name = f"{item}:{how}" if how and how not in ("합계", "계") else item
+            st["items"].add(name)
             recs.append((code, y, val * 1000.0,
-                         f"local_tax_corp:{item}", "원", "KOSIS 지방세통계"))
+                         f"local_tax_corp:{name}", "원", "KOSIS 지방세통계"))
         if recs:
             con.executemany(
                 "INSERT OR REPLACE INTO region_series"
@@ -1894,4 +1907,7 @@ def load_local_tax_corp(con, years: list[str], *, code_map: dict | None = None,
         log(f"  세원: {' · '.join(sorted(st['items']))}")
     if st["unmatched"]:
         log(f"  못 이은 시도: {st['unmatched']}")
+        if {"광주광역시", "전라남도"} & set(st["unmatched"]):
+            log("    ※ 광주·전남은 2026 통합으로 우리 대조표에 옛 이름이"
+                " 없다 — 통합 코드로 이을지는 따로 정한다")
     return st
