@@ -860,17 +860,34 @@ def cmd_load_landprice(args):
     """
     from .collect import reb
     names = [x.strip() for x in args.tables.split(",") if x.strip()]
+    regions = [x.strip() for x in (args.region or "").split(",") if x.strip()]
     with db.connect() as con:
         for name in names:
             sid = reb.TABLES.get(name)
             if not sid:
                 print(f"  ✗ 모르는 표 {name} — 쓸 수 있는 이름: {', '.join(reb.TABLES)}")
                 continue
-            try:
-                rows = reb.data(sid, start=args.start, end=args.end, max_pages=int(args.max_pages))
-            except reb.Truncated as exc:
-                rows = exc.rows
-                print(f"  ⚠ {name}: {exc.limit}장에서 잘림 — 받은 만큼만 넣는다")
+            # 표 하나가 한 달에 1,600행(시군구 × 용도지역)이라 전 기간을 통째로
+            # 받으면 400장·150MB 다 (run 34816759975: 80장에 50개월). 시장 층에는
+            # 전국(과 시도)만 필요하다 — 한 달을 받아 지역 축의 ID 를 알아낸 뒤
+            # 그 ID 로 걸러 받는다. 그러면 전 기간이 몇 장이다.
+            grp_ids = None
+            if regions:
+                probe = reb.data(sid, start=args.start, end=args.start, max_pages=3)
+                grp_ids = sorted({str(r.get("GRP_ID")) for r in probe
+                                  if any(w in str(r.get("GRP_NM", "")) for w in regions)})
+                if not grp_ids:
+                    seen = sorted({str(r.get("GRP_NM", "")) for r in probe})[:15]
+                    print(f"  ✗ {name}: 지역 축에 {regions} 가 없다 — 보인 GRP_NM: {seen}")
+                    continue
+                print(f"  {name}: 지역 {regions} → GRP_ID {grp_ids}")
+            rows = []
+            for gid in (grp_ids or [None]):
+                try:
+                    rows += reb.data(sid, start=args.start, end=args.end, grp_id=gid, max_pages=int(args.max_pages))
+                except reb.Truncated as exc:
+                    rows += exc.rows
+                    print(f"  ⚠ {name} GRP {gid}: {exc.limit}장에서 잘림 — 받은 만큼만 넣는다")
             recs = []
             for r in rows:
                 try:
@@ -3647,6 +3664,7 @@ def main(argv=None):
 
     p = sub.add_parser("load-landprice", help="R-ONE 지가변동률·지가지수 → landprice_index")
     p.add_argument("--tables", default="지가변동률_용도지역_월,지가변동률_지역_월", help="reb.TABLES 이름을 쉼표로")
+    p.add_argument("--region", default="전국", help="지역 축에서 이 말이 든 것만 (쉼표 여럿 · 비우면 전부 = 무겁다)")
     p.add_argument("--start", default="200601")
     p.add_argument("--end", default="202612")
     p.add_argument("--max-pages", dest="max_pages", default="400")
