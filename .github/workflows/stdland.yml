@@ -21,7 +21,8 @@
 #   landprice         R-ONE 지가변동률 → landprice_index (query=표 이름 쉼표 · limit=지역 말, 비우면 전국)
 #   market-fit        시장 층 적합 — 금리·물가·성장률 → 지가변동률, 시나리오 셋 (limit=년수)
 #   portal-file       포털 파일형 데이터셋 하나 받기 (query=번호,저장이름)
-#   industrial        산업단지 현황(15041930) 받기 → zone_event → 주소 지오코딩 (limit=지오코딩 상한)
+#   industrial        산업단지 현황 받기 → zone_event → 주소 지오코딩 (query=번호, 비우면 15041930 · limit=지오코딩 상한)
+#                     번호가 죽었으면 '산업단지' 로 찾아 후보를 보이고 멈춘다
 #   permits           건축인허가 훑기 — 건축HUB → permit (query=시군구·시도 코드 쉼표, 비우면 전국 · limit=호출 예산, 비우면 8000 · 이어받기 · 65분에 스스로 멈춤)
 #   law-probe   국가법령정보센터 자치법규 API 탐침 (조례 한 건, LAW_OC 필요)
 #   law         전국 도시계획조례 → data/ordinance/ 관심 조문 (브랜치에 커밋)
@@ -284,7 +285,8 @@ jobs:
         run: |
           set -o pipefail
           {
-            python -m redt.cli portal-file --id "${{ inputs.query || '15041930' }}" --out zones_industrial
+            python -m redt.cli portal-file --id "${{ inputs.query || '15041930' }}" --out zones_industrial \
+              --search "산업단지"
             python -m redt.cli load-h3
             python -m redt.cli geocode-zones --limit "${{ inputs.limit || '2000' }}"
           } 2>&1 | tee /tmp/stdland.log

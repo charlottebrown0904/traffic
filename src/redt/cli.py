@@ -930,7 +930,25 @@ def cmd_portal_file(args):
     """
     from .collect import indicators
     from .collect.h3_files import ZONE_COLS, _pick
-    raw, ext, d = indicators.fetch_portal_dataset(args.id, timeout=int(args.timeout))
+
+    # 번호는 낡는다. 15041930 은 2026-09-14 에 포털에서 사라졌다("요청하신
+    # 페이지를 찾을 수 없습니다"). 죽은 번호 앞에서 그냥 멈추면 다음 사람이
+    # 다시 찾아 헤맨다 — **같은 판에서 이름으로 찾아 후보를 보여 준다.**
+    try:
+        raw, ext, d = indicators.fetch_portal_dataset(args.id, timeout=int(args.timeout))
+    except Exception as exc:                          # noqa: BLE001
+        print(f"{args.id}: {exc}"[:300])
+        if not args.search:
+            raise
+        print(f"\n'{args.search}' 로 포털을 찾아 본다 — 번호가 바뀐 것일 수 있다")
+        hits = indicators.search_portal(args.search, timeout=int(args.timeout))
+        if hits and "_raw_head" in hits[0]:
+            print(f"  검색 화면을 못 읽었다 ({hits[0].get('_len')}자)")
+            raise
+        for h in hits[:30]:
+            print(f"  {h['id']:10s} {h['kind']:9s} {h['title'][:60]}")
+        print(f"  후보 {len(hits)}개 — 파일형(fileData)부터 다시 두드린다")
+        raise SystemExit(1)
     out = ROOT / "data" / "raw" / f"{args.out}.{ext}"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(raw)
@@ -3787,6 +3805,8 @@ def main(argv=None):
     p.add_argument("--id", required=True, help="데이터셋 번호")
     p.add_argument("--out", required=True, help="저장 이름 (확장자 없이, 예: zones_industrial)")
     p.add_argument("--timeout", default="120")
+    p.add_argument("--search", default="",
+                   help="번호가 죽었을 때 이 말로 포털을 찾아 후보를 보인다")
     p.set_defaults(func=cmd_portal_file)
 
     p = sub.add_parser("geocode-zones", help="zone_event 의 좌표 없는 사건을 주소로 지오코딩")
