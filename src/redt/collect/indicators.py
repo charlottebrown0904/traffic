@@ -45,11 +45,22 @@ CANDIDATES = [
      "url": "https://bigdata.kepco.co.kr/openapi/v1/powerUsage/contractType.do",
      "params": {"year": "2024", "month": "01", "metroCd": "41", "cityCd": "41550",
                 "apiKey": http.VIA_RELAY, "returnType": "json"}},
-    # 같은 것이 포털에도 있는지 — 있으면 DATA_GO_KR_KEY 로 된다.
-    {"name": "포털 한전 전력사용량 (후보)",
-     "url": "https://apis.data.go.kr/B551236/PowerUsageService/getContractTypeUsage",
-     "params": {"year": "2024", "month": "01", "metroCd": "41", "cityCd": "41550",
-                "_type": "json"}},
+    # 4차(run 34806432813)에서 건축HUB 가 NORMAL SERVICE 로 열렸다 — 활용신청이
+    # 반영된 것이다. 안성 25300 은 0건이었으니, 자료가 있는 동으로 한 건 받아
+    # **항목 열쇠**를 보고, 법정동 없이 시군구만으로 되는지도 본다 — 그것이
+    # 전국을 훑는 호출 수(250 vs 3,500+)를 정한다.
+    {"name": "건축HUB 강남·역삼 (열쇠 보기)",
+     "url": "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo",
+     "params": {"sigunguCd": "11680", "bjdongCd": "10300", "numOfRows": "2",
+                "pageNo": "1", "_type": "json"}},
+    {"name": "건축HUB 시군구만 (법정동 없이)",
+     "url": "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo",
+     "params": {"sigunguCd": "41550", "numOfRows": "2", "pageNo": "1", "_type": "json",
+                "startDate": "20240101", "endDate": "20241231"}},
+    # 행안부 통계연보 — 상세 화면에서 주소와 운영 이름이 나왔다 (15107410).
+    {"name": "통계연보 지방세 징수실적",
+     "url": "https://apis.data.go.kr/1741000/RecordLocalTaxCollectionYear/getRecordLocalTaxCollectionYear",
+     "params": {"pageNo": "1", "numOfRows": "3", "type": "json"}},
 ]
 
 
@@ -127,6 +138,10 @@ def detail(dataset_id: str, kind: str = "openapi", timeout: int = 40) -> dict:
     # 3차에서 '활용신청' 발췌가 앞을 다 차지해 주소 발췌가 밀렸다. 주소가 먼저다.
     out["excerpts"] = _around(page, ("apis.data.go.kr", "End Point", "endPoint", "요청주소",
                                      "서비스URL", "fn_fileDataDown"), width=320, limit=8)
+    # 4차: 15101360 · 15138716 의 주소는 발췌에 안 나왔다 — <script> 안에 있는
+    # 것이다 (_around 는 스크립트를 벗긴다). 스크립트를 살려 한 번 더 본다.
+    out["excerpts_raw"] = _around(page, ("apis.data.go.kr", "fileDetailSn"),
+                                  width=360, limit=6, keep_script=True)
     out["operations"] = sorted(set(re.findall(r"\b(get[A-Z][A-Za-z0-9]+)\b", page)))[:40]
     out["downloads"] = sorted(set(re.findall(
         r"fileDownload\.do\?[^\"'<>\s]*atchFileId=[^\"'<>\s]+", page)))[:10]
@@ -139,9 +154,11 @@ def detail(dataset_id: str, kind: str = "openapi", timeout: int = 40) -> dict:
     return out
 
 
-def _around(page: str, words: tuple, width: int = 260, limit: int = 6) -> list[str]:
+def _around(page: str, words: tuple, width: int = 260, limit: int = 6,
+            keep_script: bool = False) -> list[str]:
     """낱말 둘레의 글자를 태그 벗겨 남긴다 — 구조를 모를 때의 실마리."""
-    flat = re.sub(r"\s+", " ", re.sub(r"<script.*?</script>", " ", page, flags=re.S | re.I))
+    body = page if keep_script else re.sub(r"<script.*?</script>", " ", page, flags=re.S | re.I)
+    flat = re.sub(r"\s+", " ", body)
     out = []
     for w in words:
         for m in re.finditer(re.escape(w), flat):
@@ -198,6 +215,51 @@ def fetch_head(url: str, timeout: int = 60) -> dict:
             "looks_like": ("html" if (text or "").lstrip().lower().startswith(("<!doctype", "<html"))
                            else "table" if "," in first or "\t" in first
                            else "binary" if text is None else "other")}
+
+
+def profile_file(url: str, timeout: int = 90, limit: int = 30_000_000) -> dict:
+    """파일을 **통째로** 러너가 직접 받아 무엇이 들었는지 본다.
+
+    4차에서 셋이 0.4~2.5MB 로 작고 미국에서 200 이 왔다. 적재기를 쓰기 전에
+    기간이 어디서 어디까지인지, 시군구가 몇인지, 업종 값이 무엇인지 알아야
+    한다 — 머리 세 줄로는 '2016-10' 이 시작인지 유일한 달인지 모른다.
+    """
+    import io
+    import pandas as pd
+    try:
+        resp = http._sess().get(url, stream=True, timeout=timeout,
+                                headers={"User-Agent": "redt-research/0.1"})
+        buf = io.BytesIO()
+        for part in resp.iter_content(1 << 16):
+            buf.write(part)
+            if buf.tell() > limit:
+                break
+        resp.close()
+        raw = buf.getvalue()
+    except Exception as exc:                          # noqa: BLE001
+        return {"url": url, "error": f"{type(exc).__name__}: {exc}"[:200]}
+    text = _decode_table(raw)
+    if text is None:
+        return {"url": url, "bytes": len(raw), "error": "글자로 못 읽음"}
+    try:
+        df = pd.read_csv(io.StringIO(text), dtype=str)
+    except Exception as exc:                          # noqa: BLE001
+        return {"url": url, "bytes": len(raw), "error": f"CSV 파싱: {exc}"[:200]}
+    out = {"url": url, "bytes": len(raw), "rows": int(len(df)), "columns": list(df.columns)[:12]}
+    cols = {c: c for c in df.columns}
+    # 기간 칸 — 이름에 기간·년·월·일자가 든 것
+    for c in df.columns:
+        if re.search(r"기간|년도|연도|년|월|일자|date", c, re.I):
+            vals = df[c].dropna().astype(str)
+            if not vals.empty:
+                out.setdefault("periods", {})[c] = {"min": vals.min(), "max": vals.max(),
+                                                    "n": int(vals.nunique())}
+    for c in df.columns:
+        if re.search(r"시군구|시도|법정동|계약종|용도|업종|산업", c):
+            vals = df[c].dropna().astype(str)
+            out.setdefault("dims", {})[c] = {"n": int(vals.nunique()),
+                                             "sample": sorted(vals.unique())[:14]}
+    return out
 
 
 def fetch_direct(url: str, timeout: int = 20, limit: int = 65536) -> dict:
@@ -289,7 +351,7 @@ def probe(timeout: int = 40) -> dict:
 
     # 상세에서 나온 내려받기 링크는 머리만 실제로 받아 본다 — 로그인 없이
     # 되는지가 '러너가 대신 받을 수 있는가' 를 정한다.
-    downloads, direct = [], []
+    downloads, direct, profiles = [], [], []
     for d in details:
         for u in d.get("downloads", [])[:1]:
             full = "https://www.data.go.kr/cmm/cmm/" + u.lstrip("/")
@@ -299,8 +361,14 @@ def probe(timeout: int = 40) -> dict:
             dd = fetch_direct(full)
             dd["dataset"] = d["id"]
             direct.append(dd)
+            # 4차에서 직접 받기가 200 이었다. 이제 통째로 받아 프로파일한다.
+            if dd.get("status") == 200:
+                pf = profile_file(full)
+                pf["dataset"] = d["id"]
+                pf["title"] = d.get("title", "")[:60]
+                profiles.append(pf)
     return {"portal": found, "candidates": knocked, "details": details,
-            "downloads": downloads, "direct": direct}
+            "downloads": downloads, "direct": direct, "profiles": profiles}
 
 
 def describe(result: dict) -> str:
@@ -337,6 +405,8 @@ def describe(result: dict) -> str:
             lines.append(f"       크기: {' · '.join(d['sizes'][:4])}")
         for x in d.get("excerpts", [])[:3]:
             lines.append(f"       발췌 {x[:230]}")
+        for x in d.get("excerpts_raw", [])[:3]:
+            lines.append(f"       스크립트 {x[:300]}")
         if "_raw_head" in d:
             lines.append(f"       (주소를 못 뽑았습니다) {d['_raw_head'][:200]}")
     lines.append("\n── 내려받기 시험 · 중계기 경유 (로그인 없이 되는가) ──")
@@ -359,6 +429,17 @@ def describe(result: dict) -> str:
                      f"{g['content_type'][:40]}  길이 {g['length'] or '?'} · 받은 {g['got']:,}")
         if g.get("header"):
             lines.append(f"       머리: {g['header'][:200]}")
+    lines.append("\n── 파일 프로파일 (통째로 받아서) ──")
+    for pf in result.get("profiles", []):
+        if "error" in pf:
+            lines.append(f"  ✗ {pf.get('dataset')}  {pf['error']}")
+            continue
+        lines.append(f"  {pf.get('dataset')}  {pf.get('title', '')}")
+        lines.append(f"       {pf['rows']:,}행 · {pf['bytes']:,}바이트 · 열: {', '.join(pf['columns'])}")
+        for c, v in pf.get("periods", {}).items():
+            lines.append(f"       기간 {c}: {v['min']} ~ {v['max']} ({v['n']}개)")
+        for c, v in pf.get("dims", {}).items():
+            lines.append(f"       {c}: {v['n']}개 — {' · '.join(v['sample'][:10])}")
     lines.append("\n── 후보 두드리기 ──")
     for k in result["candidates"]:
         if "error" in k:
