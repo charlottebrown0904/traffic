@@ -3652,7 +3652,7 @@ async function stubCommon(pg) {
     check('인근 지가수준 범위를 함께 적는다', /인근 지가수준 [0-9,]+~[0-9,]+/.test(vtxt));
     check('평가액(추정)도 적는다 (1,653㎡)', /평가액\(추정\) 약/.test(vtxt));
     check('농업진흥은 표준지 자료에 없어 확인 못 했다고 참고사항에 적는다',
-          /참고사항/.test(vcalc) && /확인하지 못했다/.test(vcalc));
+          /참고사항/.test(vcalc) && /확인하지 못했습니다/.test(vcalc));
     // '다른 표준지를 쓰면' 은 뺐다 (2026-09-12 지시). 평가서는 표준지를 하나
     // 고르고 그 근거를 적는다 — 여러 안을 나란히 두지 않는다.
     check('다른 표준지를 쓰면 이라는 단서는 없다',
@@ -3723,8 +3723,21 @@ async function stubCommon(pg) {
           `${tf.sido.factor} ${tf.sido.source}`);
     check('칸이 하나도 없으면 추세로 물러난다',
           tf.none.kind === 'trend' && /추세로 대신함/.test(tf.none.source), tf.none.source);
+    // **어투는 합쇼체다** (2026-09-15 지시). 이 칸의 글 다섯 줄이 전부
+    // 해라체였다 — '뺐다' · '다시 고를 것' · '확인하지 못했다'. 한 줄만
+    // 고치면 다음 사람이 옆줄을 보고 다시 해라체로 쓴다.
+    check('참고사항 글이 합쇼체다 (해라체가 섞이지 않는다)',
+          five.warn.length > 0
+          && five.warn.every((w) => !/(?:다|것)$/.test(String(w).trim())
+                                    || /습니다$/.test(String(w).trim())),
+          JSON.stringify(five.warn));
+    // 못 하는 까닭이 **표준지 자료**에 있다는 것이 드러나야 한다. 감정평가서
+    // (원장)가 모자라서로 읽히면 안 된다 — 사장님이 그렇게 읽으셨다.
+    check('확인 못 한 까닭이 표준지 자료라고 적는다',
+          five.warn.some((w) => /표준지 공시지가 자료/.test(w)),
+          JSON.stringify(five.warn));
     check('농업진흥은 표준지 자료에 없어 확인 못 했다고 경고에 남는다',
-          five.warn.some((w) => /확인하지 못했다/.test(w)), JSON.stringify(five.warn));
+          five.warn.some((w) => /확인하지 못했습니다/.test(w)), JSON.stringify(five.warn));
     // 뒤 검사는 '미래 가치' 가 열린 상태에서 시작한다. 그 상태로 되돌린다.
     await page.evaluate(async () => {
       document.querySelector('.pc-val[data-val="future"]').click();

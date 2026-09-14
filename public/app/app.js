@@ -5816,6 +5816,15 @@ function stdAsParcel(r) {
            lon: r.lon, lat: r.lat };
 }
 
+/* 받침에 맞는 조사. 화면에 '이(가)' 를 그대로 내보내면 글이 아니라
+   자리표시자로 읽힌다. 한글 음절의 받침은 코드에서 바로 나온다. */
+function josa(word, withBat, without) {
+  const w = String(word || '');
+  const last = w.charCodeAt(w.length - 1);
+  if (!(last >= 0xAC00 && last <= 0xD7A3)) return without;
+  return ((last - 0xAC00) % 28) ? withBat : without;
+}
+
 function zoneNamesOf(p, T) {
   const keys = (T.must_match || []).concat(Object.keys(T.special || {}));
   const texts = [p.land_use, p.land_use2, p.district]
@@ -5842,7 +5851,7 @@ function individualFactor(subject, std, T) {
   }
   let r = ratioOf(roadIndexOf(subject.road_side, T), roadIndexOf(std.road_side, T));
   add('가로·접근 (도로접면)', subject.road_side, std.road_side, r, r === null ? '도로접면을 한쪽이라도 모른다' : null);
-  if (r === null) warnings.push('도로접면 미상 — 격차율에서 뺐다');
+  if (r === null) warnings.push('도로접면을 알 수 없어 격차율에서 뺐습니다');
   if (kind !== '임야지대') {
     r = ratioOf(idxOf(subject.shape, T.shape_index), idxOf(std.shape, T.shape_index));
     add('획지 (형상)', subject.shape, std.shape, r, r === null ? '형상을 한쪽이라도 모른다' : null);
@@ -5850,7 +5859,7 @@ function individualFactor(subject, std, T) {
   const slopeTable = T.slope_index[kind] || T.slope_index['*'];
   r = ratioOf(idxOf(subject.slope, slopeTable), idxOf(std.slope, slopeTable));
   add('자연·획지 (지세)', subject.slope, std.slope, r, r === null ? '지세를 한쪽이라도 모른다' : null);
-  if (r === null) warnings.push('지세 미상 — 격차율에서 뺐다');
+  if (r === null) warnings.push('지세를 알 수 없어 격차율에서 뺐습니다');
   const rules = T.area_rules[kind];
   if (rules && subject.area_m2 && std.area_m2) {
     const q = Number(subject.area_m2) / Number(std.area_m2);
@@ -5862,15 +5871,15 @@ function individualFactor(subject, std, T) {
   const ugD = useGroupOf(std.jimok, std.use_situation);
   if (ugS && ugD && ugS !== ugD) {
     const m = T.use_mismatch[`${ugS}|${ugD}`];
-    add('행정·기타 (지목·이용상황)', ugS, ugD, m ? m[0] : null, m ? m[1] : '지목군이 다르다 — 표준지를 다시 고를 것');
-    if (!m) warnings.push(`지목군 불일치 ${ugS}/${ugD} — 표준지 재선정 권고`);
+    add('행정·기타 (지목·이용상황)', ugS, ugD, m ? m[0] : null, m ? m[1] : '지목군이 달라 격차율로 메우지 않습니다');
+    if (!m) warnings.push(`대상은 ${ugS}, 표준지는 ${ugD} 로 지목군이 다릅니다 — 표준지를 다시 고르는 것이 맞습니다`);
   }
   const zs = zoneNamesOf(subject, T);
   const zd = zoneNamesOf(std, T);
   (T.must_match || []).forEach((n) => {
     if (zs.includes(n) === zd.includes(n)) return;
-    if ((T.std_known || []).includes(n)) warnings.push(`${n}이(가) 대상·표준지 한쪽에만 있다 — 표준지를 같은 구역에서 다시 고를 것`);
-    else if (zs.includes(n)) warnings.push(`대상이 ${n} 안인데 표준지 자료에는 그 구역 정보가 없어 같은지 확인하지 못했다`);
+    if ((T.std_known || []).includes(n)) warnings.push(`${n}${josa(n, '이', '가')} 대상·표준지 한쪽에만 있습니다 — 같은 구역의 표준지로 다시 골라야 합니다`);
+    else if (zs.includes(n)) warnings.push(`대상은 ${n} 안인데 표준지 공시지가 자료에 그 구역이 적혀 있지 않아, 비교표준지도 같은 조건인지 확인하지 못했습니다`);
   });
   Object.entries(T.special || {}).forEach(([name, [ratio, why]]) => {
     if (name === '현황도로') return;
