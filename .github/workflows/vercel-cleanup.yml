@@ -13,6 +13,9 @@ on:
       dry_run:
         description: "1 이면 지울 목록만 찍고 안 지운다"
         default: "1"
+      sizes:
+        description: "1 이면 팀의 프로젝트마다 배포 수만 센다 (아무것도 안 지움)"
+        default: "0"
       keep:
         description: "남길 production 배포 수 (최근 것부터)"
         default: "2"
@@ -34,7 +37,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      # 사용량 화면(26.76GB)은 **팀 전체**다 — 프로젝트 하나가 아니다.
+      # toji-gogo 만 보고 원인을 찾으면 엉뚱한 곳을 판다.
+      - name: 프로젝트마다 배포 수
+        if: inputs.sizes == '1'
+        run: |
+          set -o pipefail
+          python scripts/vercel_project_sizes.py 2>&1 | tee /tmp/cleanup.log
+
       - name: 정리
+        if: inputs.sizes != '1'
         run: |
           set -o pipefail
           python scripts/vercel_cleanup.py 2>&1 | tee /tmp/cleanup.log
