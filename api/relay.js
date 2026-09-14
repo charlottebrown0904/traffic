@@ -79,6 +79,13 @@ const ALLOW = {
   // optional 인 까닭: 키를 받기 전에도 주소가 살아 있는지, 무엇을 요구하는지
   // 두드려 볼 수 있어야 한다 — 거절 메시지도 답이다.
   "bigdata.kepco.co.kr": { param: "apiKey", env: "KEPCO_KEY", optional: true },
+  // 지방재정365 (행안부 지방재정통합공개시스템) Open API — 지방세 징수실적
+  // (법인지방소득세 시군구별). 인증키는 lofin365 마이페이지에서 따로 받아
+  // LOFIN_KEY 로 둔다. 인증키 파라미터 이름은 명세를 아직 못 봤다 — 'Key'
+  // 로 두고 첫 호출에서 확인한다 (틀리면 상류가 말해 준다). optional 인
+  // 까닭은 명세 화면 읽기에도 이 호스트를 쓰기 때문이다.
+  "lofin365.go.kr":  { param: "Key", env: "LOFIN_KEY", optional: true },
+  "www.lofin365.go.kr": { param: "Key", env: "LOFIN_KEY", optional: true },
   // 국가법령정보센터 Open API (자치법규 조례). OC 는 가입 아이디인데 키처럼
   // 다룬다 — 호출 측이 들고 있지 않게 중계기가 끼워 넣는다.
   // keepClient: 호출 측이 OC 를 실어 보냈으면 그것을 살린다. 법제처 본문(DRF)은
