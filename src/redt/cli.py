@@ -3195,6 +3195,29 @@ def cmd_kosis_diagnose(args):
     kosis.diagnose()
 
 
+def cmd_load_tax_kosis(args):
+    """KOSIS 지방세통계 — 시군구 × 세목 (2026-09-14).
+
+    지방재정365 는 총액만 줬다 (2014~2024, 세목은 전국 순계). KOSIS 는
+    시도마다 표가 하나이고 그 안이 시군구 × 세목이며 **1994년부터**다.
+    표 번호는 규칙이 어긋나 있어(1-9 울산 A064, 1-11 경기 A065) 이름으로
+    찾는다.
+    """
+    from .collect import indicators as ind
+    years = _years(args.years)
+    with db.connect() as con:
+        st = ind.load_local_tax_kosis(con, years,
+                                      max_seconds=int(args.max_minutes) * 60)
+        print(f"\n표 {st['tables']} · 호출 {st['calls']:,} · 새 행 {st['rows']:,}"
+              f" · 건너뜀(이미 받음) {st['skipped_done']:,} · 실패 {st['failed']}"
+              + (" · ⏱ 시간에 멈춤" if st["stopped"] else ""))
+        if st["unmatched"]:
+            top = sorted(st["unmatched"].items(), key=lambda x: -x[1])[:10]
+            print(f"  못 이은 이름 {len(st['unmatched'])}개: "
+                  + " · ".join(f"{a}({b})" for a, b in top))
+        ind.describe_local_tax_kosis(con)
+
+
 def cmd_load_rail(args):
     """철도역과 개통일을 싣는다 (data/rail/ 의 세 파일).
 
@@ -3965,6 +3988,12 @@ def main(argv=None):
     p.add_argument("--terms", default="주민등록인구,전국사업체조사")
     p.add_argument("--top", type=int, default=15)
     p.set_defaults(func=cmd_kosis_find)
+
+    p = sub.add_parser("load-tax-kosis",
+                       help="KOSIS 지방세통계 — 시군구 × 세목 (시도 표 열아홉)")
+    p.add_argument("--years", default="1994-2024", help="회계연도 범위")
+    p.add_argument("--max-minutes", type=int, default=50)
+    p.set_defaults(func=cmd_load_tax_kosis)
 
     p = sub.add_parser("load-rail",
                        help="철도역 좌표 + 노선·구간 개통일 적재 (data/rail/)")

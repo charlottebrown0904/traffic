@@ -2950,6 +2950,58 @@ _d = _MM.describe(_r_trend.values() and list(_r_trend.values()), 30)
 check("skip_3_1_2" in _d and "12-1" in _d, "표에 규격과 읽는 법이 함께 찍힌다")
 
 print()
+print("48. KOSIS 지방세통계 — 시군구 × 세목 (2026-09-14)")
+
+# 표 고르기. **번호를 짐작하지 않고 이름으로 찾는다** — 1-9 울산이 A064 인데
+# 1-11 경기가 A065 라 규칙을 세우면 틀린 표를 받는다. 그리고 '총괄' 은
+# 시군구 축이 아니라 시도 축이므로 빠져야 한다.
+_search_calls = []
+
+
+def _fake_search(term, rows=100):
+    _search_calls.append(term)
+    return [
+        {"TBL_ID": "TX_11007_A065", "TBL_NM": "1-11. 경기도",
+         "MT_ATITLE": "정부ㆍ재정 > 지방세통계 > 지방세 부과·징수 실적 > 시도·시군구별 징수실적"},
+        {"TBL_ID": "TX_11007_A056", "TBL_NM": "1-1. 특별시 및 광역시 징수실적(총괄)",
+         "MT_ATITLE": "정부ㆍ재정 > 지방세통계 > 지방세 부과·징수 실적 > 시도·시군구별 징수실적"},
+        {"TBL_ID": "TX_11007_A037", "TBL_NM": "1. 세목별 징수실적(총괄)",
+         "MT_ATITLE": "정부ㆍ재정 > 지방세통계 > 지방세 부과·징수 실적 > 지방세 징수실적"},
+        {"TBL_ID": "DT_11007_A760", "TBL_NM": "8-1. 지방소득세 징수현황 총괄",
+         "MT_ATITLE": "정부ㆍ재정 > 지방세통계 > 지방세 부과·징수 실적 > 지방세 세목별 징수"},
+    ]
+
+
+_kosis_mod = _IND.__dict__.get("kosis")
+import redt.collect.kosis as _KS                          # noqa: E402
+_orig_search = _KS.search
+_KS.search = _fake_search
+try:
+    _tabs = _IND.kosis_tax_tables()
+finally:
+    _KS.search = _orig_search
+check(_tabs == {"TX_11007_A065": "경기도"},
+      f"시도 표만 고른다 — 총괄·세목별·다른 분류는 뺀다 ({_tabs})")
+
+# 접기. 단위가 **천원**이라 1,000을 곱해 원으로 맞춘다 (지방재정365 가 원이다).
+# '합계' 행은 시도 총계라 시군구 칸에 넣으면 한 지역이 시도 전체 값을 가진다.
+_cm = {("경기", "수원시"): "41110"}
+_rows = [
+    {"C1_NM": "수원시", "C2_NM": "지방소득세", "PRD_DE": "2023", "DT": "1,234"},
+    {"C1_NM": "합계", "C2_NM": "지방소득세", "PRD_DE": "2023", "DT": "99999999"},
+    {"C1_NM": "없는시", "C2_NM": "재산세", "PRD_DE": "2023", "DT": "5"},
+]
+_recs, _diag = _IND.kosis_tax_rows(_rows, "경기도", _cm)
+check(len(_recs) == 1 and _recs[0][0] == "41110",
+      f"합계 행과 못 이은 이름은 안 싣는다 ({len(_recs)}행)")
+check(_recs[0][2] == 1234 * 1000.0,
+      f"천원을 원으로 바꾼다 ({_recs[0][2]:,.0f})")
+check(_recs[0][3] == "local_tax_kosis:지방소득세" and _recs[0][4] == "원",
+      f"지표 이름에 세목이 들어가고 단위는 원 ({_recs[0][3]} · {_recs[0][4]})")
+check(_diag["unmatched"].get("경기도 없는시") == 1,
+      f"못 이은 이름은 세어 둔다 ({_diag['unmatched']})")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)
