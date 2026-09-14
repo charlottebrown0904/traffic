@@ -3177,6 +3177,82 @@ def cmd_kosis_diagnose(args):
     kosis.diagnose()
 
 
+def cmd_kosis_peek(args):
+    """표 하나의 **속을 열어 본다** — 분류축·항목·기간, 그리고 한 해 맛보기.
+
+    법인지방소득세를 지방재정365 에서 못 얻었다(§5-4: 세목 이름이
+    '지방소득세' 하나다). KOSIS 지방세통계에 세목이 더 갈려 있는지,
+    그리고 **지역 축이 시군구까지 내려가는지**가 갈림길이다. 표 이름만
+    보고 정하면 또 틀린 표의 숫자를 받아놓고 맞는 줄 안다 — 축을 물어본다.
+
+    맛보기 한 해를 받을 때 objL1 을 ALL 로 두면 셀 한도에 걸릴 수 있다.
+    한도에 걸린 것과 자료가 없는 것은 다르다 — KosisError 메시지를 그대로
+    찍어 둘을 가른다.
+    """
+    from .collect import kosis
+
+    org, tbl = args.org, args.table
+    print("=" * 70)
+    print(f"orgId={org} tblId={tbl}")
+    print("=" * 70)
+
+    for kind, what in (("TBL", "표"), ("OBJ", "분류축"), ("ITM", "항목")):
+        print(f"\n[{kind}] {what}")
+        rows = None
+        for url in kosis.META_URLS:
+            try:
+                rows = kosis.fetch_meta(org, tbl, kind, url=url)
+            except Exception as exc:                  # noqa: BLE001
+                print(f"  {url.rsplit('/', 1)[-1]}: {exc}")
+                continue
+            print(f"  {url.rsplit('/', 1)[-1]}: {len(rows)}행")
+            break
+        if not rows:
+            continue
+        # 무엇이 왔는지 열쇠부터 보인다 — 칸 이름을 기억으로 적지 않기 위해.
+        print(f"  열쇠: {sorted(rows[0])}")
+        seen: dict[str, int] = {}
+        for r in rows:
+            axis = str(r.get("OBJ_ID") or r.get("ITM_ID") or "")[:12]
+            seen[axis] = seen.get(axis, 0) + 1
+        if kind == "OBJ":
+            print(f"  축별 코드 수: {seen}")
+        for r in rows[:args.top]:
+            nm = str(r.get("OBJ_NM") or r.get("ITM_NM") or r.get("TBL_NM") or "")
+            cd = str(r.get("OBJ_ID") or r.get("ITM_ID") or "")
+            sub = str(r.get("C1_NM") or r.get("OBJ_NM_ENG") or "")[:30]
+            print(f"    {cd:12s} {nm[:40]:40s} {sub}")
+        if len(rows) > args.top:
+            print(f"    … {len(rows) - args.top}행 더")
+        # 우리가 찾는 말이 이름 어딘가에 있는가.
+        for word in ("법인", "지방소득", "시군구", "시·군·구"):
+            hit = [r for r in rows
+                   if word in json.dumps(r, ensure_ascii=False)]
+            if hit:
+                print(f"  '{word}' 든 행 {len(hit)}개 — 예: "
+                      f"{json.dumps(hit[0], ensure_ascii=False)[:160]}")
+
+    if not args.year:
+        return
+    print(f"\n[맛보기] {args.year}년")
+    obj = {}
+    for extra in (args.obj or "").split(","):
+        extra = extra.strip()
+        if extra:
+            obj[extra] = "ALL"
+    try:
+        rows = kosis.fetch_table(org, tbl, args.year, args.year,
+                                 prd_se=args.prd, obj=obj or None)
+    except Exception as exc:                          # noqa: BLE001
+        print(f"  실패: {exc}")
+        return
+    print(f"  {len(rows)}행")
+    if rows:
+        print(f"  열쇠: {sorted(rows[0])}")
+        for r in rows[:args.top]:
+            print(f"    {json.dumps(r, ensure_ascii=False)[:200]}")
+
+
 def cmd_kosis_browse(args):
     """KOSIS 목록을 훑어 시군구 인구·사업체 통계표를 찾는다.
 
@@ -3785,6 +3861,16 @@ def main(argv=None):
     p.add_argument("--terms", default="주민등록인구,전국사업체조사")
     p.add_argument("--top", type=int, default=15)
     p.set_defaults(func=cmd_kosis_find)
+
+    p = sub.add_parser("kosis-peek",
+                       help="표 하나의 분류축·항목·기간 보기 (+ 한 해 맛보기)")
+    p.add_argument("--org", required=True, help="orgId")
+    p.add_argument("--table", required=True, help="tblId")
+    p.add_argument("--year", default="", help="맛보기로 받아 볼 해 (비우면 안 받음)")
+    p.add_argument("--prd", default="Y", help="주기 (Y 연 · M 월)")
+    p.add_argument("--obj", default="", help="더 줄 분류축 이름 쉼표 (objL2,objL3)")
+    p.add_argument("--top", type=int, default=20)
+    p.set_defaults(func=cmd_kosis_peek)
 
     p = sub.add_parser("kosis-diagnose",
                        help="KOSIS 응답 진단 (parentId 가 먹히는지·검색이 되는지)")

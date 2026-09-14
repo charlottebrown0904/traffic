@@ -20,6 +20,12 @@ on:
       depth:
         description: "몇 단계까지 내려갈지 (넓으면 호출이 늘어납니다)"
         default: "2"
+      terms:
+        description: "이름으로 찾을 말 (쉼표). 주면 인구 적재는 건너뛰고 찾기만 한다"
+        default: ""
+      peek:
+        description: "표 속을 열어 본다 — orgId,tblId[,맛보기해[,주기[,더줄축]]]"
+        default: ""
 
 jobs:
   browse:
@@ -51,22 +57,38 @@ jobs:
       # statisticsSearch.do 는 ORG_ID·TBL_ID 를 바로 준다. 트리를 안 탄다.
       - name: 표 찾기 + 현재 시도 코드
         run: |
-          python -m redt.cli kosis-find 2>&1 | tee data/raw/kosis_find.txt
+          python -m redt.cli kosis-find \
+            ${{ inputs.terms && format('--terms "{0}"', inputs.terms) || '' }} \
+            --top 25 2>&1 | tee data/raw/kosis_find.txt
+
+      # 표 하나의 속 — 분류축이 시군구까지 내려가는가, 항목에 세목이 갈리는가.
+      # 이름만 보고 정하면 틀린 표의 숫자를 받아놓고도 맞는 줄 안다.
+      - name: 표 속 보기
+        if: inputs.peek != ''
+        continue-on-error: true
+        run: |
+          IFS=, read -r ORG TBL YEAR PRD OBJ <<< "${{ inputs.peek }}"
+          python -m redt.cli kosis-peek --org "$ORG" --table "$TBL" \
+            --year "${YEAR:-}" --prd "${PRD:-Y}" --obj "${OBJ:-}" \
+            2>&1 | tee data/raw/kosis_peek.txt
 
       # 검색으로 확인한 표를 실제로 받아 본다. 이 엔드포인트는 아직
       # 실호출로 검증되지 않았으므로, 응답 앞부분을 그대로 찍는다.
       - name: 인구 받아보기 (엔드포인트 확인 겸)
+        if: inputs.terms == ''
         continue-on-error: true
         run: |
           python -m redt.cli kosis-fetch --table population \
             --start 2006 --end 2025 2>&1 | tee data/raw/kosis_fetch.txt
 
       - name: 새 시도 접두사 찾기 (광주·전남 통합 확인)
+        if: inputs.terms == ''
         continue-on-error: true
         run: |
           python -m redt.cli find-new-sido 2>&1 | tee data/raw/find_new_sido.txt
 
       - name: 훑기 (참고용 — parentId 가 안 먹어 최상위만 나옵니다)
+        if: inputs.terms == ''
         continue-on-error: true
         run: |
           python -m redt.cli kosis-browse \
@@ -83,6 +105,7 @@ jobs:
           path: |
             data/raw/kosis_diagnose.txt
             data/raw/kosis_find.txt
+            data/raw/kosis_peek.txt
             data/raw/kosis_fetch.txt
             data/raw/find_new_sido.txt
             data/raw/region_population.csv
