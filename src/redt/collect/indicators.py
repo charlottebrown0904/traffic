@@ -755,6 +755,149 @@ def load_power(con, only: list[str] | None = None, timeout: int = 120) -> list[d
     return diags
 
 
+# ── 한전 빅데이터 Open API — 시군구 × 계약종별 × 월 ─────────────────
+#
+# 탐침 7차(run 34808315954)가 확정한 것: 시군구(cityCd) 없이 시도(metroCd)만
+# 주면 그 시도의 **모든 시군구**가 한 번에 온다. 항목은
+#   year month metro(시도 이름) city(시군구 이름) cntr(계약종)
+#   custCnt(호수) powerUsage(kWh) bill(원) unitCost(원/kWh) cntrPwr(계약전력)
+# 그러면 전국 한 달이 시도 수만큼의 호출이다 — 열두 해가 3천 회 안이다.
+# 파일 셋(2016-10~2017-03 · 2020 여섯 시점 · 2025)이 못 준 '여러 해 월별' 을
+# 이것이 준다. 키는 Vercel 의 KEPCO_KEY — 중계기가 끼운다.
+
+KEPCO_URL = "https://bigdata.kepco.co.kr/openapi/v1/powerUsage/contractType.do"
+# 행정표준 시도 코드. 강원(42→51 · 2023)·전북(45→52 · 2024)은 두 세대를 다
+# 두드린다 — 한전이 어느 쪽을 쓰는지 모른다. 빈 답은 series_crawl 에 0 으로
+# 남아 다음 판에 다시 부르지 않는다.
+KEPCO_METRO = ["11", "26", "27", "28", "29", "30", "31", "36", "41",
+               "42", "51", "43", "44", "45", "52", "46", "47", "48", "50"]
+KEPCO_SOURCE = "KEPCO contractType"
+
+
+def kepco_page(year: int, month: int, metro: str, timeout: int = 40) -> list[dict]:
+    """한 (연, 월, 시도). 봉투에 data 가 없으면 예외 — 조용히 0 이 되지 않는다."""
+    res = http.get_json(KEPCO_URL, {"year": f"{year:04d}", "month": f"{month:02d}",
+                                    "metroCd": metro, "returnType": "json"}, timeout=timeout)
+    if isinstance(res, dict) and "data" in res:
+        return res["data"] or []
+    raise RuntimeError(f"한전: {str(res)[:200]}")
+
+
+def kepco_rows(data: list[dict], code_map: dict) -> tuple[list[tuple], dict]:
+    """한전 항목들 → region_series 행. 이름을 코드에 잇고 못 이은 것은 센다.
+
+    지표: power_kwh_contract:{계약종} (kWh) · power_cust_contract:{계약종} (호) ·
+    power_kwh_total (계약종 합). 계약종 이름의 빈칸('심  야')은 지운다.
+    """
+    diag = {"rows_in": len(data), "unmatched": {}}
+    out = []
+    totals: dict[tuple[str, str], float] = {}
+    for d in data:
+        metro, city = str(d.get("metro") or ""), str(d.get("city") or "")
+        code = resolve(code_map, metro, city)
+        if code is None:
+            k = f"{metro} {city}".strip()
+            diag["unmatched"][k] = diag["unmatched"].get(k, 0) + 1
+            continue
+        per = f"{str(d.get('year') or '')[:4]}{str(d.get('month') or '').zfill(2)}"
+        if len(per) != 6:
+            continue
+        cntr = re.sub(r"\s+", "", str(d.get("cntr") or "")) or "기타"
+        kwh, cust = _f(d.get("powerUsage")), _f(d.get("custCnt"))
+        if kwh is not None:
+            out.append((code, per, kwh, f"power_kwh_contract:{cntr}", "kWh", KEPCO_SOURCE))
+            totals[(code, per)] = totals.get((code, per), 0.0) + kwh
+        if cust is not None:
+            out.append((code, per, cust, f"power_cust_contract:{cntr}", "호", KEPCO_SOURCE))
+    for (code, per), v in totals.items():
+        out.append((code, per, v, "power_kwh_total", "kWh", KEPCO_SOURCE))
+    diag["rows_out"] = len(out)
+    return out, diag
+
+
+def load_power_api(con, years: list[int], max_calls: int = 1000, timeout: int = 40,
+                   log=print) -> dict:
+    """(연, 월, 시도) 를 돌며 한전 전력을 region_series 에 넣는다. 이어받는다.
+
+    끝낸 열쇠는 series_crawl 에 남긴다(받은 행 수 포함). 빈 답(0행)도 남기되,
+    최근 두 해의 빈 답은 '아직 안 나온 달' 일 수 있어 다음 판에 다시 부른다.
+    해마다 먼저 한 번(6월 · 경기) 두드려 그 해에 자료가 있는지 본다 — 없는
+    해에 228회를 쓰지 않기 위해서다.
+    """
+    from datetime import date, datetime, timezone
+    code_map = build_code_map(con)
+    if not code_map:
+        raise RuntimeError("region_umd 가 비어 대조표를 못 만듭니다 — 먼저 읍면동을 채우십시오")
+    done = {k: n for k, n in con.execute(
+        "SELECT key, n FROM series_crawl WHERE source = 'kepco'").fetchall()}
+    this_year = date.today().year
+    st = {"calls": 0, "rows": 0, "empty": 0, "failed": 0, "skipped_years": [], "unmatched": {}}
+
+    def mark(key: str, n: int) -> None:
+        con.execute("INSERT OR REPLACE INTO series_crawl VALUES (?,?,?,?)",
+                    ["kepco", key, n, datetime.now(timezone.utc)])
+
+    for y in years:
+        if st["calls"] >= max_calls:
+            break
+        # 그 해에 자료가 있는가 — 이미 받은 열쇠가 하나라도 있으면 묻지 않는다
+        if not any(k.startswith(f"{y:04d}") and n > 0 for k, n in done.items()):
+            try:
+                probe = kepco_page(y, 6, "41", timeout=timeout)
+            except Exception as exc:                      # noqa: BLE001
+                st["failed"] += 1
+                log(f"  ✗ {y} 살피기: {str(exc)[:160]}")
+                if "apikey" in str(exc).lower() or "limit" in str(exc).lower():
+                    log("  키·한도 문제입니다 — 이 판은 여기서 멈춥니다.")
+                    break
+                continue
+            st["calls"] += 1
+            if not probe:
+                st["skipped_years"].append(y)
+                log(f"  {y}: 한전에 자료가 없다 (6월·경기 0행) — 이 해는 건너뜀")
+                continue
+        stop = False
+        for m in range(1, 13):
+            for metro in KEPCO_METRO:
+                key = f"{y:04d}{m:02d}:{metro}"
+                n_prev = done.get(key)
+                if n_prev is not None and not (n_prev == 0 and y >= this_year - 1):
+                    continue
+                if st["calls"] >= max_calls:
+                    stop = True
+                    break
+                try:
+                    data = kepco_page(y, m, metro, timeout=timeout)
+                except Exception as exc:                  # noqa: BLE001
+                    st["failed"] += 1
+                    log(f"  ✗ {key}: {str(exc)[:160]}")
+                    if "apikey" in str(exc).lower() or "limit" in str(exc).lower():
+                        log("  키·한도 문제입니다 — 이 판은 여기서 멈춥니다.")
+                        stop = True
+                        break
+                    continue
+                st["calls"] += 1
+                rows, diag = kepco_rows(data, code_map)
+                for k, v in diag["unmatched"].items():
+                    st["unmatched"][k] = st["unmatched"].get(k, 0) + v
+                if rows:
+                    con.executemany(
+                        "INSERT OR REPLACE INTO region_series"
+                        " (sigungu_cd, period, value, metric, unit, source) VALUES (?,?,?,?,?,?)", rows)
+                    st["rows"] += len(rows)
+                else:
+                    st["empty"] += 1
+                mark(key, len(data))
+                done[key] = len(data)
+            if stop:
+                break
+        if stop:
+            break
+    st["left"] = sum(1 for y in years for m in range(1, 13) for metro in KEPCO_METRO
+                     if f"{y:04d}{m:02d}:{metro}" not in done and y not in st["skipped_years"])
+    return st
+
+
 # ── 건축인허가 훑기 — 건축HUB → permit ────────────────────────────
 #
 # 6차(run 34807146961)에서 확정한 것:

@@ -772,6 +772,49 @@ def cmd_load_indicators(args):
         print(f"  … 외 {len(have) - 60}개")
 
 
+def _years(spec: str) -> list[int]:
+    """'2015-2026' 또는 '2020,2021' → 연도 목록 (최근 해부터)."""
+    out: set[int] = set()
+    for part in (spec or "").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-", 1)
+            out.update(range(int(a), int(b) + 1))
+        else:
+            out.add(int(part))
+    return sorted(out, reverse=True)
+
+
+def cmd_load_power(args):
+    """한전 Open API — 시군구 × 계약종별 × 월 전력을 region_series 에 (2026-09-14).
+
+    시도 단위로 부르면 시군구가 다 온다 (탐침 7차). 열쇠 (연월:시도) 마다
+    series_crawl 에 남겨 이어받는다. 최근 해부터 간다 — 패널이 먼저 쓰는 쪽이다.
+    """
+    from .collect import indicators
+    years = _years(args.years)
+    with db.connect() as con:
+        st = indicators.load_power_api(con, years, max_calls=int(args.max_calls),
+                                       timeout=int(args.timeout))
+        print(f"\n이 판: 호출 {st['calls']:,} · 새 행 {st['rows']:,} · 빈 답 {st['empty']} · 실패 {st['failed']}"
+              f" · 남은 열쇠 {st['left']:,}"
+              + (f" · 자료 없는 해 {st['skipped_years']}" if st["skipped_years"] else ""))
+        um = st["unmatched"]
+        if um:
+            top = sorted(um.items(), key=lambda kv: -kv[1])[:15]
+            print(f"  ⚠ 코드에 못 이은 이름 {len(um)}개 · {sum(um.values()):,}행 — "
+                  + " · ".join(f"{k}({v})" for k, v in top))
+        have = con.execute(
+            "SELECT metric, count(*), min(period), max(period), count(DISTINCT sigungu_cd)"
+            " FROM region_series WHERE source = ? GROUP BY metric ORDER BY metric",
+            [indicators.KEPCO_SOURCE]).fetchall()
+    print(f"\nregion_series 의 한전 API 계열 ({len(have)} 지표):")
+    for metric, n, lo, hi, nsgg in have:
+        print(f"  {metric:<34} {n:>8,}건 · {lo}~{hi} · 시군구 {nsgg}")
+
+
 def cmd_load_permits(args):
     """건축인허가 훑기 — 건축HUB → permit → region_series (2026-09-14).
 
@@ -3404,6 +3447,12 @@ def main(argv=None):
     p.add_argument("--only", default="", help="데이터셋 번호를 쉼표로 (비우면 셋 다)")
     p.add_argument("--timeout", default="120")
     p.set_defaults(func=cmd_load_indicators)
+
+    p = sub.add_parser("load-power", help="한전 Open API — 시군구·계약종별·월 전력 → region_series (이어받기)")
+    p.add_argument("--years", default="2015-2026", help="연도 범위 '2015-2026' 또는 목록 '2020,2021'")
+    p.add_argument("--max-calls", dest="max_calls", default="1000", help="이 판의 호출 예산")
+    p.add_argument("--timeout", default="40")
+    p.set_defaults(func=cmd_load_power)
 
     p = sub.add_parser("load-permits", help="건축인허가 훑기 — 건축HUB → permit (이어받기)")
     p.add_argument("--sigungu", default="", help="시군구 코드(5) 또는 시도(2)를 쉼표로 (비우면 전국)")

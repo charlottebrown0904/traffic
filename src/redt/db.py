@@ -129,6 +129,15 @@ CREATE TABLE IF NOT EXISTS market_series (
 --
 -- metric 은 행으로 둔다. 셋으로 시작하지만 docs/future-value-indicators.md
 -- 의 57개가 뒤에 올 수 있다 — 스키마를 안 바꾸고 늘린다.
+-- 계열 수집의 이어받기 — (원천, 열쇠) 마다 받은 행 수. 한전 API 는
+-- (연월:시도) 가 열쇠다. 0 도 남긴다 — 빈 답을 다시 묻지 않기 위해.
+CREATE TABLE IF NOT EXISTS series_crawl (
+    source   VARCHAR,
+    key      VARCHAR,
+    n        INTEGER,
+    done_at  TIMESTAMP,
+    PRIMARY KEY (source, key)
+);
 CREATE TABLE IF NOT EXISTS region_series (
     sigungu_cd  VARCHAR,
     period      VARCHAR,              -- 2024 (연) · 202401 (월)

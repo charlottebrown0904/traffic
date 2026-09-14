@@ -2778,6 +2778,55 @@ try:
 finally:
     _IND.http.get_json, _IND.time.sleep = _saved_get, _saved_sleep
 
+print("45. 한전 Open API — 시도 한 번에 시군구 전부, 열쇠마다 이어받는다")
+_kd = [{"year": "2024", "month": "01", "metro": "경기도", "city": "안성시", "cntr": "산업용",
+        "custCnt": 100, "powerUsage": 5000, "bill": 1, "unitCost": 1.0, "cntrPwr": 1},
+       {"year": "2024", "month": "01", "metro": "경기도", "city": "안성시", "cntr": "심  야",
+        "custCnt": 10, "powerUsage": 500},
+       {"year": "2024", "month": "01", "metro": "경기도", "city": "없는시", "cntr": "주택용",
+        "custCnt": 1, "powerUsage": 1}]
+_kr, _kdg = _IND.kepco_rows(_kd, _cm)
+_km = {(r[3], r[1]): r[2] for r in _kr if r[0] == "41550"}
+check(_km.get(("power_kwh_contract:산업용", "202401")) == 5000.0 and _km.get(("power_kwh_contract:심야", "202401")) == 500.0
+      and _km.get(("power_cust_contract:산업용", "202401")) == 100.0 and _km.get(("power_kwh_total", "202401")) == 5500.0,
+      f"계약종별 kWh·호수와 합을 낸다 · 계약종 이름의 빈칸을 지운다 ({sorted(_km)})")
+check(_kdg["unmatched"] == {"경기도 없는시": 1}, "코드에 못 이은 이름은 세어 돌려준다")
+_kcon = _ddb.connect()
+for _stmt in [x for x in __import__("redt.db", fromlist=["SCHEMA"]).SCHEMA.split(";")
+              if "series_crawl" in x or "region_umd" in x or "region_series" in x]:
+    _kcon.execute(_stmt)
+_kcon.execute("CREATE TABLE IF NOT EXISTS trade (sigungu_cd VARCHAR)")   # 대조표가 거래 표를 본다
+_kcon.executemany("INSERT INTO region_umd (region_cd, sigungu_cd, sigungu, umd, level, full_nm) VALUES (?,?,?,?,?,?)",
+                  [("4155025300", "41550", "안성시", "공도읍", "umd", "경기도 안성시 공도읍")])
+_kcalls = []
+def _fake_kepco(year, month, metro, timeout=40):
+    _kcalls.append((year, month, metro))
+    if year == 2013:
+        return []                                   # 자료 없는 해
+    if metro != "41":
+        return []                                   # 다른 시도는 빈 답 (가짜)
+    return [{"year": str(year), "month": f"{month:02d}", "metro": "경기도", "city": "안성시",
+             "cntr": "산업용", "custCnt": 1, "powerUsage": 100 + month}]
+_saved_k = _IND.kepco_page
+try:
+    _IND.kepco_page = _fake_kepco
+    _st = _IND.load_power_api(_kcon, [2014, 2013], max_calls=5, log=lambda *a: None)
+    # 2014 살피기 1회 + 본 호출 4회 = 5. 2013 은 예산이 다해 못 감.
+    check(_st["calls"] == 5 and _kcalls[0] == (2014, 6, "41") and _kcalls[1] == (2014, 1, "11"),
+          f"해마다 먼저 살피고, 예산 안에서 (월, 시도) 를 돈다 ({_kcalls[:3]} · {_st['calls']}회)")
+    _kcalls.clear()
+    _st2 = _IND.load_power_api(_kcon, [2014, 2013], max_calls=1000, log=lambda *a: None)
+    _n41 = _kcon.execute("SELECT count(*) FROM region_series WHERE metric='power_kwh_contract:산업용' AND sigungu_cd='41550'").fetchone()[0]
+    _done = _kcon.execute("SELECT count(*) FROM series_crawl WHERE source='kepco'").fetchone()[0]
+    check(_n41 == 12 and _done == 12 * len(_IND.KEPCO_METRO) and _st2["skipped_years"] == [2013] and _st2["left"] == 0,
+          f"다음 판은 끝낸 열쇠를 건너뛰고 나머지를 채운다 · 자료 없는 해는 한 번 묻고 건너뜀 (12달 {_n41} · 열쇠 {_done})")
+    check(all(c != (2014, 1, "11") for c in _kcalls), "끝낸 열쇠(202401:11)는 다시 부르지 않는다")
+    _kcalls.clear()
+    _st3 = _IND.load_power_api(_kcon, [2014], max_calls=1000, log=lambda *a: None)
+    check(_st3["calls"] == 0, f"다 끝난 해는 한 번도 부르지 않는다 ({_st3['calls']}회)")
+finally:
+    _IND.kepco_page = _saved_k
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
