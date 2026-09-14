@@ -2740,9 +2740,10 @@ try:
     # 허가일 쓰레기(3003년 · 1944년) 는 모으지 않는다
     _con.execute("INSERT OR REPLACE INTO permit VALUES ('Z1','41550','25300',NULL,NULL,'공장',NULL,NULL,NULL,999,NULL,'30030901',NULL,NULL,NULL)")
     _con.execute("INSERT OR REPLACE INTO permit VALUES ('Z2','41550','25300',NULL,NULL,'공장',NULL,NULL,NULL,999,NULL,'19441001',NULL,NULL,NULL)")
+    _con.execute("INSERT OR REPLACE INTO region_series VALUES ('41550','300309','permit_count:all',1,'건','옛 판')")
     _IND.aggregate_permits(_con)
     _bad = _con.execute("SELECT count(*) FROM region_series WHERE metric LIKE 'permit_%' AND (period > '209912' OR period < '199001')").fetchone()[0]
-    check(_bad == 0, f"허가일이 1990-01~이번 달 밖이면 모으지 않는다 ({_bad}행)")
+    check(_bad == 0, f"허가일이 1990-01~이번 달 밖이면 모으지 않고, 옛 판이 남긴 쓰레기 행도 지운다 ({_bad}행)")
     # 나란히: 일꾼 둘 · 예산 넉넉 → 두 동을 다 끝내고 호출은 3+1 회
     _con.execute("DELETE FROM permit_crawl"); _con.execute("DELETE FROM permit")
     _calls.clear()

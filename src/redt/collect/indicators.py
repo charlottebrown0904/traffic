@@ -1035,6 +1035,11 @@ def load_local_tax(con, years: list[int], timeout: int = 40, log=print) -> dict:
 
 HUB_URL = "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo"
 HUB_PAGE = 100
+# 허가일 하한. 전국 첫 판(run 34808645542)이 65분에 7,536회로 1,185개 동을
+# 끝냈다 — 남은 19,057개 동이면 열여섯 판이다. 패널은 2006년부터이고 선행
+# 시차는 길어야 3년이라 2000년 이전 허가는 쓸 데가 없다. 1940년대부터 쌓인
+# 도시 동의 쪽수를 이것이 크게 줄인다.
+HUB_SINCE = "20000101"
 
 
 def _f(v):
@@ -1078,7 +1083,8 @@ def hub_page(sgg: str, bjd: str, page: int, timeout: int = 40) -> tuple[list[dic
     for attempt in range(1, HUB_TRIES + 1):
         try:
             res = http.get_json(HUB_URL, {"sigunguCd": sgg, "bjdongCd": bjd, "numOfRows": str(HUB_PAGE),
-                                          "pageNo": str(page), "_type": "json"}, timeout=timeout)
+                                          "pageNo": str(page), "_type": "json",
+                                          "startDate": HUB_SINCE, "endDate": "20991231"}, timeout=timeout)
             break
         except http.ApiError as exc:
             if "JSON 이 아닙니다" not in str(exc) or attempt == HUB_TRIES:
@@ -1253,6 +1259,10 @@ def aggregate_permits(con) -> int:
     for r in tot.itertuples(index=False):
         rows.append((r.sigungu_cd, r.period, float(r.area), "permit_area_m2:all", "m2", "건축HUB 15136267"))
         rows.append((r.sigungu_cd, r.period, float(r.n), "permit_count:all", "건", "건축HUB 15136267"))
+    # 앞 판이 남긴 permit_* 행을 먼저 지운다 — INSERT OR REPLACE 는 같은 열쇠만
+    # 덮으므로, 걸러낸 쓰레기 기간(194410 · 300309)이 옛 행으로 그대로 남는다
+    # (run 34808645542 에서 실제로 그랬다).
+    con.execute("DELETE FROM region_series WHERE metric LIKE 'permit_%'")
     con.executemany(
         "INSERT OR REPLACE INTO region_series (sigungu_cd, period, value, metric, unit, source)"
         " VALUES (?,?,?,?,?,?)", rows)

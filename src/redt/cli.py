@@ -3511,7 +3511,7 @@ def main(argv=None):
     p.add_argument("--max-calls", dest="max_calls", default="8000", help="이 판의 호출 예산")
     p.add_argument("--max-minutes", dest="max_minutes", default="65",
                    help="이 판의 시간 예산(분) — 러너 90분 안에 캐시 저장까지 마치게")
-    p.add_argument("--workers", default="4", help="나란히 부를 법정동 수")
+    p.add_argument("--workers", default="6", help="나란히 부를 법정동 수 (첫 판: 넷으로 1.9회/초)")
     p.add_argument("--timeout", default="40")
     p.set_defaults(func=cmd_load_permits)
 
