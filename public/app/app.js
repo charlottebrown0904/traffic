@@ -131,13 +131,42 @@ async function boot() {
   // 없어 그냥 사라진다 — 화면은 멀쩡한데 눌러도 안 넘어간다. 바깥
   // CDN(Leaflet·폰트)이 느리거나 막히면 app.js 실행 자체가 몇 초 밀려서
   // 이 틈이 눈에 띄게 벌어진다.
+/* 자료를 어디서 받나 — **배포가 아니라 버킷에서** (2026-09-14).
+ *
+ * public/app/data 가 64MB 였고 그것이 Vercel 배포 하나의 98% 였다. 배포를
+ * 지우지 않는 곳이라 푸시마다 그만큼 쌓여 저장 한도를 넘겼고 배포가
+ * 막혔다 (docs/vercel-limits.md). 파일을 Supabase 공개 버킷으로 옮기면
+ * 배포가 1.5MB 가 된다.
+ *
+ * 새로 열리는 자료는 없다 — 이미 toji.fyi 에서 누구나 받던 것이다.
+ * 프리미엄 자료는 여기 없다 (비공개 버킷 premium).
+ *
+ * **못 받으면 배포 쪽으로 물러난다.** 버킷이 잠깐 흔들렸다고 화면이
+ * 통째로 죽으면 안 된다. */
+const DATA_BUCKET = 'https://caykbxvnebpifcduqjre.supabase.co/storage/v1/object/public/appdata';
+const DATA_LOCAL = '/app/data';
+
+function dataUrl(name) {
+  return `${DATA_BUCKET}/${name}`;
+}
+
+/* 버킷 → 실패하면 배포. 둘 다 안 되면 마지막 응답을 그대로 돌려준다
+   (부르는 쪽이 r.ok 로 판정하고 있으므로 그 약속을 깨지 않는다). */
+async function fetchData(name, opts) {
+  try {
+    const r = await fetch(`${DATA_BUCKET}/${name}`, opts);
+    if (r.ok) return r;
+  } catch (e) { /* 아래에서 배포 쪽으로 */ }
+  return fetch(`${DATA_LOCAL}/${name}`, opts);
+}
+
   wireTabs();
   wireWhy();
   wireSheet();
   try {
     const [meta, tollgates, trades, series] = await Promise.all(
       ['meta', 'tollgates', 'trades', 'series'].map((n) =>
-        fetch(`/app/data/${n}.json`).then((r) => {
+        fetchData(`${n}.json`).then((r) => {
           if (!r.ok) throw new Error(`data/${n}.json 을 읽지 못했습니다 (${r.status})`);
           return r.json();
         }))
@@ -167,34 +196,34 @@ async function boot() {
 
   // 순위 탭 자료는 없어도 나머지 화면은 살아야 한다. 실패하면 그 탭만 끈다.
   try {
-    const r = await fetch('/app/data/traffic.json');
+    const r = await fetchData('traffic.json');
     if (r.ok) state.traffic = await r.json();
   } catch (err) {
     state.traffic = null;
   }
   try {
-    const r = await fetch('/app/data/chart.json');
+    const r = await fetchData('chart.json');
     if (r.ok) state.chart = await r.json();
   } catch (err) {
     state.chart = null;
   }
   // 행정구역. 인구와 관청 좌표가 여기서 온다.
   try {
-    const r = await fetch('/app/data/regions.json');
+    const r = await fetchData('regions.json');
     if (r.ok) state.regions = await r.json();
   } catch (err) {
     state.regions = null;
   }
   // 행정구역별·연도별 땅값. 없으면 그 테마 막대만 숨긴다.
   try {
-    const r = await fetch('/app/data/landprice.json');
+    const r = await fetchData('landprice.json');
     if (r.ok) state.landPrice = await r.json();
   } catch (err) {
     state.landPrice = null;
   }
   // 철도 — '개발' 층의 한 갈래. 없으면 그 칸만 아무것도 안 그린다.
   try {
-    const r = await fetch('/app/data/rail.json');
+    const r = await fetchData('rail.json');
     if (r.ok) state.rail = await r.json();
   } catch (err) {
     state.rail = null;
@@ -206,7 +235,7 @@ async function boot() {
   await Promise.all([['land', 'verdicts'], ['factory', 'verdicts_factory']]
     .map(async ([k, name]) => {
       try {
-        const r = await fetch(`/app/data/${name}.json`);
+        const r = await fetchData(`${name}.json`);
         if (r.ok) state.verdictSets[k] = await r.json();
       } catch (err) { /* 없으면 그 종류만 안 보인다 */ }
     }));
@@ -1908,7 +1937,7 @@ async function loadTradeYear(year) {
   if (year === 'all') { state.tradesShown = state.trades; return; }
   if (state.tradeCache[year]) { state.tradesShown = state.tradeCache[year]; return; }
   try {
-    const r = await fetch(`/app/data/trades-${year}.json`);
+    const r = await fetchData(`trades-${year}.json`);
     if (!r.ok) throw new Error(String(r.status));
     state.tradeCache[year] = await r.json();
   } catch (err) {
@@ -4020,7 +4049,7 @@ async function lpLoadRoster() {
   want.forEach((c) => lpRosterPending.add(c.p));
   await Promise.all(want.map(async (c) => {
     try {
-      const r = await fetch(`/app/data/${c.f}`, { cache: 'no-cache' });
+      const r = await fetchData(`${c.f}`, { cache: 'no-cache' });
       if (r.ok) lpRosterCache[c.p] = await r.json();
     } catch (e) {
       // 못 받아도 지도는 거래 있는 곳만으로 계속 돈다.
@@ -4341,7 +4370,7 @@ async function lpLoadUmd() {
     try {
       // **절대 경로여야 한다.** 상대 경로는 …/app 에서 404 가 나고,
       // 그러면 조각이 영영 안 와서 지도가 조용히 시·군으로 물러난다.
-      const r = await fetch(`/app/data/${w.f}`, { cache: 'no-cache' });
+      const r = await fetchData(`${w.f}`, { cache: 'no-cache' });
       if (r.ok) {
         const payload = await r.json();
         // **면 인구는 칸 목록과 따로 온다** (head_pop). 리 값을 합친
@@ -4978,7 +5007,7 @@ async function loadParcelStats() {
   if (parcelStats || parcelStatsTried) return parcelStats;
   parcelStatsTried = true;
   try {
-    const r = await fetch('/app/data/parcelstats.json', { cache: 'no-cache' });
+    const r = await fetchData('parcelstats.json', { cache: 'no-cache' });
     if (r.ok) parcelStats = await r.json();
   } catch (e) { /* 없으면 진단만 못 보여준다. 지도는 그대로 돈다. */ }
   return parcelStats;
@@ -5587,7 +5616,7 @@ let zoningLimits = null;
 async function loadZoningLimits() {
   if (zoningLimits) return zoningLimits;
   try {
-    const r = await fetch('/app/data/zoning-limits.json', { cache: 'no-cache' });
+    const r = await fetchData('zoning-limits.json', { cache: 'no-cache' });
     if (r.ok) zoningLimits = await r.json();
   } catch (e) { /* 없으면 개발 한도 칸이 안 선다. 나머지는 그대로. */ }
   return zoningLimits;
@@ -5610,7 +5639,7 @@ async function premiumFetch(name) {
     } catch (e) { return null; }
   }
   try {
-    const r = await fetch(`/app/data/${name}`, { cache: 'no-cache' });
+    const r = await fetchData(`${name}`, { cache: 'no-cache' });
     return r.ok ? await r.json() : null;
   } catch (e) { return null; }
 }
@@ -6726,7 +6755,7 @@ async function findLoad() {
     sido.forEach((v, k) => rows.push({ k: 'sido', n: k, p: '',
                                        lat: v.lat, lon: v.lon }));
     try {
-      const r = await fetch('/app/data/places.json');
+      const r = await fetchData('places.json');
       if (r.ok) {
         const body = await r.json();
         (body.places || []).forEach((x) => rows.push(x));
@@ -6789,7 +6818,7 @@ async function findLdCode(sg, name) {
   if (!c) return '';
   if (!lpRosterCache[c.p]) {
     try {
-      const r = await fetch(`/app/data/${c.f}`, { cache: 'no-cache' });
+      const r = await fetchData(`${c.f}`, { cache: 'no-cache' });
       if (r.ok) lpRosterCache[c.p] = await r.json();
     } catch (e) { /* 못 받으면 지오코더로 */ }
   }

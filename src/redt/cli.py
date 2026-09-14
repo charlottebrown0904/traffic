@@ -280,6 +280,25 @@ def cmd_zoning_limits(args):
     print(f"→ {y.relative_to(zoning.ROOT)} · {w.relative_to(zoning.ROOT)}")
 
 
+def cmd_web_upload(args):
+    """화면 JSON 을 공개 버킷에 올린다 (2026-09-14).
+
+    까닭은 web_store 머리글에 있다 — 배포 하나의 98% 가 이 파일들이고,
+    Vercel 이 배포를 안 지워서 저장 한도를 넘겼다.
+    """
+    from pathlib import Path
+    from . import web_store as WS
+    src = Path(args.src) if args.src else (ROOT / "public" / "app" / "data")
+    if not src.exists():
+        print(f"{src} 가 없습니다 — export-web 을 먼저 돌리세요")
+        return
+    print(f"화면 자료 → 버킷 {WS.BUCKET}")
+    st = WS.sync(src)
+    if st["fail"]:
+        raise SystemExit(f"{st['fail']}개를 못 올렸습니다")
+    print(f"  주소: {WS.public_base()}/<이름>.json")
+
+
 def cmd_value_test(args):
     """현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다.
 
@@ -3832,6 +3851,11 @@ def main(argv=None):
     p = sub.add_parser("premium-upload", help="프리미엄 파일 → Supabase 비공개 버킷 premium")
     p.add_argument("--src", default=None, help="올릴 폴더 (기본 data/processed/premium)")
     p.set_defaults(func=cmd_premium_upload)
+
+    p = sub.add_parser("web-upload",
+                       help="화면 JSON → Supabase 공개 버킷 appdata (배포에서 빼려고)")
+    p.add_argument("--src", default=None, help="올릴 폴더 (기본 public/app/data)")
+    p.set_defaults(func=cmd_web_upload)
 
     p = sub.add_parser("value-test",
                        help="현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다")
