@@ -2941,6 +2941,10 @@ const FAKE_LEAFLET = () => {
       window.__center = [36.5, 127.8];
       window.SB.__log.channels.length = 0;
       window.SB.__log.rpc.length = 0;
+      // 로그만 비우면 모자란다. '올린 태그' 는 한 방문에 한 번만 세므로
+      // (viewers.seen), 앞 절에서 이미 올라간 태그는 여기서 다시 안 올라
+      // 간다 — 켜고 끈 문제가 아니라 이미 지나간 것이다.
+      window.__viewersReset();
       (window.__mapOn.moveend || []).forEach((f) => f());
       await new Promise((r) => setTimeout(r, 1800));
       return {
@@ -4186,7 +4190,11 @@ const FAKE_LEAFLET = () => {
             `${sel.from}~${sel.to} "${sel.out}"`);
 
       // 거래는 기본이 꺼져 있다(2026-09-04 지시). 켜야 그려진다.
+      // 그리고 **z14 이상이어야 그려진다** (지시 2026-09-14 ·
+      // docs/map-zoom-levels.md). 가짜 지도의 기본은 7 이므로 여기서
+      // 올린다 — 전역 기본을 올리면 개발 층까지 같이 깨어난다.
       await page2.evaluate(() => {
+        window.__zoom = 15;
         document.querySelectorAll('#kind-filters input').forEach((i) => {
           if (!i.checked) i.click();
         });
@@ -4668,6 +4676,47 @@ const FAKE_LEAFLET = () => {
     await browser.close();
     srv.kill();
   }
+  // ── 배율 정책이 문서와 어긋나지 않는가 ────────────────────────
+  //
+  // 지시(2026-09-14)로 실거래 표기 배율이 정해졌고, 그 기준은
+  // docs/map-zoom-levels.md 한 곳에 산다. 상수가 코드에 흩어져 있으므로
+  // **문서와 코드를 맞대어 본다** — 어긋나면 문서가 맞고 코드가 틀린 것이다.
+  console.log('\n배율 정책 — docs/map-zoom-levels.md 와 코드가 같은가');
+  {
+    const app = fs.readFileSync(path.join(__dirname, '..', 'public', 'app',
+                                          'app.js'), 'utf8');
+    const doc = fs.readFileSync(path.join(__dirname, '..', 'docs',
+                                          'map-zoom-levels.md'), 'utf8');
+    const num = (re) => { const m = app.match(re); return m ? m[1] : null; };
+
+    const minZ = num(/const TRADE_MIN_ZOOM = (\d+)/);
+    const labZ = num(/const TRADE_LABEL_ZOOM = (\d+)/);
+    check('실거래는 z14 부터 그린다', minZ === '14', `TRADE_MIN_ZOOM=${minZ}`);
+    check('실거래 글자는 z16 부터다 (필지 경계가 뜨는 배율)',
+          labZ === '16', `TRADE_LABEL_ZOOM=${labZ}`);
+
+    // **상한이 없어야 한다.** 자르면 '이 동네 거래는 이것뿐' 으로 읽힌다.
+    check('그리는 수에 상한이 없다',
+          /const TRADE_DRAW_CAP = Infinity/.test(app), '');
+    check('글자 수에도 상한이 없다',
+          /const TRADE_LABEL_CAP = Infinity/.test(app), '');
+
+    // 낮은 배율에서 아예 안 그리는 길이 있는가.
+    check('배율이 낮으면 그리기 전에 되돌아간다',
+          /map\.getZoom\(\) < TRADE_MIN_ZOOM/.test(app), '');
+    // 0 건과 '아직 안 보여줄 배율' 을 갈라 말하는가.
+    check("0건과 '아직 안 보여줄 배율' 을 갈라 말한다",
+          /state\.tradeInView = null/.test(app)
+          && /더 당겨야 나옵니다/.test(app), '');
+
+    check('문서가 같은 값을 말한다',
+          doc.includes('z ≤ 13') && doc.includes('z ≥ 14')
+          && doc.includes('z ≥ 16'), '');
+    check('문서에 상수가 사는 곳이 적혀 있다',
+          doc.includes('TRADE_MIN_ZOOM') && doc.includes('CADASTRAL_MIN_ZOOM'),
+          '');
+  }
+
   console.log();
   console.log(failed ? `실패 ${failed}건` : '모두 통과');
   process.exit(failed ? 1 : 0);

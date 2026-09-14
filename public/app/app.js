@@ -1977,6 +1977,15 @@ function updateYearNote() {
     text += ` <em>(${MAX_YEAR_FILES}년이 넘어 전 기간 표본에서 골랐습니다 —`
       + ` 좁히면 그 해 자료를 통째로 받습니다)</em>`;
   }
+  // **아직 안 보여줄 배율이면 그렇다고 말한다** (지시 2026-09-14).
+  // 아무 말도 없으면 '이 동네에 거래가 없다' 로 읽힌다 — 전혀 다른 뜻이다.
+  if (map && map.getZoom() < TRADE_MIN_ZOOM) {
+    node.innerHTML = text
+      + ' · <em>실거래는 더 당겨야 나옵니다 — 지금 배율에서는 점 하나가'
+      + ' 수 km 를 가리켜 어느 땅인지 짚을 수 없습니다. 그 대신 읍·면·동'
+      + ' 땅값을 색으로 보여주고 있습니다.</em>';
+    return;
+  }
   // 화면에 실제로 몇 개가 그려졌는지. 잘렸으면 반드시 말한다.
   if (typeof state.tradeInView === 'number') {
     text += ` · 지금 보이는 영역 ${n(state.tradeInView)}건`;
@@ -1990,7 +1999,8 @@ function updateYearNote() {
         : ` <em>(그중 ${n(state.tradeDrawn)}건만 표시 — 확대하면 다 보입니다)</em>`;
     }
     if (!state.tradeLabelled) {
-      text += ' <em>(더 당기면 핀에 값이 적힙니다)</em>';
+      text += ' <em>(필지 경계가 보이는 배율까지 당기면 핀에 값이'
+        + ' 적힙니다)</em>';
     }
   }
   node.innerHTML = text + '.';
@@ -2039,19 +2049,42 @@ function visibleTrades() {
   });
 }
 
-/* 지금 보이는 영역의 거래만 그린다.
+/* 실거래를 그리기 시작하는 배율. **docs/map-zoom-levels.md 가 기준이다.**
  *
- * 표식 하나가 DOM 요소 하나라 휴대폰에서는 수천 개를 못 버틴다. 그렇다고
- * 표본을 줄이면 **확대해 들어갔을 때** 그 동네 거래가 몇 점 안 남는다 —
- * 스크리닝 도구에서 정작 들여다볼 때 비는 셈이다.
+ * 지시(2026-09-14): "전국, 시/도, 구 단위의 축척에서는 실거래 표기를 하지
+ * 않습니다. 결국엔 확대(동/리 정도의 배율)에서는 해당 조건의 실거래가
+ * 전부 표시 되었으면 좋겠습니다."
  *
- * 그래서 받아 두는 것은 넉넉히, 그리는 것은 보이는 영역만. 전국을 볼 때는
- * 자연히 성기고, 시군구 하나로 확대하면 그 안이 촘촘해진다. */
-const TRADE_DRAW_CAP = 1500;
+ * z13 이하에서 점 하나는 6~20km 를 가리킨다. 찍어 봐야 어느 땅인지 못 짚고,
+ * 점이 몰린 곳이 '거래가 많은 곳' 이 아니라 '우리가 좌표를 잘 붙인 곳' 으로
+ * 읽힌다. 그 자리에는 읍면동 땅값 분위지도가 이미 있고 그쪽이 더 정직하다.
+ *
+ * z14 는 휴대폰에서 3km — 읍·면·동 하나가 화면에 들어오는 배율이다. */
+const TRADE_MIN_ZOOM = 14;
+/* **상한을 두지 않는다.** 자르면 사용자가 '이 동네 거래는 이것뿐' 으로
+ * 읽는다. 못 그릴 사정이 생기면 자르지 말고 그리는 방식을 바꾼다
+ * (docs/map-zoom-levels.md '아직 정해지지 않은 것'). */
+const TRADE_DRAW_CAP = Infinity;
 
 function drawTrades() {
   if (!map || !tradeLayer) return;
   tradeLayer.clearLayers();
+  // **배율이 낮으면 아예 안 그린다** (지시 2026-09-14).
+  // 0 으로 두지 않고 null 로 둔다 — 0 건은 '이 동네에 거래가 없다' 는
+  // 뜻이고, 여기서는 '아직 안 보여줄 배율' 이라 뜻이 다르다. 안내 문구가
+  // 그 둘을 갈라 말해야 한다.
+  if (map.getZoom() < TRADE_MIN_ZOOM) {
+    state.tradeInView = null;
+    state.tradeDrawn = 0;
+    state.tradeLabelled = false;
+    window.__tradeStyles = [];
+    window.__pins = { kind: state.pinKind, labelled: false, drawn: 0,
+                      inView: null, belowMinZoom: true };
+    // **되돌아가기 전에 안내를 고친다.** 안 고치면 '더 당겨야 나옵니다'
+    // 가 영영 안 뜨고, 앞 배율에서 적힌 건수가 그대로 남아 거짓말을 한다.
+    updateYearNote();
+    return;
+  }
   const rows = visibleTrades();
   const bounds = map.getBounds();
   const inView = rows.filter((t) => bounds.contains([t.lat, t.lon]));
@@ -3138,9 +3171,13 @@ const PIN_KINDS = [
  * 한 화면이 동네 하나라, 시군구를 훑으며 값을 견주는 데는 쓸 수 없습니다.
  * 13(시군구 하나쯤)으로 내립니다 — 글자 수는 아래 CAP 이 막고 있으므로
  * 배율을 내려도 화면이 덮이지는 않습니다. */
-const TRADE_LABEL_ZOOM = 13;
-/* 그 배율에서도 한 화면에 몇 개까지. 넘으면 최근 거래부터 남깁니다. */
-const TRADE_LABEL_CAP = 60;
+/* **16 으로 올립니다** (지시 2026-09-14 · docs/map-zoom-levels.md).
+ * 필지 경계(연속지적도)가 z16 에 뜹니다. 경계가 있어야 글자가 어느 땅의
+ * 값인지 짚입니다 — 그 전에는 글자끼리 덮여 하나도 못 읽습니다. */
+const TRADE_LABEL_ZOOM = 16;
+/* 글자도 안 자릅니다. z16 은 화면폭이 0.75~2.5km 라 한 화면에 드는 거래가
+ * 애초에 많지 않습니다. */
+const TRADE_LABEL_CAP = Infinity;
 
 /* won() 은 '2.2억원' 을 줍니다. 핀은 좁아서 '원' 을 뗍니다 — 억/만이
  * 이미 돈이라고 말하고 있습니다. */
@@ -4457,7 +4494,15 @@ window.__drawCadastral = () => drawCadastral();
 window.__cadTileList = () => cadTileList();
 // 조회 배지·별표 검사가 안을 들여다볼 구멍.
 window.__viewersPeek = () => ({ star: viewers.star, open: lpOpenPk, pending: lpPending,
-  stat: [...viewers.stat].map(([k, v]) => [k, v.n24]) });
+  stat: [...viewers.stat].map(([k, v]) => [k, v.n24]),
+  // 가운데 둔 태그와 이미 올린 것들. 이 둘이 없으면 '왜 안 올렸나' 를
+  // 밖에서 못 가른다 — 못 골랐는가(pk 가 빔), 아니면 이미 올렸는가(seen).
+  pk: viewers.pk, seen: [...viewers.seen],
+  items: (viewers.items || []).map((x) => ({ pk: x.pk, at: x.at || null })) });
+/* 검사가 '여기서부터' 를 세울 수 있게. 올린 것은 한 방문에 한 번만
+   세므로(viewers.seen), 로그만 비우고 다시 재면 이미 올린 태그는 영영
+   안 잡힌다 — 켜고 끈 것이 아니라 **이미 지나간 것**이기 때문이다. */
+window.__viewersReset = () => { viewers.seen.clear(); viewers.pk = ''; };
 // 차종을 바꾸면 경계가 따라 내려가는지 검사가 볼 수 있게. 화면에서는
 // 차종 칸을 눌러 도는 길과 같은 함수다.
 window.state = state;
