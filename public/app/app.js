@@ -125,12 +125,12 @@ if (window.matchMedia) {
 }
 
 /* ─────────── 부팅 ─────────── */
-async function boot() {
-  // 탭 배선을 **맨 먼저** 한다. 탭은 정적 HTML 이라 자료가 없어도 있다.
-  // 배선을 아래 자료 받기 뒤에 두면, 그 사이에 누른 클릭은 듣는 사람이
-  // 없어 그냥 사라진다 — 화면은 멀쩡한데 눌러도 안 넘어간다. 바깥
-  // CDN(Leaflet·폰트)이 느리거나 막히면 app.js 실행 자체가 몇 초 밀려서
-  // 이 틈이 눈에 띄게 벌어진다.
+/* **module 첫머리에 둔다.** 2026-09-14 까지 이 넷이 boot() 안에 있었다. boot 안의
+ * 열여섯 자리는 됐지만 밖의 자리 — 읍·면·동 조각(lpLoadUmd) · 명부(lpLoadRoster) ·
+ * 또래 표(loadParcelStats) · 프리미엄 뒷길(premiumFetch) — 는 전부
+ * `ReferenceError: fetchData is not defined` 로 죽어 catch 에 삼켜졌다. 그래서
+ * 조각은 영영 안 오고(고리) · 시점수정은 '자료 없음' · 검사 54건이 빨갰다. 검사가
+ * 잡아 준 것이 아니라 검사도 같이 속고 있었다 — 예외가 삼켜지면 그렇게 된다. */
 /* 자료를 어디서 받나 — **배포가 아니라 버킷에서** (2026-09-14).
  *
  * public/app/data 가 64MB 였고 그것이 Vercel 배포 하나의 98% 였다. 배포를
@@ -160,6 +160,12 @@ async function fetchData(name, opts) {
   return fetch(`${DATA_LOCAL}/${name}`, opts);
 }
 
+async function boot() {
+  // 탭 배선을 **맨 먼저** 한다. 탭은 정적 HTML 이라 자료가 없어도 있다.
+  // 배선을 아래 자료 받기 뒤에 두면, 그 사이에 누른 클릭은 듣는 사람이
+  // 없어 그냥 사라진다 — 화면은 멀쩡한데 눌러도 안 넘어간다. 바깥
+  // CDN(Leaflet·폰트)이 느리거나 막히면 app.js 실행 자체가 몇 초 밀려서
+  // 이 틈이 눈에 띄게 벌어진다.
   wireTabs();
   wireWhy();
   wireSheet();
@@ -3849,6 +3855,10 @@ const lpRosterPending = new Set();
 const LP_RETRY_MS = 60000;
 const lpFailed = new Map();          // 조각 열쇠 → 마지막으로 못 받은 때
 const lpFresh = (k) => Date.now() - (lpFailed.get(k) || 0) >= LP_RETRY_MS;
+// 검사가 들여다본다 — 무엇이 막혀 있는지(실패 기억 · 받는 중 · 받은 것).
+window.__lpState = () => ({ failed: [...lpFailed.keys()], pending: [...lpUmdPending],
+                            rosterPending: [...lpRosterPending],
+                            cached: Object.keys(lpUmdCache), roster: Object.keys(lpRosterCache) });
 
 /* 지금 열려 있는 말풍선의 태그 열쇠. 없으면 null.
  *
@@ -5703,8 +5713,9 @@ async function premiumFetch(name) {
   }
   try {
     const r = await fetchData(`${name}`, { cache: 'no-cache' });
+    if (!r.ok) window.__premiumLast = `${name}: ${r.status}`;
     return r.ok ? await r.json() : null;
-  } catch (e) { return null; }
+  } catch (e) { window.__premiumLast = `${name}: ${e && e.message}`; return null; }
 }
 
 async function loadValuationTables() {
@@ -6221,6 +6232,10 @@ async function nowResults() {
   return { picked, results: picked.map((std) => appraiseNow(subject, std, T, mo ? mo.trend : null)) };
 }
 window.__nowResults = () => nowResults();
+// 검사용 — 산출표가 안 나올 때 세 조각 중 무엇이 비었는지.
+window.__nowParts = async (code) => ({
+  T: !!(await loadValuationTables()), chunk: !!(await loadStdland(code)),
+  stats: !!(await loadParcelStats()) });
 window.__renderValuation = (res) => renderValuation(res);  // 좁은 칸 확인용
 
 async function fillNowValue(box) {
