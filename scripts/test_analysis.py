@@ -2851,6 +2851,15 @@ try:
 except RuntimeError as exc:
     check("ERROR-300" in str(exc), "row 가 없으면 RESULT 메시지를 담아 예외 — 조용히 0행이 되지 않는다")
 
+_it = [{"fyr": "2024", "dtmk_cd": "13", "dtmk_nm": "법인지방소득세", "cltn_dcsn_aggr_amt": "100", "rcvmt_aggr_amt": "90", "rate": "90.0"},
+       {"fyr": "2024", "dtmk_cd": "13", "dtmk_nm": "법인 지방소득세", "cltn_dcsn_aggr_amt": "10", "rcvmt_aggr_amt": "9", "rate": "90.0",
+        "wa_laf_hg_nm": "경기도", "laf_hg_nm": "안성시"}]
+_ir, _in, _id = _IND.lofin_item_rows(_it, _cm)
+check(len(_in) == 3 and _in[0][0] == "local_tax_item:법인지방소득세" and _in[0][1] == "2024" and _in[0][2] == 90.0,
+      "자치단체 칸이 없으면 전국 계열(market_series)로 둔다")
+check(len(_ir) == 3 and _ir[0][0] == "41550" and _ir[0][3] == "local_tax_item:법인지방소득세",
+      "자치단체 칸이 있으면 시군구 지표로 두고 세목명의 빈칸을 지운다")
+
 print("46-1. 포털 파일 — 형식을 바이트로 알아본다")
 check(_IND.sniff_ext(b"PK\x03\x04" + b"x" * 100 + b"[Content_Types].xml") == "xlsx" and _IND.sniff_ext(b"PK\x03\x04abc") == "zip"
       and _IND.sniff_ext("단지명,지정일\n".encode("cp949")) == "csv", "xlsx · zip · csv 를 가른다")

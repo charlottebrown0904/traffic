@@ -17,7 +17,7 @@
 #   indicators-probe  지역 지표 원천 탐침 — 법인지방소득세·산업용 전력·건축허가
 #   indicators        지역 지표 적재 — 전력 파일 셋 → region_series (query=번호,번호 로 골라서)
 #   power             한전 Open API 전력 — 시군구·계약종별·월 → region_series (query=연도 범위 '2015-2026' · limit=호출 예산, 비우면 1000 · 이어받기)
-#   localtax          지방재정365 지방세 징수실적(연) → region_series.local_tax_total (query=회계연도 범위, 비우면 2017-2024)
+#   localtax          지방재정365 지방세 징수실적(연, DFGDGG) + 세목별 징수율(KAAAG) → region_series/market_series (query=회계연도 범위)
 #   landprice         R-ONE 지가변동률 → landprice_index (query=표 이름 쉼표)
 #   market-fit        시장 층 적합 — 금리·물가·성장률 → 지가변동률, 시나리오 셋 (limit=년수)
 #   portal-file       포털 파일형 데이터셋 하나 받기 (query=번호,저장이름)
@@ -252,7 +252,7 @@ jobs:
         if: inputs.mode == 'localtax'
         run: |
           set -o pipefail
-          python -m redt.cli load-local-tax \
+          python -m redt.cli load-local-tax --items \
             --years "${{ inputs.query || '2017-2024' }}" 2>&1 | tee /tmp/stdland.log
 
       # R-ONE 지가변동률 → landprice_index (캐시 저장). query=표 이름 쉼표 (비우면 용도지역·지역 월별).

@@ -836,6 +836,18 @@ def cmd_load_local_tax(args):
     print(f"\nregion_series.local_tax_total — 연도별 시군구 수:")
     for per, n, lo, hi in have:
         print(f"  {per}  시군구 {n:>4}  최소 {lo:,.0f}  최대 {hi:,.0f}")
+    if args.items:
+        with db.connect() as con:
+            st2 = indicators.load_tax_items(con, _years(args.items_years), timeout=int(args.timeout))
+        print(f"\n세목별(KAAAG): 호출 {st2['calls']} · 시군구 행 {st2['region_rows']:,} · 전국 행 {st2['nat_rows']:,} · 실패 {st2['failed']}")
+        print(f"  받은 열쇠: {st2['keys']}")
+        print(f"  세목 {len(st2['items'])}개: {' · '.join(st2['items'][:30])}")
+        print("  회계연도별 받은 행: " + " · ".join(f"{y}:{n}" for y, n in st2["years"].items()))
+        if st2["unmatched"]:
+            top = sorted(st2["unmatched"].items(), key=lambda kv: -kv[1])[:15]
+            print(f"  ⚠ 코드에 못 이은 이름 {len(st2['unmatched'])}개 — " + " · ".join(f"{k}({v})" for k, v in top))
+        if st2["region_rows"] == 0 and st2["nat_rows"]:
+            print("  → 자치단체 칸이 없다: 전국 순계다. 시군구별 법인지방소득세는 이 표로는 못 얻는다.")
 
 
 def cmd_load_landprice(args):
@@ -3625,6 +3637,8 @@ def main(argv=None):
 
     p = sub.add_parser("load-local-tax", help="지방재정365 — 자치단체별 지방세 징수실적(연) → region_series")
     p.add_argument("--years", default="2017-2024", help="회계연도 범위 (보유 2017~2024)")
+    p.add_argument("--items", action="store_true", help="세목별 징수율(KAAAG)도 받는다")
+    p.add_argument("--items-years", dest="items_years", default="2010-2024", help="세목별 보유 2010~2024")
     p.add_argument("--timeout", default="40")
     p.set_defaults(func=cmd_load_local_tax)
 

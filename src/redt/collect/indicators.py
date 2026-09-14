@@ -920,6 +920,13 @@ def load_power_api(con, years: list[int], max_calls: int = 1000, timeout: int = 
 LOFIN_URL = "https://www.lofin365.go.kr/lf/hub/DFGDGG"
 LOFIN_SOURCE = "lofin365 DFGDGG"
 LOFIN_PAGE = 1000
+# 세목별 징수율 (사용자가 찾음, 2026-09-14 16:27): /lf/hub/KAAAG · 검색인자 fyr ·
+# 출력 fyr, dtmk_cd(세목코드), dtmk_nm(세목명), cltn_dcsn_aggr_amt(부과액),
+# rcvmt_aggr_amt(징수액), rate(징수율). 보유 2010~2024 · 산정기준 '순계, 결산'.
+# 화면에 자치단체 칸이 안 보였다 — 전국 순계일 수 있다. 자치단체 칸이 오면
+# region_series 로, 없으면 market_series(전국) 로 넣는다. 첫 호출이 정한다.
+LOFIN_ITEMS_URL = "https://www.lofin365.go.kr/lf/hub/KAAAG"
+LOFIN_ITEMS_SOURCE = "lofin365 KAAAG"
 
 
 def _lofin_unwrap(res) -> tuple[list[dict], dict]:
@@ -945,10 +952,85 @@ def _lofin_unwrap(res) -> tuple[list[dict], dict]:
     return (rows if isinstance(rows, list) else [rows]), head
 
 
-def lofin_page(fyr: int, pindex: int = 1, psize: int = LOFIN_PAGE, timeout: int = 40) -> tuple[list[dict], dict]:
-    res = http.get_json(LOFIN_URL, {"Type": "json", "pIndex": str(pindex), "pSize": str(psize),
-                                    "fyr": str(fyr)}, timeout=timeout)
+def lofin_page(fyr: int, pindex: int = 1, psize: int = LOFIN_PAGE, timeout: int = 40,
+               url: str = LOFIN_URL) -> tuple[list[dict], dict]:
+    res = http.get_json(url, {"Type": "json", "pIndex": str(pindex), "pSize": str(psize),
+                              "fyr": str(fyr)}, timeout=timeout)
     return _lofin_unwrap(res)
+
+
+def lofin_item_rows(rows: list[dict], code_map: dict) -> tuple[list[tuple], list[tuple], dict]:
+    """세목별 행 → (region_series 행, market_series 행, 진단).
+
+    자치단체 이름 칸(laf_hg_nm)이 있으면 시군구별로, 없으면 전국 합계로 둔다.
+    값은 징수액(rcvmt_aggr_amt); 부과액·징수율도 따로 지표로 남긴다.
+    """
+    diag = {"rows_in": len(rows), "keys": sorted(rows[0].keys()) if rows else [], "unmatched": {}, "items": set()}
+    reg, nat = [], []
+    for r in rows:
+        try:
+            fyr = int(str(r.get("fyr"))[:4])
+        except (TypeError, ValueError):
+            continue
+        item = re.sub(r"\s+", "", str(r.get("dtmk_nm") or r.get("dtmk_cd") or "")) or "기타"
+        diag["items"].add(item)
+        vals = (("rcvmt_aggr_amt", "local_tax_item", "원"), ("cltn_dcsn_aggr_amt", "local_tax_levied", "원"),
+                ("rate", "local_tax_rate", "%"))
+        name = str(r.get("laf_hg_nm") or "").strip()
+        if name:
+            code = resolve(code_map, str(r.get("wa_laf_hg_nm") or ""), name)
+            if code is None:
+                k = f"{r.get('wa_laf_hg_nm', '')} {name}".strip()
+                diag["unmatched"][k] = diag["unmatched"].get(k, 0) + 1
+                continue
+            for src, metric, unit in vals:
+                v = _f(r.get(src))
+                if v is not None:
+                    reg.append((code, f"{fyr:04d}", v, f"{metric}:{item}", unit, LOFIN_ITEMS_SOURCE))
+        else:
+            for src, metric, unit in vals:
+                v = _f(r.get(src))
+                if v is not None:
+                    nat.append((f"{metric}:{item}", f"{fyr:04d}", v, f"전국 {item} {metric}", "A", LOFIN_ITEMS_SOURCE))
+    diag["items"] = sorted(diag["items"])
+    return reg, nat, diag
+
+
+def load_tax_items(con, years: list[int], timeout: int = 40, log=print) -> dict:
+    """세목별 징수율(KAAAG)을 회계연도마다 받아 넣는다."""
+    code_map = build_code_map(con)
+    st = {"calls": 0, "region_rows": 0, "nat_rows": 0, "failed": 0, "unmatched": {}, "items": set(), "keys": [], "years": {}}
+    for y in years:
+        pindex, got = 1, 0
+        while True:
+            try:
+                rows, head = lofin_page(y, pindex, timeout=timeout, url=LOFIN_ITEMS_URL)
+            except Exception as exc:                      # noqa: BLE001
+                st["failed"] += 1
+                log(f"  ✗ 세목별 {y} p{pindex}: {str(exc)[:200]}")
+                break
+            st["calls"] += 1
+            reg, nat, diag = lofin_item_rows(rows, code_map)
+            st["keys"] = st["keys"] or diag["keys"]
+            st["items"].update(diag["items"])
+            for k, v in diag["unmatched"].items():
+                st["unmatched"][k] = st["unmatched"].get(k, 0) + v
+            if reg:
+                con.executemany("INSERT OR REPLACE INTO region_series (sigungu_cd, period, value, metric, unit, source)"
+                                " VALUES (?,?,?,?,?,?)", reg)
+                st["region_rows"] += len(reg)
+            if nat:
+                con.executemany("INSERT OR REPLACE INTO market_series (series, period, value, label, cycle, source)"
+                                " VALUES (?,?,?,?,?,?)", nat)
+                st["nat_rows"] += len(nat)
+            got += len(rows)
+            total = head.get("list_total_count") or head.get("totalCount")
+            if len(rows) < LOFIN_PAGE or (total and got >= int(total)):
+                break
+            pindex += 1
+        st["years"][y] = got
+    st["items"] = sorted(st["items"])
+    return st
 
 
 def lofin_rows(rows: list[dict], code_map: dict) -> tuple[list[tuple], dict]:
