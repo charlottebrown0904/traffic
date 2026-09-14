@@ -740,6 +740,38 @@ def cmd_probe_indicators(args):
     print(f"\n→ {out}")
 
 
+def cmd_load_indicators(args):
+    """지역 지표 적재 — 지금은 전력 파일 셋 (2026-09-14).
+
+    파일은 러너가 포털에서 직접 받는다 (4차 탐침: 미국 IP 에서 200, 0.4~2.5MB).
+    이름으로 오는 시도·시군구는 region_umd 로 코드에 잇고, **못 이은 이름은
+    세어 말한다** — 이름이 안 맞아 빠진 시군구는 오류 없이 사라지기 때문이다.
+    """
+    from .collect import indicators
+    only = [x.strip() for x in (args.only or "").split(",") if x.strip()] or None
+    with db.connect() as con:
+        diags = indicators.load_power(con, only=only, timeout=int(args.timeout))
+        have = con.execute(
+            "SELECT metric, count(*), min(period), max(period), count(DISTINCT sigungu_cd)"
+            " FROM region_series GROUP BY metric ORDER BY metric").fetchall()
+    print("── 전력 파일 적재 ──")
+    for d in diags:
+        if "error" in d:
+            print(f"  ✗ {d['dataset']}  {d['error']}")
+            continue
+        print(f"  {d['dataset']}  {d.get('label', '')}: {d['rows_in']:,}행 → {d['rows_out']:,}행")
+        um = d.get("unmatched") or {}
+        if um:
+            top = sorted(um.items(), key=lambda kv: -kv[1])[:12]
+            print(f"     ⚠ 코드에 못 이은 이름 {len(um)}개 · {sum(um.values()):,}행 — "
+                  + " · ".join(f"{k}({v})" for k, v in top))
+    print(f"\nregion_series 에 담긴 것 ({len(have)} 지표):")
+    for metric, n, lo, hi, nsgg in have[:60]:
+        print(f"  {metric:<34} {n:>7,}건 · {lo}~{hi} · 시군구 {nsgg}")
+    if len(have) > 60:
+        print(f"  … 외 {len(have) - 60}개")
+
+
 def cmd_ecos(args):
     """한국은행 ECOS — 시장 층 계열을 받아 market_series 에 쌓는다.
 
@@ -3343,6 +3375,11 @@ def main(argv=None):
                        help="지역 지표 원천 탐침 — 법인지방소득세·산업용 전력·건축허가")
     p.add_argument("--timeout", default="40")
     p.set_defaults(func=cmd_probe_indicators)
+
+    p = sub.add_parser("load-indicators", help="지역 지표 적재 — 전력 파일 셋 → region_series")
+    p.add_argument("--only", default="", help="데이터셋 번호를 쉼표로 (비우면 셋 다)")
+    p.add_argument("--timeout", default="120")
+    p.set_defaults(func=cmd_load_indicators)
 
     p = sub.add_parser("ecos", help="한국은행 ECOS — 금리·물가·성장률 (시장 층)")
     p.add_argument("--start", default="2000")

@@ -451,3 +451,177 @@ def describe(result: dict) -> str:
         head = re.sub(r"\s+", " ", k["head"])[:220]
         lines.append(f"       머리: {head}")
     return "\n".join(lines)
+
+
+# ── 파일 적재 — 전력 셋 → region_series ─────────────────────────────
+#
+# 4차(run 34806432813)에서 셋이 러너 직접 200 · 0.4~2.5MB 로 확정됐다.
+# 파일은 **이름**으로 온다 (시도·시군구·법정동). 코드가 없다. 그래서
+# region_umd(법정동코드·시군구 이름·전체 주소)로 대조표를 만들어 잇는다.
+# 못 이은 이름은 **반드시 세어 말한다** — 이름이 안 맞아 빠진 시군구는
+# 오류를 안 내고 조용히 사라지기 때문이다.
+
+POWER_FILES = {
+    # 데이터셋 번호: (파일 ID, 어떤 표인지)
+    "15104908": ("FILE_000000003681825", "법정동·월 전력사용량"),
+    "15069678": ("FILE_000000002314410", "시군구·용도업종(소)·월 판매량"),
+    "15069679": ("FILE_000000002334166", "시군구·계약종별(대) 판매량"),
+}
+PORTAL_FILE = "https://www.data.go.kr/cmm/cmm/fileDownload.do?atchFileId={fid}&fileDetailSn=1&insertDataPrcus=N"
+
+# 시도 이름은 해마다 바뀐다 — 강원도→강원특별자치도(2023), 전북→전북특별자치도
+# (2024), 전남+광주→전남광주통합특별시(2026). 파일과 대조표가 다른 해의
+# 이름을 쓰면 한 글자도 안 맞는다. 앞 두 글자로 줄여 견준다.
+_SIDO_KEY = {
+    "서울": "서울", "부산": "부산", "대구": "대구", "인천": "인천", "광주": "광주",
+    "대전": "대전", "울산": "울산", "세종": "세종", "경기": "경기", "강원": "강원",
+    "충북": "충북", "충청북": "충북", "충남": "충남", "충청남": "충남",
+    "전북": "전북", "전라북": "전북", "전남": "전남", "전라남": "전남",
+    "경북": "경북", "경상북": "경북", "경남": "경남", "경상남": "경남", "제주": "제주",
+}
+
+
+def sido_key(name: str) -> str:
+    """'강원특별자치도' → '강원', '전라남도' → '전남', '전남광주통합특별시' → '전남광주'."""
+    n = re.sub(r"\s+", "", str(name or ""))
+    if n.startswith("전남광주") or n.startswith("광주전남"):
+        return "전남광주"
+    for k in sorted(_SIDO_KEY, key=len, reverse=True):
+        if n.startswith(k):
+            return _SIDO_KEY[k]
+    return n[:2]
+
+
+def norm_sgg(name: str) -> str:
+    """시군구 이름 정규화 — 띄어쓰기·'시 구' 붙임. '수원시 팔달구' → '수원시팔달구'."""
+    return re.sub(r"\s+", "", str(name or ""))
+
+
+def build_code_map(con) -> dict:
+    """region_umd 에서 (시도키, 시군구) → 시군구코드 대조표.
+
+    같은 (시도, 시군구) 에 코드가 둘 이상이면(옛·새 세대 코드가 함께 있는
+    전남광주) **거래 표가 쓰는 쪽**을 고른다 — 패널이 거래와 붙기 때문이다.
+    """
+    rows = con.execute("""
+        SELECT DISTINCT sigungu_cd, sigungu, full_nm FROM region_umd
+        WHERE sigungu_cd IS NOT NULL AND full_nm IS NOT NULL
+    """).fetchall()
+    in_trade = {r[0] for r in con.execute(
+        "SELECT DISTINCT sigungu_cd FROM trade WHERE sigungu_cd IS NOT NULL").fetchall()}
+    cands: dict[tuple, set] = {}
+    for code, sgg, full in rows:
+        sido = str(full).split()[0] if full else ""
+        key = (sido_key(sido), norm_sgg(sgg or ""))
+        cands.setdefault(key, set()).add(str(code))
+    out = {}
+    for key, codes in cands.items():
+        if len(codes) == 1:
+            out[key] = next(iter(codes))
+        else:
+            pref = [c for c in codes if c in in_trade]
+            out[key] = sorted(pref or codes)[-1]
+    return out
+
+
+def resolve(code_map: dict, sido: str, sgg: str) -> str | None:
+    """이름 둘 → 시군구코드. 못 찾으면 None (호출 쪽이 센다)."""
+    k = (sido_key(sido), norm_sgg(sgg))
+    if k in code_map:
+        return code_map[k]
+    # '수원시팔달구' 로 왔는데 대조표가 '팔달구' 인 경우, 또 그 반대
+    for (s, g), code in code_map.items():
+        if s == k[0] and (g.endswith(k[1]) or k[1].endswith(g)) and len(g) >= 2:
+            return code
+    return None
+
+
+def power_rows(dataset: str, df, code_map: dict) -> tuple[list[tuple], dict]:
+    """한 파일 → region_series 행들. (rows, 진단) 을 돌려준다.
+
+    열 이름은 4차 탐침에서 본 것 그대로다. 파일이 바뀌면 여기가 깨지고,
+    깨지면 소리가 난다 — 그것이 맞다.
+    """
+    import pandas as pd
+    cols = {c.strip().strip('"'): c for c in df.columns}
+    df = df.rename(columns={v: k for k, v in cols.items()})
+    diag = {"dataset": dataset, "rows_in": int(len(df)), "unmatched": {}, "rows_out": 0}
+    out = []
+
+    def _code(sido, sgg):
+        c = resolve(code_map, sido, sgg)
+        if c is None:
+            k = f"{sido} {sgg}"
+            diag["unmatched"][k] = diag["unmatched"].get(k, 0) + 1
+        return c
+
+    def _num(v):
+        try:
+            return float(str(v).replace(",", "").strip())
+        except ValueError:
+            return None
+
+    if dataset == "15104908":
+        # 시도,시군구,법정동,년도,월,전체호수,전력사용량 — 법정동을 시군구로 모은다
+        need = {"시도", "시군구", "년도", "월", "전력사용량"}
+        if not need.issubset(df.columns):
+            raise ValueError(f"{dataset}: 열이 다릅니다 {list(df.columns)[:8]}")
+        df = df.assign(_code=[_code(a, b) for a, b in zip(df["시도"], df["시군구"])])
+        df = df.dropna(subset=["_code"])
+        df["_period"] = df["년도"].astype(str).str.zfill(4) + df["월"].astype(str).str.zfill(2)
+        df["_kwh"] = pd.to_numeric(df["전력사용량"].astype(str).str.replace(",", ""), errors="coerce")
+        g = df.groupby(["_code", "_period"], as_index=False)["_kwh"].sum()
+        for r in g.itertuples(index=False):
+            out.append((r._0 if hasattr(r, "_0") else r[0], r[1], float(r[2]),
+                        "power_kwh_total", "kWh", f"data.go.kr {dataset}"))
+    elif dataset in ("15069678", "15069679"):
+        # 조회기간,시도,시군구,용도업종(소)|계약종별(대),판매량
+        dim = "용도업종(소)" if "용도업종(소)" in df.columns else "계약종별(대)"
+        need = {"조회기간", "시도", "시군구", dim, "판매량"}
+        if not need.issubset(df.columns):
+            raise ValueError(f"{dataset}: 열이 다릅니다 {list(df.columns)[:8]}")
+        prefix = "power_kwh_use:" if dim.startswith("용도") else "power_kwh_contract:"
+        for r in df.itertuples(index=False):
+            row = dict(zip(df.columns, r))
+            code = _code(row["시도"], row["시군구"])
+            if code is None:
+                continue
+            per = re.sub(r"[^0-9]", "", str(row["조회기간"]))[:6]   # 2016-10 → 201610
+            val = _num(row["판매량"])
+            if val is None or len(per) < 6:
+                continue
+            out.append((code, per, val, prefix + str(row[dim]).strip(), "kWh",
+                        f"data.go.kr {dataset}"))
+    else:
+        raise ValueError(f"모르는 파일 {dataset}")
+    diag["rows_out"] = len(out)
+    return out, diag
+
+
+def load_power(con, only: list[str] | None = None, timeout: int = 120) -> list[dict]:
+    """전력 파일 셋을 러너가 직접 받아 region_series 에 넣는다."""
+    import io
+    import pandas as pd
+    code_map = build_code_map(con)
+    if not code_map:
+        raise RuntimeError("region_umd 가 비어 대조표를 못 만듭니다 — 먼저 읍면동을 채우십시오")
+    diags = []
+    for dataset, (fid, label) in POWER_FILES.items():
+        if only and dataset not in only:
+            continue
+        url = PORTAL_FILE.format(fid=fid)
+        resp = http._sess().get(url, timeout=timeout, headers={"User-Agent": "redt-research/0.1"})
+        text = _decode_table(resp.content)
+        if resp.status_code != 200 or text is None:
+            diags.append({"dataset": dataset, "error": f"{resp.status_code} · 글자로 못 읽음"})
+            continue
+        df = pd.read_csv(io.StringIO(text), dtype=str)
+        rows, diag = power_rows(dataset, df, code_map)
+        diag["label"] = label
+        if rows:
+            con.executemany(
+                "INSERT OR REPLACE INTO region_series"
+                " (sigungu_cd, period, value, metric, unit, source) VALUES (?,?,?,?,?,?)",
+                rows)
+        diags.append(diag)
+    return diags

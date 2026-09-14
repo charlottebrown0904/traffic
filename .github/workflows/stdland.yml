@@ -14,6 +14,7 @@
 #                      items:CODE=항목 목록 · find:말=이름으로 표 찾기
 #                      findin:CODE,말=그 표의 항목을 이름으로 찾기
 #   indicators-probe  지역 지표 원천 탐침 — 법인지방소득세·산업용 전력·건축허가
+#   indicators        지역 지표 적재 — 전력 파일 셋 → region_series (query=번호,번호 로 골라서)
 #   law-probe   국가법령정보센터 자치법규 API 탐침 (조례 한 건, LAW_OC 필요)
 #   law         전국 도시계획조례 → data/ordinance/ 관심 조문 (브랜치에 커밋)
 #
@@ -25,7 +26,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / ecos / indicators-probe / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / ecos / indicators-probe / indicators / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -210,6 +211,15 @@ jobs:
         run: |
           set -o pipefail
           python -m redt.cli probe-indicators 2>&1 | tee /tmp/stdland.log
+
+      # 지역 지표 적재 — 전력 파일 셋 (러너가 포털에서 직접 받는다). DB 에 쓰므로
+      # 캐시를 남긴다.
+      - name: 지역 지표 적재
+        if: inputs.mode == 'indicators'
+        run: |
+          set -o pipefail
+          python -m redt.cli load-indicators \
+            ${{ inputs.query && format('--only {0}', inputs.query) || '' }} 2>&1 | tee /tmp/stdland.log
 
       - name: 자치법규 API 탐침
         if: inputs.mode == 'law-probe'
