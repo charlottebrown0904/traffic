@@ -4695,11 +4695,22 @@ const FAKE_LEAFLET = () => {
     check('실거래 글자는 z16 부터다 (필지 경계가 뜨는 배율)',
           labZ === '16', `TRADE_LABEL_ZOOM=${labZ}`);
 
-    // **상한이 없어야 한다.** 자르면 '이 동네 거래는 이것뿐' 으로 읽힌다.
-    check('그리는 수에 상한이 없다',
-          /const TRADE_DRAW_CAP = Infinity/.test(app), '');
-    check('글자 수에도 상한이 없다',
-          /const TRADE_LABEL_CAP = Infinity/.test(app), '');
+    // **상한이 있어야 한다** (2026-09-14, 사이트가 멈춘 뒤 되돌림).
+    //
+    // 처음에는 '확대하면 전부' 지시대로 상한을 없앴는데, 표식을 한 번에
+    // 동기로 만드는 구조라 화면 안 건수가 크면 주 스레드가 막혀 브라우저가
+    // '응답 없는 페이지' 를 띄운다. 실제로 그렇게 됐다. '전부' 는 그리는
+    // 방식을 바꾼 뒤에 지킬 약속이고, 그때까지는 상한을 두되 **잘랐다고
+    // 말한다.**
+    const drawCap = Number((app.match(/const TRADE_DRAW_CAP = (\d+)/) || [])[1]);
+    const labelCap = Number((app.match(/const TRADE_LABEL_CAP = (\d+)/) || [])[1]);
+    check('그리는 수에 상한이 있다 (주 스레드를 막지 않게)',
+          drawCap > 0 && Number.isFinite(drawCap), `TRADE_DRAW_CAP=${drawCap}`);
+    check('글자 수에도 상한이 있다',
+          labelCap > 0 && Number.isFinite(labelCap), `TRADE_LABEL_CAP=${labelCap}`);
+    // 자른 사실을 말하는 자리가 남아 있는가 — 말 없이 자르는 것이 가장 나쁘다.
+    check('잘랐으면 말한다',
+          /state\.tradeDrawn < state\.tradeInView/.test(app), '');
 
     // 낮은 배율에서 아예 안 그리는 길이 있는가.
     check('배율이 낮으면 그리기 전에 되돌아간다',
