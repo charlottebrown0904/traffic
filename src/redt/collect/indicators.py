@@ -1545,6 +1545,45 @@ def dart_list(bgn: str, end: str, ty: str = "B", page: int = 1,
     return body.get("list", []), int(body.get("total_page", 1) or 1)
 
 
+def dart_windows(bgn: str, end: str, days: int = 89) -> list[tuple[str, str]]:
+    """기간을 89일 토막으로 자른다.
+
+    **OpenDART 는 corp_code 없이 부르면 검색기간을 3개월로 묶는다**
+    ([100] "corp_code가 없는 경우 검색기간은 3개월만 가능합니다"). 첫
+    호출이 그것으로 거절당했다 — 키가 죽은 것이 아니라 업무 규칙이다.
+    경계에서 하루가 새지 않게 89일로 자른다.
+    """
+    from datetime import datetime, timedelta            # noqa: PLC0415
+    lo = datetime.strptime(bgn, "%Y%m%d")
+    hi = datetime.strptime(end, "%Y%m%d")
+    out = []
+    while lo <= hi:
+        cut = min(lo + timedelta(days=days), hi)
+        out.append((lo.strftime("%Y%m%d"), cut.strftime("%Y%m%d")))
+        lo = cut + timedelta(days=1)
+    return out
+
+
+def dart_list_all(bgn: str, end: str, ty: str = "B", max_pages: int = 20,
+                  timeout: int = 40) -> list[dict]:
+    """기간 전체를 89일씩·쪽마다 훑는다. 빈 토막은 [013] 으로 오니 넘긴다."""
+    rows = []
+    for lo, hi in dart_windows(bgn, end):
+        page = 1
+        while page <= max_pages:
+            try:
+                got, pages = dart_list(lo, hi, ty, page=page, timeout=timeout)
+            except RuntimeError as exc:
+                if "013" in str(exc):                   # 그 토막에 공시가 없다
+                    break
+                raise
+            rows.extend(got)
+            if page >= pages:
+                break
+            page += 1
+    return rows
+
+
 def dart_address(corp_code: str, timeout: int = 40) -> str:
     """회사 주소 한 줄. 목록에는 주소가 없어 따로 묻는다.
 

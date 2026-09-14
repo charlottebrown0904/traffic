@@ -3226,12 +3226,14 @@ def cmd_dart_probe(args):
 
     print(f"OpenDART 탐침 — {args.bgn}~{args.end} · 공시유형 {args.ty}"
           f"({ind.DART_TYPES.get(args.ty, '?')})")
+    wins = ind.dart_windows(args.bgn, args.end)
+    print(f"  89일 토막 {len(wins)}개 — corp_code 없이 부르면 3개월 제한이다")
     try:
-        rows, pages = ind.dart_list(args.bgn, args.end, args.ty, size=args.size)
+        rows = ind.dart_list_all(args.bgn, args.end, args.ty)
     except Exception as exc:                          # noqa: BLE001
         print(f"  실패: {exc}")
         return
-    print(f"  첫 쪽 {len(rows)}행 · 전체 {pages}쪽")
+    print(f"  공시 {len(rows):,}건")
     if not rows:
         return
     print(f"  열쇠: {sorted(rows[0])}")
