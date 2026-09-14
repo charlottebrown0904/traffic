@@ -2872,7 +2872,7 @@ _rate = [3.0 + math.sin(i / 20) for i in range(len(_pers))]
 _lp = []; _ms = []
 for i, per in enumerate(_pers):
     _ms.append(("policy_rate", str(per).replace("-", ""), _rate[i], "기준금리", "M", "검사"))
-    _ms.append(("cpi", str(per).replace("-", ""), 100 * (1.02 ** (i / 12)), "CPI", "M", "검사"))
+    _ms.append(("cpi", str(per).replace("-", ""), 100 * (1.02 ** (i / 12)) * (1 + _rnd.gauss(0, 0.004)), "CPI", "M", "검사"))
     y = 0.6 - 0.15 * _rate[i - 6] + _rnd.gauss(0, 0.05) if i >= 6 else None      # 금리 6개월 시차, 음의 계수
     if y is not None:
         _lp.append(("A_2024_00007", str(per).replace("-", ""), "G0", "전국", "C1", "관리", "I1", "지가변동률", y, "%"))

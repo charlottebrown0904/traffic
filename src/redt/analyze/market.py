@@ -69,7 +69,11 @@ def fit_zone(y: pd.Series, x: pd.DataFrame, lags: dict = LAGS):
     """시차 격자에서 조정 R² 최대인 조합. (결과, 시차) — statsmodels OLS·HAC."""
     import statsmodels.api as sm
     best = None
-    cols = [c for c in ("rate", "cpi", "gdp") if c in x.columns]
+    # 분산이 없는 계열(예: 물가가 한 값으로 고정)은 상수와 겹쳐 행렬이 특이해지고
+    # p 값이 nan 이 된다 — 그런 열은 빼고 적합한다.
+    cols = [c for c in ("rate", "cpi", "gdp") if c in x.columns and x[c].dropna().std() > 1e-9]
+    if not cols:
+        return None
     grid = itertools.product(*[lags[c] for c in cols])
     for combo in grid:
         X = pd.DataFrame({c: x[c].shift(l) for c, l in zip(cols, combo)})
