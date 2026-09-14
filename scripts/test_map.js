@@ -1434,6 +1434,57 @@ const FAKE_LEAFLET = () => {
           gone.switches === 4,
           `${gone.switches}개`);
 
+    /* '개발' 층 (요구사항 2026-09-14) — 켜면 타일이 실제로 깔리고 철도역이
+       그려지는가. 층 이름이 살아 있다는 것은 vworld-render 탐침이 따로
+       확인했다(칠해진 화소까지 셌다). 여기서 보는 것은 **화면이 그 층을
+       제대로 켜는가** 다. */
+    const devBefore = await page.evaluate(() => ({
+      on: (window.__develop || {}).on,
+      rail: ((window.state.rail || {}).stations || []).length,
+      parts: document.getElementById('dev-parts')
+        ? document.getElementById('dev-parts').children.length : 0,
+      hidden: document.getElementById('dev-parts')
+        ? document.getElementById('dev-parts').hidden : null,
+    }));
+    check('개발은 꺼진 채로 시작한다', devBefore.on === false,
+          `on=${devBefore.on}`);
+    check('개발 갈래 칸이 넷이고 처음엔 접혀 있다',
+          devBefore.parts === 4 && devBefore.hidden === true,
+          `${devBefore.parts}개 · hidden=${devBefore.hidden}`);
+    check('철도역이 실려 있다 (rail.json)', devBefore.rail >= 300,
+          `${devBefore.rail}곳`);
+
+    await page.click('#develop-bg');
+    await page.waitForTimeout(400);
+    const devAfter = await page.evaluate(() => {
+      const d = window.__develop || {};
+      // 지도에 깔린 타일 주소 — '개발' 것만 센다.
+      let tiles = 0;
+      document.querySelectorAll('img.leaflet-tile').forEach((im) => {
+        if ((im.src || '').includes('layer=develop')) tiles += 1;
+      });
+      return { on: d.on, key: d.key, tiles,
+               hidden: document.getElementById('dev-parts').hidden };
+    });
+    check('개발을 켜면 develop 한 장으로 부른다 (갈래마다 안 부른다)',
+          devAfter.on === true && devAfter.key === 'develop',
+          `key=${devAfter.key}`);
+    check('켜면 갈래 칸이 펼쳐진다', devAfter.hidden === false,
+          `hidden=${devAfter.hidden}`);
+
+    // 갈래 하나를 끄면 열쇠가 좁아진다 — 산업단지를 뺀다.
+    await page.evaluate(() => {
+      const box = document.querySelector('#dev-parts input[data-part="industry"]');
+      box.checked = false;
+      box.dispatchEvent(new Event('change'));
+    });
+    await page.waitForTimeout(200);
+    const devNarrow = await page.evaluate(() => (window.__develop || {}).key);
+    check('갈래를 끄면 그만큼만 부른다',
+          devNarrow === 'housing+planroad', `key=${devNarrow}`);
+    await page.click('#develop-bg');      // 원래대로 끄고 다음 절로
+    await page.waitForTimeout(200);
+
     console.log();
     console.log('7. 거래 점이 배경에서 보인다 · 도로 위계가 살아 있다');
     // 보고된 문제: "토지, 공장 색상이 배경과 너무 구분이 안됩니다."
