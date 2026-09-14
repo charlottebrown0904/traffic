@@ -93,3 +93,30 @@ def sync(src: Path, log=print) -> dict:
     log(f"  버킷 {BUCKET}: {st['ok']}/{st['n']}개 · {st['bytes'] / 1e6:,.1f}MB"
         + (f" · 실패 {st['fail']}" if st["fail"] else ""))
     return st
+
+
+def verify(names: tuple[str, ...], log=print) -> bool:
+    """올린 것을 **공개 주소로 다시 받아 본다.**
+
+    올리기가 200 을 줬다는 것과 브라우저가 받을 수 있다는 것은 다른 말이다.
+    버킷이 비공개로 남아 있거나 경로가 틀리면 올리기는 멀쩡한데 화면만
+    빈다. 그 둘을 가르려면 **열쇠 없이** 받아 봐야 한다.
+    """
+    import requests
+    base = public_base()
+    ok = True
+    for n in names:
+        try:
+            # 열쇠를 일부러 안 붙인다 — 브라우저와 같은 자리에서 본다.
+            r = requests.get(f"{base}/{n}", timeout=60)
+        except requests.RequestException as exc:
+            log(f"  ✗ {n}: {type(exc).__name__}")
+            ok = False
+            continue
+        size = len(r.content)
+        if r.status_code == 200 and size > 0:
+            log(f"  ✓ {n}: {size / 1000:,.0f}KB")
+        else:
+            log(f"  ✗ {n}: HTTP {r.status_code} · {size}B · {r.text[:80]}")
+            ok = False
+    return ok

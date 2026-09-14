@@ -296,7 +296,15 @@ def cmd_web_upload(args):
     st = WS.sync(src)
     if st["fail"]:
         raise SystemExit(f"{st['fail']}개를 못 올렸습니다")
-    print(f"  주소: {WS.public_base()}/<이름>.json")
+    # **열쇠 없이 다시 받아 본다.** 올리기가 200 을 줬다는 것과 브라우저가
+    # 받을 수 있다는 것은 다른 말이다 — 버킷이 비공개면 올리기는 멀쩡한데
+    # 화면만 빈다. 확인하고 나서야 저장소의 사본을 지울 수 있다.
+    print("\n공개 주소로 다시 받아 확인:")
+    want = [n for n in ("meta.json", "chart.json", "trades-2025.json",
+                        "places.json") if (src / n).exists()]
+    if not WS.verify(tuple(want)):
+        raise SystemExit("올라갔는데 공개 주소로 못 받습니다 — 버킷이 공개인지 확인하십시오")
+    print(f"\n  주소: {WS.public_base()}/<이름>.json")
 
 
 def cmd_value_test(args):
