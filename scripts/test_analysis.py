@@ -3030,6 +3030,76 @@ check(("인천", "중구") not in _IND.KOSIS_SGG_ALIAS
       and ("인천", "서구") not in _IND.KOSIS_SGG_ALIAS,
       "갈라진 인천 중구·서구는 한 곳으로 안 잇는다")
 
+# ────────────────────────────────────────────────────────────────
+print()
+print("49. 특별시·광역시 총괄 (TX_11007_A056) — 시 전체지 시군구가 아니다")
+
+# 부산·대구·세종이 시군구 적재에 안 잡히던 까닭은 자료가 없어서가 아니라
+# **그 시도의 표가 따로 없어서**였다. 일곱 광역시와 세종이 이 한 표에
+# 묶여 있고, 우리가 이름의 '총괄' 을 보고 건너뛰고 있었다.
+check(_IND.KOSIS_METRO_TBL == "TX_11007_A056",
+      "특별시·광역시 총괄 표를 이름이 아니라 번호로 못박는다 (검색에 안 걸리므로)")
+
+# **가장 중요한 검사.** 이 표의 합계는 시세 + 구세, 곧 시 전체다.
+# 시군구 표의 시도 행(본청)은 시세뿐이다. 둘이 같은 이름을 쓰면 한쪽이
+# 다른 쪽을 덮어써서 서울 지방세가 조용히 바뀐다.
+_metro_rows = [
+    {"C1_NM": "부산광역시", "C2_NM": "취득세", "PRD_DE": "2020", "DT": "1,000"},
+    {"C1_NM": "세종특별자치시", "C2_NM": "재산세", "PRD_DE": "2020", "DT": "7"},
+    {"C1_NM": "합계", "C2_NM": "취득세", "PRD_DE": "2020", "DT": "99999"},
+]
+
+
+class _FakeCon:
+    def __init__(self):
+        self.recs = []
+
+    def execute(self, sql, args=None):
+        self.recs.append(("exec", sql, args))
+        return self
+
+    def fetchall(self):
+        return []
+
+    def executemany(self, sql, rows):
+        self.recs.extend(rows)
+
+
+class _FakeKosis:
+    KosisError = RuntimeError
+
+    @staticmethod
+    def fetch_table_auto(org, tbl, a, b, **kw):
+        return _metro_rows
+
+
+import redt.collect as _pkg                            # noqa: E402
+
+_saved = getattr(_pkg, "kosis", None)
+_pkg.kosis = _FakeKosis
+try:
+    _con = _FakeCon()
+    _st = _IND.load_local_tax_metro(
+        _con, ["2020"], code_map={("부산", "중구"): "26110",
+                                  ("세종", ""): "36110"}, log=lambda *a: None)
+finally:
+    if _saved is not None:
+        _pkg.kosis = _saved
+
+_written = [r for r in _con.recs if isinstance(r, tuple) and len(r) == 6]
+_metrics = {r[3] for r in _written}
+check(all(m.startswith("local_tax_metro:") for m in _metrics) and _metrics,
+      f"이름이 시군구 쪽과 갈린다 — local_tax_metro:* ({sorted(_metrics)})")
+check(not any(m.startswith("local_tax_kosis:") for m in _metrics),
+      "시군구 표의 이름(local_tax_kosis:*)을 덮어쓰지 않는다")
+check(all("합계" not in str(r[3]) for r in _written) and len(_written) == 2,
+      f"합계 행은 자치단체가 아니므로 안 싣는다 (실은 행 {len(_written)}개)")
+check(any(r[0] == "26110"[:2] for r in _written),
+      f"부산은 시도 코드 두 자리로 앉는다 ({[r[0] for r in _written]})")
+check(all(abs(r[2] - v) < 1e-6 for r, v in zip(sorted(_written, key=lambda x: x[3]),
+                                               [7000.0, 1000000.0])),
+      f"천원을 원으로 바꾼다 ({[r[2] for r in sorted(_written, key=lambda x: x[3])]})")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

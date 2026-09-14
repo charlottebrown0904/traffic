@@ -1835,6 +1835,85 @@ def describe_local_tax_kosis(con, log=print) -> None:
 # 시군구 고유의 법인 활동은 여기서 못 얻는다. 그래도 싣는 까닭은 시군구
 # 총액을 **시도 법인 비중으로 안분**할 재료가 되기 때문이다. 안분한 값은
 # 안분한 값이라고 이름에 남긴다 — 나중에 원자료로 착각하지 않게.
+# --- 특별시·광역시 총괄 (TX_11007_A056) -------------------------------
+# 부산·대구·세종이 시군구 표에 안 잡히던 까닭을 run 14~15 의 맛보기가
+# 밝혔다. **그 시도의 표가 따로 없다** — 특별시·광역시는 이 한 표에
+# 묶여 있고, 우리 수집기가 이름에 '총괄' 이 들어간다고 건너뛰고 있었다.
+#
+# 다만 이 표는 **자치구까지 안 갈린다.** 맛보기(2020)가 297행이고
+# 자치단체 축이 아홉(특별시·광역시 일곱 + 세종 + 합계) × 세목 서른셋이다.
+# 그래서 이것은 시군구 자료가 아니라 **시 전체** 자료다.
+#
+# 값의 뜻이 다르므로 이름도 다르게 둔다. 시군구 표의 시도 행(본청)은
+# '시세' 만인데 여기 합계는 **시세 + 구세**, 곧 시 전체다. 같은 이름에
+# 넣으면 한쪽이 다른 쪽을 덮어써서 서울 지방세가 조용히 바뀐다.
+KOSIS_METRO_TBL = "TX_11007_A056"
+KOSIS_METRO_SKIP = ("합계", "계", "총계", "전국", "소계")
+
+
+def load_local_tax_metro(con, years: list[str], *, code_map: dict | None = None,
+                         log=print) -> dict:
+    """특별시·광역시 × 세목 (시 전체). 열쇠는 시도 코드 두 자리다."""
+    from . import kosis                                  # noqa: PLC0415
+    if code_map is None:
+        code_map = build_code_map(con)
+    codes = sido_codes(code_map)
+    st = {"calls": 0, "rows": 0, "failed": 0, "unmatched": {},
+          "items": set(), "sido": set()}
+    done = {r[0] for r in con.execute(
+        "SELECT key FROM series_crawl WHERE source = 'kosis_tax_metro'").fetchall()}
+    for y in years:
+        key = f"{KOSIS_METRO_TBL}:{y}"
+        if key in done:
+            continue
+        try:
+            rows = kosis.fetch_table_auto(KOSIS_TAX_ORG, KOSIS_METRO_TBL, y, y)
+        except Exception as exc:                         # noqa: BLE001
+            st["failed"] += 1
+            if st["failed"] <= 3:
+                log(f"  ✗ {y}: {type(exc).__name__} {str(exc)[:120]}")
+            continue
+        st["calls"] += 1
+        recs = []
+        for r in rows:
+            sido = str(r.get("C1_NM", "")).strip()
+            item = str(r.get("C2_NM", "")).strip()
+            raw = r.get("DT")
+            if not sido or not item or sido in KOSIS_METRO_SKIP:
+                continue
+            try:
+                val = float(str(raw).replace(",", ""))
+            except (TypeError, ValueError):
+                continue
+            code = codes.get(_sido_key(sido))
+            if not code:
+                st["unmatched"][sido] = st["unmatched"].get(sido, 0) + 1
+                continue
+            st["items"].add(item)
+            st["sido"].add(sido)
+            recs.append((code, y, val * 1000.0,
+                         f"local_tax_metro:{item}", "원", "KOSIS 지방세통계"))
+        if recs:
+            con.executemany(
+                "INSERT OR REPLACE INTO region_series"
+                " (sigungu_cd, period, value, metric, unit, source)"
+                " VALUES (?,?,?,?,?,?)", recs)
+            st["rows"] += len(recs)
+        con.execute(
+            "INSERT OR REPLACE INTO series_crawl (source, key, n, done_at)"
+            " VALUES ('kosis_tax_metro', ?, ?, current_timestamp)",
+            [key, len(recs)])
+    log(f"특별시·광역시 총괄 — 호출 {st['calls']} · 행 {st['rows']:,}"
+        f" · 실패 {st['failed']}")
+    if st["sido"]:
+        log(f"  시도 {len(st['sido'])}곳: {' · '.join(sorted(st['sido']))}")
+    if st["items"]:
+        log(f"  세목 {len(st['items'])}개")
+    if st["unmatched"]:
+        log(f"  못 이은 이름: {st['unmatched']}")
+    return st
+
+
 KOSIS_CORP_TBL = "DT_11007_A646"
 # 이 표는 축이 **셋**이다 (시도별 · 징수방법별 · 세원별). 둘만 물어도
 # 200 이 오는데 그때는 세원 축이 통째로 빠진다 — run 98 에서 '보통징수 ·

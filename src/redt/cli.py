@@ -3227,6 +3227,12 @@ def cmd_load_tax_kosis(args):
         con.execute("DELETE FROM series_crawl WHERE source = 'kosis_tax_corp'")
         con.execute("DELETE FROM region_series WHERE metric LIKE 'local_tax_corp:%'")
         ind.load_local_tax_corp(con, [y for y in years if y >= "2010"])
+        # 특별시·광역시는 시도마다 표가 따로 없고 한 표에 묶여 있다.
+        # 그래서 부산·대구·세종이 위 시군구 적재에 안 잡힌다 — 자치구는
+        # 여전히 못 얻지만, 시 전체 값은 여기서 온다 (2000~). 이름을
+        # 달리 두는 까닭은 함수 머리글에 적었다.
+        print()
+        ind.load_local_tax_metro(con, [y for y in years if y >= "2000"])
 
 
 def cmd_load_rail(args):
