@@ -288,9 +288,20 @@ def cmd_web_upload(args):
     """
     from pathlib import Path
     from . import web_store as WS
+    # **버킷만 확인하는 길.** 옮기고 난 뒤에는 저장소에 사본이 없으므로
+    # (public/app/data 는 .gitignore 다) 새 체크아웃에서 올릴 것이 없다.
+    # 그래도 버킷이 살아 있는지, 브라우저가 받을 수 있는지는 봐야 한다.
+    if getattr(args, "verify_only", False):
+        print(f"버킷 {WS.BUCKET} 만 확인합니다 (올리지 않음)")
+        if not WS.verify(("meta.json", "chart.json", "trades-2025.json",
+                          "places.json")):
+            raise SystemExit("버킷에서 못 받습니다")
+        print(f"\n  주소: {WS.public_base()}/<이름>.json")
+        return
     src = Path(args.src) if args.src else (ROOT / "public" / "app" / "data")
     if not src.exists():
-        print(f"{src} 가 없습니다 — export-web 을 먼저 돌리세요")
+        print(f"{src} 가 없습니다 — export-web 을 먼저 돌리거나"
+              " --verify-only 로 버킷만 확인하십시오")
         return
     print(f"화면 자료 → 버킷 {WS.BUCKET}")
     st = WS.sync(src)
@@ -3863,6 +3874,8 @@ def main(argv=None):
     p = sub.add_parser("web-upload",
                        help="화면 JSON → Supabase 공개 버킷 appdata (배포에서 빼려고)")
     p.add_argument("--src", default=None, help="올릴 폴더 (기본 public/app/data)")
+    p.add_argument("--verify-only", dest="verify_only", action="store_true",
+                   help="올리지 않고 버킷에서 받아지는지만 (CORS 까지) 확인")
     p.set_defaults(func=cmd_web_upload)
 
     p = sub.add_parser("value-test",

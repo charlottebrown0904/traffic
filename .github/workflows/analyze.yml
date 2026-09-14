@@ -66,7 +66,16 @@ jobs:
       # requests 만으로는 안 된다 — redt.cli 가 numpy·pandas 를 머리에서
       # 들여온다. 올리기 자체는 requests 뿐이지만 명령을 거치므로 다 깐다.
       - run: pip install -r requirements.txt
-      - run: python -m redt.cli web-upload
+      # 옮기고 난 뒤에는 저장소에 사본이 없다(.gitignore). 그럴 때는
+      # 올릴 것이 없으므로 **버킷만 확인**한다 — 살아 있는지, 그리고
+      # 브라우저가 받을 수 있는지(CORS)를.
+      - run: |
+          if [ -d public/app/data ]; then
+            python -m redt.cli web-upload
+          else
+            echo "저장소에 사본이 없습니다 — 버킷만 확인합니다"
+            python -m redt.cli web-upload --verify-only
+          fi
 
   analyze:
     if: ${{ !inputs.upload_only }}
