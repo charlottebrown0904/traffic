@@ -153,3 +153,25 @@ rokaf-lmp 8 · quant 5). toji-gogo 가 배포당 65MB 이고 나머지는 더 �
 주간 정리가 어제(일요일) 돌았으니 그 전에 쌓였던 것이 아직 수치에 남아
 있는 쪽이 그럴듯하다. **어느 쪽이든 더 지워서 내릴 수 있는 것이 아니다** —
 근본은 배포 하나를 65MB 에서 1.5MB 로 줄이는 것(데이터를 버킷으로)이다.
+
+
+## 옮겼다 (2026-09-14 14:11 UTC)
+
+    올림   435개 · 65.1MB  →  Supabase 공개 버킷 appdata
+    확인   열쇠 없이 공개 주소로 다시 받음
+             meta.json 4KB · chart.json 415KB
+             trades-2025.json 1,463KB · places.json 2,004KB
+
+**올리기가 200 을 주는 것과 브라우저가 받는 것은 다른 말**이라 반드시
+열쇠 없이 다시 받아 본다 (`web_store.verify`). 그것이 통과한 뒤에 저장소
+사본을 지웠다 — 순서를 바꾸면 확인 전에 물러설 자리가 사라진다.
+
+    배포에 실리는 것   65MB → **1.5MB**   (43분의 1)
+
+주소: `https://caykbxvnebpifcduqjre.supabase.co/storage/v1/object/public/appdata/<이름>.json`
+
+다시 만들려면 `redt export-web && redt web-upload`. analyze.yml 이 이제
+커밋하지 않고 그 길로 올린다.
+
+**작업 폴더에는 파일이 남는다** — git 이 안 따라갈 뿐이다. 지역에서
+`make web` 으로 만든 것을 그대로 열어 볼 수 있다.
