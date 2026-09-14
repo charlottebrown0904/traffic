@@ -7,6 +7,10 @@ name: 브이월드 개발 층 그림 확인
 
 on:
   workflow_dispatch:
+    inputs:
+      probe:
+        description: "render(기본) / geocode-mask — 가려진 지번 좌표가 진짜인가"
+        default: "render"
 
 jobs:
   render:
@@ -20,5 +24,24 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install requests pillow
-      - run: python scripts/vworld_render_probe.py
+      - run: pip install -r requirements.txt
+      - name: 개발 층 그림 확인
+        if: inputs.probe == 'render' || inputs.probe == ''
+        run: python scripts/vworld_render_probe.py 2>&1 | tee /tmp/probe.log
+
+      # 가려진 지번('1**')으로 얻은 'parcel' 좌표가 진짜인가.
+      # 이 컨테이너는 중계기를 못 부르므로 러너에서 돈다.
+      - name: 가려진 지번 좌표 탐침
+        if: inputs.probe == 'geocode-mask'
+        env:
+          PYTHONPATH: src
+        run: |
+          set -o pipefail
+          python scripts/geocode_mask_probe.py 2>&1 | tee /tmp/probe.log
+
+      - name: 요약
+        if: always()
+        run: |
+          { echo "## 탐침 — ${{ inputs.probe || 'render' }}"; echo; echo '```'
+            cat /tmp/probe.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
