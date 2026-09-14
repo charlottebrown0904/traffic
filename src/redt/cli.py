@@ -815,6 +815,24 @@ def cmd_ecos(args):
         _t, cycle, _i, label = ecos.SERIES[name]
         for r in rows:
             rows_out.append((name, r["time"], r["value"], label, cycle, "ECOS"))
+
+    # 우리가 만들어 내는 계열. **받은 값과 섞지 않는다** — source 를 달리
+    # 적어, 나중에 보는 사람이 무엇이 한국은행 값이고 무엇이 우리 계산인지
+    # 가릴 수 있게 한다.
+    for new_name, (base, lag, label) in ecos.DERIVED.items():
+        if base not in got:
+            continue
+        drows = ecos.growth(got[base], lag)
+        _t, cycle, _i, _l = ecos.SERIES[base]
+        for r in drows:
+            rows_out.append((new_name, r["time"], r["value"], label, cycle,
+                             f"ECOS {base} 에서 계산"))
+        if drows:
+            print(f"  ↳ {label:<28} {len(drows):>4}건 · "
+                  f"{drows[0]['time']}~{drows[-1]['time']} · "
+                  f"마지막 {drows[-1]['value']:,.2f}")
+        else:
+            print(f"  ↳ {label}: 낼 수 없습니다 ({base} 이 {lag}칸을 못 채웁니다)")
     with db.connect() as con:
         con.executemany(
             "INSERT OR REPLACE INTO market_series"

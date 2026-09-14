@@ -26,8 +26,61 @@ SERIES = {
     "cd91":        ("721Y001", "M", "2010000", "CD 91일 금리"),
     "bond3":       ("721Y001", "M", "5020000", "국고채 3년"),
     "cpi":         ("901Y009", "M", "0",       "소비자물가지수"),
-    "gdp_growth":  ("200Y002", "Q", "1400",    "실질 GDP 성장률"),
+    # 2026-09-14. 처음에 200Y002/1400 을 **추측으로** 적었고 없는 표였다.
+    # 목록을 훑어(--browse) 찾은 것이 이것이다:
+    #   200Y110  2.1.2.2.4. 국내총생산에 대한 지출(원계열, 실질, 분기 및 연간)
+    #   10601    국내총생산에 대한 지출  1960Q1~2026Q2
+    #
+    # 이것은 **수준**(실질 금액)이지 성장률이 아니다. ECOS 가 성장률을 따로
+    # 주기도 하지만, 수준을 받아 우리가 재는 쪽을 고른다 — 전년동기대비냐
+    # 전기대비냐를 우리가 정할 수 있고, 나중에 기준이 바뀌어도 같은 자리에서
+    # 고치면 된다. 받은 값과 우리가 만든 값을 섞지 않으려고 둘 다 담는다.
+    "gdp_real":    ("200Y110", "Q", "10601",   "실질 GDP (원계열, 분기)"),
 }
+
+# 받은 계열에서 **우리가 만들어 내는** 계열. {새 이름: (원본, 시차, 이름)}
+#
+# 분기 자료의 전년동기대비는 네 분기 전과 견준다. 전기대비(시차 1)로 하면
+# 계절이 그대로 남아 봄·가을마다 오르내린다 — 원계열이라 더 그렇다.
+DERIVED = {
+    "gdp_growth": ("gdp_real", 4, "실질 GDP 성장률 (전년동기대비 %)"),
+}
+
+
+def growth(rows: list[dict], lag: int) -> list[dict]:
+    """수준 계열 → 시차 대비 증감률(%). 기간이 비면 그 자리는 건너뛴다.
+
+    **차례대로 있다고 믿지 않는다.** 받은 순서가 뒤죽박죽이면 네 칸 앞이
+    네 분기 전이 아니게 된다. 기간으로 세워 놓고, 짝이 실제로 있는지
+    확인한 것만 낸다 — 없는 분기를 이웃으로 때우면 조용히 틀린다.
+    """
+    by = {r["time"]: r["value"] for r in rows}
+    times = sorted(by)
+    out = []
+    for i, t in enumerate(times):
+        if i < lag:
+            continue
+        base_t = times[i - lag]
+        base = by[base_t]
+        # 네 칸 앞이 정말 네 분기 전인가 — 빠진 분기가 있으면 아니다.
+        if _quarters_between(base_t, t) != lag:
+            continue
+        if not base:
+            continue
+        out.append({"time": t, "value": (by[t] - base) / base * 100.0})
+    return out
+
+
+def _quarters_between(a: str, b: str) -> int | None:
+    """'2015Q1' 과 '2016Q1' 사이의 분기 수. 모양이 다르면 None."""
+    try:
+        ya, qa = int(a[:4]), int(a[5])
+        yb, qb = int(b[:4]), int(b[5])
+    except (ValueError, IndexError):
+        return None
+    if a[4] not in "Qq" or b[4] not in "Qq":
+        return None
+    return (yb - ya) * 4 + (qb - qa)
 
 
 def url(table: str, cycle: str, start: str, end: str, item: str,

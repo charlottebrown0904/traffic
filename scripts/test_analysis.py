@@ -348,6 +348,26 @@ try:
 finally:
     _EC.http.get_json = _saved_get
 
+# 성장률은 우리가 낸다. 받은 것은 수준(실질 금액)이다.
+_lvl = [{"time": f"{y}Q{q}", "value": 100 * (1.03 ** ((y - 2010) + (q - 1) / 4))}
+        for y in range(2010, 2015) for q in range(1, 5)]
+_g = _EC.growth(_lvl, 4)
+check(len(_g) == 16 and abs(_g[0]["value"] - 3.0) < 1e-9,
+      f"전년동기대비를 되찾는다 ({len(_g)}건 · 첫 값 {_g[0]['value']:.3f}%)")
+check(_g[0]["time"] == "2011Q1", f"첫 값이 네 분기 뒤부터다 ({_g[0]['time']})")
+# **빠진 분기를 이웃으로 때우지 않는다.** 네 칸 앞이 네 분기 전이 아니면 버린다.
+_hole = [r for r in _lvl if r["time"] != "2012Q2"]
+check(len(_EC.growth(_hole, 4)) < len(_g),
+      "분기가 빠지면 그 짝은 내지 않는다 — 이웃으로 때우면 조용히 틀린다")
+check(_EC._quarters_between("2015Q1", "2016Q1") == 4, "분기 셈이 맞다")
+check(_EC._quarters_between("202501", "202601") is None,
+      "월 표기를 분기로 읽지 않는다")
+# 받은 계열과 만든 계열이 이름으로 갈린다.
+check(all(v[0] in _EC.SERIES for v in _EC.DERIVED.values()),
+      "만든 계열은 받은 계열에서 나온다")
+check(not (set(_EC.DERIVED) & set(_EC.SERIES)),
+      "만든 이름과 받은 이름이 겹치지 않는다")
+
 # ────────────────────────────────────────────────────────────────
 print("\n6. 거리 밴드 설정 — 영향범위 5km, 대조 밴드 존재")
 
