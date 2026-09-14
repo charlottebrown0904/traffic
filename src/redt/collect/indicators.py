@@ -1037,9 +1037,10 @@ def lofin_item_rows(rows: list[dict], code_map: dict) -> tuple[list[tuple], list
         diag["items"].add(item)
         vals = (("rcvmt_aggr_amt", "local_tax_item", "원"), ("cltn_dcsn_aggr_amt", "local_tax_levied", "원"),
                 ("rate", "local_tax_rate", "%"))
-        name = str(r.get("laf_hg_nm") or "").strip()
+        sido_nm = str(r.get("wa_laf_hg_nm") or "")
+        name = strip_sido_prefix(str(r.get("laf_hg_nm") or "").strip(), sido_nm)
         if name:
-            code = resolve(code_map, str(r.get("wa_laf_hg_nm") or ""), name)
+            code = resolve(code_map, sido_nm, name)
             if code is None:
                 k = f"{r.get('wa_laf_hg_nm', '')} {name}".strip()
                 diag["unmatched"][k] = diag["unmatched"].get(k, 0) + 1
@@ -1100,24 +1101,48 @@ def load_tax_items(con, years: list[int], timeout: int = 40, log=print, hub: str
     return st
 
 
+def strip_sido_prefix(name: str, sido: str) -> str:
+    """'경기수원시' → '수원시' · '인천중구' → '중구' · '서울본청' → '본청'.
+
+    지방재정365 는 자치단체명 앞에 시도 이름을 붙여 온다 (첫 적재 run
+    34813423737 에서 34개 이름이 그래서 안 이어졌다). 같은 이름의 구가
+    여러 시도에 있어 그렇게 쓰는 것이다 — 우리는 시도를 따로 받으므로 뗀다.
+    """
+    # 남는 글자가 한 자면 떼지 않는다 — '경기도' 에서 '경기' 를 떼면 '도' 만
+    # 남아 이름이 아니게 된다 (시도 본청 행이 그렇게 온다).
+    for pre in (sido, sido_key(sido)):
+        if pre and name.startswith(pre) and len(name) - len(pre) >= 2:
+            return name[len(pre):]
+    return name
+
+
 def lofin_rows(rows: list[dict], code_map: dict) -> tuple[list[tuple], dict]:
     """한 행 = 자치단체 × 회계연도, 값은 4개년 (amt2=fyr-3 … amt5=fyr).
 
-    시도 본청 행(자치단체명이 시도 이름과 같은 것)은 시군구가 아니라 따로 센다.
+    **시도 본청 행은 버리지 않는다.** 광역시·도의 시세(취득세 등)가 거기
+    잡히므로 시도 코드 두 자리를 열쇠로 두어 시군구 행과 갈라 둔다
+    (KAAAE 와 같은 규칙).
     """
     diag = {"rows_in": len(rows), "unmatched": {}, "sido_rows": 0, "laf_cd": {}}
+    codes = sido_codes(code_map)
     out = []
     for r in rows:
         sido = str(r.get("wa_laf_hg_nm") or "").strip()
-        name = str(r.get("laf_hg_nm") or "").strip()
+        name = strip_sido_prefix(str(r.get("laf_hg_nm") or "").strip(), sido)
         try:
             fyr = int(str(r.get("fyr"))[:4])
         except (TypeError, ValueError):
             continue
-        if not name or sido_key(name) == sido_key(sido) and norm_sgg(name) == norm_sgg(sido):
+        if not name or name.endswith("본청") or (sido_key(name) == sido_key(sido)
+                                                and norm_sgg(name) == norm_sgg(sido)):
             diag["sido_rows"] += 1
-            continue
-        code = resolve(code_map, sido, name)
+            code = codes.get(sido_key(sido))
+            if code is None:
+                diag["unmatched"][f"{sido} {name}".strip()] = \
+                    diag["unmatched"].get(f"{sido} {name}".strip(), 0) + 1
+                continue
+        else:
+            code = resolve(code_map, sido, name)
         if code is None:
             k = f"{sido} {name}".strip()
             diag["unmatched"][k] = diag["unmatched"].get(k, 0) + 1

@@ -2844,11 +2844,23 @@ _lres = {"DFGDGG": [{"head": [{"list_total_count": 2}, {"RESULT": {"CODE": "INFO
                               "pfin_stl_amt5": "130", "rate": "9.1"}]}]}
 _lrows, _lhead = _IND._lofin_unwrap(_lres)
 check(len(_lrows) == 2 and _lhead.get("list_total_count") == 2, "봉투 {이름:[{head},{row}]} 를 벗긴다")
+check(_IND.strip_sido_prefix("경기수원시", "경기") == "수원시"
+      and _IND.strip_sido_prefix("인천중구", "인천광역시") == "중구"
+      and _IND.strip_sido_prefix("서울본청", "서울") == "본청"
+      and _IND.strip_sido_prefix("안성시", "경기") == "안성시"
+      and _IND.strip_sido_prefix("경기도", "경기도") == "경기도",
+      "자치단체명 앞에 붙은 시도 이름을 뗀다 (한 자만 남으면 안 뗀다)")
 _lo, _ld = _IND.lofin_rows(_lrows, _cm)
 _lm = {r[1]: r[2] for r in _lo if r[0] == "41550"}
 check(_lm == {"2021": 100.0, "2022": 110.0, "2023": 120.0, "2024": 130.0} and all(r[3] == "local_tax_total" for r in _lo),
       f"amt2~5 를 회계연도-3 … 회계연도로 편다 ({_lm})")
 check(_ld["sido_rows"] == 1 and _ld["laf_cd"].get("41550") == "4110000", "시도 본청 행은 따로 세고 자치단체코드를 남긴다")
+_lb = [{"fyr": "2024", "wa_laf_hg_nm": "경기", "laf_hg_nm": "경기본청", "pfin_stl_amt5": "7"},
+       {"fyr": "2024", "wa_laf_hg_nm": "경기", "laf_hg_nm": "경기안성시", "pfin_stl_amt5": "3"}]
+_lo2, _ld2 = _IND.lofin_rows(_lb, _cm)
+_m2 = {r[0]: r[2] for r in _lo2}
+check(_m2 == {"41": 7.0, "41550": 3.0} and _ld2["unmatched"] == {},
+      f"본청은 시도 코드 두 자리로, 시도 이름이 붙은 시군구는 떼어 잇는다 ({_m2})")
 try:
     _IND._lofin_unwrap({"DFGDGG": [{"head": [{"RESULT": {"CODE": "ERROR-300", "MESSAGE": "필수 값이 누락"}}]}]})
     check(False, "row 가 없으면 예외")
