@@ -2828,6 +2828,10 @@ try:
     _kcalls.clear()
     _st3 = _IND.load_power_api(_kcon, [2014], max_calls=1000, log=lambda *a: None)
     check(_st3["calls"] == 0, f"다 끝난 해는 한 번도 부르지 않는다 ({_st3['calls']}회)")
+    _kcon.execute("DELETE FROM series_crawl")
+    _kmsgs = []
+    _st4 = _IND.load_power_api(_kcon, [2014], max_calls=1000, log=_kmsgs.append, max_seconds=0)
+    check(_st4["calls"] <= 1 and any("시간 예산" in m for m in _kmsgs), f"시간 예산이 다하면 멈추고 말한다 ({_st4['calls']}회)")
 finally:
     _IND.kepco_page = _saved_k
 

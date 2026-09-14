@@ -822,7 +822,7 @@ def kepco_rows(data: list[dict], code_map: dict) -> tuple[list[tuple], dict]:
 
 
 def load_power_api(con, years: list[int], max_calls: int = 1000, timeout: int = 40,
-                   log=print) -> dict:
+                   log=print, max_seconds: int = 3600) -> dict:
     """(연, 월, 시도) 를 돌며 한전 전력을 region_series 에 넣는다. 이어받는다.
 
     끝낸 열쇠는 series_crawl 에 남긴다(받은 행 수 포함). 빈 답(0행)도 남기되,
@@ -837,7 +837,16 @@ def load_power_api(con, years: list[int], max_calls: int = 1000, timeout: int = 
     done = {k: n for k, n in con.execute(
         "SELECT key, n FROM series_crawl WHERE source = 'kepco'").fetchall()}
     this_year = date.today().year
-    st = {"calls": 0, "rows": 0, "empty": 0, "failed": 0, "skipped_years": [], "unmatched": {}}
+    st = {"calls": 0, "rows": 0, "empty": 0, "failed": 0, "skipped_years": [], "unmatched": {}, "timed_out": False}
+    # 한전은 한 호출이 3초를 넘는다 (run 34809088634: 1,500회에 85분 이상 → 러너
+    # 90분 한도에 죽어 캐시 저장이 안 됐다). 허가 훑기와 같은 시간 예산을 둔다.
+    deadline = time.monotonic() + max_seconds
+
+    def out_of_time() -> bool:
+        if time.monotonic() > deadline:
+            st["timed_out"] = True
+            return True
+        return False
 
     def mark(key: str, n: int) -> None:
         con.execute("INSERT OR REPLACE INTO series_crawl VALUES (?,?,?,?)",
@@ -869,7 +878,7 @@ def load_power_api(con, years: list[int], max_calls: int = 1000, timeout: int = 
                 n_prev = done.get(key)
                 if n_prev is not None and not (n_prev == 0 and y >= this_year - 1):
                     continue
-                if st["calls"] >= max_calls:
+                if st["calls"] >= max_calls or out_of_time():
                     stop = True
                     break
                 try:
@@ -899,6 +908,8 @@ def load_power_api(con, years: list[int], max_calls: int = 1000, timeout: int = 
                 break
         if stop:
             break
+    if st["timed_out"]:
+        log(f"  시간 예산({max_seconds // 60}분)에 닿아 멈췄습니다 — 다음 판이 이어받습니다.")
     st["left"] = sum(1 for y in years for m in range(1, 13) for metro in KEPCO_METRO
                      if f"{y:04d}{m:02d}:{metro}" not in done and y not in st["skipped_years"])
     return st

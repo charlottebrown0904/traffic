@@ -797,7 +797,7 @@ def cmd_load_power(args):
     years = _years(args.years)
     with db.connect() as con:
         st = indicators.load_power_api(con, years, max_calls=int(args.max_calls),
-                                       timeout=int(args.timeout))
+                                       timeout=int(args.timeout), max_seconds=int(args.max_minutes) * 60)
         print(f"\n이 판: 호출 {st['calls']:,} · 새 행 {st['rows']:,} · 빈 답 {st['empty']} · 실패 {st['failed']}"
               f" · 남은 열쇠 {st['left']:,}"
               + (f" · 자료 없는 해 {st['skipped_years']}" if st["skipped_years"] else ""))
@@ -3634,6 +3634,7 @@ def main(argv=None):
     p = sub.add_parser("load-power", help="한전 Open API — 시군구·계약종별·월 전력 → region_series (이어받기)")
     p.add_argument("--years", default="2015-2026", help="연도 범위 '2015-2026' 또는 목록 '2020,2021'")
     p.add_argument("--max-calls", dest="max_calls", default="1000", help="이 판의 호출 예산")
+    p.add_argument("--max-minutes", dest="max_minutes", default="60", help="시간 예산(분) — 러너 90분 안에 캐시 저장까지")
     p.add_argument("--timeout", default="40")
     p.set_defaults(func=cmd_load_power)
 
