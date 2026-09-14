@@ -118,9 +118,15 @@ def detail(dataset_id: str, kind: str = "openapi", timeout: int = 40) -> dict:
     title = re.search(r"<title>(.*?)</title>", page, re.S)
     out = {"id": dataset_id, "kind": kind, "status": resp.status_code,
            "title": re.sub(r"\s+", " ", title.group(1)).strip()[:120] if title else ""}
+    # 2차(run 34805702626)에서 운영 이름은 잡혔는데 주소는 하나도 안 잡혔다.
+    # 화면이 'http://' 없이 쓰거나 입력칸(value=)에 넣어 둔 것이다. 스킴을
+    # 선택으로 두고, 못 잡으면 주소가 있을 법한 낱말 둘레를 그대로 남긴다.
     out["endpoints"] = sorted(set(re.findall(
-        r"https?://(?:apis\.data\.go\.kr|api\.odcloud\.kr|api\.data\.go\.kr)/[A-Za-z0-9_./\-]+",
+        r"(?:https?://)?(?:apis\.data\.go\.kr|api\.odcloud\.kr|api\.data\.go\.kr)/[A-Za-z0-9_./\-]+",
         page)))[:20]
+    out["excerpts"] = _around(page, ("End Point", "endPoint", "요청주소", "apis.data.go.kr",
+                                     "fn_fileDataDown", "fileDownload", "atchFileId",
+                                     "미리보기", "활용신청"), width=260, limit=6)
     out["operations"] = sorted(set(re.findall(r"\b(get[A-Z][A-Za-z0-9]+)\b", page)))[:40]
     out["downloads"] = sorted(set(re.findall(
         r"fileDownload\.do\?[^\"'<>\s]*atchFileId=[^\"'<>\s]+", page)))[:10]
@@ -131,6 +137,50 @@ def detail(dataset_id: str, kind: str = "openapi", timeout: int = 40) -> dict:
     if not (out["endpoints"] or out["operations"] or out["downloads"]):
         out["_raw_head"] = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", page))[:600]
     return out
+
+
+def _around(page: str, words: tuple, width: int = 260, limit: int = 6) -> list[str]:
+    """낱말 둘레의 글자를 태그 벗겨 남긴다 — 구조를 모를 때의 실마리."""
+    flat = re.sub(r"\s+", " ", re.sub(r"<script.*?</script>", " ", page, flags=re.S | re.I))
+    out = []
+    for w in words:
+        for m in re.finditer(re.escape(w), flat):
+            a, b = max(0, m.start() - width // 2), m.end() + width // 2
+            snip = re.sub(r"<[^>]+>", " ", flat[a:b])
+            snip = re.sub(r"\s+", " ", snip).strip()
+            if snip and snip not in out:
+                out.append(f"[{w}] …{snip}…")
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def fetch_head(url: str, timeout: int = 60) -> dict:
+    """파일 내려받기가 **로그인 없이** 되는지 — 머리만 받아 본다.
+
+    포털 파일은 회원만 받는 것도 있다. 그러면 HTML(로그인 화면)이 오고,
+    되는 것이면 CSV 머리가 온다. 둘을 content-type 과 첫 줄로 가른다.
+    """
+    try:
+        resp = http.get_once(url, {}, timeout=timeout)
+    except Exception as exc:                          # noqa: BLE001
+        return {"url": url, "error": f"{type(exc).__name__}: {exc}"[:300]}
+    body = resp.content[:4000]
+    text = None
+    for enc in ("utf-8-sig", "cp949", "utf-8"):
+        try:
+            text = body.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    return {"url": url, "status": resp.status_code,
+            "content_type": resp.headers.get("content-type", ""),
+            "disposition": resp.headers.get("content-disposition", "")[:160],
+            "length": resp.headers.get("content-length", ""),
+            "head": (text or repr(body[:200]))[:700],
+            "looks_like": ("html" if (text or "").lstrip().lower().startswith(("<!doctype", "<html"))
+                           else "table" if text and ("," in text.splitlines()[0] if text.splitlines() else False)
+                           else "binary" if text is None else "other")}
 
 
 def _top_keys(text: str) -> list[str]:
@@ -171,10 +221,12 @@ def probe(timeout: int = 40) -> dict:
     # 시군구 하나짜리('○○시_지방세 징수현황')는 전국 패널에 못 쓰므로 뺀다.
     # 1차 결과(run 34805269914)에서 전력은 **전부 파일**, 건축인허가는 API 와
     # 파일 둘 다, 지방세는 통계연보 API 와 재정연감(결산) 파일이 나왔다.
+    # 3차: 2차에서 새로 보인 한전 **API**(15101360)와 동단위 전력 파일
+    # (15101533·15104908), 지방재정365 지방세 징수실적 API(15138716)를 더한다.
     want_api = re.compile(r"건축인\s*허가|건축인허가|기본정보표준|지방세 징수실적|"
-                          r"지방재정 365_?\s*(우리 지자체|세입|재정 자립도)", re.I)
+                          r"계약종별 전력사용량|지방재정\s*365_?\s*(우리 지자체|세입|재정\s*자립도)", re.I)
     want_file = re.compile(r"시군구별\s*(계약종별|용도업종별)\s*전력|건축인허가 기본개요|"
-                           r"재정 연감\(결산\)|계약종별 전력사용량 현황", re.I)
+                           r"재정\s*연감\(결산\)|동단위|법정동별 전력", re.I)
     skip = re.compile(r"(시|군|구|특별자치시)_", re.I)
     picked: list[tuple[str, str]] = []
     for by_word in found.values():
@@ -187,8 +239,18 @@ def probe(timeout: int = 40) -> dict:
                     picked.append((i, k))
                 elif k == "fileData" and want_file.search(t):
                     picked.append((i, k))
-    details = [detail(i, k, timeout=timeout) for i, k in picked[:14]]
-    return {"portal": found, "candidates": knocked, "details": details}
+    details = [detail(i, k, timeout=timeout) for i, k in picked[:16]]
+
+    # 상세에서 나온 내려받기 링크는 머리만 실제로 받아 본다 — 로그인 없이
+    # 되는지가 '러너가 대신 받을 수 있는가' 를 정한다.
+    downloads = []
+    for d in details:
+        for u in d.get("downloads", [])[:1]:
+            full = "https://www.data.go.kr/cmm/cmm/" + u.lstrip("/")
+            got = fetch_head(full, timeout=timeout)
+            got["dataset"] = d["id"]
+            downloads.append(got)
+    return {"portal": found, "candidates": knocked, "details": details, "downloads": downloads}
 
 
 def describe(result: dict) -> str:
@@ -223,8 +285,18 @@ def describe(result: dict) -> str:
             lines.append(f"       파일: {' · '.join(f.strip() for f in d['files'][:5])}")
         if d.get("sizes"):
             lines.append(f"       크기: {' · '.join(d['sizes'][:4])}")
+        for x in d.get("excerpts", [])[:3]:
+            lines.append(f"       발췌 {x[:230]}")
         if "_raw_head" in d:
             lines.append(f"       (주소를 못 뽑았습니다) {d['_raw_head'][:200]}")
+    lines.append("\n── 내려받기 시험 (로그인 없이 되는가) ──")
+    for g in result.get("downloads", []):
+        if "error" in g:
+            lines.append(f"  ✗ {g.get('dataset')}  {g['error']}")
+            continue
+        lines.append(f"  {g['status']} {g.get('dataset')}  {g['looks_like']:<6} "
+                     f"{g['content_type'][:40]}  {g['disposition'][:60]}  {g['length']}")
+        lines.append(f"       머리: {re.sub(chr(10), ' | ', g['head'])[:220]}")
     lines.append("\n── 후보 두드리기 ──")
     for k in result["candidates"]:
         if "error" in k:
