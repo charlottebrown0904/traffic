@@ -742,6 +742,26 @@ def cmd_ecos(args):
         raise SystemExit(f"모르는 계열: {', '.join(bad)}"
                          f" (있는 것: {', '.join(ecos.SERIES)})")
 
+    if args.browse:
+        # 코드를 추측해서 틀렸을 때 쓰는 길이다. 표 코드를 주면 그 표의
+        # 항목을, 안 주면 그 코드 아래 표 목록을 보여 준다.
+        code = args.browse if args.browse != "top" else ""
+        what = "항목" if args.items else "표"
+        print(f"ECOS {what} 목록 — {code or '최상위'}")
+        rows = (ecos.items(code, timeout=int(args.timeout)) if args.items
+                else ecos.tables(code, timeout=int(args.timeout)))
+        if not rows:
+            print("  (없습니다 — 코드를 다시 보십시오)")
+            return
+        for r in rows:
+            cd = r.get("ITEM_CODE") or r.get("STAT_CODE") or ""
+            nm = r.get("ITEM_NAME") or r.get("STAT_NAME") or ""
+            cyc = r.get("CYCLE") or ""
+            span = f" {r.get('START_TIME','')}~{r.get('END_TIME','')}".rstrip()
+            print(f"  {cd:<12} {cyc:<2} {nm}{span if span.strip() else ''}")
+        print(f"  — {len(rows)}건")
+        return
+
     print(f"ECOS {args.start}~{args.end} · 계열 {len(names)}개")
     if not relay().enabled:
         print("  ⚠ 중계기를 안 거칩니다 — 인증키 자리표가 그대로 나갑니다")
@@ -3277,6 +3297,10 @@ def main(argv=None):
                    help="쉼표로 고른다 (비우면 모두)")
     p.add_argument("--probe", action="store_true", help="받아 보기만 하고 안 쌓는다")
     p.add_argument("--timeout", default="60")
+    p.add_argument("--browse", default="",
+                   help="코드를 물어본다 — 표 코드 또는 top (추측하지 않는다)")
+    p.add_argument("--items", action="store_true",
+                   help="--browse 와 함께: 표 목록 대신 그 표의 항목 목록")
     p.set_defaults(func=cmd_ecos)
 
     p = sub.add_parser("factor-cells", help="미래 가치 인자 — 조합 칸 세기 (+ 추정)")

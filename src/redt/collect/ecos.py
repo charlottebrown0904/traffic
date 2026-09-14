@@ -57,3 +57,33 @@ def rows(name: str, start: str, end: str, timeout: int = 60) -> list[dict]:
         except ValueError:
             continue
     return out
+
+
+# ── 코드는 추측하지 않고 물어본다 ────────────────────────────────
+#
+# 처음에 실질 GDP 성장률을 200Y002/1400 으로 적었다. 추측이었고 틀렸다 —
+# '해당하는 데이터가 없습니다' 가 돌아왔다. ECOS 는 없는 표를 물어도 없는
+# 항목을 물어도 같은 말을 한다. 그래서 목록을 받아 눈으로 고른다.
+#
+#   StatisticTableList  표 목록 (부모 코드를 주면 그 아래)
+#   StatisticItemList   그 표의 항목 목록 — ITEM_CODE 가 우리가 쓸 값이다
+
+def list_url(kind: str, code: str, rows: int = 200) -> str:
+    return f"{BASE}/{kind}/{KEY_SLOT}/json/kr/1/{rows}" + (f"/{code}" if code else "")
+
+
+def _list(kind: str, code: str, key: str, timeout: int = 60) -> list[dict]:
+    res = http.get_json(list_url(kind, code), {}, timeout=timeout)
+    if isinstance(res, dict) and "RESULT" in res:
+        raise RuntimeError(f"ECOS: {res['RESULT'].get('MESSAGE', res['RESULT'])}")
+    return ((res or {}).get(key) or {}).get("row") or []
+
+
+def tables(parent: str = "", timeout: int = 60) -> list[dict]:
+    """통계표 목록. parent 를 비우면 최상위."""
+    return _list("StatisticTableList", parent, "StatisticTableList", timeout)
+
+
+def items(table: str, timeout: int = 60) -> list[dict]:
+    """그 표의 항목 목록. ITEM_CODE 가 SERIES 에 적을 값이다."""
+    return _list("StatisticItemList", table, "StatisticItemList", timeout)

@@ -174,11 +174,26 @@ jobs:
       # 받아 보기만 하고 안 쌓는다 — 배선 확인용이다.
       - name: 한국은행 ECOS 수집
         if: inputs.mode == 'ecos'
+        env:
+          Q: ${{ inputs.query }}
         run: |
           set -o pipefail
-          python -m redt.cli ecos \
-            --start "${{ inputs.years || '2000' }}" \
-            ${{ inputs.query == 'probe' && '--probe' || format('--series "{0}"', inputs.query) }} \
+          # query 가 넷 중 하나로 갈린다. YAML 식으로 쓰면 읽기 어려워
+          # 여기서 가른다 (빈 문자열이 거짓이라 엉뚱한 인자가 들어가던
+          # 일을 이미 한 번 겪었다).
+          #   (비움)        계열 전부를 받아 쌓는다
+          #   probe         받아만 보고 안 쌓는다
+          #   browse:CODE   그 코드 아래 표 목록 (top 이면 최상위)
+          #   items:CODE    그 표의 항목 목록 — 코드를 여기서 고른다
+          #   그 밖          쉼표로 고른 계열만
+          case "$Q" in
+            probe)    ARGS="--probe" ;;
+            browse:*) ARGS="--browse ${Q#browse:}" ;;
+            items:*)  ARGS="--browse ${Q#items:} --items" ;;
+            "")       ARGS="" ;;
+            *)        ARGS="--series $Q" ;;
+          esac
+          python -m redt.cli ecos --start "${{ inputs.years || '2000' }}" $ARGS \
             2>&1 | tee /tmp/stdland.log
 
       - name: 자치법규 API 탐침
