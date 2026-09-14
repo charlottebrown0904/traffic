@@ -507,12 +507,103 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3,
 # 달수로 환산하되 **어디서 온 값인지 적는다.**
 # ─────────────────────────────────────────────────────────────────
 
+# R-ONE 용도지역별 지가변동률의 분류(CLS_NM). 우리 용도지역 글자 → 표의 분류.
+# 세분(보전·생산·자연녹지)은 표에 없다 — 고시도 '같은 용도지역' 이라 했고
+# 부동산원은 녹지·주거·상업·공업을 한 칸으로 낸다. 순서가 뜻이다: '계획관리'
+# 를 '관리' 보다 먼저 봐야 한다.
+RONE_CLASS = [
+    ("계획관리", "계획관리지역"), ("보전관리", "보전관리지역"), ("생산관리", "생산관리지역"),
+    ("관리", "관리지역"), ("녹지", "녹지지역"), ("주거", "주거지역"), ("상업", "상업지역"),
+    ("공업", "공업지역"), ("농림", "농림지역"), ("자연환경", "자연환경보전지역"),
+]
+# 표에 쓰인 지가변동률 표 (collect/reb.py TABLES 의 ID).
+RONE_TBL_ZONE = "A_2024_00007"      # 용도지역별 · 월
+RONE_TBL_REGION = "A_2024_00903"    # 지역별(용도지역 구분 없음) · 월
+
+
+def rone_class(land_use) -> str | None:
+    t = str(land_use or "")
+    for key, name in RONE_CLASS:
+        if key in t:
+            return name
+    return None
+
+
+def _month_iter(base: dt.date, at: dt.date):
+    """base 가 든 달부터 at 이 든 달까지 'YYYYMM' 을 차례로."""
+    y, m = base.year, base.month
+    while (y, m) <= (at.year, at.month):
+        yield f"{y}{m:02d}"
+        m += 1
+        if m == 13:
+            y, m = y + 1, 1
+
+
 def time_factor(base_date: dt.date, at: dt.date,
                 monthly_rates: list[float] | None = None,
-                annual_trend: float | None = None) -> dict:
+                annual_trend: float | None = None,
+                rates: dict | None = None, label: str | None = None) -> dict:
+    """시점수정 — 고시 [610-1.5.2.3.1].
+
+    rates 는 {'YYYYMM': 월 변동률(%)} 다. 공시기준일이 든 달부터 직전 달까지의
+    변동률을 누계로 곱하고, 기준시점이 든 달은 **최근 고시 월의 변동률 ×
+    경과일수/그 달의 일수** 로 잰다(같은 조 ⑤). 아직 고시되지 않은 달이
+    사이에 있으면 그 달도 최근 고시 월의 값으로 추정하고(④) 몇 달을
+    그렇게 했는지 적는다. 고시 월이 하나도 없으면 이 길은 쓰지 않는다.
+
+    monthly_rates(목록) 는 예전 호출자를 위해 남긴다. rates 가 있으면 그것이
+    먼저다. 둘 다 없으면 또래 추세, 그것도 없으면 '자료 없음' — 1.00 이 아니다.
+    """
+    import calendar
     months = (at.year - base_date.year) * 12 + (at.month - base_date.month) \
         + (at.day - base_date.day) / 30.0
     months = max(0.0, months)
+    if rates:
+        f = 1.0
+        used = 0          # 고시된 달 (그대로 곱한 달)
+        est = 0           # 고시가 없어 최근 월로 추정한 달
+        last = None       # 가장 최근 고시 월의 값
+        first_p = last_p = None
+        cur = f"{at.year}{at.month:02d}"
+        for p in _month_iter(base_date, at):
+            r = rates.get(p)
+            if r is not None:
+                try:
+                    r = float(r)
+                except (TypeError, ValueError):
+                    r = None
+            if p == cur:
+                # 기준시점이 든 달 — 경과일수만큼 (그 달의 고시가 있으면 그 값으로,
+                # 없으면 최근 월 값으로).
+                days = calendar.monthrange(at.year, at.month)[1]
+                base_r = r if r is not None else last
+                if base_r is not None:
+                    f *= 1.0 + float(base_r) / 100.0 * (at.day / days)
+                break
+            if r is not None:
+                f *= 1.0 + r / 100.0
+                used += 1
+                last = r
+                first_p = first_p or p
+                last_p = p
+            elif last is not None:
+                f *= 1.0 + last / 100.0
+                est += 1
+        if used:
+            src = f"지가변동률 {used}개월 누계 ({first_p}~{last_p}"
+            if label:
+                src += f" · {label}"
+            src += ")"
+            partial = at.day if f"{at.year}{at.month:02d}" != f"{base_date.year}{base_date.month:02d}" else 0
+            if est or partial:
+                bits = []
+                if est:
+                    bits.append(f"미고시 {est}개월")
+                if partial:
+                    bits.append(f"{at.month}월 {at.day}일분")
+                src += " · " + "·".join(bits) + "은 최근 고시 월로 추정"
+            return {"factor": round(f, 5), "months": round(months, 1), "source": src,
+                    "kind": "rates", "published": used, "estimated": est}
     if monthly_rates:
         f = 1.0
         for r in monthly_rates:
@@ -527,6 +618,162 @@ def time_factor(base_date: dt.date, at: dt.date,
         return {"factor": round(f, 5), "months": round(months, 1),
                 "source": "또래 실거래 추세로 대신함 (지가변동률 자료 없음)"}
     return {"factor": None, "months": round(months, 1), "source": "자료 없음"}
+
+
+def _region_rows(con) -> list[dict]:
+    """시군구 코드·이름·시도. 실거래 표의 이름과 관청 표의 시도를 잇는다
+    (regions.json 과 같은 원천)."""
+    try:
+        rows = con.execute("""
+            SELECT t.sigungu_cd, any_value(t.sigungu) AS name,
+                   coalesce(any_value(o.sido), '') AS sido
+            FROM trade t LEFT JOIN office o ON o.level = 'gu' AND o.key = t.sigungu_cd
+            WHERE t.sigungu_cd IS NOT NULL AND t.sigungu IS NOT NULL
+            GROUP BY t.sigungu_cd
+        """).fetchall()
+    except Exception:                                   # noqa: BLE001
+        return []
+    return [{"code": str(c), "name": str(n or ""), "sido": str(sd or "")} for c, n, sd in rows]
+
+
+def _norm(s: str) -> str:
+    return "".join(str(s or "").split())
+
+
+def match_region(grp_nm: str, regions: list[dict]) -> str | None:
+    """R-ONE 지역 이름 → 우리 열쇠. 시군구는 5자리 코드, 시도는 2자리, 전국은 '*'.
+
+    이름이 같은 구(중구·남구·동구·서구·북구)는 시도가 같이 적혀 있어야 잇는다.
+    못 이으면 None — 짐작으로 잇지 않는다 (틀리면 다른 시군구의 변동률을
+    곱하게 된다)."""
+    g = _norm(grp_nm)
+    if not g:
+        return None
+    if g in ("전국", "전체", "합계"):
+        return "*"
+    for code, short in SIDO_NAMES.items():
+        if g == short or g == _norm(SIDO_FULL.get(short, "")):
+            return code
+    hits = []
+    for r in regions:
+        name = _norm(r["name"])
+        if not name:
+            continue
+        bare = name[:-1] if name[-1] in "시군구" and len(name) > 2 else name
+        sido_short = SIDO_NAMES.get(r["code"][:2], "")
+        cands = {name, bare, sido_short + name, sido_short + bare,
+                 _norm(r["sido"]) + name, _norm(r["sido"]) + bare}
+        # '수원 장안구' 처럼 시 이름이 앞에 붙는 꼴 — 시 이름은 코드 앞 4자리가
+        # 같은 '시' 행에서 온다.
+        if g == name or g == bare or g in cands:
+            hits.append(r)
+        elif g.endswith(name) and (sido_short and g.startswith(sido_short)):
+            hits.append(r)
+    if len(hits) == 1:
+        return hits[0]["code"]
+    if len(hits) > 1:
+        # 이름이 겹치는 구 — 시도가 이름에 들어 있어야 가른다.
+        for r in hits:
+            sido_short = SIDO_NAMES.get(r["code"][:2], "")
+            if sido_short and sido_short in g:
+                return r["code"]
+        return None
+    # '수원 장안구' 꼴: 뒤가 구 이름이고 앞이 시 이름.
+    for r in regions:
+        name = _norm(r["name"])
+        if name and g.endswith(name) and len(g) > len(name):
+            head = g[:-len(name)]
+            parents = [x for x in regions if x["code"][:4] == r["code"][:4]
+                       and x["code"] != r["code"] and _norm(x["name"]).startswith(head)]
+            if parents:
+                return r["code"]
+    return None
+
+
+SIDO_FULL = {"서울": "서울특별시", "부산": "부산광역시", "대구": "대구광역시", "인천": "인천광역시",
+             "광주": "광주광역시", "대전": "대전광역시", "울산": "울산광역시", "세종": "세종특별자치시",
+             "경기": "경기도", "충북": "충청북도", "충남": "충청남도", "전북": "전북특별자치도",
+             "전남": "전라남도", "경북": "경상북도", "경남": "경상남도", "제주": "제주특별자치도",
+             "강원": "강원특별자치도"}
+
+
+def time_rates_for_web(con, since: str | None = None) -> dict:
+    """landprice_index → {'열쇠|분류': {'YYYYMM': %}} 와 meta.
+
+    열쇠는 시군구 5자리 · 시도 2자리 · 전국 '*'. 분류는 R-ONE 의 용도지역
+    이름(RONE_CLASS 의 값)이고, 지역별 표(용도지역 구분 없음)는 '*' 다.
+    since 를 안 주면 가장 최근 해의 1월부터 — 표준지 공시기준일이 그해 1월 1일이라
+    그 뒤만 있으면 된다."""
+    try:
+        has = con.execute("SELECT count(*) FROM information_schema.tables WHERE table_name='landprice_index'"
+                          ).fetchone()[0]
+    except Exception:                                   # noqa: BLE001
+        has = 0
+    if not has:
+        return {"rates": {}, "meta": {"n": 0, "note": "landprice_index 표가 없다"}}
+    rows = con.execute("""
+        SELECT statbl, period, grp_nm, cls_nm, itm_nm, value FROM landprice_index
+        WHERE statbl IN (?, ?) AND length(period) = 6
+    """, [RONE_TBL_ZONE, RONE_TBL_REGION]).fetchall()
+    if not rows:
+        return {"rates": {}, "meta": {"n": 0, "note": "지가변동률 행이 없다 — redt load-landprice"}}
+    periods = sorted({r[1] for r in rows})
+    if since is None:
+        since = periods[-1][:4] + "01"
+    regions = _region_rows(con)
+    rates: dict = {}
+    unmatched: dict = {}
+    cache: dict = {}
+    for statbl, period, grp, cls, itm, val in rows:
+        if period < since or val is None:
+            continue
+        # 지가변동률 표에는 '지가변동률' 항목 하나뿐이지만, 지수가 섞여 오면 뺀다.
+        if itm and "지수" in str(itm):
+            continue
+        if grp not in cache:
+            cache[grp] = match_region(grp, regions)
+        key = cache[grp]
+        if key is None:
+            unmatched[grp] = unmatched.get(grp, 0) + 1
+            continue
+        c = "*" if statbl == RONE_TBL_REGION else _norm(cls)
+        if statbl == RONE_TBL_ZONE and c not in {v for _, v in RONE_CLASS} | {"관리(통합)지역"}:
+            # 표가 내는 다른 분류('관리(통합)지역' 등)는 관리지역의 다른 이름이다.
+            pass
+        if c == "관리(통합)지역":
+            c = "관리지역"
+        rates.setdefault(f"{key}|{c}", {})[period] = float(val)
+    used_p = sorted({p for d in rates.values() for p in d})
+    meta = {"n": len(rates), "since": since, "first": used_p[0] if used_p else None,
+            "last": used_p[-1] if used_p else None,
+            "source": "한국부동산원 부동산통계정보(R-ONE) 지가변동률 · 월",
+            "unmatched": sorted(unmatched, key=lambda k: -unmatched[k])[:30],
+            "regions": len(regions)}
+    return {"rates": rates, "meta": meta}
+
+
+def pick_rates(table: dict, sigungu_cd, land_use) -> tuple[dict | None, str | None]:
+    """고시 ①②의 순서로 칸을 고른다: 같은 시군구·같은 용도지역 → 같은
+    시군구 전체 → 같은 시도·같은 용도지역 → 시도 전체. 어느 칸인지 말과
+    함께 준다."""
+    if not table:
+        return None, None
+    sgg = str(sigungu_cd or "")
+    cls = rone_class(land_use)
+    tries = []
+    if sgg:
+        if cls:
+            tries.append((f"{sgg}|{cls}", f"같은 시·군·구 · {cls}"))
+        tries.append((f"{sgg}|*", "같은 시·군·구 · 용도지역 구분 없음"))
+        sd = sgg[:2]
+        if cls:
+            tries.append((f"{sd}|{cls}", f"같은 시·도 · {cls}"))
+        tries.append((f"{sd}|*", "같은 시·도 · 용도지역 구분 없음"))
+    for key, label in tries:
+        got = table.get(key)
+        if got:
+            return got, label
+    return None, None
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -1040,9 +1287,10 @@ def bijunpyo_regions(zone: str = "계획관리지역") -> list[dict]:
     return [d for d in out if d]
 
 
-def tables_for_web(trade: dict | None = None) -> dict:
+def tables_for_web(trade: dict | None = None, time_rates: dict | None = None) -> dict:
     """화면용 표. trade 는 trade_other_factor() 의 거래사례 칸 — 내보내기(webexport)가
-    DB 를 열어 넘긴다. 없으면 빈 사전이고 화면은 평가선례만 쓴다."""
+    DB 를 열어 넘긴다. 없으면 빈 사전이고 화면은 평가선례만 쓴다.
+    time_rates 는 time_rates_for_web() 의 결과 — 시점수정의 원천(지가변동률)."""
     rows = load_ledger()
     zones = [z for z, _ in ZONE_GROUPS]
     uses = [u for u, _ in USE_GROUPS]
@@ -1074,6 +1322,12 @@ def tables_for_web(trade: dict | None = None) -> dict:
         "trade_years": TRADE_YEARS_URBAN,
         "trade_years_nonurban": TRADE_YEARS_NONURBAN,
         "time_clamp": [0.98, 1.03],
+        # 시점수정의 원천 — 지가변동률(월). 열쇠 '시군구|분류' · '시도|분류' ·
+        # 분류 '*' 는 용도지역 구분 없는 지역 전체. 없으면 화면은 또래 추세로
+        # 물러나고 그렇게 적는다.
+        "time_rates": (time_rates or {}).get("rates", {}),
+        "time_rates_meta": (time_rates or {}).get("meta", {}),
+        "rone_class": RONE_CLASS,
         "zone_groups": ZONE_GROUPS, "use_groups": USE_GROUPS,
         "ledger_n": len(rows),
         "ledger_source": _adb.source(),

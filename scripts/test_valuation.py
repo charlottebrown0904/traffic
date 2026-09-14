@@ -216,6 +216,49 @@ check(t["factor"] is None and t["source"] == "자료 없음", "자료 없으면 
 t = V.time_factor(dt.date(2026, 1, 1), dt.date(2026, 9, 10), annual_trend=0.5)
 check(t["factor"] <= 1.03, "추세 대체는 평가서 관측 범위 안으로 누른다")
 
+# 고시대로 — 월별 지가변동률 사전. 1~8월 고시, 9월 10일이 기준시점.
+R = {f"2026{m:02d}": 0.2 for m in range(1, 9)}
+t = V.time_factor(dt.date(2026, 1, 1), dt.date(2026, 9, 10), rates=R, label="같은 시·군·구 · 녹지지역")
+want = 1.002 ** 8 * (1 + 0.002 * 10 / 30)
+check(abs(t["factor"] - round(want, 5)) < 1e-5 and t["published"] == 8 and t["estimated"] == 0,
+      f"지가변동률 8개월 누계 × 9월 10일분 최근월 추정 — {t['factor']} (기대 {want:.5f})")
+check("지가변동률 8개월 누계" in t["source"] and "녹지지역" in t["source"] and "9월 10일분" in t["source"],
+      f"어느 칸·몇 달인지 적는다 — {t['source']}")
+# 7·8월 고시가 아직 없으면 6월 값으로 추정하고 그 사실을 적는다.
+R2 = {f"2026{m:02d}": 0.2 for m in range(1, 7)}
+t = V.time_factor(dt.date(2026, 1, 1), dt.date(2026, 9, 10), rates=R2)
+check(t["published"] == 6 and t["estimated"] == 2 and "미고시 2개월" in t["source"],
+      f"미고시 달은 최근 고시 월로 추정하고 적는다 — {t['source']}")
+# 지가변동률이 있으면 추세가 있어도 지가변동률이다. 상한도 없다.
+R3 = {f"2026{m:02d}": 1.0 for m in range(1, 9)}
+t = V.time_factor(dt.date(2026, 1, 1), dt.date(2026, 9, 10), rates=R3, annual_trend=0.5)
+check(t.get("kind") == "rates" and t["factor"] > 1.03, "지가변동률이 있으면 추세보다 먼저고 상한을 씌우지 않는다")
+# 빈 사전이면 지가변동률 길은 안 쓴다 — 추세로.
+t = V.time_factor(dt.date(2026, 1, 1), dt.date(2026, 9, 10), rates={}, annual_trend=0.5)
+check("추세로 대신함" in t["source"], "고시 월이 하나도 없으면 추세로 물러난다")
+# 용도지역 → R-ONE 분류.
+check(V.rone_class("생산녹지지역") == "녹지지역" and V.rone_class("계획관리지역") == "계획관리지역"
+      and V.rone_class("관리지역") == "관리지역" and V.rone_class("개발제한구역") is None,
+      "용도지역 글자를 부동산원 분류로 — 세분 녹지는 녹지지역, 계획관리는 관리보다 먼저")
+# 칸 고르기 — 같은 시군구·같은 용도지역 → 시군구 전체 → 시도.
+TBL = {"41550|녹지지역": {"202601": 0.1}, "41550|*": {"202601": 0.2}, "41|녹지지역": {"202601": 0.3}}
+got, lab = V.pick_rates(TBL, "41550", "생산녹지지역")
+check(got == TBL["41550|녹지지역"] and "같은 시·군·구" in lab, f"칸 고르기 ① — {lab}")
+got, lab = V.pick_rates(TBL, "41550", "개발제한구역")
+check(got == TBL["41550|*"], f"용도지역이 표에 없으면 시군구 전체 — {lab}")
+got, lab = V.pick_rates(TBL, "41111", "자연녹지지역")
+check(got == TBL["41|녹지지역"] and "시·도" in lab, f"시군구 칸이 없으면 시·도 — {lab}")
+# 지역 이름 잇기 — 짐작으로 잇지 않는다.
+REG = [{"code": "41550", "name": "안성시", "sido": "경기도"}, {"code": "11140", "name": "중구", "sido": "서울특별시"},
+       {"code": "26110", "name": "중구", "sido": "부산광역시"}, {"code": "41111", "name": "장안구", "sido": "경기도"},
+       {"code": "41110", "name": "수원시", "sido": "경기도"}]
+check(V.match_region("안성시", REG) == "41550" and V.match_region("안성", REG) == "41550"
+      and V.match_region("경기 안성시", REG) == "41550", "시군구 이름 — 안성시·안성·경기 안성시")
+check(V.match_region("중구", REG) is None and V.match_region("부산 중구", REG) == "26110",
+      "이름이 겹치는 구는 시도 없이는 잇지 않는다")
+check(V.match_region("경기", REG) == "41" and V.match_region("전국", REG) == "*" and V.match_region("수원 장안구", REG) == "41111",
+      "시도·전국·'시 구' 꼴")
+
 print()
 print("6. 그 밖의 요인 — 원장에서, 물러난 단계를 밝힌다")
 if HAVE_LEDGER:

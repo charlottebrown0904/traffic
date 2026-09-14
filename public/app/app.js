@@ -3834,7 +3834,7 @@ let lpRosterCache = {};
 const lpRosterPending = new Set();
 
 /* **못 받은 조각을 기억한다.** 이것이 없으면 조각 하나가 404 일 때
- * 화면이 통째로 멎는다 (2026-09-14, 사장님 화면에서 실제로 났다).
+ * 화면이 통째로 멎는다 (2026-09-14, 실제 화면에서 났다).
  *
  * 까닭은 이렇다. 받아 오는 함수는 끝에서 다시 그리기를 부르고, 다시
  * 그리기는 z12 이상이면 또 받아 오기를 부른다. 성공하면 캐시에 들어가
@@ -5053,16 +5053,27 @@ function haversine(lat1, lon1, lat2, lon2) {
 }
 
 let parcelStats = null;
-let parcelStatsTried = false;
+let parcelStatsAt = 0;          // 마지막으로 받으려 한 때 — 실패해도 한동안은 안 두드린다
+let parcelStatsLoading = null;
+const PARCEL_STATS_RETRY_MS = 60000;
 
 async function loadParcelStats() {
-  if (parcelStats || parcelStatsTried) return parcelStats;
-  parcelStatsTried = true;
-  try {
-    const r = await fetchData('parcelstats.json', { cache: 'no-cache' });
-    if (r.ok) parcelStats = await r.json();
-  } catch (e) { /* 없으면 진단만 못 보여준다. 지도는 그대로 돈다. */ }
-  return parcelStats;
+  if (parcelStats) return parcelStats;
+  if (parcelStatsLoading) return parcelStatsLoading;
+  // 예전에는 한 번 실패하면 **영영** 안 받았다(parcelStatsTried). 버킷이 잠깐
+  // 흔들린 첫 요청 하나로 그 뒤 모든 산출표의 시점수정이 '자료 없음' 이
+  // 됐다 (2026-09-14 화면). 실패는 기억하되 한동안 뒤에는 다시 받는다.
+  if (Date.now() - parcelStatsAt < PARCEL_STATS_RETRY_MS) return null;
+  parcelStatsAt = Date.now();
+  parcelStatsLoading = (async () => {
+    try {
+      const r = await fetchData('parcelstats.json', { cache: 'no-cache' });
+      if (r.ok) parcelStats = await r.json();
+    } catch (e) { /* 없으면 진단만 못 보여준다. 지도는 그대로 돈다. */ }
+    parcelStatsLoading = null;
+    return parcelStats;
+  })();
+  return parcelStatsLoading;
 }
 
 /* 값 → 또래 안 백분위. 분위 경계 사이를 선형으로 읽는다. */
@@ -5870,19 +5881,99 @@ function pickStandard(subject, cands, T, top) {
   return rows.slice(0, top || 3);
 }
 
-/* 시점수정 — 표준지 공시기준일(그해 1월 1일) → 오늘. 지가변동률이 아직
- * 없어 또래 실거래 추세로 대신하고 평가서 관측 범위(0.98~1.03)로 누른다.
- * 추세도 없으면 비운다 — 1.00 이 아니다. */
-function timeFactorOf(stdYear, trend, T) {
+/* 시점수정 — 표준지 공시기준일(그해 1월 1일) → 오늘 (고시 [610-1.5.2.3.1]).
+ *
+ * 1) **지가변동률**(부동산원 월별 · T.time_rates). 비교표준지가 있는 시·군·구의
+ *    같은 용도지역 칸이 먼저고, 없으면 그 시·군·구 전체 → 시·도 순이다.
+ *    공시기준일이 든 달부터 직전 달까지를 누계로 곱하고, 기준시점이 든
+ *    달은 최근 고시 월의 값 × 경과일수/그 달 일수. 고시가 아직 없는 달은
+ *    최근 고시 월로 추정하고 그렇게 했다고 적는다. (src/redt/valuation.py
+ *    time_factor 와 같은 규칙 — 두 곳이 같은 수를 내야 한다.)
+ * 2) 그것이 없으면 또래 실거래 추세로 대신하고 평가서 관측 범위(0.98~1.03)로
+ *    누른다 — 고시가 허락한 방법이 아니므로 그렇게 적는다.
+ * 3) 추세도 없으면 비운다 — 1.00 이 아니다. */
+const RONE_CLASS_DEFAULT = [['계획관리', '계획관리지역'], ['보전관리', '보전관리지역'],
+  ['생산관리', '생산관리지역'], ['관리', '관리지역'], ['녹지', '녹지지역'], ['주거', '주거지역'],
+  ['상업', '상업지역'], ['공업', '공업지역'], ['농림', '농림지역'], ['자연환경', '자연환경보전지역']];
+
+function roneClassOf(landUse, T) {
+  const t = String(landUse || '');
+  const table = (T && T.rone_class) || RONE_CLASS_DEFAULT;
+  const hit = table.find(([key]) => t.indexOf(key) >= 0);
+  return hit ? hit[1] : null;
+}
+
+/* 고시 ①② 순서로 칸을 고른다. 어느 칸인지 말도 같이 준다. */
+function pickTimeRates(T, sigungu, landUse) {
+  const table = (T && T.time_rates) || null;
+  if (!table) return null;
+  const sgg = String(sigungu || '');
+  const cls = roneClassOf(landUse, T);
+  const tries = [];
+  if (sgg) {
+    if (cls) tries.push([`${sgg}|${cls}`, `같은 시·군·구 · ${cls}`]);
+    tries.push([`${sgg}|*`, '같은 시·군·구 · 용도지역 구분 없음']);
+    if (cls) tries.push([`${sgg.slice(0, 2)}|${cls}`, `같은 시·도 · ${cls}`]);
+    tries.push([`${sgg.slice(0, 2)}|*`, '같은 시·도 · 용도지역 구분 없음']);
+  }
+  for (const [key, label] of tries) {
+    const got = table[key];
+    if (got && Object.keys(got).length) return { rates: got, label };
+  }
+  return null;
+}
+
+function timeFromRates(rates, label, base, now) {
+  const ym = (d) => `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const cur = ym(now);
+  let f = 1; let used = 0; let est = 0; let last = null; let firstP = null; let lastP = null;
+  let y = base.getFullYear(); let m = base.getMonth() + 1;
+  while (y < now.getFullYear() || (y === now.getFullYear() && m <= now.getMonth() + 1)) {
+    const p = `${y}${String(m).padStart(2, '0')}`;
+    const raw = rates[p];
+    const r = (raw === null || raw === undefined || raw === '') ? null : Number(raw);
+    if (p === cur) {
+      const days = new Date(y, m, 0).getDate();
+      const baseR = (r !== null && isFinite(r)) ? r : last;
+      if (baseR !== null) f *= 1 + baseR / 100 * (now.getDate() / days);
+      break;
+    }
+    if (r !== null && isFinite(r)) {
+      f *= 1 + r / 100; used += 1; last = r; firstP = firstP || p; lastP = p;
+    } else if (last !== null) {
+      f *= 1 + last / 100; est += 1;
+    }
+    m += 1; if (m === 13) { y += 1; m = 1; }
+  }
+  if (!used) return null;
+  let source = `지가변동률 ${used}개월 누계 (${firstP}~${lastP}${label ? ` · ${label}` : ''})`;
+  const partial = cur !== ym(base) ? now.getDate() : 0;
+  if (est || partial) {
+    const bits = [];
+    if (est) bits.push(`미고시 ${est}개월`);
+    if (partial) bits.push(`${now.getMonth() + 1}월 ${now.getDate()}일분`);
+    source += ` · ${bits.join('·')}은 최근 고시 월로 추정`;
+  }
+  return { factor: Math.round(f * 100000) / 100000, source, kind: 'rates',
+           published: used, estimated: est };
+}
+
+function timeFactorOf(stdYear, trend, T, ctx) {
   if (!stdYear) return { factor: null, source: '표준지 연도 미상' };
   const base = new Date(stdYear, 0, 1); const now = new Date();
   const months = Math.max(0, (now - base) / (30.44 * 24 * 3600 * 1000));
+  const picked = ctx ? pickTimeRates(T, ctx.sigungu, ctx.landUse) : null;
+  if (picked) {
+    const got = timeFromRates(picked.rates, picked.label, base, now);
+    if (got) return { ...got, months: Math.round(months * 10) / 10 };
+  }
   if (typeof trend !== 'number') return { factor: null, months, source: '자료 없음' };
   const [lo, hi] = T.time_clamp || [0.98, 1.03];
   const f = Math.min(hi, Math.max(lo, Math.pow(1 + trend, months / 12)));
   return { factor: Math.round(f * 100000) / 100000, months: Math.round(months * 10) / 10,
-           source: '또래 실거래 추세로 대신함 (지가변동률 자료 없음)' };
+           source: '또래 실거래 추세로 대신함 (지가변동률 자료 없음)', kind: 'trend' };
 }
+window.__timeFactorOf = (stdYear, trend, T, ctx) => timeFactorOf(stdYear, trend, T, ctx);
 
 /* 그 밖의 요인 — 두 갈래를 합친다 (src/redt/valuation.py decide_other 와 같은 규칙).
  *
@@ -5980,7 +6071,12 @@ function regionFactorOf(subject, std, indFactor) {
 }
 
 function appraiseNow(subject, std, T, trend) {
-  const t = timeFactorOf(std.year, trend, T);
+  // 고시: 비교표준지가 있는 시·군·구의 같은 용도지역. 표준지 조각이 시군구를
+  // 들고 있고(nowResults 가 붙인다), 없으면 대상의 PNU 앞 다섯 자리.
+  const t = timeFactorOf(std.year, trend, T, {
+    sigungu: std.sigungu || String(subject.pnu || '').slice(0, 5),
+    landUse: std.land_use || subject.land_use,
+  });
   const ind = individualFactor(subject, std, T);
   const other = otherFactorOf(subject, std, T);
   const reg = REGION_ENABLED ? regionFactorOf(subject, std, ind.factor)
@@ -6111,11 +6207,14 @@ async function nowResults() {
   if (!ctx || !ctx.parcel) return null;
   const parcel = ctx.parcel;
   const code = String(parcel.pnu || '').slice(0, 5);
-  const [T, chunk] = await Promise.all([loadValuationTables(), loadStdland(code)]);
+  // 또래 표(추세)는 시점수정의 뒷길이다 — 지가변동률이 없을 때만 쓴다.
+  // 그래도 여기서 기다린다: 안 기다리면 첫 산출이 늘 '자료 없음' 이 된다.
+  const [T, chunk] = await Promise.all([loadValuationTables(), loadStdland(code),
+                                        loadParcelStats()]);
   if (!T || !chunk || !chunk.rows || !chunk.rows.length) return null;
   // 주소는 필지 자료가 아니라 따로 온다 (ctx.addr). 산출표 첫 줄에 적는다.
   const subject = { ...parcel, zones: ctx.zones || [], addr: ctx.addr || null };
-  const cands = chunk.rows.map(stdAsParcel);
+  const cands = chunk.rows.map((r) => ({ ...stdAsParcel(r), sigungu: chunk.sigungu || code }));
   const picked = pickStandard(subject, cands, T, 3);
   if (!picked.length) return { picked: [], results: [] };
   const mo = pickTrend(code, parcelGroup(parcel.land_use));

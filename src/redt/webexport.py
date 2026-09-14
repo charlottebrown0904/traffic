@@ -334,6 +334,18 @@ def _stdland_files() -> None:
         except Exception as e:                      # noqa: BLE001
             print(f"  ! 거래사례 그 밖의 요인을 못 만들었습니다 ({type(e).__name__}: {str(e)[:100]})")
             trade_cells = {}
+        # 시점수정의 원천 — 지가변동률(월). 없으면 빈 표이고 화면은 또래 추세로
+        # 물러난다. 못 이은 지역 이름은 여기 찍힌다 — 이름 규칙을 고칠 자리.
+        try:
+            time_rates = V.time_rates_for_web(con)
+            tm = time_rates.get("meta", {})
+            print(f"  지가변동률 칸 {tm.get('n', 0):,}개 · {tm.get('first')}~{tm.get('last')}"
+                  + (f" · 못 이은 지역 {len(tm.get('unmatched') or [])}: {tm.get('unmatched')[:12]}"
+                     if tm.get("unmatched") else "")
+                  + (f" · {tm.get('note')}" if tm.get("note") else ""))
+        except Exception as e:                      # noqa: BLE001
+            print(f"  ! 지가변동률 표를 못 만들었습니다 ({type(e).__name__}: {str(e)[:100]})")
+            time_rates = {}
     from . import premium_store as PS
     PS.PREMIUM_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -372,7 +384,7 @@ def _stdland_files() -> None:
     for stale in list(PS.PREMIUM_DIR.glob("stdland-*.json")) + list(WEB_DATA.glob("stdland-*.json")):
         if stale.name not in keep or stale.parent == WEB_DATA:
             stale.unlink()                          # public/ 에 남은 옛 조각도 걷는다
-    tables = V.tables_for_web(trade=trade_cells)
+    tables = V.tables_for_web(trade=trade_cells, time_rates=time_rates)
     # 원장을 못 읽어 평가선례 칸이 전부 비었으면 (Supabase 가 잠깐 끊긴 run 16),
     # 버킷의 이전 valuation.json 을 빈 표로 덮어쓰지 않는다 — 표준지 조각만 올린다.
     ledger_ok = any((c.get("*") or {}).get("n") for c in tables.get("other", {}).values())

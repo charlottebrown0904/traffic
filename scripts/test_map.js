@@ -3624,6 +3624,38 @@ async function stubCommon(pg) {
     check('시점수정은 추세로 대신했다고 적고 상한 1.03 안이다',
           /추세로 대신함/.test(five.timeSrc) && Math.abs(five.time - 1.03) < 0.0005,
           `${five.time} ${five.timeSrc}`);
+    // 지가변동률이 표에 있으면 **그것이 먼저**다 (고시 [610-1.5.2.3.1]). 같은
+    // 시군구·같은 용도지역 칸 → 시군구 전체 → 시도. 상한은 없다. 파이썬
+    // (valuation.time_factor)과 같은 수를 내야 한다 — 1~8월 0.2% · 9월 10일.
+    const tf = await page.evaluate(() => {
+      const T = { time_clamp: [0.98, 1.03],
+                  time_rates: { '41111|계획관리지역': { 202601: 0.2, 202602: 0.2, 202603: 0.2, 202604: 0.2,
+                                                    202605: 0.2, 202606: 0.2, 202607: 0.2, 202608: 0.2 },
+                                '41|녹지지역': { 202601: 1.0 } } };
+      const real = Date;
+      // 기준시점을 2026-09-10 으로 고정한다 — 날짜가 지나도 검사가 같은 수를 본다.
+      window.Date = class extends real {
+        constructor(...a) { if (a.length) super(...a); else super(2026, 8, 10); }
+        static now() { return new real(2026, 8, 10).getTime(); }
+      };
+      try {
+        return {
+          same: window.__timeFactorOf(2026, 0.5, T, { sigungu: '41111', landUse: '계획관리지역' }),
+          sido: window.__timeFactorOf(2026, 0.5, T, { sigungu: '41113', landUse: '자연녹지지역' }),
+          none: window.__timeFactorOf(2026, 0.5, T, { sigungu: '43111', landUse: '농림지역' }),
+        };
+      } finally { window.Date = real; }
+    });
+    const want = Math.pow(1.002, 8) * (1 + 0.002 * 10 / 30);
+    check('지가변동률이 있으면 누계로 곱한다 (1~8월 0.2% · 9월 10일분 추정) — 파이썬과 같은 수',
+          Math.abs(tf.same.factor - Math.round(want * 100000) / 100000) < 1e-5
+          && /지가변동률 8개월 누계/.test(tf.same.source) && /같은 시·군·구 · 계획관리지역/.test(tf.same.source),
+          `${tf.same.factor} (기대 ${want.toFixed(5)}) ${tf.same.source}`);
+    check('시군구 칸이 없으면 시·도 칸 — 그렇게 적고 상한을 안 씌운다',
+          tf.sido.kind === 'rates' && /같은 시·도 · 녹지지역/.test(tf.sido.source) && tf.sido.factor > 1.03,
+          `${tf.sido.factor} ${tf.sido.source}`);
+    check('칸이 하나도 없으면 추세로 물러난다',
+          tf.none.kind === 'trend' && /추세로 대신함/.test(tf.none.source), tf.none.source);
     check('농업진흥은 표준지 자료에 없어 확인 못 했다고 경고에 남는다',
           five.warn.some((w) => /확인하지 못했다/.test(w)), JSON.stringify(five.warn));
     // 뒤 검사는 '미래 가치' 가 열린 상태에서 시작한다. 그 상태로 되돌린다.

@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "reach = 직접/중계기 두 길 재기(키 없어도 됨) · probe = 표 확인 · pull = 받아서 저장"
+        description: "reach = 두 길 재기 · probe = 표 확인 · pull = 받아 아티팩트로 · load = 받아 DB(캐시)에 — 시점수정용"
         type: choice
-        options: ["reach", "probe", "pull"]
+        options: ["reach", "probe", "pull", "load"]
         default: "reach"
       table:
         description: "pull 일 때 받을 표 이름 (scripts/reb_stats.py 의 이름)"
@@ -62,6 +62,38 @@ jobs:
             --pull "${{ inputs.table }}" \
             --from "${{ inputs.from }}" --to "${{ inputs.to }}" \
             --max-pages "${{ inputs.max_pages }}"
+      # ── load: 시점수정의 원천을 DB 에 넣는다 ────────────────────────
+      # pull 은 tsv 를 아티팩트로만 남겨 다음 판이 못 쓴다. load 는 분석이 쓰는
+      # DB 캐시(redt-data-*)를 되살려 landprice_index 에 넣고 새 키로 보관한다.
+      # 그러면 analyze(export-web) 가 그 캐시를 이어받아 valuation.json 에
+      # 지가변동률을 싣는다. 표준지 공시기준일이 그해 1월 1일이므로 from 은
+      # 보통 그해 01 이면 된다 — 한 달이 1,600행쯤이라 두 표 합쳐 스무 장 안이다.
+      - name: 이전 수집분 복원
+        if: inputs.mode == 'load'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/processed
+            data/interim
+          key: redt-data-${{ github.run_id }}
+          restore-keys: redt-data-
+      - name: DB 에 넣기 (전 지역 · 용도지역별 + 지역별)
+        if: inputs.mode == 'load'
+        run: |
+          test -f data/processed/redt.duckdb || { echo "::error::복원된 DB 가 없습니다 — collect 를 먼저"; exit 1; }
+          PYTHONPATH=src python -m redt.cli load-landprice \
+            --tables "지가변동률_용도지역_월,지가변동률_지역_월" --region "" \
+            --start "${{ inputs.from }}" --end "${{ inputs.to }}" \
+            --max-pages "${{ inputs.max_pages }}"
+          PYTHONPATH=src python scripts/reb_time_check.py
+      - name: 수집분 보관
+        if: always() && inputs.mode == 'load'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/processed
+            data/interim
+          key: redt-data-${{ github.run_id }}-reb
       - name: 결과 올리기
         # 잘려도(exit 1) 받은 만큼은 올린다 — 이미 쓴 호출이다.
         if: always() && inputs.mode == 'pull'

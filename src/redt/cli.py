@@ -452,6 +452,7 @@ def cmd_value_test(args):
 
         groups = [(name, likes[0]) for name, likes in V.ZONE_GROUPS]
         trade_cells = V.trade_other_factor(con, groups)
+        time_rates = V.time_rates_for_web(con).get("rates", {})
 
         scope = "전국" if nationwide else code
         print(f"{scope} · 후보 거래 {len(rows):,}건"
@@ -497,7 +498,9 @@ def cmd_value_test(args):
                 tc = V.trade_cell(trade_cells, sgg, zg, ug_std or ug)
             trend, recent, before, tlabel = trend_for(sgg)
             base = date(int(year_max), 1, 1)
-            tf = V.time_factor(base, today, annual_trend=trend) if trend is not None else V.time_factor(base, today)
+            # 고시대로 지가변동률이 먼저다 (같은 시군구·같은 용도지역). 없으면 추세.
+            rates, rlabel = V.pick_rates(time_rates, sgg, (stds3[0].get("land_use") if stds3 else None) or t["land_use"])
+            tf = V.time_factor(base, today, rates=rates, label=rlabel, annual_trend=trend)
             if not stds3:
                 print("   비교표준지 없음 — 같은 용도지역 세분의 표준지가 이 시군구에 없다")
                 out.append({"trade_id": t["trade_id"], "sgg": sgg, "actual": actual, "hold": True})
@@ -1018,11 +1021,11 @@ def cmd_load_landprice(args):
                              str(r.get("ITM_NM", "")), v, str(r.get("UI_NM", ""))))
             if recs:
                 con.executemany("INSERT OR REPLACE INTO landprice_index VALUES (?,?,?,?,?,?,?,?,?,?)", recs)
-            grp = sorted({x[3] for x in recs})[:8]
+            grp = sorted({x[3] for x in recs})
             cls = sorted({x[5] for x in recs})[:12]
             per = sorted({x[1] for x in recs})
             print(f"  {name} ({sid}): {len(recs):,}행 · 시점 {per[0] if per else '-'}~{per[-1] if per else '-'}")
-            print(f"     GRP: {grp}")
+            print(f"     GRP {len(grp)}개: {grp[:60]}{' …' if len(grp) > 60 else ''}")
             print(f"     CLS: {cls}")
         n = con.execute("SELECT count(*) FROM landprice_index").fetchone()[0]
     print(f"landprice_index 누계 {n:,}행")
@@ -2577,8 +2580,13 @@ def cmd_landchar(args):
     def flush():
         """lock 을 쥔 채로만 부른다 (DuckDB 연결은 동시 사용 불가)."""
         if rows_p:
-            wcon.register("_p", pd.DataFrame(rows_p).drop_duplicates("pnu"))
-            wcon.execute("INSERT OR REPLACE INTO parcel SELECT * FROM _p")
+            dfp = pd.DataFrame(rows_p).drop_duplicates("pnu")
+            wcon.register("_p", dfp)
+            # 열 이름을 적어 넣는다. parcel 은 lon·lat 이 뒤에 붙어(MIGRATIONS)
+            # 열이 13 인데 받은 행은 11 열이라, SELECT * 로는 열 수가 안 맞아
+            # 터진다 (test_landchar_scope 2026-09-14).
+            cols = ", ".join(f'"{c}"' for c in dfp.columns)
+            wcon.execute(f"INSERT OR REPLACE INTO parcel ({cols}) SELECT {cols} FROM _p")
             wcon.unregister("_p")
             rows_p.clear()
         if rows_l:
