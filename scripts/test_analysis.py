@@ -2617,6 +2617,24 @@ try:
 finally:
     _IND.http.get_once = _saved_once2
 
+# 포털 파일은 중계기로 받고 base64 를 푼다 — 적재기와 프로파일이 같은 길을 쓴다.
+_saved_get2 = _IND.http.get
+try:
+    _IND.http.get = lambda *a, **k: _RB()
+    _raw = _IND.fetch_portal_file("https://x/")
+    check(_raw == _csv_cp949, "중계기 base64 를 풀어 원본 바이트를 돌려준다")
+    class _RPlain:
+        content = b"a,b\n1,2\n"; headers = {}; status_code = 200
+    _IND.http.get = lambda *a, **k: _RPlain()
+    check(_IND.fetch_portal_file("https://x/") == b"a,b\n1,2\n",
+          "감싸지 않은 응답은 그대로 준다")
+finally:
+    _IND.http.get = _saved_get2
+check(_IND._total_count('{"response":{"body":{"totalCount":"42","items":{"item":[{"a":1},{"a":2}]}}}}') == "42"
+      and _IND._n_items('{"response":{"body":{"items":{"item":[{"a":1},{"a":2}]}}}}') == 2,
+      "봉투에서 전체 건수와 이 쪽 건수를 읽는다")
+check(_IND._total_count("{}") is None, "봉투가 아니면 None")
+
 # 포털 표준 봉투를 한 겹 벗겨 열쇠를 보인다.
 _env = '{"response":{"header":{"resultCode":"00"},"body":{"totalCount":3,"items":{"item":[{"pmsDay":"20240103","totArea":"1200.5","mainPurpsCdNm":"공장"}]}}}}'
 _keys = _IND._top_keys(_env)

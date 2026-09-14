@@ -53,10 +53,17 @@ CANDIDATES = [
      "url": "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo",
      "params": {"sigunguCd": "11680", "bjdongCd": "10300", "numOfRows": "2",
                 "pageNo": "1", "_type": "json"}},
-    {"name": "건축HUB 시군구만 (법정동 없이)",
+    # 5차: 법정동 없이는 {"body":{}} — 빈 몸통. 법정동별로 불러야 한다. 그러면
+    # 전국이 3,500+ 법정동 × 쪽수다. 쪽 크기 한도(1000 이 되는가)와 허가일
+    # 필터(startDate·endDate 가 먹는가)가 그 수를 정한다. 개포동 전체 건수도 본다.
+    {"name": "건축HUB 개포동 1000줄 (쪽 한도·건수)",
      "url": "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo",
-     "params": {"sigunguCd": "41550", "numOfRows": "2", "pageNo": "1", "_type": "json",
-                "startDate": "20240101", "endDate": "20241231"}},
+     "params": {"sigunguCd": "11680", "bjdongCd": "10300", "numOfRows": "1000",
+                "pageNo": "1", "_type": "json"}},
+    {"name": "건축HUB 개포동 2024년만 (날짜 필터)",
+     "url": "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo",
+     "params": {"sigunguCd": "11680", "bjdongCd": "10300", "numOfRows": "5",
+                "pageNo": "1", "_type": "json", "startDate": "20240101", "endDate": "20241231"}},
     # 행안부 통계연보 — 상세 화면에서 주소와 운영 이름이 나왔다 (15107410).
     {"name": "통계연보 지방세 징수실적",
      "url": "https://apis.data.go.kr/1741000/RecordLocalTaxCollectionYear/getRecordLocalTaxCollectionYear",
@@ -102,7 +109,8 @@ def knock(cand: dict, timeout: int = 40) -> dict:
         head = resp.text[:800]
         return {"name": cand["name"], "url": cand["url"], "status": resp.status_code,
                 "content_type": resp.headers.get("content-type", ""),
-                "head": head, "keys": _top_keys(resp.text)}
+                "head": head, "keys": _top_keys(resp.text),
+                "total": _total_count(resp.text), "n_items": _n_items(resp.text)}
     except Exception as exc:                          # noqa: BLE001
         return {"name": cand["name"], "url": cand["url"], "error": f"{type(exc).__name__}: {exc}"[:400]}
 
@@ -217,6 +225,22 @@ def fetch_head(url: str, timeout: int = 60) -> dict:
                            else "binary" if text is None else "other")}
 
 
+def fetch_portal_file(url: str, timeout: int = 90) -> bytes:
+    """포털 파일을 **중계기로** 받는다 — 러너 직접은 러너마다 막힌다.
+
+    4차에서 직접 받기가 200 이었는데 5차(run 34806782924)에서는 셋 다
+    ConnectTimeout 이었다. 해외 IP 차단이 러너에 따라 다르게 걸린다. 중계기
+    경유는 두 번 다 200 이었고, 파일이 2.5MB 이하라 중계기 한도(약 4.5MB,
+    base64 로 1.33배 불어도 3.4MB) 안이다. 그 길이 믿을 만하다.
+    """
+    import base64
+    resp = http.get(url, {}, timeout=timeout)
+    raw = resp.content
+    if resp.headers.get("x-relay-encoding") == "base64":
+        raw = base64.b64decode(raw)
+    return raw
+
+
 def profile_file(url: str, timeout: int = 90, limit: int = 30_000_000) -> dict:
     """파일을 **통째로** 러너가 직접 받아 무엇이 들었는지 본다.
 
@@ -227,15 +251,7 @@ def profile_file(url: str, timeout: int = 90, limit: int = 30_000_000) -> dict:
     import io
     import pandas as pd
     try:
-        resp = http._sess().get(url, stream=True, timeout=timeout,
-                                headers={"User-Agent": "redt-research/0.1"})
-        buf = io.BytesIO()
-        for part in resp.iter_content(1 << 16):
-            buf.write(part)
-            if buf.tell() > limit:
-                break
-        resp.close()
-        raw = buf.getvalue()
+        raw = fetch_portal_file(url, timeout=timeout)
     except Exception as exc:                          # noqa: BLE001
         return {"url": url, "error": f"{type(exc).__name__}: {exc}"[:200]}
     text = _decode_table(raw)
@@ -291,6 +307,25 @@ def fetch_direct(url: str, timeout: int = 20, limit: int = 65536) -> dict:
         return {"url": url, "error": f"{type(exc).__name__}: {exc}"[:200]}
 
 
+def _total_count(text: str):
+    """포털 봉투의 body.totalCount — 한 법정동에 몇 건인가."""
+    import json
+    try:
+        body = json.loads(text)["response"]["body"]
+        return body.get("totalCount")
+    except Exception:                                 # noqa: BLE001
+        return None
+
+
+def _n_items(text: str):
+    import json
+    try:
+        item = json.loads(text)["response"]["body"]["items"]["item"]
+        return len(item) if isinstance(item, list) else (1 if item else 0)
+    except Exception:                                 # noqa: BLE001
+        return None
+
+
 def _top_keys(text: str) -> list[str]:
     """JSON 이면 맨 위 열쇠들 — 무엇이 왔는지 한눈에 보려고."""
     import json
@@ -308,7 +343,7 @@ def _top_keys(text: str) -> list[str]:
             if isinstance(items, dict):
                 item = items.get("item")
                 if isinstance(item, list) and item and isinstance(item[0], dict):
-                    keys += [f"item.{k}" for k in list(item[0])[:25]]
+                    keys += [f"item.{k}" for k in list(item[0])[:60]]
         return keys
     return []
 
@@ -361,8 +396,8 @@ def probe(timeout: int = 40) -> dict:
             dd = fetch_direct(full)
             dd["dataset"] = d["id"]
             direct.append(dd)
-            # 4차에서 직접 받기가 200 이었다. 이제 통째로 받아 프로파일한다.
-            if dd.get("status") == 200:
+            # 5차: 직접 받기는 러너마다 막힌다. 중계기 경유가 200 이면 프로파일한다.
+            if got.get("status") == 200:
                 pf = profile_file(full)
                 pf["dataset"] = d["id"]
                 pf["title"] = d.get("title", "")[:60]
@@ -445,9 +480,12 @@ def describe(result: dict) -> str:
         if "error" in k:
             lines.append(f"  ✗ {k['name']:<24} {k['error']}")
             continue
-        keys = ", ".join(k["keys"][:12]) if k["keys"] else "(JSON 아님)"
-        lines.append(f"  {k['status']} {k['name']:<24} {k['content_type'][:30]}")
-        lines.append(f"       열쇠: {keys}")
+        keys = ", ".join(k["keys"]) if k["keys"] else "(JSON 아님)"
+        extra = ""
+        if k.get("total") is not None:
+            extra = f"  전체 {k['total']}건 · 이 쪽 {k.get('n_items')}건"
+        lines.append(f"  {k['status']} {k['name']:<24} {k['content_type'][:30]}{extra}")
+        lines.append(f"       열쇠: {keys[:900]}")
         head = re.sub(r"\s+", " ", k["head"])[:220]
         lines.append(f"       머리: {head}")
     return "\n".join(lines)
@@ -610,10 +648,14 @@ def load_power(con, only: list[str] | None = None, timeout: int = 120) -> list[d
         if only and dataset not in only:
             continue
         url = PORTAL_FILE.format(fid=fid)
-        resp = http._sess().get(url, timeout=timeout, headers={"User-Agent": "redt-research/0.1"})
-        text = _decode_table(resp.content)
-        if resp.status_code != 200 or text is None:
-            diags.append({"dataset": dataset, "error": f"{resp.status_code} · 글자로 못 읽음"})
+        try:
+            raw = fetch_portal_file(url, timeout=timeout)
+        except Exception as exc:                      # noqa: BLE001
+            diags.append({"dataset": dataset, "error": f"{type(exc).__name__}: {exc}"[:200]})
+            continue
+        text = _decode_table(raw)
+        if text is None:
+            diags.append({"dataset": dataset, "error": f"{len(raw):,}바이트 · 글자로 못 읽음"})
             continue
         df = pd.read_csv(io.StringIO(text), dtype=str)
         rows, diag = power_rows(dataset, df, code_map)
