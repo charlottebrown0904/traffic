@@ -3204,7 +3204,10 @@ def cmd_load_tax_kosis(args):
     찾는다.
     """
     from .collect import indicators as ind
-    years = _years(args.years)
+    # **글자로 바꾼다.** _years 는 정수를 돌려주는데 기간은 글자로 다룬다
+    # (열쇠·비교·저장 모두). 정수인 채로 "2010" 과 견주면 터진다 — run 97
+    # 이 그렇게 죽었다.
+    years = [str(y) for y in _years(args.years)]
     with db.connect() as con:
         st = ind.load_local_tax_kosis(con, years,
                                       max_seconds=int(args.max_minutes) * 60)
