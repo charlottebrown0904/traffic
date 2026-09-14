@@ -2618,14 +2618,22 @@ const FAKE_LEAFLET = () => {
         const r = document.querySelector('.map-wrap').getBoundingClientRect();
         return Math.round(r.height);
       };
+      // **'상세가 없는 평소' 를 재려면 표시만 잠깐 뗀다.** 앞 절들이 필지를
+      // 골라 두었고 그러면 지도가 46dvh 로 줄어 있는 것이 정상이다
+      // (2026-09-14). 닫기 단추를 누르면 필지 윤곽까지 지워져 뒤 절의
+      // 영업소 검사가 다른 표식을 고른다 — 그래서 앱 상태는 건드리지 않고
+      // CSS 표시만 떼고 재고 되돌린다.
+      const had = document.body.classList.contains('has-detail');
+      document.body.classList.remove('has-detail');
       const normal = h();
+      document.body.classList.toggle('has-detail', had);
       document.getElementById('map-full').click();
       const max = h();
       document.getElementById('map-full').click();
       return { normal, max, vh: window.innerHeight };
     });
-    // 74dvh 로 잡아 뒀으므로 평소에도 화면의 3분의 2는 넘어야 한다.
-    check('폰에서 지도가 화면의 3분의 2를 넘게 쓴다',
+    // 74dvh 로 잡아 뒀으므로 상세를 닫은 평소에는 화면의 3분의 2를 넘는다.
+    check('폰에서 상세를 닫으면 지도가 화면의 3분의 2를 넘게 쓴다',
           phone.normal / phone.vh > 0.66,
           `지도 ${phone.normal}px / 화면 ${phone.vh}px`
           + ` (${(phone.normal / phone.vh * 100).toFixed(0)}%)`);
@@ -2633,44 +2641,39 @@ const FAKE_LEAFLET = () => {
           phone.max / phone.vh > 0.98,
           `지도 ${phone.max}px / 화면 ${phone.vh}px`
           + ` (${(phone.max / phone.vh * 100).toFixed(0)}%)`);
-    // 필지 상세가 **지도 위로 올라오는 시트**인가 (2026-09-12 지적).
-    // 예전에는 지도 아래에 붙어 있어서, 지도가 화면의 74%를 먹는 폰에서
-    // 자세한 내용까지 내려갈 방법이 사실상 없었다 (지도를 만지면 Leaflet 이
-    // 지도를 끈다).
+    // 필지 상세는 **지도를 줄이고 그 아래 흐름 안에** 온다 (2026-09-14 지시).
+    //
+    // 2026-09-12 에는 지도 위로 올라오는 고정 시트였다. 그런데 실기에서
+    // 필지를 골라도 상세가 안 보이고 스크롤도 안 된다는 보고가 왔다 —
+    // 화면 밖에 붙는 고정 칸은 어긋나면 통째로 안 보이고 손쓸 길이 없다.
+    // 지도를 줄여 자리를 만들면 페이지가 평범하게 굴러가므로 그럴 일이 없다.
     const sheet = await page.evaluate(() => {
       const box = document.getElementById('detail');
       if (!box) return null;
-      // 아직 필지를 고르지 않은 자리다. 자리 모양만 재려고 잠깐 열고
-      // 내용을 길게 넣어 본다 (재고 나서 되돌린다).
       const wasHidden = box.hidden;
       const wasHtml = box.innerHTML;
+      const wasCls = document.body.classList.contains('has-detail');
       box.hidden = false;
+      document.body.classList.add('has-detail');
       box.innerHTML = '<div style="height:2000px">재는 중</div>';
       const cs = getComputedStyle(box);
       const r = box.getBoundingClientRect();
       const mapR = document.querySelector('.map-wrap').getBoundingClientRect();
       const out = {
-        pos: cs.position, z: Number(cs.zIndex),
-        overflowY: cs.overflowY, overscroll: cs.overscrollBehaviorY,
-        bottom: Math.round(window.innerHeight - r.bottom),
-        overMap: r.top < mapR.bottom,          // 지도 위로 겹쳐 올라왔는가
-        scrolls: box.scrollHeight > box.clientHeight + 1,
-        maxH: Math.round(r.height), vh: window.innerHeight,
+        pos: cs.position,
+        below: r.top >= mapR.bottom - 2,       // 지도 아래에 온다
+        mapH: Math.round(mapR.height), vh: window.innerHeight,
       };
       box.innerHTML = wasHtml;
       box.hidden = wasHidden;
+      document.body.classList.toggle('has-detail', wasCls);
       return out;
     });
-    check('폰에서 필지 상세가 아래에 붙어 지도 위로 올라온다',
-          sheet && sheet.pos === 'fixed' && sheet.bottom === 0 && sheet.overMap
-          && sheet.z >= 500, JSON.stringify(sheet));
-    check('시트 안에서 스크롤되고 그 힘이 지도로 넘어가지 않는다',
-          sheet && sheet.overflowY === 'auto' && sheet.overscroll === 'contain'
-          && sheet.scrolls,
-          `${sheet && sheet.overflowY} · ${sheet && sheet.overscroll} · 스크롤=${sheet && sheet.scrolls}`);
-    check('시트가 화면을 다 덮지는 않는다 (지도가 보인다)',
-          sheet && sheet.maxH < sheet.vh * 0.9,
-          `시트 ${sheet && sheet.maxH}px / 화면 ${sheet && sheet.vh}px`);
+    check('폰에서 필지 상세가 지도 아래 흐름 안에 온다',
+          sheet && sheet.pos === 'static' && sheet.below, JSON.stringify(sheet));
+    check('상세가 열리면 지도가 화면의 절반쯤으로 줄어든다',
+          sheet && sheet.mapH / sheet.vh < 0.6 && sheet.mapH / sheet.vh > 0.3,
+          `지도 ${sheet && sheet.mapH}px / 화면 ${sheet && sheet.vh}px`);
     // 홈은 글자 대신 아이콘 (2026-09-12 지적)
     const home = await page.evaluate(() => {
       const a = document.getElementById('home-link');
@@ -2709,7 +2712,7 @@ const FAKE_LEAFLET = () => {
       const b = document.getElementById('detail');
       return { hidden: b.hidden, html: b.innerHTML };
     });
-    check('영업소를 고르면 열린다', !d1.hidden);
+    check('영업소를 고르면 열린다', !d1.hidden, JSON.stringify(d1).slice(0, 160));
 
     // E — 사분면 배지와 통계 카드 넷은 없다.
     if (!d1.hidden) {
@@ -4419,6 +4422,94 @@ const FAKE_LEAFLET = () => {
       check('시·도를 바꾸면 그 조례로 (서울 자연녹지 20%·50% · 경사 기준 없음)',
             /서울특별시 도시계획 조례/.test(g2) && /자연녹지<\/th><td class="num">20%<\/td><td class="num">50%/.test(g2)
             && /경사도<\/th><td><span class="muted">조문에 숫자 기준 없음/.test(g2), g2.slice(0, 200));
+      await pg.close();
+    }
+    // ── 폰에서 필지 상세가 보이고 스크롤되는가 (2026-09-14 지시) ──
+    //
+    // 예전에는 지도 위로 올라오는 고정 시트였는데, 실기에서 필지를 골라도
+    // 상세가 안 보이고 스크롤도 안 된다는 보고가 왔다. 이제 지도를 줄여
+    // 자리를 만들고 상세를 흐름 안에 둔다 — 그 둘을 **재서** 확인한다.
+    {
+      // 새 탭을 열지만 **가짜 Leaflet 과 가짜 로그인을 함께 넣는다** —
+      // 안 넣으면 관문이 막아 #detail 이 아예 안 그려진다 (page2 와 같은 길).
+      const pg = await browser.newPage({ viewport: { width: 390, height: 844 } });
+      // 진짜 supabase 스크립트가 내 가짜를 덮어써 관문이 막는다 — 비운다.
+      for (const pat of ['**/lib/supabase-init.js*', '**/app/supabase.js*',
+                         '**/supabase-js*/**', '**/leaflet*.js', '**/leaflet*.css'])
+        await pg.route(pat, (r) => r.fulfill({ status: 200, body: '' }));
+      await pg.addInitScript(FAKE_LEAFLET);
+      await pg.addInitScript(() => {
+        window.SB = {};
+        window.SBUtil = { me: async () => ({ user: { id: 'u1' },
+          profile: { status: 'approved', grade: 'B' } }) };
+      });
+      await pg.goto(`${BASE}/app/`, { waitUntil: 'domcontentloaded' });
+      // hidden 이 붙어 있으니 '보일 때까지' 기다리면 안 된다 — 붙었는지만 본다.
+      await pg.waitForSelector('#detail', { state: 'attached', timeout: 20000 })
+        .catch(async () => {
+          const dbg = await pg.evaluate(() => ({
+            url: location.href, ids: [...document.querySelectorAll('[id]')]
+              .map((e) => e.id).slice(0, 12),
+            body: document.body.innerHTML.slice(0, 200),
+          }));
+          console.log('    [디버그]', JSON.stringify(dbg));
+        });
+      await pg.waitForTimeout(800);
+      const m = await pg.evaluate(async () => {
+        const box = document.getElementById('detail');
+        const wrap = document.querySelector('.map-wrap');
+        const before = wrap ? wrap.getBoundingClientRect().height : 0;
+        // 필지 카드가 열린 상태를 만든다 (산출 경로가 아니라 표시를 잰다).
+        box.hidden = false;
+        document.body.classList.toggle('has-detail', true);
+        box.innerHTML = '<div style="height:1400px">긴 내용</div>';
+        await new Promise((r) => setTimeout(r, 120));
+        const after = wrap ? wrap.getBoundingClientRect().height : 0;
+        const view = document.getElementById('view-explore');
+        const st = getComputedStyle(box);
+        // 페이지가 실제로 아래로 굴러가는가.
+        const scroller = (view && view.scrollHeight > view.clientHeight + 20) ? view
+          : (document.scrollingElement || document.documentElement);
+        const top0 = scroller.scrollTop;
+        scroller.scrollTop = scroller.scrollHeight;
+        await new Promise((r) => setTimeout(r, 60));
+        const moved = scroller.scrollTop - top0;
+        return { before, after, pos: st.position, moved,
+                 h: box.getBoundingClientRect().height };
+      });
+      check('필지를 고르면 지도가 줄어든다', m.after > 0 && m.after < m.before - 40,
+            `${Math.round(m.before)}px → ${Math.round(m.after)}px`);
+      check('상세는 흐름 안에 있다 (화면 밖 고정 칸이 아니다)', m.pos === 'static',
+            `position: ${m.pos}`);
+      check('긴 상세를 아래로 굴릴 수 있다', m.moved > 100, `${Math.round(m.moved)}px 굴렀다`);
+
+      // ── 주소 자동완성 안내문이 세로로 서지 않는가 ──
+      // '찾 는 이 름 이 없 습 니 다' 로 한 글자씩 접혔다 (2026-09-14 보고).
+      const f = await pg.evaluate(async () => {
+        const input = document.getElementById('find-q');
+        const list = document.getElementById('find-list');
+        if (!input || !list) return null;
+        list.innerHTML = '<li class="find-none">찾는 이름이 없습니다'
+          + ' <em>(읍·면·동까지 찾고, 지번까지 적으면 그 필지로 갑니다 —'
+          + ' 예: 곤지암읍 건업리 140-25)</em></li>';
+        list.hidden = false;
+        await new Promise((r) => setTimeout(r, 60));
+        const li = list.querySelector('.find-none');
+        const st = getComputedStyle(li);
+        return { disp: st.display, w: li.getBoundingClientRect().width,
+                 h: li.getBoundingClientRect().height,
+                 over: list.scrollWidth - list.clientWidth };
+      });
+      if (f) {
+        check('안내 줄은 블록이다 (flex 면 글자가 세로로 선다)', f.disp === 'block',
+              `display: ${f.disp}`);
+        // 한 글자씩 접히면 9줄 이상이 되어 높이가 150px 을 넘는다.
+        check('안내문이 가로로 읽힌다 (세로로 안 선다)', f.h < 120 && f.w > 150,
+              `${Math.round(f.w)}×${Math.round(f.h)}px`);
+        check('목록이 옆으로 넘치지 않는다', f.over <= 2, `넘침 ${f.over}px`);
+      } else {
+        check('안내 줄 검사', false, '검색칸을 못 찾았습니다');
+      }
       await pg.close();
     }
   } finally {

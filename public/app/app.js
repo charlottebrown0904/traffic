@@ -3008,6 +3008,21 @@ function showDetail(on) {
   const box = document.getElementById('detail');
   if (!box) return;
   box.hidden = !on;
+  // 폰에서는 이 표시로 지도를 줄여 상세 자리를 만든다 (style.css 의
+  // body.has-detail). 고정 시트로 띄웠더니 필지를 골라도 상세가 안 보이고
+  // 스크롤도 안 된다는 보고가 있었다 (2026-09-14) — 흐름 안에 두고
+  // 페이지가 평범하게 스크롤되게 한다.
+  document.body.classList.toggle('has-detail', !!on);
+  if (on) {
+    // 줄어든 지도 아래에 있으니 눈에 들어오도록 데려간다. 좁은 화면에서만
+    // 한다 — 넓은 화면은 옆 칸이라 움직일 까닭이 없다.
+    if (window.matchMedia && window.matchMedia('(max-width:56rem)').matches) {
+      setTimeout(() => {
+        try { box.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+        catch (err) { box.scrollIntoView(); }
+      }, 60);
+    }
+  }
   if (!on) {
     box.innerHTML = '';
     // 칸을 닫으면 윤곽도 지운다. 카드가 없는데 파란 테두리만 남아
