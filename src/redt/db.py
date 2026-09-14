@@ -120,6 +120,25 @@ CREATE TABLE IF NOT EXISTS market_series (
     PRIMARY KEY (series, period)
 );
 
+-- 지역 지표 계열 — 시군구 × 기간 × 지표 (2026-09-14, 허가 → 가동 → 소득).
+--
+-- region_year 는 연 단위다. 전력·건축허가는 **월**로 오고 법인지방소득세는
+-- 연으로 온다. 주기가 다른 것을 한 표에 두려면 기간을 글자로 둔다 —
+-- market_series 와 같은 까닭이다: 연 '2024' · 월 '202401'. 억지로 한 모양으로
+-- 바꾸면 되돌릴 수 없다.
+--
+-- metric 은 행으로 둔다. 셋으로 시작하지만 docs/future-value-indicators.md
+-- 의 57개가 뒤에 올 수 있다 — 스키마를 안 바꾸고 늘린다.
+CREATE TABLE IF NOT EXISTS region_series (
+    sigungu_cd  VARCHAR,
+    period      VARCHAR,              -- 2024 (연) · 202401 (월)
+    metric      VARCHAR,              -- power_industrial_kwh / permit_area_m2 / corp_local_income_tax …
+    value       DOUBLE,
+    unit        VARCHAR,              -- kWh / m2 / 원
+    source      VARCHAR,              -- 어느 데이터셋(번호)에서
+    PRIMARY KEY (sigungu_cd, period, metric)
+);
+
 -- 가설3 패널형: 시군구 × 연도 규모 지표.
 --
 -- 인구가 늘어서 오른 것을 교통량이 늘어서 오른 것으로 읽지 않으려면, 같은
