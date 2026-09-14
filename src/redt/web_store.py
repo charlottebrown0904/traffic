@@ -107,15 +107,24 @@ def verify(names: tuple[str, ...], log=print) -> bool:
     ok = True
     for n in names:
         try:
-            # 열쇠를 일부러 안 붙인다 — 브라우저와 같은 자리에서 본다.
-            r = requests.get(f"{base}/{n}", timeout=60)
+            # 열쇠를 일부러 안 붙이고, **Origin 을 붙여** 브라우저와 같은
+            # 자리에서 본다. 이제 화면이 다른 출처(toji.fyi → supabase.co)로
+            # 부르므로 CORS 머리글이 없으면 curl 은 되는데 **브라우저만**
+            # 막힌다 — 그 둘을 가르려면 Origin 을 붙여 물어야 한다.
+            r = requests.get(f"{base}/{n}", timeout=60,
+                             headers={"Origin": "https://toji.fyi"})
         except requests.RequestException as exc:
             log(f"  ✗ {n}: {type(exc).__name__}")
             ok = False
             continue
         size = len(r.content)
-        if r.status_code == 200 and size > 0:
-            log(f"  ✓ {n}: {size / 1000:,.0f}KB")
+        cors = r.headers.get("access-control-allow-origin")
+        if r.status_code == 200 and size > 0 and cors:
+            log(f"  ✓ {n}: {size / 1000:,.0f}KB · CORS {cors}")
+        elif r.status_code == 200 and size > 0:
+            log(f"  ✗ {n}: 받히기는 하는데 **CORS 머리글이 없다** —"
+                " curl 은 되고 브라우저는 막힌다")
+            ok = False
         else:
             log(f"  ✗ {n}: HTTP {r.status_code} · {size}B · {r.text[:80]}")
             ok = False
