@@ -661,6 +661,67 @@ const call = async (query, method = 'GET', headers = {}) => {
         `${sea.code} · 호출 ${calls.length}회`);
 
   console.log();
+  console.log("16. 개발 층을 도형으로 (mode=devvec) — 완공된 것을 걸러 내려고");
+  // 그림(WMS)으로는 못 거른다 — 브이월드가 이미 칠해서 준다. 그래서
+  // 계획도로와 택지지구만 WFS 로 받아 화면이 거른다 (2026-09-14 지시).
+  const DEVFC = {
+    type: 'FeatureCollection',
+    features: [
+      { properties: { cat_nam: '준공', zonename: '대구월성',
+                      zonecode: '27290KH1986001', cat_cde: 'CP' },
+        geometry: { type: 'Polygon',
+          coordinates: [[[127.00012345678, 37.0], [127.001, 37.0],
+                         [127.001, 37.001], [127.00012345678, 37.0]]] } },
+      { properties: { cat_nam: '지구지정', zonename: '아무지구' },
+        geometry: { type: 'Polygon',
+          coordinates: [[[127.002, 37.002], [127.003, 37.002],
+                         [127.003, 37.003], [127.002, 37.002]]] } },
+    ],
+  };
+  stubFetch(parcelReply(DEVFC));
+  const dv = await call({ mode: 'devvec', kind: 'zone',
+                          z: '13', x: '6992', y: '3188' });
+  const dvUrl = (calls[0] || {}).url || '';
+  check('사업지구를 WFS 로 부른다',
+        /\/req\/wfs\?/.test(dvUrl) && /TYPENAME=lt_c_lhzone/.test(dvUrl),
+        dvUrl.replace(KEY, '<KEY>').slice(0, 90) || '없음');
+  check('도형 두 개를 돌려준다', (dv.json_ || {}).n === 2,
+        String((dv.json_ || {}).n));
+  // 단계 칸은 **실어야** 한다 — 그것으로 거르고 색을 정하기 때문이다.
+  const dvFirst = ((dv.json_ || {}).items || [])[0] || {};
+  check('단계(cat_nam)와 이름은 싣는다',
+        (dvFirst.p || {}).cat_nam === '준공'
+        && (dvFirst.p || {}).zonename === '대구월성',
+        JSON.stringify(dvFirst.p || {}));
+  // 안 쓰는 칸까지 다 실으면 한 칸이 커진다.
+  check('안 쓰는 칸은 안 싣는다 (cat_cde)',
+        !('cat_cde' in (dvFirst.p || {})),
+        JSON.stringify(dvFirst.p || {}));
+  const dvPt = (((dvFirst.g || {}).coordinates || [])[0] || [])[0] || [];
+  check('좌표를 여섯 자리로 깎는다', dvPt[0] === 127.000123, String(dvPt[0]));
+
+  stubFetch(parcelReply(DEVFC));
+  const dvRoad = await call({ mode: 'devvec', kind: 'planroad',
+                              z: '13', x: '6992', y: '3188' });
+  check('계획도로도 같은 길로 부른다',
+        dvRoad.code === 200
+        && /TYPENAME=lt_c_upisuq151/.test((calls[0] || {}).url || ''),
+        String(dvRoad.code));
+
+  stubFetch(parcelReply(DEVFC));
+  const dvBad = await call({ mode: 'devvec', kind: '없는것',
+                             z: '13', x: '6992', y: '3188' });
+  check('모르는 갈래는 거절한다 (브이월드를 안 부른다)',
+        dvBad.code === 400 && calls.length === 0, String(dvBad.code));
+
+  // 얕은 배율은 거절한다 — 한 칸에 든 도형이 상한에 걸려 군데군데 빠진다.
+  stubFetch(parcelReply(DEVFC));
+  const dvShallow = await call({ mode: 'devvec', kind: 'zone',
+                                 z: '9', x: '436', y: '199' });
+  check('배율 12 아래는 거절한다',
+        dvShallow.code === 400 && calls.length === 0, String(dvShallow.code));
+
+  console.log();
   console.log('17. 주소 → 좌표 (mode=geocode) — 주소를 치면 그 필지로');
   const geoReply = (body) => ({
     ok: true, status: 200,
