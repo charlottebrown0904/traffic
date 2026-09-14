@@ -366,13 +366,17 @@ def cmd_value_test(args):
               AND t.geocode_level = 'parcel'
               {"" if nationwide else "AND t.sigungu_cd = ?"} AND pc.land_use LIKE ?
               AND t.price_per_m2 > 0 AND pc.official_price > 0
+              -- 거래금액 하한 (지시 2026-09-14: "거래금액이 5천만원 이상").
+              -- 작은 금액은 지분·자투리·가족 간 거래가 섞여 배수가 튄다.
+              AND t.price_krw >= ?
               AND (t.deal_year * 12 + t.deal_month) >= ?
               -- 거래면적이 필지면적의 절반~두 배 밖이면 지번 지오코딩이 옆 필지에
               -- 떨어진 것일 수 있다 (run 7: 14㎡ 거래가 254㎡ 필지에 붙었다).
               AND t.area_m2 BETWEEN pc.area_m2 * 0.5 AND pc.area_m2 * 2.0
             QUALIFY row_number() OVER (PARTITION BY pc.pnu ORDER BY t.deal_year DESC, t.deal_month DESC) = 1
         """
-        params = ([] if nationwide else [code]) + [f"%{zone}%", ym - args.months]
+        params = ([] if nationwide else [code]) + [
+            f"%{zone}%", int(args.min_price), ym - args.months]
         if nationwide:
             # 전국에서 n건 — SQL 안에서 뽑는다 (수만 건을 다 들고 오지 않게).
             sql = f"SELECT * FROM ({base_sql}) USING SAMPLE reservoir({int(args.n)} ROWS) REPEATABLE ({int(args.seed)})"
@@ -490,7 +494,13 @@ def cmd_value_test(args):
             out.append({"trade_id": t["trade_id"], "pnu": t["pnu"], "sgg": sgg, "sido": subject["sido"],
                         "umd": t.get("umd"), "jibun": t.get("jibun"),
                         "deal": f"{t['deal_year']}-{int(t['deal_month']):02d}",
-                        "ug": ug, "jimok": t["jimok"],
+                        "ug": ug, "zg": zg, "jimok": t["jimok"],
+                        # **원인을 가르는 두 칸.** 배수가 어긋난 칸에서
+                        # 평가선례가 몇 건이었고(n) 어느 단계까지 물러났는지
+                        # (level: 시군구 → 시도 → 전국). 이것이 없으면
+                        # '감정평가서가 모자라서인가' 를 숫자로 못 가른다.
+                        "led_n": (led or {}).get("n"),
+                        "led_level": (led or {}).get("level") or "(없음)",
                         "actual": actual, "official": t["official_price"], "std": stds3[0].get("label"),
                         "std_price": stds3[0].get("price"), "time": tf.get("factor"),
                         "region": r0["region"]["factor"], "indiv": r0["individual"]["factor"],
@@ -527,7 +537,9 @@ def cmd_value_test(args):
         print(f"   켠 채 중앙 {on[0]:.2f} · ±30% 안 {on[1]} · 2배 안 {on[2]}")
         print(f"   끈 채 중앙 {offd[0]:.2f} · ±30% 안 {offd[1]} · 2배 안 {offd[2]}")
     # 지목군별 · 시·도별 — 어느 칸이 실거래와 어긋나는지가 다음에 손댈 곳.
-    for title, keyf in (("지목군", lambda o: o.get("ug") or "(없음)"), ("시·도", lambda o: o.get("sido") or "?")):
+    for title, keyf in (("지목군", lambda o: o.get("ug") or "(없음)"),
+                        ("용도지역군", lambda o: o.get("zg") or "(없음)"),
+                        ("시·도", lambda o: o.get("sido") or "?")):
         by: dict = {}
         for o in done:
             if o["unit"].get("결정"):
@@ -538,6 +550,57 @@ def cmd_value_test(args):
         for k, rs in sorted(by.items(), key=lambda kv: -len(kv[1])):
             d = _digest(rs)
             print(f"   {k:<6s} n={d[3]:>3d} 중앙 {d[0]:.2f} · ±30% 안 {d[1]} · 2배 안 {d[2]}")
+    # ── 어긋난 칸의 원인 가르기 (지시 2026-09-14) ────────────────────
+    #
+    # "차이가 많은 지역과 용도지역, 지목을 알려주시고, 원인이 감정평가서(BM)이
+    #  부족한 것인지 아니면 다른 원인이 있는지 확인해 주세요."
+    #
+    # 배수가 어긋난 것만으로는 못 가른다. 같은 칸에서 **평가선례가 몇 건이
+    # 받쳐 줬는지**(led_n)와 **어느 단계까지 물러났는지**(led_level)를 나란히
+    # 놓아야 한다. 물러남은 시군구 → 시도 → 전국 순이고, 전국까지 물러났다는
+    # 것은 그 조건의 평가서가 우리에게 없다는 뜻이다.
+    #
+    #   어긋남 크다 + 전국까지 물러남 + n 적다  → **평가서가 모자라서다**
+    #   어긋남 크다 + 제 칸에서 n 넉넉          → **다른 까닭이다** (그 칸을 따로 판다)
+    print()
+    print("어긋난 칸의 원인 — 평가선례가 받쳐 줬는가")
+    print("  (물러남: 시군구 → 시도 → 전국. 전국까지 갔으면 그 조건의 평가서가 없다)")
+    for title, keyf in (("지목군", lambda o: o.get("ug") or "(없음)"),
+                        ("용도지역군", lambda o: o.get("zg") or "(없음)"),
+                        ("시·도", lambda o: o.get("sido") or "?")):
+        rows = []
+        by: dict = {}
+        for o in done:
+            if o["unit"].get("결정"):
+                by.setdefault(keyf(o), []).append(o)
+        for k, os_ in by.items():
+            rs = [o["actual"] / o["unit"]["결정"] for o in os_]
+            d = _digest(rs)
+            ns = [o["led_n"] for o in os_ if o.get("led_n")]
+            lv: dict = {}
+            for o in os_:
+                lv[o.get("led_level") or "(없음)"] = lv.get(o.get("led_level") or "(없음)", 0) + 1
+            # 1.0 에서 얼마나 멀리 있는가 — 위아래 어느 쪽이든 어긋남이다.
+            off = abs(d[0] - 1.0)
+            rows.append((off, k, d, ns, lv))
+        if len(rows) <= 1:
+            continue
+        print(f"\n  [{title}] 어긋난 순서")
+        print(f"    {'칸':<10s} {'n':>4s} {'중앙':>6s} {'±30%':>6s} {'선례n중앙':>9s}  물러남")
+        for off, k, d, ns, lv in sorted(rows, key=lambda r: -r[0]):
+            med_n = sorted(ns)[len(ns) // 2] if ns else 0
+            lvs = " · ".join(f"{a}{b}" for a, b in sorted(lv.items(), key=lambda kv: -kv[1]))
+            flag = ""
+            # 문턱은 '±30% 밖' 과 '선례가 거의 없음' 이다. 둘 다면 평가서 탓,
+            # 어긋나는데 선례는 넉넉하면 다른 탓 — 이름을 붙여 준다.
+            if off >= 0.30:
+                flag = " ← 평가서 부족" if med_n < 5 else " ← **다른 까닭**"
+            print(f"    {k:<10s} {d[3]:>4d} {d[0]:>6.2f} {d[1]:>6d} {med_n:>9d}  {lvs}{flag}")
+    print()
+    print("  읽는 법: '평가서 부족' 은 그 조건의 선례를 더 넣으면 좋아진다는 뜻이고,")
+    print("  '다른 까닭' 은 선례가 있는데도 어긋난 것이라 산식·표준지 선정·시점")
+    print("  보정 쪽을 따로 봐야 한다는 뜻이다.")
+
     if appraisal_db.configured():
         fs = appraisal_db.factor_summary()
         if fs:
@@ -3758,6 +3821,8 @@ def main(argv=None):
     p.add_argument("--zone", default="계획관리", help="용도지역 조각 (LIKE)")
     p.add_argument("--n", type=int, default=5, help="임의로 뽑을 거래 수")
     p.add_argument("--months", type=int, default=12, help="이 달수 안의 거래에서 뽑는다")
+    p.add_argument("--min-price", dest="min_price", default="0",
+                   help="거래금액 하한(원). 5천만이면 50000000")
     p.add_argument("--seed", type=int, default=11, help="같은 표본을 다시 뽑기 위한 씨앗")
     p.set_defaults(func=cmd_value_test)
 

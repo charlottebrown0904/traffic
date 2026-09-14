@@ -67,6 +67,9 @@ on:
       months:
         description: "value-test 모드 — 이 달수 안의 거래에서 뽑는다 (거래가 얇은 군은 36~60)"
         default: "12"
+      min_price:
+        description: "value-test 모드 — 거래금액 하한(원). 5천만이면 50000000"
+        default: "0"
       query:
         description: "law 모드 — 조례 검색어 (쉼표로 여럿 · 비우면 도시계획/군계획 조례 묶음)"
         default: ""
@@ -149,7 +152,8 @@ jobs:
           export REDT_DIST_WEIGHT="${{ inputs.limit || '1.0' }}"
           echo "거리 저울 REDT_DIST_WEIGHT=$REDT_DIST_WEIGHT"
           python -m redt.cli value-test --sigungu "${{ inputs.sigungu }}" --zone "${{ inputs.zone }}" \
-            --n "${{ inputs.n }}" --months "${{ inputs.months || 12 }}" 2>&1 | tee /tmp/stdland.log
+            --n "${{ inputs.n }}" --months "${{ inputs.months || 12 }}" \
+            --min-price "${{ inputs.min_price || '0' }}" 2>&1 | tee /tmp/stdland.log
 
       # 표준지 좌표를 연속지적도에서 묶어 받을 수 있나 (2026-09-13).
       # 좌표가 없어 같은 인근지역에서 표준지를 못 고른다 — 정확도의 가장 큰 구멍.
