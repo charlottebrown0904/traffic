@@ -3235,16 +3235,32 @@ def cmd_kosis_peek(args):
     if not args.year:
         return
     print(f"\n[맛보기] {args.year}년")
-    obj = {}
-    for extra in (args.obj or "").split(","):
-        extra = extra.strip()
-        if extra:
-            obj[extra] = "ALL"
-    try:
-        rows = kosis.fetch_table(org, tbl, args.year, args.year,
-                                 prd_se=args.prd, obj=obj or None)
-    except Exception as exc:                          # noqa: BLE001
-        print(f"  실패: {exc}")
+    # 축이 몇 개인지는 표마다 다르고, 모자라면 KOSIS 는 200 에 err 20
+    # (objL 누락)을 실어 보낸다. 축 이름을 하나씩 추측해 판을 태우지 말고
+    # **여기서 늘려 가며** 두드린다 — objL2 → objL2,objL3 → …objL5.
+    given = [x.strip() for x in (args.obj or "").split(",") if x.strip()]
+    tries = [given] if given else []
+    for n in (2, 3, 4, 5):
+        cand = [f"objL{i}" for i in range(2, n + 1)]
+        if cand not in tries:
+            tries.append(cand)
+    rows = None
+    for extra in tries:
+        obj = {name: "ALL" for name in extra}
+        try:
+            rows = kosis.fetch_table(org, tbl, args.year, args.year,
+                                     prd_se=args.prd, obj=obj or None,
+                                     quiet=True)
+        except kosis.KosisError as exc:
+            print(f"  objL1+{extra or '없음'}: {exc}")
+            continue
+        except Exception as exc:                      # noqa: BLE001
+            print(f"  objL1+{extra or '없음'}: {exc}")
+            return
+        print(f"  objL1+{extra or '없음'}: 통했다")
+        break
+    if rows is None:
+        print("  축을 못 맞췄다 — objL5 까지 다 막혔다")
         return
     print(f"  {len(rows)}행")
     if rows:
