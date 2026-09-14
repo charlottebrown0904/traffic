@@ -841,7 +841,12 @@ body.picking .leaflet-container{cursor:crosshair}
 
      닫기 단추를 누르면 body.has-detail 이 풀려 지도가 다시 커진다. */
   .detail{
-    position:static; flex:0 0 auto; width:100%;
+    /* **relative 를 유지한다 — static 으로 두면 닫기 단추가 머리띠로 올라간다.**
+       .detail-close 는 position:absolute 라 '자리 기준이 있는 가장 가까운 조상'
+       에 붙는다. 이 칸이 static 이 되는 순간 그 기준이 사라져 단추가 머리띠
+       (position:sticky) 까지 거슬러 올라가 붙었다 (2026-09-14 보고). 흐름 안에
+       두려던 것이 목적이었고, relative 도 흐름 안에 있으므로 이쪽이 맞다. */
+    position:relative; flex:0 0 auto; width:100%;
     max-height:none; overflow:visible;
     padding:1.1rem .95rem 2.5rem;
     background:var(--surface);
@@ -1252,7 +1257,9 @@ body.picking .leaflet-container{cursor:crosshair}
    레이더는 넓이를 점수로 읽히게 두면 안 된다 — 축 순서만 바꿔도 넓이가
    달라진다. 그래서 면은 옅게 깔고, 축마다 백분위와 원값을 글자로 적는다. */
 .parcel-card { font-size: 13px; }
-.pc-head { display: flex; align-items: baseline; gap: .5rem; }
+/* 오른쪽 위 모서리에 닫기 단추가 앉으므로 그만큼 비워 둔다 — 긴 용도지역
+   이름이 단추 밑으로 들어가지 않게. */
+.pc-head { display: flex; align-items: baseline; gap: .5rem; padding-right: 2.4rem; }
 .pc-head b { font-size: 15px; }
 .pc-head span { color: var(--muted); font-size: 12px; }
 .pc-size { color: var(--muted); font-size: 12.5px; margin-bottom: .4rem; }

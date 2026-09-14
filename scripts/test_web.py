@@ -382,6 +382,30 @@ check("토지·건축이 처음이시면" not in _land, "지운 가이드 안내
 check("section a{color:var(--accent)" in _land, "칸 안의 링크가 강조색을 입는다")
 
 
+# ── 닫기 단추가 상세 칸 안에 있는가 (2026-09-14 보고) ───────────────
+#
+# 휴대폰에서 × 가 머리띠 오른쪽 위에 떠 있었다. 단추는 상세 칸에 심는데
+# (app.js 의 detailBody), 좁은 화면 규칙이 .detail 을 position:static 으로
+# 바꾸면서 **자리 기준이 사라졌다.** position:absolute 는 기준이 없으면
+# 위로 거슬러 올라가 붙는다 — 머리띠가 sticky 라 거기 앉았다.
+#
+# 눈으로만 보면 다음에 또 놓친다. 규칙으로 못 박는다.
+_css = (PUBLIC / "app" / "style.css").read_text(encoding="utf-8")
+_close = re.search(r"\.detail-close\s*\{([^}]*)\}", _css)
+check(bool(_close) and "position:absolute" in (_close.group(1).replace(" ", "") if _close else ""),
+      "닫기 단추가 상세 칸 안에 절대배치된다")
+_detail_blocks = re.findall(r"(?:^|[},])\s*\.detail\s*\{([^}]*)\}", _css, re.M)
+check(bool(_detail_blocks), ".detail 규칙을 찾았다")
+_static = [b for b in _detail_blocks if "position:static" in b.replace(" ", "")]
+check(not _static,
+      ".detail 이 position:static 이 되지 않는다 (되면 닫기 단추가 머리띠로 올라간다)")
+check(any("position:relative" in b.replace(" ", "") for b in _detail_blocks),
+      ".detail 이 닫기 단추의 자리 기준이다 (position:relative)")
+check("padding-right" in (re.search(r"\.pc-head\s*\{([^}]*)\}", _css).group(1)
+                          if re.search(r"\.pc-head\s*\{([^}]*)\}", _css) else ""),
+      "카드 머리글이 닫기 단추 자리를 비워 둔다")
+
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
