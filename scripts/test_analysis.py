@@ -2734,8 +2734,49 @@ try:
     _a = _con.execute("SELECT value FROM region_series WHERE metric='permit_area_m2:all' AND period='202401'").fetchone()
     check(_f and _f[0] == 128 and _a and _a[0] == 25700.0,
           f"시군구·월·갈래로 모은다 (공장 {_f[0] if _f else None}건 · 전체 {_a[0] if _a else None}㎡)")
+    # 허가일 쓰레기(3003년 · 1944년) 는 모으지 않는다
+    _con.execute("INSERT OR REPLACE INTO permit VALUES ('Z1','41550','25300',NULL,NULL,'공장',NULL,NULL,NULL,999,NULL,'30030901',NULL,NULL,NULL)")
+    _con.execute("INSERT OR REPLACE INTO permit VALUES ('Z2','41550','25300',NULL,NULL,'공장',NULL,NULL,NULL,999,NULL,'19441001',NULL,NULL,NULL)")
+    _IND.aggregate_permits(_con)
+    _bad = _con.execute("SELECT count(*) FROM region_series WHERE metric LIKE 'permit_%' AND (period > '209912' OR period < '199001')").fetchone()[0]
+    check(_bad == 0, f"허가일이 1990-01~이번 달 밖이면 모으지 않는다 ({_bad}행)")
+    # 나란히: 일꾼 둘 · 예산 넉넉 → 두 동을 다 끝내고 호출은 3+1 회
+    _con.execute("DELETE FROM permit_crawl"); _con.execute("DELETE FROM permit")
+    _calls.clear()
+    _info3 = _IND.crawl_permits(_con, sigungu=["41550"], max_calls=10, log=lambda *a: None, workers=2)
+    check(_info3["calls"] == 4 and _info3["finished"] == 2 and _info3["permits"] == 257 and _info3["left_total"] == 0,
+          f"일꾼 둘이 나란히 불러도 호출·건수가 같다 ({_info3['calls']}회 · {_info3['permits']}건)")
+    _con.execute("DELETE FROM permit_crawl"); _con.execute("DELETE FROM permit")
+    _info4 = _IND.crawl_permits(_con, sigungu=["41550"], max_calls=3, log=lambda *a: None, workers=2)
+    check(_info4["calls"] == 3, f"나란히 불러도 예산을 넘지 않는다 ({_info4['calls']}회)")
+    # 시간 예산: 0초면 한 번도 부르지 않고 멈춘다
+    _con.execute("DELETE FROM permit_crawl")
+    _msgs = []
+    _info5 = _IND.crawl_permits(_con, sigungu=["41550"], max_calls=10, log=_msgs.append, workers=1, max_seconds=0)
+    check(_info5["calls"] == 0 and any("시간 예산" in m for m in _msgs), "시간 예산이 다하면 스스로 멈추고 말한다")
 finally:
     _IND.hub_page = _saved_hub
+
+# 빈 몸통은 다시 부른다 — 두 번 빈 뒤 세 번째에 오면 성공, 세 번 다 비면 예외
+_n_get = {"n": 0}
+def _fake_get_json(url, params, timeout=60):
+    _n_get["n"] += 1
+    if _n_get["n"] < 3:
+        raise _IND.http.ApiError("JSON 이 아닙니다 (HTTP 200): ")
+    return {"response": {"body": {"totalCount": 1, "items": {"item": [{"mgmPmsrgstPk": "R1"}]}}}}
+_saved_get, _saved_sleep = _IND.http.get_json, _IND.time.sleep
+try:
+    _IND.http.get_json, _IND.time.sleep = _fake_get_json, lambda s: None
+    _items, _tot = _IND.hub_page("41550", "25300", 1)
+    check(_n_get["n"] == 3 and _tot == 1 and _items[0]["mgmPmsrgstPk"] == "R1", "빈 몸통은 다시 불러 받는다 (3회째 성공)")
+    _n_get["n"] = -10
+    try:
+        _IND.hub_page("41550", "25300", 1)
+        check(False, "계속 비면 예외")
+    except _IND.http.ApiError:
+        check(True, f"{_IND.HUB_TRIES}회 다 비면 예외로 올린다 — 조용히 0건이 되지 않는다")
+finally:
+    _IND.http.get_json, _IND.time.sleep = _saved_get, _saved_sleep
 
 print()
 if fail:

@@ -783,7 +783,8 @@ def cmd_load_permits(args):
     sgg = [x.strip() for x in (args.sigungu or "").split(",") if x.strip()] or None
     with db.connect() as con:
         info = indicators.crawl_permits(con, sigungu=sgg, max_calls=int(args.max_calls),
-                                        timeout=int(args.timeout))
+                                        timeout=int(args.timeout), workers=int(args.workers),
+                                        max_seconds=int(args.max_minutes) * 60)
         print(f"\n이 판: 호출 {info['calls']:,} · 새 행 {info['rows']:,} · 끝낸 법정동 {info['finished']:,}"
               f" · 실패 {info['failed']} · permit 누계 {info['permits']:,}건 · 전국 남은 법정동 {info['left_total']:,}")
         n = indicators.aggregate_permits(con)
@@ -3407,6 +3408,9 @@ def main(argv=None):
     p = sub.add_parser("load-permits", help="건축인허가 훑기 — 건축HUB → permit (이어받기)")
     p.add_argument("--sigungu", default="", help="시군구 코드(5) 또는 시도(2)를 쉼표로 (비우면 전국)")
     p.add_argument("--max-calls", dest="max_calls", default="8000", help="이 판의 호출 예산")
+    p.add_argument("--max-minutes", dest="max_minutes", default="65",
+                   help="이 판의 시간 예산(분) — 러너 90분 안에 캐시 저장까지 마치게")
+    p.add_argument("--workers", default="4", help="나란히 부를 법정동 수")
     p.add_argument("--timeout", default="40")
     p.set_defaults(func=cmd_load_permits)
 

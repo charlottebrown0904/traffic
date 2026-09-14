@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import html
 import re
+import threading
+import time
 
 from . import http
 
@@ -797,10 +799,26 @@ def permit_row(item: dict) -> tuple | None:
             str(item.get("useAprDay") or "") or None, str(item.get("crtnDay") or "") or None)
 
 
+# 빈 몸통(HTTP 200 에 0바이트)이 300회에 14회 왔다 (run 34807667125). 상류의
+# 순간 결함이라 같은 쪽을 다시 부르면 온다. 한 쪽에 최대 이만큼 부른다.
+HUB_TRIES = 3
+
+
 def hub_page(sgg: str, bjd: str, page: int, timeout: int = 40) -> tuple[list[dict], int]:
-    """한 쪽. (항목들, 전체 건수). 봉투가 이상하면 예외 — 조용히 0 이 되지 않는다."""
-    res = http.get_json(HUB_URL, {"sigunguCd": sgg, "bjdongCd": bjd, "numOfRows": str(HUB_PAGE),
-                                  "pageNo": str(page), "_type": "json"}, timeout=timeout)
+    """한 쪽. (항목들, 전체 건수). 봉투가 이상하면 예외 — 조용히 0 이 되지 않는다.
+
+    JSON 이 아닌 몸통(빈 200)은 HUB_TRIES 번까지 다시 부른다 — 그 뒤에도
+    아니면 예외로 올려 그 법정동을 이 판의 실패로 남긴다 (다음 판이 이어받는다).
+    """
+    for attempt in range(1, HUB_TRIES + 1):
+        try:
+            res = http.get_json(HUB_URL, {"sigunguCd": sgg, "bjdongCd": bjd, "numOfRows": str(HUB_PAGE),
+                                          "pageNo": str(page), "_type": "json"}, timeout=timeout)
+            break
+        except http.ApiError as exc:
+            if "JSON 이 아닙니다" not in str(exc) or attempt == HUB_TRIES:
+                raise
+            time.sleep(1.5 * attempt)
     if "response" not in res:
         # 키 미등록 등은 OpenAPI_ServiceResponse 로 온다
         msg = (res.get("OpenAPI_ServiceResponse") or {}).get("cmmMsgHeader") or res
@@ -829,53 +847,99 @@ def bjdong_targets(con, sigungu: list[str] | None = None) -> list[tuple[str, str
 
 
 def crawl_permits(con, sigungu: list[str] | None = None, max_calls: int = 8000,
-                  timeout: int = 40, log=print) -> dict:
-    """(시군구, 법정동) 을 돌며 permit 을 채운다. 예산이 다하면 멈춘다 — 이어받는다."""
+                  timeout: int = 40, log=print, workers: int = 1, max_seconds: int = 3900) -> dict:
+    """(시군구, 법정동) 을 돌며 permit 을 채운다. 예산이 다하면 멈춘다 — 이어받는다.
+
+    두 예산이 있다. 호출 수(max_calls)는 포털의 하루 한도를, 시간(max_seconds)은
+    러너의 90분 한도를 지킨다. 러너가 시간에 죽으면 그 뒤의 캐시 저장이 안 돌아
+    이 판이 받은 것이 **통째로** 사라진다 — 그래서 65분에 스스로 멈춘다.
+
+    workers 만큼 법정동을 나란히 부른다. 한 호출이 1초쯤이라(run 34807667125:
+    300회 5분) 혼자면 8,000회가 시간 예산을 넘는다. DB 쓰기는 자물쇠로 한 줄씩.
+    """
     from datetime import datetime, timezone
+    from concurrent.futures import ThreadPoolExecutor
     targets = bjdong_targets(con, sigungu)
     done = {(a, b): (t, f) for a, b, t, f in con.execute(
         "SELECT sigungu_cd, bjdong_cd, total, fetched FROM permit_crawl").fetchall()}
     todo = [(a, b) for a, b in targets if not (done.get((a, b)) and done[(a, b)][1] >= done[(a, b)][0])]
-    log(f"대상 {len(targets):,}곳 · 끝난 {len(targets) - len(todo):,}곳 · 남은 {len(todo):,}곳 · 예산 {max_calls:,}회")
-    calls = rows = 0
-    finished = failed = 0
-    for sgg, bjd in todo:
-        if calls >= max_calls:
-            break
+    log(f"대상 {len(targets):,}곳 · 끝난 {len(targets) - len(todo):,}곳 · 남은 {len(todo):,}곳"
+        f" · 예산 {max_calls:,}회 · {max_seconds // 60}분 · 일꾼 {workers}")
+    state = {"calls": 0, "rows": 0, "finished": 0, "failed": 0, "stop": False, "timed_out": False}
+    lock = threading.Lock()
+    deadline = time.monotonic() + max_seconds
+
+    def exhausted() -> bool:
+        """자물쇠 안에서 부른다. 시간에 닿았으면 그 사실을 남긴다."""
+        if state["stop"] or state["calls"] >= max_calls:
+            return True
+        if time.monotonic() > deadline:
+            state["timed_out"] = True
+            return True
+        return False
+
+    def take_call() -> bool:
+        with lock:
+            if exhausted():
+                return False
+            state["calls"] += 1
+            return True
+
+    def work(sgg: str, bjd: str) -> None:
         prev = done.get((sgg, bjd))
         fetched = prev[1] if prev else 0
         page = fetched // HUB_PAGE + 1
         total = prev[0] if prev else None
         try:
-            while calls < max_calls:
+            while take_call():
                 items, total = hub_page(sgg, bjd, page, timeout=timeout)
-                calls += 1
                 recs = [r for r in (permit_row(it) for it in items) if r]
-                if recs:
-                    con.executemany(
-                        "INSERT OR REPLACE INTO permit VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", recs)
-                    rows += len(recs)
                 fetched = min(total, (page - 1) * HUB_PAGE + len(items))
-                con.execute(
-                    "INSERT OR REPLACE INTO permit_crawl VALUES (?,?,?,?,?)",
-                    [sgg, bjd, total, fetched, datetime.now(timezone.utc)])
+                with lock:
+                    if recs:
+                        con.executemany(
+                            "INSERT OR REPLACE INTO permit VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", recs)
+                        state["rows"] += len(recs)
+                    con.execute(
+                        "INSERT OR REPLACE INTO permit_crawl VALUES (?,?,?,?,?)",
+                        [sgg, bjd, total, fetched, datetime.now(timezone.utc)])
                 if fetched >= total or not items:
-                    finished += 1
-                    break
+                    with lock:
+                        state["finished"] += 1
+                    return
                 page += 1
         except Exception as exc:                      # noqa: BLE001
-            failed += 1
-            log(f"  ✗ {sgg} {bjd} p{page}: {str(exc)[:160]}")
-            if "SERVICE_KEY" in str(exc) or "LIMITED" in str(exc).upper():
-                log("  키·한도 문제입니다 — 이 판은 여기서 멈춥니다.")
-                break
+            with lock:
+                state["failed"] += 1
+                log(f"  ✗ {sgg} {bjd} p{page}: {str(exc)[:160]}")
+                if "SERVICE_KEY" in str(exc) or "LIMITED" in str(exc).upper():
+                    log("  키·한도 문제입니다 — 이 판은 여기서 멈춥니다.")
+                    state["stop"] = True
+
+    if workers <= 1:
+        for sgg, bjd in todo:
+            with lock:
+                if exhausted():
+                    break
+            work(sgg, bjd)
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            # 한 번에 다 넣지 않는다 — 예산이 다한 뒤 2만 개가 헛돌지 않게 묶음으로.
+            for i in range(0, len(todo), workers * 8):
+                with lock:
+                    if exhausted():
+                        break
+                list(pool.map(lambda t: work(*t), todo[i:i + workers * 8]))
+    if state["timed_out"]:
+        log(f"  시간 예산({max_seconds // 60}분)에 닿아 멈췄습니다 — 다음 판이 이어받습니다.")
     left = con.execute("""
         SELECT count(*) FROM (
           SELECT DISTINCT sigungu_cd, substr(region_cd, 6, 5) AS b FROM region_umd WHERE length(region_cd)=10
         ) t LEFT JOIN permit_crawl c ON c.sigungu_cd = t.sigungu_cd AND c.bjdong_cd = t.b
         WHERE c.total IS NULL OR c.fetched < c.total
     """).fetchone()[0]
-    return {"calls": calls, "rows": rows, "finished": finished, "failed": failed, "left_total": left,
+    return {"calls": state["calls"], "rows": state["rows"], "finished": state["finished"],
+            "failed": state["failed"], "left_total": left,
             "permits": con.execute("SELECT count(*) FROM permit").fetchone()[0]}
 
 
@@ -901,10 +965,16 @@ def purps_group(name: str | None) -> str:
 def aggregate_permits(con) -> int:
     """permit → region_series: 시군구 × 허가월 × 갈래의 연면적 합과 건수."""
     import pandas as pd
+    from datetime import date
+    # 허가일에 1944년·3003년·'250007' 같은 값이 섞여 온다 (run 34807667125).
+    # 1990-01 ~ 이번 달 밖은 버린다 — 패널은 2006년부터고, 그 앞 십몇 해는
+    # 선행 시차용이다.
+    this_month = date.today().strftime("%Y%m")
     df = con.execute("""
         SELECT sigungu_cd, substr(pms_day, 1, 6) AS period, main_purps, tot_area
         FROM permit WHERE pms_day IS NOT NULL AND length(pms_day) >= 6 AND sigungu_cd <> ''
-    """).fetchdf()
+          AND substr(pms_day, 1, 6) BETWEEN '199001' AND ?
+    """, [this_month]).fetchdf()
     if df.empty:
         return 0
     df["grp"] = df["main_purps"].map(purps_group)
