@@ -65,6 +65,12 @@ CANDIDATES = [
      "params": {"sigunguCd": "11680", "bjdongCd": "10300", "numOfRows": "5",
                 "pageNo": "1", "_type": "json", "startDate": "20240101", "endDate": "20241231"}},
     # 행안부 통계연보 — 상세 화면에서 주소와 운영 이름이 나왔다 (15107410).
+    # 한전: 시군구(cityCd) 없이 시도만 주면 시도 전체가 오는가 — 그러면 전국이
+    # 17 시도 × 12 월 × 연수 호출로 끝난다.
+    {"name": "한전 계약종별 · 시군구 없이 (시도 전체?)",
+     "url": "https://bigdata.kepco.co.kr/openapi/v1/powerUsage/contractType.do",
+     "params": {"year": "2024", "month": "01", "metroCd": "41",
+                "apiKey": http.VIA_RELAY, "returnType": "json"}},
     {"name": "통계연보 지방세 징수실적",
      "url": "https://apis.data.go.kr/1741000/RecordLocalTaxCollectionYear/getRecordLocalTaxCollectionYear",
      "params": {"pageNo": "1", "numOfRows": "3", "type": "json"}},
@@ -348,6 +354,35 @@ def _top_keys(text: str) -> list[str]:
     return []
 
 
+LOFIN_PAGES = [
+    # 지방재정365 Open API 안내가 어디 있는지 모른다. 첫 화면과 흔한 경로를
+    # 읽어 'api' 가 든 링크를 모은다 — 주소를 추측해 두드리는 대신 화면이
+    # 가리키는 곳으로 간다.
+    "https://www.lofin365.go.kr/",
+    "https://www.lofin365.go.kr/portal/main.do",
+    "https://lofin365.go.kr/",
+]
+
+
+def lofin_links(timeout: int = 40) -> list[dict]:
+    """지방재정365 화면에서 API 관련 링크와 글귀를 모은다."""
+    out = []
+    for url in LOFIN_PAGES:
+        try:
+            resp = http.get_once(url, {}, timeout=timeout)
+        except Exception as exc:                      # noqa: BLE001
+            out.append({"url": url, "error": f"{type(exc).__name__}: {exc}"[:200]})
+            continue
+        page = html.unescape(resp.text)
+        links = sorted(set(re.findall(r'href="([^"]*(?:api|API|openapi|Openapi|OpenAPI)[^"]*)"', page)))[:20]
+        words = _around(page, ("Open API", "오픈API", "인증키", "openapi"), width=200, limit=6)
+        out.append({"url": url, "status": resp.status_code, "len": len(page),
+                    "links": links, "excerpts": words})
+        if links:
+            break
+    return out
+
+
 def probe(timeout: int = 40) -> dict:
     """세 마디 모두 — 포털 검색 + 후보 두드리기."""
     found = {}
@@ -403,7 +438,8 @@ def probe(timeout: int = 40) -> dict:
                 pf["title"] = d.get("title", "")[:60]
                 profiles.append(pf)
     return {"portal": found, "candidates": knocked, "details": details,
-            "downloads": downloads, "direct": direct, "profiles": profiles}
+            "downloads": downloads, "direct": direct, "profiles": profiles,
+            "lofin": lofin_links(timeout=timeout)}
 
 
 def describe(result: dict) -> str:
@@ -464,6 +500,16 @@ def describe(result: dict) -> str:
                      f"{g['content_type'][:40]}  길이 {g['length'] or '?'} · 받은 {g['got']:,}")
         if g.get("header"):
             lines.append(f"       머리: {g['header'][:200]}")
+    lines.append("\n── 지방재정365 — API 안내가 어디 있나 ──")
+    for g in result.get("lofin", []):
+        if "error" in g:
+            lines.append(f"  ✗ {g['url']}  {g['error']}")
+            continue
+        lines.append(f"  {g['status']} {g['url']}  ({g['len']:,}자)")
+        for u in g.get("links", [])[:12]:
+            lines.append(f"       링크: {u[:140]}")
+        for x in g.get("excerpts", [])[:4]:
+            lines.append(f"       발췌 {x[:200]}")
     lines.append("\n── 파일 프로파일 (통째로 받아서) ──")
     for pf in result.get("profiles", []):
         if "error" in pf:
@@ -562,15 +608,53 @@ def build_code_map(con) -> dict:
     return out
 
 
+# 옛 이름 → 지금 이름. 파일이 옛 이름을 쓰는 것을 첫 적재(run 34807148446)에서
+# 봤다 — 인천 남구는 2018 년에 미추홀구가 됐다.
+SGG_ALIAS = {("인천", "남구"): "미추홀구"}
+
+# 시도 키가 갈라진 경우 — 파일은 '광주광역시'·'전라남도' 로, 대조표는
+# '전남광주통합특별시'(2026) 로 온다. 둘 다 같은 땅이다.
+SIDO_FALLBACK = {"광주": ("전남광주",), "전남": ("전남광주",), "전남광주": ("광주", "전남")}
+
+
 def resolve(code_map: dict, sido: str, sgg: str) -> str | None:
-    """이름 둘 → 시군구코드. 못 찾으면 None (호출 쪽이 센다)."""
-    k = (sido_key(sido), norm_sgg(sgg))
-    if k in code_map:
-        return code_map[k]
-    # '수원시팔달구' 로 왔는데 대조표가 '팔달구' 인 경우, 또 그 반대
-    for (s, g), code in code_map.items():
-        if s == k[0] and (g.endswith(k[1]) or k[1].endswith(g)) and len(g) >= 2:
-            return code
+    """이름 둘 → 시군구코드. 못 찾으면 None (호출 쪽이 센다).
+
+    첫 적재에서 못 이은 것 셋을 여기서 잇는다:
+      · 광주·전남 ↔ 전남광주통합특별시 (시도 이름 세대 차)
+      · 세종 — 시군구 칸이 비어 온다(단층제). 세종 코드 하나로 잇는다
+      · 구가 있는 시 — 파일은 '수원시' 통째, 대조표는 '수원시 장안구'…
+        구 코드들이 앞 네 자리를 같이 쓰므로 시 코드는 앞 네 자리 + '0'
+    """
+    sk = sido_key(sido)
+    g = norm_sgg(sgg)
+    if g in ("", "nan", "None"):
+        g = ""
+    g = SGG_ALIAS.get((sk, g), g)
+    tries = [sk, *SIDO_FALLBACK.get(sk, ())]
+    for s in tries:
+        if (s, g) in code_map:
+            return code_map[(s, g)]
+    # 세종 — 시군구 이름이 없다. 그 시도의 코드가 하나면 그것이다.
+    if sk == "세종" or g == "":
+        codes = {c for (s, _g), c in code_map.items() if s == sk}
+        if len(codes) == 1:
+            return next(iter(codes))
+        if sk == "세종":
+            return "36110"
+    for s in tries:
+        # '수원시팔달구' 로 왔는데 대조표가 '팔달구' 인 경우, 또 그 반대
+        for (cs, cg), code in code_map.items():
+            if cs == s and cg and g and (cg.endswith(g) or g.endswith(cg)) and len(cg) >= 2 \
+                    and not (g.endswith("시") and cg.startswith(g) and len(cg) > len(g)):
+                return code
+        # 구가 있는 시 — 그 시의 구 코드들이 앞 네 자리를 같이 쓰면 시 코드는 +'0'
+        if g.endswith("시"):
+            gu = {code for (cs, cg), code in code_map.items()
+                  if cs == s and cg.startswith(g) and len(cg) > len(g)}
+            heads = {c[:4] for c in gu}
+            if gu and len(heads) == 1:
+                return next(iter(heads)) + "0"
     return None
 
 
