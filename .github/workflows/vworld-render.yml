@@ -1,0 +1,24 @@
+# 브이월드 '개발' 층이 실제로 그림을 주는지 두드린다 (2026-09-14).
+#
+# 이름이 목록에 있다고 그림이 오는 것은 아니다 — lt_c_uq111 에서 같은
+# 자리에서 세 겹으로 틀린 적이 있다. 빈 그림이 오는 층은 목록에서 뺀다.
+# '켰는데 아무것도 안 나온다' 는 화면은 고장으로 읽힌다.
+name: 브이월드 개발 층 그림 확인
+
+on:
+  workflow_dispatch:
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests pillow
+      - run: python scripts/vworld_render_probe.py
