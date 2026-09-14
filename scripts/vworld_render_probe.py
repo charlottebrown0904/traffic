@@ -125,6 +125,46 @@ def main() -> None:
             print(f"   {spot:10s} {resp.status_code} · {len(raw):,}B"
                   f" · 칠해진 화소 {painted(raw)}")
 
+    # ── 산업단지 층에 **몇 건이나 있는가** ──────────────────────────
+    #
+    # 첨단산업단지가 네 자리 모두 빈 그림이었다. 자리를 더 찍어 맞히는
+    # 것은 추측이다 — 도시첨단산업단지는 전국에 서른 곳이 안 돼 아무
+    # 자리나 찍으면 대개 빈다. 그래서 **층에 대고 직접 센다.** 전국을
+    # 덮는 상자로 물어 0건이면 층이 빈 것이고, 그러면 목록에서 뺀다.
+    #
+    # 덤으로 속성 열쇠를 본다 — **지정일이 있으면** 포털 파일이 막힌
+    # 산업단지 인자를 이 층으로 세울 수 있다 (사건 연구에 날짜가 있어야
+    # 전후를 가른다).
+    print("\n" + "=" * 72)
+    print("산업단지 층 — 전국에 몇 건인가 · 지정일이 있는가")
+    print("=" * 72)
+    for name, label in (("lt_c_wgisiegug", "국가산업단지"),
+                        ("lt_c_wgisieilban", "일반산업단지"),
+                        ("lt_c_wgisiedosi", "첨단산업단지"),
+                        ("lt_c_wgisienong", "농공단지")):
+        try:
+            resp = call(WFS, {
+                "SERVICE": "WFS", "REQUEST": "GetFeature", "VERSION": "1.1.0",
+                "TYPENAME": name,
+                "BBOX": "124.0,33.0,132.0,39.0",      # 한반도 전체
+                "SRSNAME": "EPSG:4326", "OUTPUT": "application/json",
+                "MAXFEATURES": "1000", "RESULTTYPE": "results",
+                "DOMAIN": "https://toji.fyi/",
+            })
+            body = resp.json()
+        except Exception as exc:                       # noqa: BLE001
+            print(f"  {name} ({label}) 실패: {type(exc).__name__} {exc}")
+            continue
+        feats = (body or {}).get("features") or []
+        print(f"  {name} ({label}): {len(feats)}건")
+        if feats:
+            props = feats[0].get("properties") or {}
+            print(f"    속성 열쇠: {sorted(props)}")
+            date_like = [k for k in props
+                         if any(w in k.lower() for w in ("dt", "date", "ymd", "de"))]
+            print(f"    날짜로 보이는 칸: {date_like or '없음'}")
+            print(f"    값: {dict(list(props.items())[:8])}")
+
     # WFS 도 한 자리 — 행정구역 한 덩이가 오는가 (mode=admin 의 길).
     print("\n" + "=" * 72)
     print("행정구역 WFS — 누른 자리를 감싸는 폴리곤이 오는가")
