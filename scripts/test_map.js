@@ -3732,7 +3732,7 @@ async function stubCommon(pg) {
                                     || /습니다$/.test(String(w).trim())),
           JSON.stringify(five.warn));
     // 못 하는 까닭이 **표준지 자료**에 있다는 것이 드러나야 한다. 감정평가서
-    // (원장)가 모자라서로 읽히면 안 된다 — 사장님이 그렇게 읽으셨다.
+    // (원장)가 모자라서로 읽히면 안 된다 — 실제로 그렇게 읽힌 보고가 있었다.
     check('확인 못 한 까닭이 표준지 자료라고 적는다',
           five.warn.some((w) => /표준지 공시지가 자료/.test(w)),
           JSON.stringify(five.warn));
