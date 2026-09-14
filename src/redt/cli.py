@@ -33,7 +33,7 @@ from .collect import geocode as gc
 from .collect import backfill, ex_api, h3_files, rtms, tollgate, tollgate_fill, traffic as tr
 from .collect import traffic_files as tfiles
 from . import regions as rg
-from .config import PROCESSED, ROOT, settings
+from .config import PROCESSED, ROOT, relay, settings
 
 ROOT_CFG = ROOT / "config"
 from .transform import panel as pn
@@ -721,6 +721,91 @@ def _cadastral_retry_alias(CAD, con, path: Path, want: set[str]) -> str:
     return (f"옛 코드 {got['code']} 로 맞췄습니다 (제 필지의 {got['cover']:.0%}"
             f" · {got['rows']:,}필지 덮음) → 맞은 필지 {len(alt):,}개 · {n_txt}"
             f" · 남은 것 {len(want):,}")
+
+
+def cmd_ecos(args):
+    """한국은행 ECOS — 시장 층 계열을 받아 market_series 에 쌓는다.
+
+    **먼저 살아 있는지부터 본다.** ECOS 는 인증키를 쿼리가 아니라 경로 한
+    칸에 넣는 유일한 API 라, 중계기에 pathKey 규칙을 따로 만들었다. 그
+    배선이 실제로 도는지 확인하지 않은 채 쌓기부터 하면, 키가 없다는
+    사실이 '해당하는 데이터가 없습니다' 라는 다른 말로 둔갑해 돌아온다.
+
+    그래서 계열마다 받은 건수·기간·마지막 값을 찍는다. 0건이면 까닭을
+    그 자리에서 말한다 — 0 은 소리를 내야 한다.
+    """
+    from .collect import ecos
+    names = ([n.strip() for n in args.series.split(",") if n.strip()]
+             if args.series else list(ecos.SERIES))
+    bad = [n for n in names if n not in ecos.SERIES]
+    if bad:
+        raise SystemExit(f"모르는 계열: {', '.join(bad)}"
+                         f" (있는 것: {', '.join(ecos.SERIES)})")
+
+    print(f"ECOS {args.start}~{args.end} · 계열 {len(names)}개")
+    if not relay().enabled:
+        print("  ⚠ 중계기를 안 거칩니다 — 인증키 자리표가 그대로 나갑니다")
+
+    got, failed = {}, {}
+    for name in names:
+        table, cycle, item, label = ecos.SERIES[name]
+        # 주기마다 기간 표기가 다르다. 월은 YYYYMM, 분기는 YYYYQn, 연은 YYYY.
+        start, end = _ecos_span(cycle, args.start, args.end)
+        try:
+            rows = ecos.rows(name, start, end, timeout=int(args.timeout))
+        except Exception as exc:                          # noqa: BLE001
+            failed[name] = str(exc)
+            print(f"  ✗ {label:<16} {exc}")
+            continue
+        got[name] = rows
+        if rows:
+            last = rows[-1]
+            print(f"  ✓ {label:<16} {len(rows):>4}건 · "
+                  f"{rows[0]['time']}~{last['time']} · 마지막 {last['value']:,.3f}")
+        else:
+            print(f"  ✗ {label:<16}    0건 — 표 {table}/{item} 에 이 기간 값이 없습니다")
+
+    total = sum(len(v) for v in got.values())
+    if not total:
+        print("\n한 건도 못 받았습니다. 쌓지 않습니다.")
+        if failed:
+            print("중계기·인증키를 먼저 보십시오 — 위 메시지가 상류가 한 말입니다.")
+        raise SystemExit(1)
+
+    if args.probe:
+        print(f"\n탐침만 했습니다 — {total:,}건 (쌓으려면 --probe 를 빼십시오)")
+        return
+
+    rows_out = []
+    for name, rows in got.items():
+        _t, cycle, _i, label = ecos.SERIES[name]
+        for r in rows:
+            rows_out.append((name, r["time"], r["value"], label, cycle, "ECOS"))
+    with db.connect() as con:
+        con.executemany(
+            "INSERT OR REPLACE INTO market_series"
+            " (series, period, value, label, cycle, source) VALUES (?,?,?,?,?,?)",
+            rows_out)
+        have = con.execute(
+            "SELECT series, count(*), min(period), max(period)"
+            " FROM market_series GROUP BY series ORDER BY series").fetchall()
+    print(f"\nmarket_series 에 {len(rows_out):,}건 넣었습니다. 지금 담긴 것:")
+    for series, n, lo, hi in have:
+        print(f"  {series:<14} {n:>5,}건 · {lo}~{hi}")
+
+
+def _ecos_span(cycle: str, start: str, end: str) -> tuple[str, str]:
+    """연도 두 개를 그 주기의 기간 표기로. 월 202001 · 분기 2020Q1 · 연 2020.
+
+    ECOS 는 주기에 안 맞는 기간을 주면 값이 없다고 답한다 — 오류가 아니라
+    빈 답이다. 그러면 '자료가 없다' 와 '내가 잘못 물었다' 가 똑같이 생긴다.
+    """
+    lo, hi = str(start)[:4], str(end)[:4]
+    if cycle == "M":
+        return f"{lo}01", f"{hi}12"
+    if cycle == "Q":
+        return f"{lo}Q1", f"{hi}Q4"
+    return lo, hi
 
 
 def cmd_factor_cells(args):
@@ -3184,6 +3269,15 @@ def main(argv=None):
                    choices=["total", "freight", "passenger", "mid"])
     p.add_argument("--top", type=int, default=25, help="표에 찍을 상위 개수")
     p.set_defaults(func=cmd_rank)
+
+    p = sub.add_parser("ecos", help="한국은행 ECOS — 금리·물가·성장률 (시장 층)")
+    p.add_argument("--start", default="2000")
+    p.add_argument("--end", default=str(datetime.now(timezone.utc).year))
+    p.add_argument("--series", default="",
+                   help="쉼표로 고른다 (비우면 모두)")
+    p.add_argument("--probe", action="store_true", help="받아 보기만 하고 안 쌓는다")
+    p.add_argument("--timeout", default="60")
+    p.set_defaults(func=cmd_ecos)
 
     p = sub.add_parser("factor-cells", help="미래 가치 인자 — 조합 칸 세기 (+ 추정)")
     p.add_argument("--since", default="2010")

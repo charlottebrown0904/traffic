@@ -307,6 +307,47 @@ _bad = [h for h, body in _rules
         if "env:" in body and "param:" not in body and "pathKey:" not in body]
 check(not _bad, f"모든 규칙이 키 넣는 자리를 밝힌다 ({_bad})")
 
+# 주기마다 기간 표기가 다르다. ECOS 는 안 맞는 기간을 주면 **오류가 아니라
+# 빈 답**을 준다 — '자료가 없다' 와 '내가 잘못 물었다' 가 똑같이 생긴다.
+from redt import cli as _cli3                              # noqa: E402
+check(_cli3._ecos_span("M", "2000", "2026") == ("200001", "202612"),
+      "월 계열은 YYYYMM 으로 묻는다")
+check(_cli3._ecos_span("Q", "2000", "2026") == ("2000Q1", "2026Q4"),
+      "분기 계열은 YYYYQn 으로 묻는다")
+check(_cli3._ecos_span("A", "2000", "2026") == ("2000", "2026"),
+      "연 계열은 YYYY 로 묻는다")
+check(all(c in ("M", "Q", "A") for _t, c, _i, _l in _EC.SERIES.values()),
+      "쓰는 계열의 주기가 셋 중 하나다")
+
+# 상류가 실패를 알려 주는 모양이 둘이다. 빈 답으로 받으면 '없다' 로,
+# RESULT 로 받으면 그 말을 그대로 올려야 한다.
+_saved_get = _EC.http.get_json
+try:
+    _EC.http.get_json = lambda *a, **k: {
+        "RESULT": {"CODE": "INFO-100", "MESSAGE": "인증키가 유효하지 않습니다."}}
+    try:
+        _EC.rows("policy_rate", "200001", "202612")
+        check(False, "상류의 실패를 올린다")
+    except RuntimeError as exc:
+        check("인증키가 유효하지 않습니다" in str(exc),
+              "상류가 한 말을 그대로 올린다 — 삼키면 키 문제가 자료 문제로 보인다")
+
+    _EC.http.get_json = lambda *a, **k: {"StatisticSearch": {"row": [
+        {"TIME": "202601", "DATA_VALUE": "2.75"},
+        {"TIME": "202602", "DATA_VALUE": ""},        # 빈 값은 버린다
+        {"TIME": "202603", "DATA_VALUE": "-"},       # 줄표도 값이 아니다
+        {"TIME": "202604", "DATA_VALUE": "2.50"}]}}
+    _r = _EC.rows("policy_rate", "200001", "202612")
+    check([x["time"] for x in _r] == ["202601", "202604"],
+          f"빈 값과 줄표는 값이 아니다 ({len(_r)}건)")
+    check(_r[0]["value"] == 2.75, "숫자로 바꿔 담는다")
+
+    _EC.http.get_json = lambda *a, **k: {"StatisticSearch": {}}
+    check(_EC.rows("policy_rate", "200001", "202612") == [],
+          "행이 없으면 빈 목록 — 터지지 않는다")
+finally:
+    _EC.http.get_json = _saved_get
+
 # ────────────────────────────────────────────────────────────────
 print("\n6. 거리 밴드 설정 — 영향범위 5km, 대조 밴드 존재")
 

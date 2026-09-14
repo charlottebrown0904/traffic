@@ -101,6 +101,25 @@ CREATE TABLE IF NOT EXISTS zone_event (
     geocode_level    VARCHAR           -- parcel / umd / sigungu(시군구 중심)
 );
 
+-- 시장 층 계열 (한국은행 ECOS) — 금리·물가·성장률.
+--
+-- 이것들은 **필지를 이웃과 다르게 만들지 않는다.** 전국 모든 땅을 같은
+-- 방향으로 옮긴다. 그래서 인자로 곱하지 않고 시나리오로 쓴다
+-- (docs/future-value.md §2). 값 종류를 행으로 두는 것은 region_year 와
+-- 같은 까닭이다 — 계열이 늘어도 스키마를 안 바꾼다.
+--
+-- period 는 받은 그대로 둔다: 월이면 '202601', 분기면 '2026Q1'. 주기마다
+-- 모양이 다른 것을 억지로 한 모양으로 바꾸면 되돌릴 수 없다.
+CREATE TABLE IF NOT EXISTS market_series (
+    series  VARCHAR,                  -- policy_rate / cd91 / bond3 / cpi / gdp_growth
+    period  VARCHAR,                  -- 202601 (월) · 2026Q1 (분기)
+    value   DOUBLE,
+    label   VARCHAR,                  -- 사람이 읽는 이름
+    cycle   VARCHAR,                  -- M / Q / A
+    source  VARCHAR,
+    PRIMARY KEY (series, period)
+);
+
 -- 가설3 패널형: 시군구 × 연도 규모 지표.
 --
 -- 인구가 늘어서 오른 것을 교통량이 늘어서 오른 것으로 읽지 않으려면, 같은
