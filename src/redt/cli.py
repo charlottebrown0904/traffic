@@ -1997,10 +1997,22 @@ def cmd_geocode_staged(args):
 
 
 def cmd_geocode(args):
+    """지번 좌표를 붙인다. --upgrade 면 법정동 중심점에 머문 거래도 다시 묻는다.
+
+    **좌표가 있다고 다 된 것이 아니다** (2026-09-14 지시: "실거래 물건 주소
+    다시 확인해주세요"). 법정동 중심점(umd)에 찍힌 거래는 오차가 ±1~2km 라
+    지도에서 지역 태그와 같은 자리에 쌓인다. 그런데 지금까지 이 명령은
+    `lat IS NULL` 만 골라서, **한 번 중심점에 앉은 거래는 영영 그대로**였다 —
+    나중에 지번 좌표를 얻을 수 있게 되어도 다시 묻지 않았다.
+
+    --upgrade 를 따로 둔 까닭은 브이월드 하루 한도다. 중심점 거래가 수십만
+    건이라 그냥 켜면 한도를 통째로 태운다. 고를 수 있게 두고, 값은 **좋아질
+    때만** 바꾼다 (parcel 로만 덮어쓴다 — 아래 UPDATE 의 조건).
+    """
     # 분석에 쓰지 않을 용도지역까지 좌표를 찍으면 일일 한도만 태운다.
     # 권역을 넓히면 대기열이 백만 건 단위가 되므로 여기서 걸러야 한다.
     wanted = [] if args.all else (settings().get("land_use_filter") or [])
-    where = "lat IS NULL"
+    where = "(lat IS NULL OR geocode_level = 'umd')" if args.upgrade else "lat IS NULL"
     if wanted:
         # 용도지역이 빈 거래도 포함한다 (geocode-staged 의 같은 이유).
         cond = (" OR ".join(f"land_use LIKE '%{w}%'" for w in wanted)
@@ -2010,7 +2022,7 @@ def cmd_geocode(args):
     with db.connect() as con:
         if wanted:
             total = con.execute(
-                "SELECT count(DISTINCT (sigungu, umd, jibun)) FROM trade WHERE lat IS NULL"
+                f"SELECT count(DISTINCT (sigungu, umd, jibun)) FROM trade WHERE {where.split(' AND ')[0]}"
             ).fetchone()[0]
         todo = con.execute(
             f"SELECT DISTINCT sigungu, umd, jibun FROM trade WHERE {where}"
@@ -2038,7 +2050,10 @@ def cmd_geocode(args):
         con.execute("""
             UPDATE trade SET lat = g.lat, lon = g.lon, geocode_level = g.geocode_level
             FROM _geo g
-            WHERE trade.lat IS NULL
+            -- 빈 칸을 채우거나, 중심점을 지번으로 **올릴 때만** 덮는다.
+            -- 지번 좌표를 중심점으로 되돌리는 일은 없어야 한다.
+            WHERE (trade.lat IS NULL
+                   OR (trade.geocode_level = 'umd' AND g.geocode_level = 'parcel'))
               AND trade.umd IS NOT DISTINCT FROM g.umd
               AND trade.jibun IS NOT DISTINCT FROM g.jibun
               AND trade.sigungu IS NOT DISTINCT FROM g.sigungu
@@ -3610,6 +3625,8 @@ def main(argv=None):
     p.add_argument("--limit", type=int, help="이번 실행에서 신규 호출 상한")
     p.add_argument("--all", action="store_true",
                    help="용도지역 필터를 무시하고 전부 지오코딩")
+    p.add_argument("--upgrade", action="store_true",
+                   help="법정동 중심점(umd)에 머문 거래도 다시 물어 지번 좌표로 올린다")
     p.set_defaults(func=cmd_geocode)
 
     sub.add_parser("link", help="거래-영업소 공간 조인").set_defaults(func=cmd_link)

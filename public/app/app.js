@@ -2070,6 +2070,11 @@ function drawTrades() {
         // 누를 수 있는지와, 눌렀을 때 무엇이 뜨는지. 이 둘이 없으면
         // '눌러도 아무것도 안 나온다' 를 검사로 옮길 수 없다.
         interactive: l.options.interactive === true,
+        // 그린 자리. 법정동 중심점 거래를 흩는 규칙(tradeLatLng)이 실제로
+        // 도는지 검사가 보려면 좌표가 나와 있어야 한다.
+        at: (l.getLatLng && l.getLatLng()) ? [l.getLatLng().lat, l.getLatLng().lng]
+          : (Array.isArray(l.__latlng) ? l.__latlng : null),
+        srcAt: l.options.srcAt || null,
         popup: (l.getPopup && l.getPopup() && l.getPopup().getContent
                 && l.getPopup().getContent()) || l.__popupHtml || '',
       }))
@@ -2766,9 +2771,13 @@ const PIN_KINDS = [
  *
  * **낮은 배율에서 붙이면 안 됩니다.** 전국을 보면서 1,500개에 글자를
  * 달면 서로 덮여 하나도 못 읽고, 그리는 데도 한참 걸립니다. 지금 점을
- * 그대로 두는 배율과 글자를 다는 배율을 가릅니다 — 부동산플래닛도
- * 필지가 보일 만큼 당겨야 핀이 뜹니다. */
-const TRADE_LABEL_ZOOM = 15;
+ * 그대로 두는 배율과 글자를 다는 배율을 가릅니다.
+ *
+ * 처음에는 15 였는데 **너무 당겨야 보였습니다** (2026-09-14 지시). 15 는
+ * 한 화면이 동네 하나라, 시군구를 훑으며 값을 견주는 데는 쓸 수 없습니다.
+ * 13(시군구 하나쯤)으로 내립니다 — 글자 수는 아래 CAP 이 막고 있으므로
+ * 배율을 내려도 화면이 덮이지는 않습니다. */
+const TRADE_LABEL_ZOOM = 13;
 /* 그 배율에서도 한 화면에 몇 개까지. 넘으면 최근 거래부터 남깁니다. */
 const TRADE_LABEL_CAP = 60;
 
@@ -2828,11 +2837,44 @@ function tradeShape(t) {
   return 'trade-etc';
 }
 
+/* 법정동 중심점 거래를 **결정적으로** 흩는다 (2026-09-14 지시).
+ *
+ * "위치를 특정하지 못한 실거래 물건 태그가 지역 태그와 겹칩니다."
+ *
+ * 지번 좌표를 못 얻은 거래는 법정동 중심점에 찍힌다. 그런데 **지역 태그도
+ * 같은 중심점**에 앉는다 — 그래서 단가 태그가 거래 태그에 통째로 가렸다.
+ * 같은 동네의 그런 거래끼리도 한 점에 쌓여 맨 위 하나만 보였다.
+ *
+ * 흩는 자리는 trade_id 로 만든 해시에서 나온다 — 다시 그려도 같은 자리에
+ * 앉으므로 지도를 움직일 때마다 점이 춤추지 않는다. 반경은 300m 안쪽이라
+ * 이 점의 오차(±1~2km)보다 훨씬 작다. 즉 **정확도를 더 낮추지 않는다.**
+ * 말풍선은 여전히 '법정동 중심점 — 실제 필지 위치가 아닙니다' 라고 말한다. */
+const COARSE_SPREAD_M = 300;
+
+function tradeLatLng(t, coarse) {
+  if (!coarse || !(t.lat && t.lon)) return [t.lat, t.lon];
+  const seed = String(t.trade_id || `${t.umd}|${t.jibun}|${t.price_krw}`);
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h >>>= 0;
+  const angle = (h % 3600) / 3600 * Math.PI * 2;
+  // 안쪽만 쓰면 가운데가 비고 바깥만 쓰면 고리가 된다. 넓이에 고르게
+  // 퍼지도록 제곱근을 쓴다.
+  const r = COARSE_SPREAD_M * Math.sqrt(((h >>> 12) & 1023) / 1023);
+  const dLat = (r * Math.cos(angle)) / 111320;
+  const dLon = (r * Math.sin(angle))
+    / (111320 * Math.cos(t.lat * Math.PI / 180) || 1);
+  return [t.lat + dLat, t.lon + dLon];
+}
+
 function tradeMarker(t, labelled) {
   const factory = t.kind === 'factory';
   const coarse = t.geocode_level !== 'parcel';
   if (labelled) return tradePin(t, coarse);
-  return L.marker([t.lat, t.lon], {
+  return L.marker(tradeLatLng(t, coarse), {
     // divIcon 을 쓰는 이유는 하나다 — Leaflet 의 circleMarker 는 원밖에
     // 못 그린다. 모양으로 가르려면 이 길뿐이다.
     icon: L.divIcon({
@@ -2852,6 +2894,8 @@ function tradeMarker(t, labelled) {
     // 검사와 화면 양쪽이 같은 값을 본다.
     kind: t.kind,
     geocodeLevel: t.geocode_level || '',
+    // 흩기 전의 자리. 검사가 '얼마나 옮겼나' 를 볼 수 있어야 한다.
+    srcAt: [t.lat, t.lon],
   }).bindPopup(tradePopup(t), { className: 'trade-popup', maxWidth: 320 });
 }
 
@@ -2863,7 +2907,7 @@ function tradePin(t, coarse) {
   const k = pinKind();
   const val = k.of(t);
   const sub = pinSub(t);
-  return L.marker([t.lat, t.lon], {
+  return L.marker(tradeLatLng(t, coarse), {
     icon: L.divIcon({
       className: 'trade-pin-wrap',
       html: `<span class="trade-pin ${tradeShape(t)}`
@@ -2885,6 +2929,7 @@ function tradePin(t, coarse) {
     keyboard: false,
     kind: t.kind,
     geocodeLevel: t.geocode_level || '',
+    srcAt: [t.lat, t.lon],
   }).bindPopup(tradePopup(t), { className: 'trade-popup', maxWidth: 320 });
 }
 

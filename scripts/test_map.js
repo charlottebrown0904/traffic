@@ -203,6 +203,9 @@ const FAKE_LEAFLET = () => {
       const m = chain();
       m.options = Object.assign({}, opts);
       m.__latlng = ll;
+      // 진짜 Leaflet 은 표식이 놓인 자리를 돌려준다. 0,0 을 돌려주면
+      // '어디에 그렸나' 를 보는 검사가 통째로 헛돈다.
+      m.getLatLng = () => ({ lat: (ll || [])[0], lng: (ll || [])[1] });
       // 거래 상세 말풍선. 붙인 내용을 들고 있지 않으면 '눌러도 아무것도
       // 안 나온다' 를 검사로 옮길 수 없다.
       m.bindPopup = (html, opts) => {
@@ -2669,8 +2672,13 @@ const FAKE_LEAFLET = () => {
       document.body.classList.toggle('has-detail', wasCls);
       return out;
     });
+    // **흐름 안** 은 static 과 relative 둘 다다. static 만 통과시켰더니
+    // 닫기 단추가 자리 기준을 잃고 머리띠로 올라갔다 (2026-09-14 보고) —
+    // 그 단추가 이 칸에 붙으려면 relative 여야 한다. 막아야 할 것은
+    // fixed·absolute(화면 밖 고정 칸)이지 relative 가 아니다.
     check('폰에서 필지 상세가 지도 아래 흐름 안에 온다',
-          sheet && sheet.pos === 'static' && sheet.below, JSON.stringify(sheet));
+          sheet && (sheet.pos === 'static' || sheet.pos === 'relative')
+          && sheet.below, JSON.stringify(sheet));
     check('상세가 열리면 지도가 화면의 절반쯤으로 줄어든다',
           sheet && sheet.mapH / sheet.vh < 0.6 && sheet.mapH / sheet.vh > 0.3,
           `지도 ${sheet && sheet.mapH}px / 화면 ${sheet && sheet.vh}px`);
@@ -4078,6 +4086,28 @@ const FAKE_LEAFLET = () => {
       check('거래 표식을 누를 수 있다',
             styles.length > 0 && styles.every((x) => x.interactive === true));
 
+      // 법정동 중심점 거래는 흩어 놓는다 (2026-09-14 지시).
+      //
+      // 지역 태그도 같은 중심점에 앉으므로, 흩지 않으면 단가 태그가
+      // 거래 태그에 가린다. 지번 좌표 거래는 **건드리지 않는다** — 그쪽은
+      // 자리가 정확한데 흔들면 거짓이 된다.
+      const coarseAt = styles.filter((x) => x.geocodeLevel === 'umd' && x.at);
+      const fineAt = styles.filter((x) => x.geocodeLevel === 'parcel' && x.at);
+      const first = coarseAt[0];
+      const off = (first && first.srcAt)
+        ? [Math.abs(first.at[0] - first.srcAt[0]), Math.abs(first.at[1] - first.srcAt[1])]
+        : [0, 0];
+      // 300m 안쪽으로만 흩는다 — 이 점의 오차(±1~2km)보다 훨씬 작다.
+      check('법정동 중심점 거래는 태그와 안 겹치게 흩어 그린다',
+            coarseAt.length > 0 && (off[0] > 1e-5 || off[1] > 1e-5)
+            && off[0] < 0.004 && off[1] < 0.005,
+            `옮긴 거리 ${off.map((v) => v.toFixed(5)).join(', ')}도`);
+      check('지번 좌표 거래는 그대로 둔다',
+            fineAt.length > 0 && fineAt.every((x) => x.srcAt
+              && Math.abs(x.at[0] - x.srcAt[0]) < 1e-12
+              && Math.abs(x.at[1] - x.srcAt[1]) < 1e-12),
+            `${fineAt.length}건`);
+
       const land = styles.find((x) => x.kind === 'land' && x.geocodeLevel === 'parcel');
       const fac = styles.find((x) => x.kind === 'factory');
       const coarse = styles.find((x) => x.geocodeLevel === 'umd');
@@ -4479,7 +4509,8 @@ const FAKE_LEAFLET = () => {
       });
       check('필지를 고르면 지도가 줄어든다', m.after > 0 && m.after < m.before - 40,
             `${Math.round(m.before)}px → ${Math.round(m.after)}px`);
-      check('상세는 흐름 안에 있다 (화면 밖 고정 칸이 아니다)', m.pos === 'static',
+      check('상세는 흐름 안에 있다 (화면 밖 고정 칸이 아니다)',
+            m.pos === 'static' || m.pos === 'relative',
             `position: ${m.pos}`);
       check('긴 상세를 아래로 굴릴 수 있다', m.moved > 100, `${Math.round(m.moved)}px 굴렀다`);
 

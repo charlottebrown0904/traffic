@@ -28,6 +28,15 @@ SYNTHETIC_MARK = PROCESSED / ".synthetic"
 # 요구사항의 '거래 연도 선택' 이 그대로 파일 나누는 기준이 된다.
 MAX_TRADE_POINTS = 2500          # trades.json — 전 기간 개요
 MAX_TRADE_POINTS_YEAR = 3000     # trades-YYYY.json — 그 해만
+# **공장·창고는 따로 뽑는다** (2026-09-14 지시: "공장 물건은 경기도 충청도만
+# 있는 것 같습니다").
+#
+# 공장·창고는 전체 거래의 1~2% 다. 한 표본에서 고르게 뽑으면 한 해에 50건
+# 남짓밖에 안 들어가고, 그것이 전국 200여 시군구에 흩어지면 **어느 화면에도
+# 한 건도 없다.** 자료가 수도권에만 있는 것으로 읽힌다 — 실제로는 제주부터
+# 강원까지 있다. 종류마다 몫을 따로 두어 그 착시를 없앤다.
+MAX_TRADE_POINTS_FACTORY = 1200
+MAX_TRADE_POINTS_FACTORY_YEAR = 1200
 SAMPLE_SEED = 42          # 표본을 고정해 실행마다 diff 가 생기지 않게 한다
 
 # 도로 접함 필터의 세 칸 이름. 화면과 meta 가 같은 글자를 써야 하므로
@@ -88,6 +97,20 @@ PARCEL_COLS = """
     coalesce(pc.slope, '') AS parcel_slope,
     pc.official_price
 """
+
+
+def _sample_trades(con, where: str, limit: int, factory_limit: int):
+    """종류마다 몫을 따로 두고 뽑는다 — 공장·창고가 표본에서 사라지지 않게.
+
+    한 표본에서 고르게 뽑으면 드문 종류는 통째로 빠진다 (위 상수의 까닭).
+    """
+    import pandas as pd
+    land = con.execute(_trade_query(
+        f"({where}) AND coalesce(kind, '') <> 'factory'", limit)).fetchdf()
+    fac = con.execute(_trade_query(
+        f"({where}) AND kind = 'factory'", factory_limit)).fetchdf()
+    both = pd.concat([land, fac], ignore_index=True)
+    return both.sort_values("trade_id").reset_index(drop=True)
 
 
 def _trade_query(where: str, limit: int) -> str:
@@ -1604,8 +1627,8 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         # 뽑고 그중 조건을 통과한 것만 남겨, 늘 2천 건 남짓밖에 안 나왔다
         # (좌표 없는 거래가 19% 라 그만큼 깎였다). 하위 질의로 감싸야
         # 거른 뒤의 집합에서 뽑는다 — 합성 자료에서 446 → 4,000 으로 확인.
-        trades = con.execute(
-            _trade_query(TRADE_WHERE, MAX_TRADE_POINTS)).fetchdf()
+        trades = _sample_trades(con, TRADE_WHERE, MAX_TRADE_POINTS,
+                                MAX_TRADE_POINTS_FACTORY)
         # 연도별 표본. 그 해만 받으므로 한 해에 더 많이 담을 수 있다.
         # 실제 건수도 함께 센다 — 표본만 보여주면 '이 해에 거래가
         # 4천 건뿐' 으로 읽힌다.
@@ -1615,9 +1638,12 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
         """).fetchdf()
         by_year = {}
         for year in year_counts["deal_year"].dropna().astype(int).tolist():
-            by_year[year] = con.execute(_trade_query(
-                f"{TRADE_WHERE} AND deal_year = {year}",
-                MAX_TRADE_POINTS_YEAR)).fetchdf()
+            by_year[year] = _sample_trades(
+                con, f"{TRADE_WHERE} AND deal_year = {year}",
+                MAX_TRADE_POINTS_YEAR, MAX_TRADE_POINTS_FACTORY_YEAR)
+        n_fac = sum(int((f.get("kind") == "factory").sum()) for f in by_year.values())
+        print(f"  연도별 표본 {sum(len(f) for f in by_year.values()):,}건"
+              f" (공장·창고 {n_fac:,}건 — 따로 뽑은 몫)")
 
     try:
         scores = scoring.build_scores(panel, band=band, volume_col=volume_col)
