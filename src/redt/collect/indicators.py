@@ -618,6 +618,10 @@ SGG_ALIAS = {("인천", "남구"): "미추홀구"}
 # '전남광주통합특별시'(2026) 로 온다. 둘 다 같은 땅이다.
 SIDO_FALLBACK = {"광주": ("전남광주",), "전남": ("전남광주",), "전남광주": ("광주", "전남")}
 
+# 시도를 옮긴 곳 — 파일은 옛 소속으로 쓴다 (run 34808317290 에서 남은 것).
+# 군위군은 2023-07 대구로, 연기군은 2012-07 세종이 됐다.
+SGG_MOVED = {("경북", "군위군"): ("대구", "군위군"), ("충남", "연기군"): ("세종", "")}
+
 
 def resolve(code_map: dict, sido: str, sgg: str) -> str | None:
     """이름 둘 → 시군구코드. 못 찾으면 None (호출 쪽이 센다).
@@ -633,6 +637,8 @@ def resolve(code_map: dict, sido: str, sgg: str) -> str | None:
     if g in ("", "nan", "None"):
         g = ""
     g = SGG_ALIAS.get((sk, g), g)
+    if (sk, g) in SGG_MOVED:
+        sk, g = SGG_MOVED[(sk, g)]
     tries = [sk, *SIDO_FALLBACK.get(sk, ())]
     for s in tries:
         if (s, g) in code_map:
