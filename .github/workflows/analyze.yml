@@ -206,6 +206,13 @@ jobs:
 
       - name: 화면용 JSON 생성
         if: inputs.fill_tollgates || inputs.commit
+        # 표준지 조각·격차율 표(valuation.json)는 내보내기 안에서 비공개 버킷
+        # premium 으로 바로 올라간다(premium_store.sync). 이 키가 없으면 "프리미엄
+        # 253개를 올리지 않았습니다" 하고 조용히 지나가 — run 21 에서 지가변동률을
+        # 실은 새 표가 버킷에 안 갔다. 키는 GitHub Secrets 에만 있다.
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python -m redt.cli export-web
 
       - name: 수집분 보관
