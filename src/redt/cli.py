@@ -305,8 +305,14 @@ def cmd_value_test(args):
     import random
     from datetime import date
     from . import valuation as V, appraisal_db
-    code, zone = str(args.sigungu).strip(), args.zone
+    code, zone = str(args.sigungu).strip(), str(args.zone or "").strip()
     nationwide = code.lower() in ("all", "*", "")
+    # **용도지역 전체**는 빈 조각으로 둔다 (LIKE '%%' 가 다 맞는다).
+    # 워크플로에서 빈 값을 넘기면 GitHub 가 기본값('계획관리')으로 되돌리므로
+    # 'all' 이라는 말을 따로 받는다 — run 102 가 그래서 계획관리만 봤다.
+    if zone.lower() in ("all", "*", "전체"):
+        zone = ""
+    zone_label = zone or "용도지역 전체"
     today = date.today()
     ym = today.year * 12 + today.month
 
@@ -411,7 +417,7 @@ def cmd_value_test(args):
 
         scope = "전국" if nationwide else code
         print(f"{scope} · 후보 거래 {len(rows):,}건"
-              f" (최근 {args.months}개월 · {zone} · 필지 붙은 것 · 필지당 한 건 · 면적 맞는 것)")
+              f" (최근 {args.months}개월 · {zone_label} · 필지 붙은 것 · 필지당 한 건 · 면적 맞는 것)")
         print(f"원장: {appraisal_db.source()} · 평가서 {len(V.load_ledger())}건"
               f" · 거래사례 칸 {len(trade_cells):,}개 (시군구·시·도·전국)")
         if not len(rows):

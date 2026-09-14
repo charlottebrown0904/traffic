@@ -35,6 +35,10 @@ jobs:
         if: inputs.probe == 'geocode-mask'
         env:
           PYTHONPATH: src
+          # 지오코더는 **중계기가 아니라 키를 직접** 쓴다
+          # (collect/geocode.py 의 geocode_one → keys().require('vworld')).
+          # 첫 판이 이것을 안 줘서 죽었다.
+          VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
         run: |
           set -o pipefail
           python scripts/geocode_mask_probe.py 2>&1 | tee /tmp/probe.log
