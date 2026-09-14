@@ -584,28 +584,40 @@ def cmd_value_test(args):
             d = _digest(rs)
             ns = [o["led_n"] for o in os_ if o.get("led_n")]
             lv: dict = {}
+            far = 0                      # 전국까지 물러난 건수
             for o in os_:
-                lv[o.get("led_level") or "(없음)"] = lv.get(o.get("led_level") or "(없음)", 0) + 1
+                lev = o.get("led_level") or "(없음)"
+                lv[lev] = lv.get(lev, 0) + 1
+                if lev.startswith("전국"):
+                    far += 1
+            far_pct = far / max(len(os_), 1)
             # 1.0 에서 얼마나 멀리 있는가 — 위아래 어느 쪽이든 어긋남이다.
             off = abs(d[0] - 1.0)
-            rows.append((off, k, d, ns, lv))
+            rows.append((off, k, d, ns, lv, far_pct))
         if len(rows) <= 1:
             continue
         print(f"\n  [{title}] 어긋난 순서")
-        print(f"    {'칸':<10s} {'n':>4s} {'중앙':>6s} {'±30%':>6s} {'선례n중앙':>9s}  물러남")
-        for off, k, d, ns, lv in sorted(rows, key=lambda r: -r[0]):
+        print(f"    {'칸':<10s} {'n':>4s} {'중앙':>6s} {'±30%':>6s} {'전국까지':>8s} {'선례n':>6s}")
+        for off, k, d, ns, lv, far_pct in sorted(rows, key=lambda r: -r[0]):
             med_n = sorted(ns)[len(ns) // 2] if ns else 0
-            lvs = " · ".join(f"{a}{b}" for a, b in sorted(lv.items(), key=lambda kv: -kv[1]))
             flag = ""
-            # 문턱은 '±30% 밖' 과 '선례가 거의 없음' 이다. 둘 다면 평가서 탓,
-            # 어긋나는데 선례는 넉넉하면 다른 탓 — 이름을 붙여 준다.
+            # **문턱을 고쳐 적는다.** 처음에는 '선례 n 이 적으면 평가서 부족'
+            # 으로 뒀는데 그것으로는 못 가른다 — cell() 이 MIN_CELL(3) 에
+            # 못 미치면 **더 넓은 칸으로 물러나** 버리므로, 선례가 얇다는
+            # 사실이 작은 n 이 아니라 '물러남' 으로 나타난다. n 은 거의 늘
+            # 3 이상이라 그 문턱은 사실상 안 걸린다.
+            #
+            # 그래서 **전국까지 물러난 비율**로 가른다. 그 지역·조건의
+            # 평가서가 없어서 전국 평균을 쓴 것이 곧 '평가서 부족' 이다.
             if off >= 0.30:
-                flag = " ← 평가서 부족" if med_n < 5 else " ← **다른 까닭**"
-            print(f"    {k:<10s} {d[3]:>4d} {d[0]:>6.2f} {d[1]:>6d} {med_n:>9d}  {lvs}{flag}")
+                flag = (" ← 평가서 부족 (그 조건 선례가 없어 전국 평균을 썼다)"
+                        if far_pct >= 0.5
+                        else " ← **다른 까닭** (제 칸 선례를 쓰고도 어긋난다)")
+            print(f"    {k:<10s} {d[3]:>4d} {d[0]:>6.2f} {d[1]:>6d} {far_pct:>7.0%} {med_n:>6d}{flag}")
     print()
-    print("  읽는 법: '평가서 부족' 은 그 조건의 선례를 더 넣으면 좋아진다는 뜻이고,")
-    print("  '다른 까닭' 은 선례가 있는데도 어긋난 것이라 산식·표준지 선정·시점")
-    print("  보정 쪽을 따로 봐야 한다는 뜻이다.")
+    print("  읽는 법: '전국까지' 는 그 조건의 평가선례가 없어 전국 평균으로")
+    print("  때운 비율이다. 높을수록 그 지역의 평가서가 모자라다는 뜻이고,")
+    print("  낮은데도 어긋나면 산식·표준지 선정·시점 보정 쪽을 봐야 한다.")
 
     if appraisal_db.configured():
         fs = appraisal_db.factor_summary()
