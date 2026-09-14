@@ -315,6 +315,16 @@
 
            IC·영업소도 꺼진 채로 시작한다. 땅값이 이 화면의 주인공인데
            영업소 점이 함께 깔리면 처음 여는 사람은 무엇을 볼지 모른다. -->
+      <!-- 지역 태그(땅값 카드) 껐다 켜기 (요구사항 2026-09-14) —
+           "Ic영업소 앞에 지역테그 On/Off도 추가해 주세요".
+           **켠 채로 시작한다**: 지금까지 늘 보이던 것이라 꺼진 채로
+           열면 고장으로 읽힌다. 개발 층을 켜고 그 아래 지구 모양을
+           볼 때 태그가 가리므로 끌 수 있어야 한다. -->
+      <label class="map-switch">
+        <input type="checkbox" id="place-bg" checked>
+        <span>지역 태그</span>
+      </label>
+
       <label class="map-switch">
         <input type="checkbox" id="gate-bg">
         <span>IC·영업소</span>

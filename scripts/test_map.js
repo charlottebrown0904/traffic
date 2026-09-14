@@ -1430,9 +1430,45 @@ const FAKE_LEAFLET = () => {
     // 넷이다 — IC·영업소 · 용도지역 · 개발 · 필지경계.
     // 예전에 넷을 둘로 줄인 절이라, 늘어난 것은 여기서 못을 박는다.
     // '개발' 이 2026-09-14 에 붙었다 (산업단지·택지·계획도로·철도).
-    check('스위치는 넷이다 (IC·영업소 · 용도지역 · 개발 · 필지경계)',
-          gone.switches === 4,
+    check('스위치는 다섯이다 (지역 태그 · IC·영업소 · 용도지역 · 개발 · 필지경계)',
+          gone.switches === 5,
           `${gone.switches}개`);
+
+    /* 지역 태그 껐다 켜기 (요구사항 2026-09-14). 개발 층을 켜고 그 아래
+       지구 모양을 볼 때 값 태그가 가리므로 끌 수 있어야 한다. **켠 채로
+       시작한다** — 지금까지 늘 보이던 것이라 꺼진 채로 열면 고장으로 읽힌다.
+       그리고 IC·영업소 **앞에** 선다. */
+    const tagBefore = await page.evaluate(() => {
+      const boxes = [...document.querySelectorAll('.map-tools .map-switch input')];
+      return {
+        on: document.getElementById('place-bg').checked,
+        first: boxes[0] ? boxes[0].id : null,
+        before: boxes.indexOf(document.getElementById('place-bg'))
+                < boxes.indexOf(document.getElementById('gate-bg')),
+        n: (window.__lp || {}).n,
+      };
+    });
+    check('지역 태그는 켠 채로 시작한다', tagBefore.on === true);
+    check('지역 태그가 IC·영업소 앞에 선다',
+          tagBefore.before && tagBefore.first === 'place-bg',
+          `첫 칸 ${tagBefore.first}`);
+    check('켜져 있으면 태그가 그려져 있다', (tagBefore.n || 0) > 0,
+          `${tagBefore.n}장`);
+
+    await page.click('#place-bg');
+    await page.waitForTimeout(400);
+    const tagOff = await page.evaluate(() => ({
+      on: (window.__lp || {}).on,
+      n: (window.__lp || {}).n,
+      cards: document.querySelectorAll('.lp-card').length,
+    }));
+    check('끄면 한 장도 안 그린다',
+          tagOff.on === false && tagOff.n === 0 && tagOff.cards === 0,
+          `on=${tagOff.on} · ${tagOff.n}장 · 카드 ${tagOff.cards}`);
+    await page.click('#place-bg');
+    await page.waitForTimeout(400);
+    const tagBack = await page.evaluate(() => (window.__lp || {}).n);
+    check('다시 켜면 돌아온다', (tagBack || 0) > 0, `${tagBack}장`);
 
     /* '개발' 층 (요구사항 2026-09-14) — 켜면 타일이 실제로 깔리고 철도역이
        그려지는가. 층 이름이 살아 있다는 것은 vworld-render 탐침이 따로

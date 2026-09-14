@@ -23,6 +23,9 @@ const state = {
   // 용도지역 배경은 기본으로 켜 둔다 — 요청된 화면이다.
   // 용도지역 색면은 **꺼진 채로 시작한다** (요구사항 2026-09-08).
   // 색면이 깔리면 그 위의 땅값 글자와 거래 점이 묻힌다.
+  // 지역 태그(땅값 카드)를 끌 수 있게 (2026-09-14 지시). **켠 채로
+  // 시작한다** — 지금까지 늘 보이던 것이라 꺼진 채로 열면 고장으로 읽힌다.
+  placeTags: true,
   zoning: false,
   // 개발 층 (2026-09-14 지시) — 산업단지·택지지구·계획도로·철도.
   // 꺼진 채로 시작한다. 켜면 지도가 확 복잡해지고, 이 화면의 주인공은
@@ -2695,6 +2698,11 @@ function drawRail() {
   });
 }
 
+function togglePlaceTags(on) {
+  state.placeTags = on;
+  drawLandPrice();
+}
+
 function toggleDevelop(on) {
   state.develop = on;
   if (!map || !developLayer) return;
@@ -4284,6 +4292,9 @@ function drawLandPriceInner(have) {
   lpLayer.clearLayers();
   const groups = lpGroups();
   window.__lp = { on: false, n: 0, groups, level: null };
+  // 꺼 두었으면 한 장도 안 그린다. 고른 행정구역도 같이 걷는다 —
+  // 태그가 없는데 그 태그의 경계만 남으면 '이게 뭔가' 가 된다.
+  if (!state.placeTags) { clearAdminShape(); updateLpNote(null); return; }
   if (!have || !groups.length) { updateLpNote(null); return; }
 
   const zoom = map.getZoom();
@@ -6781,6 +6792,13 @@ function wireFind() {
   if (zbox) {
     zbox.checked = state.zoning;
     zbox.addEventListener('change', () => toggleZoning(zbox.checked));
+  }
+
+  // 지역 태그 (요구사항 2026-09-14). 기본 켬.
+  const pbox = document.getElementById('place-bg');
+  if (pbox) {
+    pbox.checked = state.placeTags;
+    pbox.addEventListener('change', () => togglePlaceTags(pbox.checked));
   }
 
   // 개발 층 (요구사항 2026-09-14). 기본 꺼짐. 켜면 갈래 칸이 펼쳐진다.
