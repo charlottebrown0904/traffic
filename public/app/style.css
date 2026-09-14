@@ -1890,3 +1890,24 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 @media (max-width:56rem){
   #find-q{width:100%}
 }
+
+/* 개발 갈래 칸 (요구사항 2026-09-14) — '개발' 을 켜야 펼쳐진다.
+   지도 위 스위치 줄에 붙으므로 글자를 한 단계 줄이고 줄바꿈을 허용한다. */
+.dev-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .3rem .6rem;
+  padding: .35rem .5rem;
+  margin-top: -.2rem;
+  border-radius: .5rem;
+  background: var(--surface-2, rgba(255, 255, 255, .78));
+  font-size: .78rem;
+}
+.dev-part {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dev-part input { margin: 0; }

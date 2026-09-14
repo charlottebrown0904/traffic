@@ -863,10 +863,11 @@ const FAKE_LEAFLET = () => {
     console.log();
     console.log('2. 배경 지도에 키가 필요 없다');
     const tiles = await page.evaluate(() => window.__map.tiles);
-    // 배경 지도(OSM) + 용도지역 색면 = 2장. 필지 경계선은 **타일이
-    // 아니다** — 브이월드 WMS 가 배율 18 아래로 빈 그림만 줘서
-    // 도형(WFS)으로 받아 직접 그린다 (2026-09-10 실측).
-    check('타일 원천이 둘이다 (배경 + 용도지역)', tiles.length === 2,
+    // 배경 지도(OSM) + 용도지역 색면 + 개발 층 = 3장. 필지 경계선은
+    // **타일이 아니다** — 브이월드 WMS 가 배율 18 아래로 빈 그림만 줘서
+    // 도형(WFS)으로 받아 직접 그린다 (2026-09-10 실측). 개발 층도
+    // 꺼진 채로 시작하지만 타일 원천 자체는 만들어 둔다 (2026-09-14).
+    check('타일 원천이 셋이다 (배경 + 용도지역 + 개발)', tiles.length === 3,
           tiles.join(' '));
     check('API 키를 요구하는 서비스가 아니다',
           tiles.every((u) => !/carto|stadia|mapbox|thunderforest|apikey/i.test(u)),
@@ -1426,10 +1427,11 @@ const FAKE_LEAFLET = () => {
     }));
     check('상단에서 전체 IC 반경 스위치가 사라졌다', !gone.allBands);
     check('상단에서 인구 스위치가 사라졌다', !gone.popBox && !gone.popSwitch);
-    // 셋이다 — IC·영업소 · 용도지역 · 필지경계 (요구사항 2026-09-10).
-    // 예전에 넷을 둘로 줄인 절이라, 늘어난 하나는 여기서 못을 박는다.
-    check('스위치는 셋이다 (IC·영업소 · 용도지역 · 필지경계)',
-          gone.switches === 3,
+    // 넷이다 — IC·영업소 · 용도지역 · 개발 · 필지경계.
+    // 예전에 넷을 둘로 줄인 절이라, 늘어난 것은 여기서 못을 박는다.
+    // '개발' 이 2026-09-14 에 붙었다 (산업단지·택지·계획도로·철도).
+    check('스위치는 넷이다 (IC·영업소 · 용도지역 · 개발 · 필지경계)',
+          gone.switches === 4,
           `${gone.switches}개`);
 
     console.log();

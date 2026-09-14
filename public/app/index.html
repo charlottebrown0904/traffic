@@ -345,6 +345,19 @@
         <span>필지경계</span>
       </label>
 
+      <!-- 개발 (요구사항 2026-09-14). 꺼진 채로 시작한다 — 켜면 지도가
+           확 복잡해지고 이 화면의 주인공은 값이다. 켜면 아래에 갈래
+           칸이 펼쳐져 넷을 따로 껐다 켤 수 있다.
+
+           철도는 브이월드에 없어 우리 자료로 그린다 (역 405곳). 나머지
+           셋은 브이월드 공식 색을 그대로 받는다. -->
+      <label class="map-switch">
+        <input type="checkbox" id="develop-bg">
+        <span>개발</span>
+      </label>
+      <div class="dev-parts" id="dev-parts" role="group"
+           aria-label="개발 갈래" hidden></div>
+
       <!-- 배경 지도 (요구사항 2026-09-09).
 
            카카오·네이버는 못 씁니다 — 타일이 아니라 자바스크립트 지도

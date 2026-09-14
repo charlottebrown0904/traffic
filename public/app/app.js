@@ -24,6 +24,11 @@ const state = {
   // 용도지역 색면은 **꺼진 채로 시작한다** (요구사항 2026-09-08).
   // 색면이 깔리면 그 위의 땅값 글자와 거래 점이 묻힌다.
   zoning: false,
+  // 개발 층 (2026-09-14 지시) — 산업단지·택지지구·계획도로·철도.
+  // 꺼진 채로 시작한다. 켜면 지도가 확 복잡해지고, 이 화면의 주인공은
+  // 값이다. 네 갈래를 따로 껐다 켤 수 있다.
+  develop: false,
+  devParts: { industry: true, housing: true, planroad: true, rail: true },
   // 필지 경계선 (요구사항 2026-09-10). **기본은 켬** — 땅을 보는
   // 사람에게 경계는 배경이 아니라 본문이다. 껐다 켠 것은 기억한다.
   cadastral: (() => {
@@ -66,6 +71,7 @@ const state = {
 };
 
 let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, lpLayer;
+let developLayer, railLayer, adminLayer;
 /* 고른 필지의 윤곽. 한 번에 하나만 그린다. */
 let parcelLayer = null;
 /* 필지 경계선 타일. **용도지역과 따로 논다** (요구사항 2026-09-10).
@@ -179,6 +185,13 @@ async function boot() {
     if (r.ok) state.landPrice = await r.json();
   } catch (err) {
     state.landPrice = null;
+  }
+  // 철도 — '개발' 층의 한 갈래. 없으면 그 칸만 아무것도 안 그린다.
+  try {
+    const r = await fetch('/app/data/rail.json');
+    if (r.ok) state.rail = await r.json();
+  } catch (err) {
+    state.rail = null;
   }
   // 판정은 분석이 한 번이라도 돈 뒤에야 생긴다. 없으면 그 탭만 비운다.
   // 토지와 공장을 따로 낸다 — 한 파일에 덮어쓰면 나중에 돈 쪽만 남아,
@@ -1740,6 +1753,9 @@ function buildMap() {
     const cls = ((e.popup || {}).options || {}).className;
     if (cls !== 'lp-pop') return;
     lpOpenPk = null;
+    // 말풍선을 닫으면 행정구역도 걷는다 — 남겨 두면 어느 태그의
+    // 구역인지가 끊긴다.
+    clearAdminShape();
     // 다시 그리는 도중에 닫힌 것이면 여기서 또 그리면 안 된다 —
     // clearLayers 가 popupclose 를 부르므로 끝없이 돈다.
     if (!lpDrawing) drawLandPrice();
@@ -1788,6 +1804,8 @@ function buildMap() {
   // 땅값 분위지도. 배경 타일(200)보다 위, 거래(380)보다 아래.
   map.createPane('lpPane').style.zIndex = 375;
   lpLayer = L.layerGroup().addTo(map);
+  addDevelopLayer();
+  addAdminLayer();
   bandLayer = L.layerGroup().addTo(map);
   tradeLayer = L.layerGroup().addTo(map);
   tollgateLayer = L.layerGroup().addTo(map);
@@ -2585,6 +2603,159 @@ function toggleZoning(on) {
   state.zoning = on;
   if (!map || !zoningLayer) return;
   on ? zoningLayer.addTo(map) : zoningLayer.remove();
+}
+
+/* ── 개발 층 (요구사항 2026-09-14) ──────────────────────────────────
+ *
+ * "산업단지 택지 지구 및 신규, 확장 도로 기차 노선은 지도에 색상 구분해서
+ *  표기하면 좋을 것 같습니다 ('개발' 선택 시 표시)"
+ *
+ * 넷을 한 층으로 묶되 갈래마다 끌 수 있다. 색은 **브이월드 공식 스타일**을
+ * 그대로 받는다 — 용도지역 층에서 이미 그렇게 했고, 우리가 색을 새로
+ * 정하면 지적편집도를 읽어온 사람이 다시 배워야 한다.
+ *
+ * 켜진 갈래만 골라 **한 요청**으로 부른다. 갈래마다 따로 부르면 타일 한
+ * 칸에 함수가 셋씩 도는데, 그 호출 수가 곧 비용이다 (2026-09-12 에 한 번
+ * 겪었다). 다 켜져 있으면 develop 한 장이다.
+ *
+ * 철도는 브이월드에 **없다** — WFS 목록 177개를 두 번 훑어도 안 걸렸다.
+ * 대신 우리 자료로 그린다: rail_station 405곳과 rail_open 82건. 역은
+ * 점으로, 개통 예정(오늘 이후)은 점선으로 구분한다.
+ */
+const DEV_PARTS = [
+  { key: 'industry', label: '산업단지', tile: 'industry',
+    note: '국가·일반·첨단·농공' },
+  { key: 'housing', label: '택지·사업지구', tile: 'housing',
+    note: 'LH 사업지구 · 단지경계' },
+  { key: 'planroad', label: '계획도로', tile: 'planroad',
+    note: '도시계획 신설·확장' },
+  { key: 'rail', label: '철도역', tile: null, note: '우리 자료 405곳' },
+];
+const DEVELOP_MIN_ZOOM = 10;
+
+/** 지금 켜진 타일 갈래를 하나의 layer 열쇠로 접는다. */
+function devTileKey() {
+  const on = DEV_PARTS.filter((p) => p.tile && state.devParts[p.key]);
+  if (!on.length) return null;
+  if (on.length === DEV_PARTS.filter((p) => p.tile).length) return 'develop';
+  return on.length === 1 ? on[0].tile : on.map((p) => p.tile).join('+');
+}
+
+function addDevelopLayer() {
+  developLayer = L.layerGroup();
+  railLayer = L.layerGroup();
+  if (state.develop) { developLayer.addTo(map); railLayer.addTo(map); }
+  drawDevelop();
+}
+
+function drawDevelop() {
+  if (!map || !developLayer) return;
+  developLayer.clearLayers();
+  const key = devTileKey();
+  // 여럿을 '+' 로 이은 열쇠는 서버가 모른다. 그때는 갈래마다 한 장씩
+  // 깐다 — 셋 중 둘만 켠 드문 경우라 호출이 크게 늘지 않는다.
+  const keys = key === null ? []
+    : (key.includes('+') ? key.split('+') : [key]);
+  keys.forEach((k) => {
+    L.tileLayer(`/api/tile?layer=${k}&z={z}&y={y}&x={x}`, {
+      ...TILE_OPTS,
+      maxZoom: 19,
+      minZoom: DEVELOP_MIN_ZOOM,
+      opacity: .55,
+      attribution: '산업단지·지구·계획도로 © 국토교통부 브이월드',
+    }).addTo(developLayer);
+  });
+  drawRail();
+  window.__develop = { on: state.develop, key, parts: { ...state.devParts } };
+}
+
+/* 철도 — 우리 자료. 역은 점, 개통 예정은 테두리를 달리한다. */
+function drawRail() {
+  if (!railLayer) return;
+  railLayer.clearLayers();
+  if (!state.develop || !state.devParts.rail) return;
+  const rows = (state.rail || {}).stations || [];
+  const today = new Date().toISOString().slice(0, 10);
+  rows.forEach((s) => {
+    if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) return;
+    const soon = s.opened_on && s.opened_on > today;
+    L.circleMarker([s.lat, s.lon], {
+      pane: 'markerPane',
+      radius: s.trains >= 100 ? 7 : 5,
+      color: soon ? '#7C3AED' : '#0369A1',
+      weight: 2,
+      dashArray: soon ? '3 2' : null,
+      fillColor: soon ? '#EDE9FE' : '#BAE6FD',
+      fillOpacity: .9,
+    }).bindTooltip(
+      `<b>${escapeHtml(s.name)}</b>`
+      + (s.trains ? `<br>하루 ${s.trains.toLocaleString()}회 정차` : '')
+      + (soon ? '<br><b>개통 예정</b>' : ''),
+      { direction: 'top' }).addTo(railLayer);
+  });
+}
+
+function toggleDevelop(on) {
+  state.develop = on;
+  if (!map || !developLayer) return;
+  if (on) { developLayer.addTo(map); railLayer.addTo(map); }
+  else { developLayer.remove(); railLayer.remove(); }
+  drawDevelop();
+}
+
+/* ── 지역 태그를 누르면 그 행정구역이 드러난다 (요구사항 2026-09-14) ──
+ *
+ * "지역 태그 선택시 행정구역을 표시해 줄 수 있나요?"
+ *
+ * **코드로 묻지 않는다.** 브이월드 WFS 의 속성 이름을 모르는데 틀린
+ * 이름으로 거르면 0건이 오고, 그것은 '그런 구역이 없다' 와 구별되지
+ * 않는다. 태그가 앉은 자리를 서버에 주면 서버가 그 자리를 감싸는
+ * 폴리곤을 찾아 준다 (api/tile.js 의 mode=admin).
+ *
+ * 같은 태그를 다시 누르면 다시 안 부른다 — 경계는 안 움직인다.
+ */
+const adminCache = new Map();      // 'level|lat|lon' → geom | null
+let adminAsked = null;
+
+function addAdminLayer() {
+  adminLayer = L.layerGroup().addTo(map);
+}
+
+function clearAdminShape() {
+  adminAsked = null;
+  if (adminLayer) adminLayer.clearLayers();
+}
+
+function drawAdminShape(geom) {
+  if (!adminLayer || !geom) return;
+  adminLayer.clearLayers();
+  L.geoJSON(geom, {
+    // 면을 옅게 깔고 테두리를 굵게. 값 태그가 위에 앉으므로 채움은
+    // 아주 옅어야 한다 — 진하면 읽던 숫자가 묻힌다.
+    style: { color: '#1D4ED8', weight: 3, opacity: .9,
+             fillColor: '#3B82F6', fillOpacity: .12 },
+    interactive: false,
+  }).addTo(adminLayer);
+}
+
+async function showAdminShape(at, levelKey) {
+  const lat = Number(at[0]).toFixed(6);
+  const lon = Number(at[1]).toFixed(6);
+  const level = (levelKey === 'umd' || levelKey === 'ri') ? 'umd'
+    : (levelKey === 'sido' ? 'sido' : 'sigungu');
+  const key = `${level}|${lat}|${lon}`;
+  adminAsked = key;
+  if (adminCache.has(key)) { drawAdminShape(adminCache.get(key)); return; }
+  try {
+    const resp = await fetch(
+      `/api/tile?mode=admin&level=${level}&lat=${lat}&lon=${lon}`);
+    if (!resp.ok) return;
+    const d = await resp.json();
+    adminCache.set(key, d.geom || null);
+    // 기다리는 사이에 다른 태그를 눌렀으면 그린 것을 덮지 않는다.
+    if (adminAsked !== key) return;
+    drawAdminShape(d.geom);
+  } catch (err) { /* 경계가 안 와도 값은 그대로 보인다 */ }
 }
 
 /* 거래 표식 — 영업소와 **모양으로** 가른다.
@@ -4189,6 +4360,8 @@ function drawLandPriceInner(have) {
       if (lpDragged) { marker.closePopup(); return; }
       marker.closeTooltip();
       lpOpenPk = it.pk;
+      // 고른 행정구역을 드러낸다 (요구사항 2026-09-14).
+      showAdminShape(it.at, level.key);
     });
     lpLayer.addLayer(marker);
   });
@@ -6601,6 +6774,38 @@ function wireFind() {
   if (zbox) {
     zbox.checked = state.zoning;
     zbox.addEventListener('change', () => toggleZoning(zbox.checked));
+  }
+
+  // 개발 층 (요구사항 2026-09-14). 기본 꺼짐. 켜면 갈래 칸이 펼쳐진다.
+  const dbox = document.getElementById('develop-bg');
+  const dparts = document.getElementById('dev-parts');
+  if (dparts) {
+    DEV_PARTS.forEach((pt) => {
+      const lab = document.createElement('label');
+      lab.className = 'dev-part';
+      lab.title = pt.note;
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.dataset.part = pt.key;
+      box.checked = !!state.devParts[pt.key];
+      box.addEventListener('change', () => {
+        state.devParts[pt.key] = box.checked;
+        drawDevelop();
+      });
+      const span = document.createElement('span');
+      span.textContent = pt.label;
+      lab.appendChild(box);
+      lab.appendChild(span);
+      dparts.appendChild(lab);
+    });
+  }
+  if (dbox) {
+    dbox.checked = state.develop;
+    if (dparts) dparts.hidden = !state.develop;
+    dbox.addEventListener('change', () => {
+      toggleDevelop(dbox.checked);
+      if (dparts) dparts.hidden = !dbox.checked;
+    });
   }
 
   // 필지 경계선 (요구사항 2026-09-10). 기본 켬.

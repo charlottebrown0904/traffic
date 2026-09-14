@@ -186,6 +186,52 @@ const LAYERS = {
   zoning: "lt_c_uq111,lt_c_uq112,lt_c_uq113,lt_c_uq114",
   // 필지 경계선. 색면 위에 얹으면 '이 필지' 를 눈으로 짚을 수 있다.
   cadastral: "lp_pa_cbnd_bubun",
+
+  // ── 개발 층 (요구사항 2026-09-14) ────────────────────────────────
+  //
+  // "산업단지 택지 지구 및 신규, 확장 도로 기차 노선은 지도에 색상
+  //  구분해서 표기하면 좋을 것 같습니다 ('개발' 선택 시 표시)"
+  //
+  // 이름은 **추측하지 않았다.** WFS GetCapabilities 로 브이월드가 실제로
+  // 열어 둔 177개 레이어를 받아 이름으로 걸렀다 (vworld-layers run 11·12).
+  // 걸린 것을 그대로 쓴다:
+  //
+  //   lt_c_wgisiegug    국가산업단지
+  //   lt_c_wgisieilban  일반산업단지
+  //   lt_c_wgisiedosi   첨단산업단지
+  //   lt_c_wgisienong   농공단지
+  //   lt_c_lhzone       사업지구경계도   ← LH 택지개발지구가 여기
+  //   lt_c_damdan       단지경계
+  //   lt_c_upisuq151    도시계획(도로)   ← 신설·확장 계획도로
+  //
+  // **철도는 브이월드에 없다.** 두 번 훑어도 안 걸렸다. 대신 우리가
+  // 자료를 갖고 있다 — rail_station 405곳과 rail_open 82건(2028년 예정
+  // 개통까지). 철도는 우리 층으로 그린다 (app.js).
+  //
+  // 색은 브이월드 공식 스타일을 그대로 받는다. 용도지역 층에서 이미
+  // 그렇게 했고, 지적편집도를 읽어온 사람에게는 설명이 필요 없다.
+  // 네 갈래를 따로 둔 까닭은 **끌 수 있어야** 하기 때문이고, 다 켜면
+  // develop 한 장으로 부른다 — 타일 한 칸에 함수 호출 한 번이다.
+  industry: "lt_c_wgisiegug,lt_c_wgisieilban,lt_c_wgisiedosi,lt_c_wgisienong",
+  housing: "lt_c_lhzone,lt_c_damdan",
+  planroad: "lt_c_upisuq151",
+  develop: "lt_c_wgisiegug,lt_c_wgisieilban,lt_c_wgisiedosi,lt_c_wgisienong,"
+    + "lt_c_lhzone,lt_c_damdan,lt_c_upisuq151",
+};
+
+/* 행정구역 경계 — 지역 태그를 누르면 그 구역이 드러나게 (2026-09-14).
+ *
+ * **코드로 묻지 않는다.** 브이월드 WFS 의 속성 이름(sig_cd 인지 emd_cd
+ * 인지)을 모르는데, 틀린 이름으로 ATTRFILTER 를 걸면 0건이 오고 그것은
+ * '그런 구역이 없다' 와 구별되지 않는다. 대신 **누른 자리를 감싸는 아주
+ * 작은 상자**로 묻는다 — 그 안에 걸리는 폴리곤이 곧 그 자리가 속한
+ * 행정구역이다. 추측이 한 개도 안 들어간다.
+ */
+const ADMIN_LAYERS = {
+  sido: "lt_c_adsido",
+  sigungu: "lt_c_adsigg",
+  umd: "lt_c_ademd",
+  ri: "lt_c_ademd",          // 리 단위 경계는 없다 — 읍면동으로 답한다
 };
 
 // ── 배경 지도 (요구사항 2026-09-09) ─────────────────────────────
@@ -616,6 +662,65 @@ async function parcelLines(req, res) {
   return sendLines(res, geoms, feats.length < PARCEL_VEC_MAX);
 }
 
+/* 누른 자리가 속한 행정구역 한 덩이를 돌려준다.
+ *
+ * 아주 작은 상자로 물어 그 자리를 감싸는 폴리곤을 받는다. 경계선 바로
+ * 위를 누르면 둘이 올 수 있는데, 그때는 **첫 번째**를 쓴다 — 어느 쪽이든
+ * 사람이 누른 자리의 구역이고, 둘 중 하나를 고르려고 점-다각형 판정을
+ * 여기서 다시 하는 것은 값에 비해 무겁다.
+ *
+ * 경계는 움직이지 않으므로 길게 캐시한다. 자리를 6자리로 끊어 물으면
+ * 같은 동네의 다른 클릭이 같은 주소가 되어 엣지 캐시가 받아낸다.
+ */
+async function adminShape(req, res) {
+  const level = String(req.query.level || "sigungu");
+  const typename = ADMIN_LAYERS[level];
+  if (!typename) return fail(res, 400, "level 은 sido·sigungu·umd·ri 여야 합니다");
+  const lat = Number(req.query.lat);
+  const lon = Number(req.query.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+    return fail(res, 400, "lat·lon 이 필요합니다");
+  }
+  if (lat < KOREA.latMin || lat > KOREA.latMax
+      || lon < KOREA.lonMin || lon > KOREA.lonMax) {
+    return fail(res, 400, "한반도 밖입니다");
+  }
+  // 약 10m 짜리 상자. 점 하나로 물으면 WFS 가 빈 상자로 읽는다.
+  const d = 0.0001;
+  const out = await callVworld({
+    SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
+    TYPENAME: typename,
+    BBOX: [lon - d, lat - d, lon + d, lat + d].join(","),
+    SRSNAME: "EPSG:4326",
+    OUTPUT: "application/json",
+    MAXFEATURES: "4", RESULTTYPE: "results",
+    DOMAIN: process.env.VWORLD_REFERER
+      || `https://${(req.headers || {}).host || "toji.fyi"}/`,
+  }, VWORLD_WFS, (req.headers || {}).host);
+  if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
+  if (!out.upstream) {
+    return fail(res, out.timedOut ? 504 : 502,
+      out.timedOut ? `브이월드 응답 없음 (${TIMEOUT_MS / 1000}초 초과)`
+                   : "브이월드 호출 실패");
+  }
+  let body;
+  try { body = await out.upstream.json(); }
+  catch (err) {
+    return fail(res, 502, "브이월드가 행정구역 대신 다른 것을 줬습니다");
+  }
+  const feats = Array.isArray(body && body.features) ? body.features : [];
+  const first = feats[0] || null;
+  res.setHeader("cache-control", CACHE_OK);
+  // 이름 칸이 무엇인지 모르므로 **속성을 통째로** 넘긴다. 화면이
+  // 골라 쓴다 — 여기서 이름을 하나 찍으면 그 추측이 굳어 버린다.
+  return res.status(200).json({
+    level,
+    n: feats.length,
+    geom: first ? round6(first.geometry) : null,
+    props: first ? (first.properties || {}) : null,
+  });
+}
+
 /** 선 목록을 돌려준다. 빈 칸도 캐시한다 — 바다는 늘 비어 있다. */
 function sendLines(res, geoms, whole_) {
   res.setHeader("cache-control", CACHE_OK);
@@ -870,6 +975,10 @@ module.exports = async function handler(req, res) {
   // 화면에 미리 깔리는 경계선. 한 칸씩 준다.
   if (mode === "parcels") {
     return parcelLines(req, res);
+  }
+  // 누른 자리가 속한 행정구역 한 덩이.
+  if (mode === "admin") {
+    return adminShape(req, res);
   }
 
   const z = whole(String(req.query.z ?? ""));

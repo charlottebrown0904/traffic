@@ -9,6 +9,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+import duckdb
 import numpy as np
 import pandas as pd
 
@@ -1867,6 +1868,39 @@ def export(band: str | None = None, volume_col: str = "volume_freight") -> dict:
                 stale.unlink()
                 print(f"  낡은 명부 조각 삭제: {stale.name}")
     _write("landprice.json", landprice)
+
+    # 철도 — '개발' 층의 한 갈래 (2026-09-14 지시). 브이월드에 철도
+    # 레이어가 없어 우리 자료로 그린다. **역별 개통일은 안 싣는다** —
+    # 노선으로 이으면 틀린 날이 나온다 (src/redt/collect/rail.py).
+    # 대신 노선·구간 개통일 중 오늘 이후인 것만 따로 내보내 '예정' 을
+    # 화면이 구분할 수 있게 한다.
+    #
+    # **연결을 새로 연다.** 위의 con 은 이미 닫혔다 — 처음에 그것을 그대로
+    # 쓰고 예외를 삼켰더니 역 405곳이 조용히 0곳으로 나갔다. 표가 없는
+    # 것(아직 load-rail 을 안 돌린 판)과 연결이 닫힌 것은 다른 일이므로
+    # 표 없음만 빈 칸으로 넘긴다.
+    stations, openings = [], []
+    try:
+        with db.connect(read_only=True) as rcon:
+            stations = rcon.execute(
+                "SELECT name, lat, lon, trains FROM rail_station"
+                " WHERE lat IS NOT NULL ORDER BY name").fetchall()
+            openings = rcon.execute(
+                "SELECT kind, line_nm, section, opened_on FROM rail_open"
+                " ORDER BY opened_on").fetchall()
+    except duckdb.CatalogException:
+        print("  철도 표가 아직 없습니다 — load-rail 을 먼저 돌리세요")
+    _write("rail.json", {
+        "stations": [
+            {"name": a, "lat": b, "lon": c, "trains": d}
+            for a, b, c, d in stations
+        ],
+        "openings": [
+            {"kind": k, "line": ln, "section": sec,
+             "opened_on": str(day) if day else None}
+            for k, ln, sec, day in openings
+        ],
+    })
 
     # 표준지공시지가 — '현재 가치' 2판의 첫 마디. std_land 가 있을 때만
     # 시군구별로 낸다. 화면은 필지의 시군구 조각 하나만 받는다.
