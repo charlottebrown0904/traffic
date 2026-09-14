@@ -723,6 +723,82 @@ def _cadastral_retry_alias(CAD, con, path: Path, want: set[str]) -> str:
             f" · 남은 것 {len(want):,}")
 
 
+def cmd_factor_cells(args):
+    """미래 가치 인자 — **조합 칸을 먼저 센다** (2026-09-14 지시).
+
+    네 사건(IC·산업단지·택지지구·인구)은 각기 다른 계획으로 움직인다.
+    넷이 한꺼번에 오기도 하고 둘만 오기도 한다. 그래서 합치지 않고 함께
+    넣어 편효과를 가르고, 같이 왔을 때만 생기는 몫은 교차항으로 잡는다.
+
+    다만 **교차항을 세울 수 있느냐는 표본이 정한다.** 열여섯 조합 중
+    관측이 얇은 칸은 세우면 안 된다 — 계수가 동네 몇 곳에 끌려간다.
+    그래서 추정보다 먼저 이 표를 낸다. 이것이 산출 준비의 첫 걸음이다.
+
+    --estimate 를 주면 그 자리에서 이원고정효과까지 돌린다.
+    """
+    from .analyze import factors as FA
+    with db.connect(read_only=True) as con:
+        # 읍·면·동은 법정동 이름으로 묶는다. 좌표가 지번 단위인 것만 쓴다 —
+        # 법정동 중심점(±1~2km)은 반경 3~5km 판정을 통째로 흔든다.
+        tr = con.execute("""
+            SELECT sigungu_cd || '|' || coalesce(umd, '') AS umd_cd,
+                   deal_year, price_per_m2, lat, lon, sigungu_cd
+            FROM trade
+            WHERE kind = 'land' AND NOT coalesce(is_cancelled, FALSE)
+              AND NOT coalesce(is_share_deal, FALSE)
+              AND geocode_level = 'parcel'
+              AND lat IS NOT NULL AND price_per_m2 > 0
+              AND deal_year BETWEEN ? AND ?
+        """, [int(args.since), int(args.until)]).fetchdf()
+        zones = con.execute("""
+            SELECT type, lat, lon, year(designated_date) AS year
+            FROM zone_event WHERE lat IS NOT NULL AND designated_date IS NOT NULL
+        """).fetchdf()
+        ics = con.execute("""
+            SELECT g.lat, g.lon, min(t.year) AS year
+            FROM tollgate g JOIN traffic t ON t.tollgate_id = g.tollgate_id
+            WHERE g.lat IS NOT NULL GROUP BY g.lat, g.lon
+        """).fetchdf()
+        ry = con.execute("SELECT sigungu_cd, year, metric, value FROM region_year").fetchdf()
+
+    print(f"거래 {len(tr):,}건 (지번 좌표 · {args.since}~{args.until})"
+          f" · 개발사건 {len(zones):,} · 영업소 {len(ics):,}")
+    pan = FA.panel(tr, min_n=int(args.min_n))
+    print(f"읍·면·동 × 연도 패널 {len(pan):,}칸 · 동네 {pan['umd_cd'].nunique():,}곳"
+          if not pan.empty else "패널이 비었습니다")
+    if pan.empty:
+        return
+    ev = {"ic": ics,
+          "ind": zones[zones["type"].str.contains("산업", na=False)],
+          "hsg": zones[zones["type"].str.contains("택지|주택|도시개발", na=False)]}
+    pan = FA.mark(pan, ev, FA.pop_flags(ry))
+
+    print("\n── 조합 칸 (추정보다 이 표가 먼저다) ──")
+    c = FA.cells(pan)
+    for r in c.itertuples(index=False):
+        mark = "○" if r.읍면동 >= FA.MIN_CELL_UMD else "×"
+        print(f"  {mark} {r.조합:<28} 칸 {r.셀:>6,} · 동네 {r.읍면동:>5,} · 거래 {r.거래:>8,}")
+    print(f"  ○ = 교차항을 세울 만큼 있다 (동네 {FA.MIN_CELL_UMD}곳 이상)")
+
+    if not args.estimate:
+        print("\n(--estimate 를 주면 이원고정효과까지 돌립니다)")
+        return
+    print("\n── 추정식 ──")
+    f = FA.formula(pan)
+    print("  " + f.split(" + C(")[0] + " + 읍면동FE + 연도FE")
+    fit = FA.estimate(pan)
+    print("\n── 조합별 배율 (현재 가치에 곱하는 값) ──")
+    m = FA.multipliers(fit)
+    if m.empty:
+        print("  계수를 못 세웠습니다")
+        return
+    for r in m.itertuples(index=False):
+        ov = f" · 겹친 몫 {r.겹친_몫}" if hasattr(r, "겹친_몫") and pd.notna(getattr(r, "겹친_몫", None)) else ""
+        print(f"  {r.조합:<28} ×{r.배율:<6} (p={r.p}){ov}")
+    print("\n  '둘 같이' 가 각각의 곱보다 작으면 겹치는 몫이 있다는 뜻이고,")
+    print("  크면 같이 와야 생기는 몫이 있다는 뜻이다.")
+
+
 def cmd_probe_history(args):
     ex_api.probe_history(args.endpoint, args.date_param)
 
@@ -3088,6 +3164,14 @@ def main(argv=None):
                    choices=["total", "freight", "passenger", "mid"])
     p.add_argument("--top", type=int, default=25, help="표에 찍을 상위 개수")
     p.set_defaults(func=cmd_rank)
+
+    p = sub.add_parser("factor-cells", help="미래 가치 인자 — 조합 칸 세기 (+ 추정)")
+    p.add_argument("--since", default="2010")
+    p.add_argument("--until", default="2025")
+    p.add_argument("--min-n", dest="min_n", default="3",
+                   help="읍면동×연도 셀에 최소 몇 건 (기본 3)")
+    p.add_argument("--estimate", action="store_true", help="이원고정효과까지 돌린다")
+    p.set_defaults(func=cmd_factor_cells)
 
     p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])

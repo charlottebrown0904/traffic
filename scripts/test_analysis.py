@@ -2267,6 +2267,91 @@ check(_cli._cadastral_code_of(_CAD, _zip3) == "12810",
 check(_cli._cadastral_code_of(_CAD, _zip2) == "",
       "좌표계를 못 읽으면 코드도 빈 글자")
 
+
+print("41. 미래 가치 인자 — 네 사건을 함께 넣어 각각의 몫을 가른다")
+from redt.analyze import factors as _FA                 # noqa: E402
+import pandas as _pd                                    # noqa: E402
+import numpy as _np                                     # noqa: E402
+
+# 상자로만 거르면 모서리가 반경 밖인데도 들어온다. 거리로 판정하는지 본다.
+_ev = _pd.DataFrame([{"lat": 36.80, "lon": 127.90, "year": 2015}])
+check(len(_FA.near(_ev, 36.80, 127.90, 1.0)) == 1, "같은 자리는 반경 안")
+# 북동쪽 대각선으로 상자 모서리 — 상자 안이지만 거리는 √2 배라 반경 밖이다.
+check(len(_FA.near(_ev, 36.80 + 0.9 / 111, 127.90 + 0.9 / 111 / 0.8, 1.0)) == 0,
+      "상자 모서리는 거리로 걸러낸다")
+
+# ── 네 사건이 **따로** 오는 세상을 만든다 ──────────────────────
+# 참값: IC 만 +20% · 산단만 +30% · 둘 같이 +40% (그냥 곱하면 +56% 이므로
+# 겹친 몫 γ 가 음수여야 맞다). 이것을 회귀가 도로 찾아내는지 본다.
+_rng = _np.random.default_rng(7)
+_rows, _ics, _inds = [], [], []
+for _u in range(240):
+    # 동네마다 고유 수준 (읍면동 FE 가 걷어 내야 하는 것)
+    _base = 10.0 + (_u % 7) * 0.3
+    # **동네 간격을 반경보다 넓게.** 0.02°(2.2km) 로 두면 이웃 동네의 IC 가
+    # 서로 반경 5km 안에 들어와 온 나라가 처치된다 — 처음에 그렇게 짰다.
+    _lat, _lon = 36.0 + (_u // 15) * 0.25, 127.0 + (_u % 15) * 0.25
+    _hasIC = _u % 4 in (1, 3)          # 절반
+    _hasIND = _u % 4 in (2, 3)         # 절반 — 겹치는 것은 4분의 1
+    if _hasIC:
+        _ics.append({"lat": _lat, "lon": _lon, "year": 2015})
+    if _hasIND:
+        _inds.append({"lat": _lat, "lon": _lon, "year": 2015})
+    for _y in (2008, 2010, 2012, 2018, 2020, 2022):
+        _on = _y >= 2015 - _FA.LEAD_YEARS        # 켜진 뒤에는 계속 켜져 있다
+        _eff = 0.0
+        if _on and _hasIC:
+            _eff += _np.log(1.20)
+        if _on and _hasIND:
+            _eff += _np.log(1.30)
+        if _on and _hasIC and _hasIND:
+            _eff += _np.log(1.40 / (1.20 * 1.30))   # 겹친 몫 (음수)
+        for _k in range(4):                          # 셀당 4건 → 중앙값이 선다
+            _rows.append({"umd_cd": f"U{_u:03d}", "deal_year": _y,
+                          "price_per_m2": float(_np.exp(_base + _eff
+                                                        + _rng.normal(0, .04))),
+                          "lat": _lat, "lon": _lon, "sigungu_cd": f"S{_u // 8:02d}"})
+_tr = _pd.DataFrame(_rows)
+_pan = _FA.panel(_tr)
+check(len(_pan) == 240 * 6, f"읍면동×연도 패널이 선다 ({len(_pan)}칸)")
+_pan = _FA.mark(_pan, {"ic": _ics, "ind": _inds})
+check(set(_pan["d_ic"]) == {0, 1} and set(_pan["d_ind"]) == {0, 1},
+      "사건 표시가 0·1 로 붙는다")
+
+# 조합 칸 세기 — **추정보다 이 표가 먼저다.**
+_c = _FA.cells(_pan)
+_both = _c[(_c["d_ic"] == 1) & (_c["d_ind"] == 1)]
+check(len(_c) >= 4 and not _both.empty,
+      f"열여섯 조합 중 관측된 것을 센다 ({len(_c)}종 · 둘 다인 칸 {int(_both['셀'].sum())})")
+check(int(_both["읍면동"].sum()) >= _FA.MIN_CELL_UMD,
+      f"둘 다인 칸이 교차항 기준을 넘는다 ({int(_both['읍면동'].sum())}동)")
+
+# 얇으면 교차항을 안 세운다 — 없는 것을 세우면 계수가 몇 동네에 끌려간다.
+_both_umd = sorted(_pan.loc[(_pan["d_ic"] == 1) & (_pan["d_ind"] == 1), "umd_cd"].unique())
+_thin = _pan[~_pan["umd_cd"].isin(_both_umd[:len(_both_umd) - 20])].copy()
+check("d_ic:d_ind" not in _FA.formula(_thin),
+      f"조합이 얇으면 교차항을 안 넣는다 (둘 다인 동네 20곳)")
+check("d_ic:d_ind" in _FA.formula(_pan), "받쳐 주면 교차항을 넣는다")
+
+_fit = _FA.estimate(_pan)
+_m = _FA.multipliers(_fit)
+_get = lambda 이름: float(_m.loc[_m["조합"] == 이름, "배율"].iloc[0])
+check(abs(_get("IC 신설") - 1.20) < 0.04, f"IC 만의 몫을 되찾는다 ({_get('IC 신설')})")
+check(abs(_get("산업단지") - 1.30) < 0.04, f"산단만의 몫을 되찾는다 ({_get('산업단지')})")
+check(abs(_get("IC 신설 + 산업단지") - 1.40) < 0.06,
+      f"둘 같이 온 몫을 따로 되찾는다 ({_get('IC 신설 + 산업단지')} · 그냥 곱하면 1.56)")
+_ov = float(_m.loc[_m["조합"] == "IC 신설 + 산업단지", "겹친 몫"].iloc[0])
+check(_ov < 1.0, f"겹친 몫이 1 보다 작다 — 그냥 곱하면 과대다 ({_ov})")
+
+# 인구: 5년 증가율 상위 4분의 1만 1 이다.
+_ry = _pd.DataFrame([{"sigungu_cd": f"S{i:02d}", "year": y, "metric": "population",
+                      "value": 1000 * (1 + (0.05 if i < 5 else 0.001)) ** y}
+                     for i in range(20) for y in range(2010, 2021)])
+_pf = _FA.pop_flags(_ry)
+_last = _pf[_pf["year"] == 2020]
+check(int(_last["d_pop"].sum()) == 5,
+      f"인구는 상위 4분의 1만 켠다 ({int(_last['d_pop'].sum())}/20)")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
