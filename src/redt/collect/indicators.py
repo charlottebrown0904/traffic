@@ -1495,3 +1495,60 @@ def aggregate_permits(con) -> int:
         "INSERT OR REPLACE INTO region_series (sigungu_cd, period, value, metric, unit, source)"
         " VALUES (?,?,?,?,?,?)", rows)
     return len(rows)
+
+
+# ── OpenDART (전자공시) — 대기업 신규시설투자 공시 ──────────────────────
+#
+# 사건 인자의 원천이다. '언제·어디에 얼마를 짓겠다' 는 발표가 삽을 뜨기
+# 한참 전에 나오고, 땅값은 그 발표부터 움직인다. 원장(사람이 신문을 읽고
+# 적는 표)으로도 되지만 공시는 **날짜가 분 단위로 박혀 있고 빠짐이 없다.**
+#
+# 인증키는 crtfc_key 로 중계기가 끼운다 (api/relay.js). 두 마디가 필요하다:
+#   list.json     공시 목록 — corp_code · corp_name · report_nm · rcept_dt
+#   company.json  기업개황 — adres(주소). 목록에는 주소가 없다.
+DART_LIST = "https://opendart.fss.or.kr/api/list.json"
+DART_COMPANY = "https://opendart.fss.or.kr/api/company.json"
+
+# 공시유형. B=주요사항보고서 — '신규 시설투자등' 이 여기 산다.
+DART_TYPES = {"B": "주요사항보고서", "A": "정기공시", "I": "거래소공시"}
+
+# 우리가 찾는 보고서 이름. 상호는 담지 않는다 — 주소와 금액만 쓴다.
+DART_WANT = ("신규시설투자", "신규 시설투자", "유형자산", "시설투자")
+
+
+def dart_call(url: str, params: dict, timeout: int = 40) -> dict:
+    """OpenDART 한 번 부르기. **status 를 먼저 본다.**
+
+    OpenDART 는 HTTP 200 에 `{"status":"013","message":"조회된 데이타가
+    없습니다."}` 를 실어 보낸다. 200 을 성공으로 읽으면 '자료가 없다' 가
+    '한 건 왔다' 로 둔갑한다 — KOSIS 에서 이미 겪은 실수다.
+
+    자리표를 넣어 부른다. 키는 중계기 밖으로 안 나간다.
+    """
+    p = dict(params)
+    p["crtfc_key"] = "__via_relay__"
+    resp = http.get(url, p, timeout=timeout)
+    body = resp.json()
+    status = str(body.get("status", ""))
+    if status and status != "000":
+        raise RuntimeError(f"OpenDART [{status}] {body.get('message', '')}")
+    return body
+
+
+def dart_list(bgn: str, end: str, ty: str = "B", page: int = 1,
+              size: int = 100, timeout: int = 40) -> tuple[list[dict], int]:
+    """기간 안의 공시 목록 한 쪽. (행, 전체쪽수) 를 돌려준다."""
+    body = dart_call(DART_LIST, {
+        "bgn_de": bgn, "end_de": end, "pblntf_ty": ty,
+        "page_no": str(page), "page_count": str(size),
+    }, timeout=timeout)
+    return body.get("list", []), int(body.get("total_page", 1) or 1)
+
+
+def dart_address(corp_code: str, timeout: int = 40) -> str:
+    """회사 주소 한 줄. 목록에는 주소가 없어 따로 묻는다.
+
+    **주소만 가져온다.** 대표자 이름(ceo_nm)은 사람 이름이라 손대지 않는다.
+    """
+    body = dart_call(DART_COMPANY, {"corp_code": corp_code}, timeout=timeout)
+    return str(body.get("adres", "") or "")

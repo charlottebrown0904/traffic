@@ -24,6 +24,7 @@
 #   industrial        산업단지 현황 받기 → zone_event → 주소 지오코딩 (query=번호, 비우면 15041930 · limit=지오코딩 상한)
 #                     번호가 죽었으면 '산업단지' 로 찾아 후보를 보이고 멈춘다
 #   permits           건축인허가 훑기 — 건축HUB → permit (query=시군구·시도 코드 쉼표, 비우면 전국 · limit=호출 예산, 비우면 8000 · 이어받기 · 65분에 스스로 멈춤)
+#   dart-probe        OpenDART 탐침 — 신규시설투자 공시와 회사 주소 (query=시작,끝 YYYYMMDD · DART_KEY)
 #   law-probe   국가법령정보센터 자치법규 API 탐침 (조례 한 건, LAW_OC 필요)
 #   law         전국 도시계획조례 → data/ordinance/ 관심 조문 (브랜치에 커밋)
 #
@@ -35,7 +36,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / dart-probe / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -300,6 +301,15 @@ jobs:
           python -m redt.cli load-permits \
             ${{ inputs.query && format('--sigungu {0}', inputs.query) || '' }} \
             --max-calls "${{ inputs.limit || '8000' }}" 2>&1 | tee /tmp/stdland.log
+
+      # OpenDART 탐침 — 사건 인자(대기업 신규시설투자)의 원천이 쓸 만한지.
+      # query="시작,끝" (YYYYMMDD). 캐시에 남길 것이 없다.
+      - name: OpenDART 탐침
+        if: inputs.mode == 'dart-probe'
+        run: |
+          IFS=, read -r BGN END <<< "${{ inputs.query || '20250101,20251231' }}"
+          python -m redt.cli dart-probe --bgn "${BGN}" --end "${END}" \
+            2>&1 | tee /tmp/stdland.log
 
       - name: 자치법규 API 탐침
         if: inputs.mode == 'law-probe'

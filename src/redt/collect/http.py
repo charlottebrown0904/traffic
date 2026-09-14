@@ -91,6 +91,8 @@ RELAYED_HOSTS = {
     # 지방재정365 Open API — 지방세 징수실적 (api/relay.js 와 짝).
     "lofin365.go.kr",
     "www.lofin365.go.kr",
+    # OpenDART (전자공시) — 대기업 신규시설투자 공시 (api/relay.js 와 짝).
+    "opendart.fss.or.kr",
     # 자치법규(조례) Open API — 시군 도시계획조례의 건폐율·용적률·개발행위 기준.
     "www.law.go.kr",
     # 토지·주택가격비준표 열람 서비스 — 개별공시지가 산정에 쓰는 공식

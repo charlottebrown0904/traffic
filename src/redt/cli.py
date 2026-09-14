@@ -3195,6 +3195,56 @@ def cmd_kosis_diagnose(args):
     kosis.diagnose()
 
 
+def cmd_dart_probe(args):
+    """OpenDART 가 무엇을 주는지 사실만 본다 (추측 금지).
+
+    DART_KEY 가 2026-09-14 에 들어왔다. 물을 것은 셋이다.
+      1. 중계기가 crtfc_key 를 제대로 끼우는가 (200 에 status 000 인가)
+      2. 주요사항보고서 목록에 '신규시설투자' 가 실제로 몇 건 오는가
+      3. 회사 주소(adres)가 오는가 — 목록에는 주소가 없어 따로 물어야 하고,
+         주소가 없으면 시군구에 못 붙여 인자가 서지 않는다
+
+    **상호와 대표자 이름은 안 담는다.** 보고서 이름·날짜·주소만 본다.
+    """
+    from .collect import indicators as ind
+
+    print(f"OpenDART 탐침 — {args.bgn}~{args.end} · 공시유형 {args.ty}"
+          f"({ind.DART_TYPES.get(args.ty, '?')})")
+    try:
+        rows, pages = ind.dart_list(args.bgn, args.end, args.ty, size=args.size)
+    except Exception as exc:                          # noqa: BLE001
+        print(f"  실패: {exc}")
+        return
+    print(f"  첫 쪽 {len(rows)}행 · 전체 {pages}쪽")
+    if not rows:
+        return
+    print(f"  열쇠: {sorted(rows[0])}")
+
+    want = [r for r in rows
+            if any(w in str(r.get("report_nm", "")) for w in ind.DART_WANT)]
+    print(f"  '{'·'.join(ind.DART_WANT[:2])}' 든 보고서 {len(want)}/{len(rows)}건")
+    for r in (want or rows)[:args.top]:
+        print(f"    {r.get('rcept_dt','')} {str(r.get('report_nm',''))[:50]}"
+              f"  corp={r.get('corp_code','')} {r.get('corp_cls','')}")
+
+    # 주소가 오는가. 한 건만 물어 본다 — 이 답이 '시군구에 붙일 수 있는가' 다.
+    sample = (want or rows)[0]
+    code = str(sample.get("corp_code", ""))
+    if not code:
+        print("  corp_code 가 없다 — 주소를 물을 열쇠가 없다")
+        return
+    try:
+        adres = ind.dart_address(code)
+    except Exception as exc:                          # noqa: BLE001
+        print(f"  주소 조회 실패: {exc}")
+        return
+    print(f"  주소: {adres[:60] or '(빈 칸)'}")
+    if adres:
+        print("  → 주소가 온다. 시군구로 접는 일은 지오코딩과 같은 길이다")
+    else:
+        print("  → 주소가 빈 칸이다. 시군구에 못 붙인다 — 다른 칸을 찾아야 한다")
+
+
 def cmd_kosis_peek(args):
     """표 하나의 **속을 열어 본다** — 분류축·항목·기간, 그리고 한 해 맛보기.
 
@@ -3897,6 +3947,15 @@ def main(argv=None):
     p.add_argument("--terms", default="주민등록인구,전국사업체조사")
     p.add_argument("--top", type=int, default=15)
     p.set_defaults(func=cmd_kosis_find)
+
+    p = sub.add_parser("dart-probe",
+                       help="OpenDART 탐침 — 신규시설투자 공시와 회사 주소")
+    p.add_argument("--bgn", default="20250101", help="시작일 YYYYMMDD")
+    p.add_argument("--end", default="20251231", help="끝일 YYYYMMDD")
+    p.add_argument("--ty", default="B", help="공시유형 (B=주요사항보고서)")
+    p.add_argument("--size", type=int, default=100)
+    p.add_argument("--top", type=int, default=15)
+    p.set_defaults(func=cmd_dart_probe)
 
     p = sub.add_parser("kosis-peek",
                        help="표 하나의 분류축·항목·기간 보기 (+ 한 해 맛보기)")

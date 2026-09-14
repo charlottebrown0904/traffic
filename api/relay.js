@@ -86,6 +86,12 @@ const ALLOW = {
   // 까닭은 명세 화면 읽기에도 이 호스트를 쓰기 때문이다.
   "lofin365.go.kr":  { param: "Key", env: "LOFIN_KEY", optional: true },
   "www.lofin365.go.kr": { param: "Key", env: "LOFIN_KEY", optional: true },
+  // OpenDART (금융감독원 전자공시) — 대기업 신규시설투자 공시. 사건 인자의
+  // 원천이다: '언제·어디에 얼마를 짓겠다' 는 발표가 땅값보다 먼저 온다.
+  // 인증키 파라미터 이름은 crtfc_key 다. 키는 DART_KEY 로 여기에만 둔다.
+  // STRIP 에 crtfc_key 가 없으므로 set() 이 덮어쓴다 — 호출 측이 자리표를
+  // 넣어도 우리 것으로 바뀐다.
+  "opendart.fss.or.kr": { param: "crtfc_key", env: "DART_KEY" },
   // 국가법령정보센터 Open API (자치법규 조례). OC 는 가입 아이디인데 키처럼
   // 다룬다 — 호출 측이 들고 있지 않게 중계기가 끼워 넣는다.
   // keepClient: 호출 측이 OC 를 실어 보냈으면 그것을 살린다. 법제처 본문(DRF)은
@@ -101,7 +107,8 @@ const DEFAULT_REFERER = "https://toji.fyi/";
 
 // OC 는 지우지 않는다 — 포털(apis.data.go.kr)이 법제처로 넘길 때 OC 를 같이 요구할 수
 // 있고, law.go.kr 은 rule.param 이 OC 라 set() 이 덮어쓴다.
-const STRIP = ["serviceKey", "key", "Key", "apiKey", "authKey", "accessKey"];
+const STRIP = ["serviceKey", "key", "Key", "apiKey", "authKey", "accessKey",
+               "crtfc_key"];
 const TIMEOUT_MS = 25_000;
 
 function deny(res, code, message) {
