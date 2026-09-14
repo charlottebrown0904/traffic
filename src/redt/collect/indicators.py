@@ -1020,6 +1020,60 @@ def load_local_tax(con, years: list[int], timeout: int = 40, log=print) -> dict:
     return st
 
 
+# ── 포털 파일 하나를 이름으로 받아 data/raw 에 두기 ─────────────────
+#
+# 산업단지(15041930) · 철도역 좌표 같은 '파일형' 데이터셋은 로그인 없이
+# 중계기로 받힌다 (5차). 번호만 주면 상세 화면에서 내려받기 링크를 찾아
+# 받고, 무엇이 왔는지(형식·열·첫 줄) 말한다. 우리 이름으로 접는 일은 각
+# 적재기(load-h3 등)가 한다 — 두 군데서 하면 어긋났을 때 어느 쪽이 틀렸는지
+# 알 수 없다.
+
+def sniff_ext(raw: bytes) -> str:
+    """받은 바이트의 형식. zip 과 xlsx 는 둘 다 PK 로 시작한다 — 안에
+    [Content_Types].xml 이 있으면 xlsx 다."""
+    if raw[:2] == b"PK":
+        return "xlsx" if b"[Content_Types].xml" in raw[:4000] else "zip"
+    if raw[:8] == b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1":
+        return "xls"
+    return "csv"
+
+
+def fetch_portal_dataset(dataset_id: str, timeout: int = 90) -> tuple[bytes, str, dict]:
+    """(바이트, 확장자, 상세 화면 정보). 내려받기 링크가 없으면 예외."""
+    d = detail(dataset_id, "fileData", timeout=timeout)
+    links = d.get("downloads") or []
+    if not links:
+        raise RuntimeError(f"{dataset_id}: 상세 화면에 내려받기 링크가 없다 — "
+                           f"{(d.get('_raw_head') or d.get('title') or '')[:200]}")
+    url = "https://www.data.go.kr/cmm/cmm/" + html.unescape(links[0])
+    raw = fetch_portal_file(url, timeout=timeout)
+    return raw, sniff_ext(raw), d
+
+
+def read_any_table(path) -> "pd.DataFrame":
+    """csv/xlsx/xls 를 읽는다. xlsx 는 첫 시트, 머리글이 첫 줄이 아니면
+    (제목 줄이 위에 있는 통계표) '지정' 이나 '단지' 가 든 줄을 머리글로 잡는다."""
+    import pandas as pd
+    path = str(path)
+    if path.endswith((".xlsx", ".xls")):
+        raw = pd.read_excel(path, header=None)
+        # 제목 줄('전국산업단지현황')에도 '단지' 가 들어 있다. 낱말이 든 줄 중
+        # 채워진 칸이 가장 많은 줄이 머리글이다 — 제목 줄은 칸 하나뿐이다.
+        best, hdr = -1, 0
+        for i in range(min(15, len(raw))):
+            cells = [str(v) for v in raw.iloc[i].tolist() if pd.notna(v)]
+            if any(w in " ".join(cells) for w in ("지정", "단지", "명칭", "역명", "주소", "위도")):
+                if len(cells) > best:
+                    best, hdr = len(cells), i
+        return pd.read_excel(path, header=hdr)
+    for enc in ("utf-8-sig", "cp949", "euc-kr", "utf-8"):
+        try:
+            return pd.read_csv(path, encoding=enc, dtype=str)
+        except UnicodeDecodeError:
+            continue
+    raise RuntimeError(f"{path}: 인코딩을 알 수 없습니다")
+
+
 # ── 건축인허가 훑기 — 건축HUB → permit ────────────────────────────
 #
 # 6차(run 34807146961)에서 확정한 것:

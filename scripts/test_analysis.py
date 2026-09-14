@@ -2851,6 +2851,15 @@ try:
 except RuntimeError as exc:
     check("ERROR-300" in str(exc), "row 가 없으면 RESULT 메시지를 담아 예외 — 조용히 0행이 되지 않는다")
 
+print("46-1. 포털 파일 — 형식을 바이트로 알아본다")
+check(_IND.sniff_ext(b"PK\x03\x04" + b"x" * 100 + b"[Content_Types].xml") == "xlsx" and _IND.sniff_ext(b"PK\x03\x04abc") == "zip"
+      and _IND.sniff_ext("단지명,지정일\n".encode("cp949")) == "csv", "xlsx · zip · csv 를 가른다")
+import tempfile as _tf, os as _os                        # noqa: E402
+_tmpx = _os.path.join(_tf.mkdtemp(), "t.xlsx")
+_pd.DataFrame([["전국산업단지현황", None], ["단지명", "지정일"], ["A산단", "2010-01-01"]]).to_excel(_tmpx, header=False, index=False)
+_dfx = _IND.read_any_table(_tmpx)
+check(list(_dfx.columns)[:2] == ["단지명", "지정일"] and len(_dfx) == 1, f"제목 줄이 위에 있는 통계표의 머리글을 찾는다 ({list(_dfx.columns)[:2]})")
+
 print("47. 모멘텀 검증 — 잡음은 가짜 반전을 만들고, 건너뛴 창은 그것을 걷어낸다")
 import random as _rnd                                      # noqa: E402
 from redt.analyze import momentum as _MM                   # noqa: E402

@@ -838,6 +838,76 @@ def cmd_load_local_tax(args):
         print(f"  {per}  시군구 {n:>4}  최소 {lo:,.0f}  최대 {hi:,.0f}")
 
 
+def cmd_portal_file(args):
+    """포털 파일형 데이터셋 하나를 번호로 받아 data/raw 에 둔다 (2026-09-14).
+
+    산업단지 현황(15041930)이 첫 쓰임이다 — 네 사건 인자 중 하나가 자료
+    자체가 없었다. 받은 칸을 그대로 저장하고 무엇이 왔는지 말한다; 우리
+    이름으로 접는 일은 load-h3 가 한다.
+    """
+    from .collect import indicators
+    from .collect.h3_files import ZONE_COLS, _pick
+    raw, ext, d = indicators.fetch_portal_dataset(args.id, timeout=int(args.timeout))
+    out = ROOT / "data" / "raw" / f"{args.out}.{ext}"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(raw)
+    print(f"{args.id}  {d.get('title', '')[:80]}")
+    print(f"→ {out}  {len(raw):,}바이트 · {ext}")
+    if ext == "zip":
+        import zipfile
+        with zipfile.ZipFile(out) as z:
+            names = z.namelist()
+            print(f"  zip 안: {names[:10]}")
+            # 표 파일이 하나면 꺼내 옆에 둔다
+            tables = [n for n in names if n.lower().endswith((".csv", ".xlsx", ".xls"))]
+            if len(tables) == 1:
+                data = z.read(tables[0])
+                out = out.with_suffix("." + tables[0].rsplit(".", 1)[-1].lower())
+                out.write_bytes(data)
+                print(f"  꺼냄 → {out}")
+    if out.suffix.lower() in (".csv", ".xlsx", ".xls"):
+        df = indicators.read_any_table(out)
+        print(f"  {len(df):,}행 · 열 {len(df.columns)}: {list(df.columns)[:24]}")
+        for i in range(min(2, len(df))):
+            print(f"  행: {dict(list(df.iloc[i].items())[:10])}")
+        got = _pick(df, ZONE_COLS["designated_date"])
+        print(f"  {'✅ 지정일로 쓸 칸: ' + got if got else '⚠ 지정일로 쓸 칸이 없다 — 이름을 후보에 넣어야 한다: ' + str(ZONE_COLS['designated_date'])}")
+        for k in ("name", "address", "lat", "area_m2"):
+            g = _pick(df, ZONE_COLS[k])
+            print(f"  {k:<16} {g or '—'}")
+
+
+def cmd_geocode_zones(args):
+    """zone_event 에서 좌표 없는 사건을 주소로 지오코딩한다 (브이월드).
+
+    좌표 없는 건을 시군구 중심으로 찍으면 반경 밴드가 거짓이 되므로,
+    주소로 못 찾은 건은 그대로 비워 둔다 — 그 건은 반경 분석에서 빠진다.
+    """
+    from .collect import geocode as G
+    with db.connect() as con:
+        rows = con.execute(
+            "SELECT zone_id, address FROM zone_event WHERE lat IS NULL AND address IS NOT NULL AND address <> ''"
+        ).fetchall()
+        print(f"좌표 없는 사건 {len(rows):,}건")
+        done = fail = 0
+        for zid, addr in rows[: int(args.limit)]:
+            try:
+                lat, lon = G.geocode_one(addr, kind="PARCEL")
+                if lat is None:
+                    lat, lon = G.geocode_one(addr, kind="ROAD")
+            except G.QuotaExhausted as exc:
+                print(f"  멈춤: {exc}")
+                break
+            if lat is None:
+                fail += 1
+                continue
+            con.execute("UPDATE zone_event SET lat=?, lon=?, geocode_level='address' WHERE zone_id=?",
+                        [lat, lon, zid])
+            done += 1
+        left = con.execute("SELECT count(*) FROM zone_event WHERE lat IS NULL").fetchone()[0]
+    print(f"붙임 {done:,} · 못 찾음 {fail:,} · 아직 좌표 없음 {left:,}")
+
+
 def cmd_load_permits(args):
     """건축인허가 훑기 — 건축HUB → permit → region_series (2026-09-14).
 
@@ -3505,6 +3575,16 @@ def main(argv=None):
     p.add_argument("--years", default="2017-2024", help="회계연도 범위 (보유 2017~2024)")
     p.add_argument("--timeout", default="40")
     p.set_defaults(func=cmd_load_local_tax)
+
+    p = sub.add_parser("portal-file", help="포털 파일형 데이터셋을 번호로 받아 data/raw 에 (산업단지 15041930 등)")
+    p.add_argument("--id", required=True, help="데이터셋 번호")
+    p.add_argument("--out", required=True, help="저장 이름 (확장자 없이, 예: zones_industrial)")
+    p.add_argument("--timeout", default="120")
+    p.set_defaults(func=cmd_portal_file)
+
+    p = sub.add_parser("geocode-zones", help="zone_event 의 좌표 없는 사건을 주소로 지오코딩")
+    p.add_argument("--limit", default="2000")
+    p.set_defaults(func=cmd_geocode_zones)
 
     p = sub.add_parser("load-permits", help="건축인허가 훑기 — 건축HUB → permit (이어받기)")
     p.add_argument("--sigungu", default="", help="시군구 코드(5) 또는 시도(2)를 쉼표로 (비우면 전국)")
