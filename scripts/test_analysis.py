@@ -2542,14 +2542,62 @@ try:
     check(len(_none) == 1 and "_raw_head" in _none[0],
           "못 뽑으면 화면 앞부분을 남긴다 (조용한 빈 목록이 아니다)")
 
-    # 두드리기는 죽지 않는다 — 예외도 결과로 담는다.
+    # 두드리기는 죽지 않는다 — 예외도 결과로 담는다. 두드리기는 재시도 없는
+    # get_once 를 쓴다 (틀린 주소는 다시 불러도 틀린 주소다).
     def _boom(*a, **k):
         raise RuntimeError("연결 안 됨")
-    _IND.http.get = _boom
-    _k = _IND.knock({"name": "x", "url": "https://example.invalid/", "params": {}})
-    check("error" in _k and "연결 안 됨" in _k["error"], "후보가 죽어도 탐침은 이어진다")
+    _saved_once0 = _IND.http.get_once
+    _IND.http.get_once = _boom
+    try:
+        _k = _IND.knock({"name": "x", "url": "https://example.invalid/", "params": {}})
+        check("error" in _k and "연결 안 됨" in _k["error"], "후보가 죽어도 탐침은 이어진다")
+        # 거절(403·400)도 예외가 아니라 **본문을 담은 결과**다 — 상류의 말이 답이다.
+        class _R403:
+            text = '{"response":{"header":{"resultCode":"30","resultMsg":"SERVICE_KEY_IS_NOT_REGISTERED_ERROR"}}}'
+            status_code = 403; headers = {"content-type": "application/json"}
+        _IND.http.get_once = lambda *a, **k: _R403()
+        _k2 = _IND.knock({"name": "y", "url": "https://x/", "params": {}})
+        check(_k2.get("status") == 403 and "NOT_REGISTERED" in _k2.get("head", ""),
+              "거절 응답의 본문을 버리지 않고 담는다")
+    finally:
+        _IND.http.get_once = _saved_once0
 finally:
     _IND.http.get = _saved_http_get
+
+# 상세 화면에서 주소·다운로드 링크를 모양으로 뽑는다 — API 형과 파일 형.
+_detail_api = '''<title>국토교통부_건축HUB_건축인허가정보 서비스 | 공공데이터포털</title>
+<td>http://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo</td>
+<span>getApBasisOulnInfo</span> <span>getApDongOulnInfo</span>'''
+_detail_file = '''<title>한국전력공사_시군구별 계약종별 전력사용량</title>
+<a href="/cmm/cmm/fileDownload.do?atchFileId=FILE_000000002966901&amp;fileDetailSn=1">
+한국전력공사_시군구별 계약종별 전력사용량_20241231.csv</a> <em>12.3 MB</em>'''
+_saved_once = _IND.http.get_once
+try:
+    class _RA:
+        text = _detail_api; status_code = 200
+    _IND.http.get_once = lambda *a, **k: _RA()
+    _da = _IND.detail("15136267", "openapi")
+    check(any("getApBasisOulnInfo" in u for u in _da["endpoints"]),
+          f"API 상세에서 호출 주소를 뽑는다 ({len(_da['endpoints'])}개)")
+    check("getApDongOulnInfo" in _da["operations"], "운영 이름도 함께 뽑는다")
+    check("건축인허가정보" in _da["title"], "제목을 남긴다")
+
+    class _RF:
+        text = _detail_file; status_code = 200
+    _IND.http.get_once = lambda *a, **k: _RF()
+    _df = _IND.detail("15069679", "fileData")
+    check(any("atchFileId=FILE_000000002966901" in u for u in _df["downloads"]),
+          "파일 상세에서 내려받기 링크를 뽑는다 (&amp; 를 풀어서)")
+    check(any(f.strip().endswith(".csv") for f in _df["files"]), "파일 이름을 뽑는다")
+    check(_df["sizes"] == ["12.3 MB"], f"크기를 뽑는다 ({_df['sizes']})")
+
+    class _RN:
+        text = "<html><body>스크립트로 그리는 화면</body></html>"; status_code = 200
+    _IND.http.get_once = lambda *a, **k: _RN()
+    _dn = _IND.detail("1", "openapi")
+    check("_raw_head" in _dn, "아무것도 못 뽑으면 화면 글자를 남긴다")
+finally:
+    _IND.http.get_once = _saved_once
 
 # 포털 표준 봉투를 한 겹 벗겨 열쇠를 보인다.
 _env = '{"response":{"header":{"resultCode":"00"},"body":{"totalCount":3,"items":{"item":[{"pmsDay":"20240103","totArea":"1200.5","mainPurpsCdNm":"공장"}]}}}}'
