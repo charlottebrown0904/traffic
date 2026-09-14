@@ -123,6 +123,38 @@ CREATE TABLE IF NOT EXISTS landprice_index (
     unit     VARCHAR,
     PRIMARY KEY (statbl, period, grp_id, cls_id, itm_id)
 );
+-- 철도역 (2026-09-14, 사용자가 올려 준 네 파일).
+--
+-- **개통일을 역마다 붙이지 않는다.** 역 파일에는 개통일이 없고, 노선
+-- 파일의 정거장구성으로 이으면 틀린 날이 나온다 — 광명역이 1974년이
+-- 됐다(실제 2004년). 나중에 생긴 역도 노선 개통일을 뒤집어쓰기 때문이다.
+-- 그래서 역은 **자리**(거리 인자)로 쓰고, 개통일은 노선·구간 단위로
+-- rail_open 에 따로 둔다. 둘을 섞으면 사건 연구가 통째로 거짓이 된다.
+CREATE TABLE IF NOT EXISTS rail_station (
+    name        VARCHAR PRIMARY KEY,
+    lat         DOUBLE,
+    lon         DOUBLE,
+    address     VARCHAR,
+    grade       VARCHAR,          -- 역등급
+    trains      INTEGER,          -- 하루 열차 정차 횟수 (규모 대용)
+    lines_txt   VARCHAR,          -- 관련 노선 (글자 그대로)
+    source      VARCHAR
+);
+
+-- 노선·구간 개통일. 사건 층이다 — IC 개통과 같은 자리에 쓴다.
+CREATE TABLE IF NOT EXISTS rail_open (
+    open_id     VARCHAR PRIMARY KEY,
+    kind        VARCHAR,          -- 노선 / 도시철도구간
+    operator    VARCHAR,
+    line_nm     VARCHAR,
+    section     VARCHAR,          -- 구간 (도시철도) 또는 기점↔종점
+    n_stations  DOUBLE,
+    length_km   DOUBLE,
+    opened_on   DATE,
+    stations_txt VARCHAR,         -- 정거장구성 (역 이름을 잇는 실마리)
+    source      VARCHAR
+);
+
 CREATE TABLE IF NOT EXISTS market_series (
     series  VARCHAR,                  -- policy_rate / cd91 / bond3 / cpi / gdp_growth
     period  VARCHAR,                  -- 202601 (월) · 2026Q1 (분기)

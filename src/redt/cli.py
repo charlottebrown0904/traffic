@@ -3195,6 +3195,22 @@ def cmd_kosis_diagnose(args):
     kosis.diagnose()
 
 
+def cmd_load_rail(args):
+    """철도역과 개통일을 싣는다 (data/rail/ 의 세 파일).
+
+    역과 개통일을 **따로** 싣는다. 역 파일에는 개통일이 없고, 노선의
+    정거장구성으로 이으면 틀린 날이 나온다 — 광명역이 1974년이 됐다
+    (실제 2004년). 나중에 생긴 역이 노선의 첫 개통일을 뒤집어쓴다.
+    그렇게 만든 날짜로 사건 연구를 하면 결과가 통째로 거짓이 된다.
+    """
+    from .collect import rail
+    with db.connect() as con:
+        n_st = rail.load_stations(con)
+        n_op = rail.load_openings(con)
+        print(f"역 {n_st:,}행 · 개통 {n_op:,}행")
+        rail.describe(con)
+
+
 def cmd_dart_probe(args):
     """OpenDART 가 무엇을 주는지 사실만 본다 (추측 금지).
 
@@ -3947,6 +3963,10 @@ def main(argv=None):
     p.add_argument("--terms", default="주민등록인구,전국사업체조사")
     p.add_argument("--top", type=int, default=15)
     p.set_defaults(func=cmd_kosis_find)
+
+    p = sub.add_parser("load-rail",
+                       help="철도역 좌표 + 노선·구간 개통일 적재 (data/rail/)")
+    p.set_defaults(func=cmd_load_rail)
 
     p = sub.add_parser("dart-probe",
                        help="OpenDART 탐침 — 신규시설투자 공시와 회사 주소")
