@@ -9,6 +9,7 @@
 #   vworld  시군구별 속성 조회로 적재 (ldCode 5자리 · 연도)
 #   value-test  현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다
 #   factor-cells 미래 가치 인자 — 조합 칸 세기 (+ query=estimate 면 추정까지)
+#   momentum    모멘텀 검증 — 시군구×용도지역군 연 중앙단가의 추세 지속·거래량 선행 (limit=칸 최소 건수)
 #   ecos        한국은행 ECOS 금리·물가·성장률
 #               query: (비움)=전부 적재 · probe=받아만 봄 · browse:CODE=표 목록
 #                      items:CODE=항목 목록 · find:말=이름으로 표 찾기
@@ -29,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / ecos / indicators-probe / indicators / power / localtax / permits / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / momentum / ecos / indicators-probe / indicators / power / localtax / permits / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -172,6 +173,14 @@ jobs:
             --since "${{ inputs.years || '2010' }}" --until "${{ inputs.n || '2025' }}" \
             ${{ inputs.query == 'estimate' && '--estimate' || '' }} 2>&1 | tee /tmp/stdland.log
 
+      # 모멘텀 검증 — 읽기만 하므로 캐시는 안 남기고 결과 JSON 을 첨부한다.
+      # limit=칸 최소 건수(비우면 30).
+      - name: 모멘텀 검증
+        if: inputs.mode == 'momentum'
+        run: |
+          set -o pipefail
+          python -m redt.cli momentum-test --min-n "${{ inputs.limit || '30' }}" 2>&1 | tee /tmp/stdland.log
+
       # 한국은행 ECOS — 시장 층 (금리·물가·성장률).
       #
       # 인증키는 러너에 없다. ECOS 는 키를 **경로 한 칸**에 넣는 유일한
@@ -289,7 +298,7 @@ jobs:
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'indicators-probe'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -326,6 +335,13 @@ jobs:
             data/processed/ordinance/probe-*.json
             data/processed/ordinance/probe-web-*.html
           if-no-files-found: ignore
+
+      - name: 모멘텀 검증 결과 첨부
+        if: always() && inputs.mode == 'momentum'
+        uses: actions/upload-artifact@v4
+        with:
+          name: momentum-test
+          path: data/processed/momentum_test.json
 
       - name: 지역 지표 탐침 결과 첨부
         if: always() && inputs.mode == 'indicators-probe'

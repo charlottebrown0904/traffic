@@ -999,6 +999,30 @@ def _ecos_span(cycle: str, start: str, end: str) -> tuple[str, str]:
     return lo, hi
 
 
+def cmd_momentum_test(args):
+    """모멘텀 검증 — 주식식 추세 지속이 땅값에 있는가 (2026-09-14 지시).
+
+    시군구 × 용도지역군 × 연 중앙 단가로 횡단면 검증. 최근 해를 건너뛴 창
+    (skip_*)이 본 검증이다 — 얇은 칸의 중앙값 잡음이 만드는 가짜 반전을
+    피하기 위해서다 (src/redt/analyze/momentum.py 머리글).
+    """
+    import json
+    from .analyze import momentum as M
+    min_n = int(args.min_n)
+    with db.connect() as con:
+        idx = M.index(con, since=int(args.since), min_n=min_n)
+    print(f"지수 칸 {len(idx):,}개 · 단위 {idx['unit'].nunique():,}개 · 연도 {idx['deal_year'].min()}~{idx['deal_year'].max()}"
+          if len(idx) else "지수 칸이 없습니다 — min_n 을 낮추십시오")
+    if not len(idx):
+        return
+    res = M.evaluate(idx, signal="price") + M.evaluate(idx, signal="volume")
+    print(M.describe(res, min_n))
+    out = ROOT / "data" / "processed" / "momentum_test.json"
+    out.write_text(json.dumps({"min_n": min_n, "since": int(args.since), "cells": int(len(idx)),
+                               "units": int(idx["unit"].nunique()), "results": res}, ensure_ascii=False, indent=1))
+    print(f"→ {out}")
+
+
 def cmd_factor_cells(args):
     """미래 가치 인자 — **조합 칸을 먼저 센다** (2026-09-14 지시).
 
@@ -3505,6 +3529,11 @@ def main(argv=None):
     p.add_argument("--find", default="",
                    help="--browse 와 함께: 이름에 이 말이 든 것만 (목록이 길다)")
     p.set_defaults(func=cmd_ecos)
+
+    p = sub.add_parser("momentum-test", help="모멘텀 검증 — 시군구×용도지역군 연 중앙단가의 추세 지속·거래량 선행")
+    p.add_argument("--since", default="2006")
+    p.add_argument("--min-n", dest="min_n", default="30", help="칸(시군구×용도지역군×연)의 최소 거래 건수")
+    p.set_defaults(func=cmd_momentum_test)
 
     p = sub.add_parser("factor-cells", help="미래 가치 인자 — 조합 칸 세기 (+ 추정)")
     p.add_argument("--since", default="2010")

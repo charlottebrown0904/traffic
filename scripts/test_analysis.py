@@ -2850,6 +2850,35 @@ try:
 except RuntimeError as exc:
     check("ERROR-300" in str(exc), "row 가 없으면 RESULT 메시지를 담아 예외 — 조용히 0행이 되지 않는다")
 
+print("47. 모멘텀 검증 — 잡음은 가짜 반전을 만들고, 건너뛴 창은 그것을 걷어낸다")
+import random as _rnd                                      # noqa: E402
+from redt.analyze import momentum as _MM                   # noqa: E402
+_rnd.seed(7)
+def _synth(persist: float, noise: float):
+    rows = []
+    for u in range(60):
+        lvl, drift = 12.0, _rnd.gauss(0, 0.03)
+        for y in range(2006, 2026):
+            drift = persist * drift + (1 - persist) * _rnd.gauss(0, 0.03)
+            lvl += drift
+            rows.append({"unit": f"U{u}|관리", "sigungu_cd": f"{u:05d}", "zone": "관리", "deal_year": y,
+                         "ln_med": lvl + _rnd.gauss(0, noise), "n": 40 + _rnd.randint(-10, 10)})
+    return _pd.DataFrame(rows)
+_r_noise = {r["spec"]: r for r in _MM.evaluate(_synth(0.0, 0.08))}
+check(_r_noise["raw_2_2"]["mean_rho"] < -0.15 and abs(_r_noise["skip_3_1_2"]["mean_rho"]) < 0.12,
+      f"추세 없이 잡음만 있으면 raw 는 반전(음수), skip 은 0 근처 (raw {_r_noise['raw_2_2']['mean_rho']:+.2f} · skip {_r_noise['skip_3_1_2']['mean_rho']:+.2f})")
+_r_trend = {r["spec"]: r for r in _MM.evaluate(_synth(0.9, 0.0))}
+check(_r_trend["skip_3_1_2"]["mean_rho"] > 0.3 and _r_trend["skip_3_1_2"]["share_pos"] > 0.8,
+      f"추세가 지속하면 skip 창이 양수로 잡는다 ({_r_trend['skip_3_1_2']['mean_rho']:+.2f} · 양수 {_r_trend['skip_3_1_2']['share_pos']:.0%})")
+_tr = _pd.DataFrame({"sigungu_cd": ["41550"] * 70, "land_use": ["계획관리지역"] * 40 + ["자연녹지지역"] * 30,
+                     "deal_year": [2020] * 70, "price_per_m2": [100000 + i * 100 for i in range(70)]})
+_ix = _MM.index_from(_tr, min_n=30)
+_nz = dict(zip(_ix["zone"], _ix["n"]))
+check(_nz.get("관리") == 40 and _nz.get("녹지") == 30, f"용도지역을 군으로 묶고 칸 건수를 잘라내기 전으로 센다 ({_nz})")
+check(set(_ix["zone"]) == {"관리", "녹지"}, "최소 건수(30)에 딱 닿은 칸도 남긴다")
+_d = _MM.describe(_r_trend.values() and list(_r_trend.values()), 30)
+check("skip_3_1_2" in _d and "12-1" in _d, "표에 규격과 읽는 법이 함께 찍힌다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
