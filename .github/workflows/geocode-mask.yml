@@ -1,0 +1,36 @@
+# 가려진 지번으로 얻은 '지번단위' 좌표가 진짜인가 (2026-09-14).
+#
+# 국토부가 토지 실거래 지번을 일부만 준다 ('1**'). 그런데 우리 수집기는
+# 그 주소로 브이월드를 부르고 **좌표가 오기만 하면 'parcel' 로 적는다.**
+# 2006~2023 의 지번은 100% 가려져 있는데 그 해들의 20~29% 가 'parcel' 이다.
+# 그 표가 참인지 거짓인지에 따라 실거래 표시를 늘리는 길이 갈린다.
+#
+# 이 컨테이너는 중계기를 못 부르므로 러너에서 돌린다.
+name: 가려진 지번 좌표 탐침
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: |
+          set -o pipefail
+          python scripts/geocode_mask_probe.py 2>&1 | tee /tmp/mask.log
+      - name: 요약
+        if: always()
+        run: |
+          { echo "## 가려진 지번 좌표 탐침"; echo; echo '```'
+            cat /tmp/mask.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
