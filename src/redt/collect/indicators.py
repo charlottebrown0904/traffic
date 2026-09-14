@@ -1613,7 +1613,27 @@ def dart_address(corp_code: str, timeout: int = 40) -> str:
 KOSIS_TAX_ORG = "110"
 # 표 이름이 '1-11. 경기도' 꼴이고, 분류 경로에 '시도·시군구별' 이 든 것만.
 KOSIS_TAX_NAME = re.compile(r"^\s*1-\d+\.\s*(.+?)\s*$")
-KOSIS_TAX_TERMS = ("징수실적", "지방소득세", "지방세통계", "시군구별 징수")
+# 검색은 한 번에 스무 건만 준다. 그래서 **시도 이름 자체**로도 찾는다 —
+# 첫 판(run 95)이 표를 열셋만 찾아 서울·부산·대구·세종이 통째로 빠졌다.
+# 시도 이름은 우리가 이미 아는 것이라 추측이 아니다.
+KOSIS_TAX_TERMS = (
+    "징수실적", "지방소득세", "지방세통계", "시군구별 징수",
+    "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시",
+    "대전광역시", "울산광역시", "세종특별자치시", "경기도", "강원",
+    "충청북도", "충청남도", "전북", "전라남도", "경상북도", "경상남도",
+    "제주특별자치도",
+)
+
+# 이름이 바뀌거나 없어진 시군구. **지어내지 않고 적어 둔다.**
+#
+#   청원군      2014 청주시에 통합 — 청주시로 잇는다
+#   인천 중구   2026 영종구·제물포구로 갈림
+#   인천 서구   2026 서구·검단구로 갈림
+#
+# 갈라진 쪽(인천 둘)은 **한 곳으로 잇지 않는다.** 하나를 골라 이으면 그
+# 구의 옛 값이 실제보다 커진다. 합쳐진 쪽(청원군)만 잇는다 — 그것은
+# 값이 새로 생기는 것이 아니라 같은 땅이 한 이름으로 묶인 것이다.
+KOSIS_SGG_ALIAS = {("충북", "청원군"): "청주시"}
 
 
 def kosis_tax_tables() -> dict[str, str]:
@@ -1645,7 +1665,22 @@ def kosis_tax_tables() -> dict[str, str]:
     return found
 
 
-def kosis_tax_rows(rows, sido: str, code_map: dict) -> tuple[list[tuple], dict]:
+def _sido_key(sido: str) -> str:
+    """'충청북도' → '충북' 처럼 대조표가 쓰는 짧은 열쇠로."""
+    s = str(sido or "").strip()
+    for long_, short in (("특별자치도", ""), ("특별자치시", ""), ("광역시", ""),
+                         ("특별시", ""), ("도", "")):
+        if s.endswith(long_) and long_:
+            s = s[: -len(long_)]
+            break
+    # '충청북' → '충북', '전라남' → '전남', '경상북' → '경북'
+    if len(s) == 3 and s[1] in "청라상":
+        s = s[0] + s[2]
+    return s
+
+
+def kosis_tax_rows(rows, sido: str, code_map: dict,
+                   sido_cd: dict | None = None) -> tuple[list[tuple], dict]:
     """KOSIS 한 표의 행을 region_series 행으로 접는다.
 
     단위가 **천원**이라 1,000을 곱해 원으로 맞춘다 — 지방재정365 쪽이
@@ -1669,7 +1704,20 @@ def kosis_tax_rows(rows, sido: str, code_map: dict) -> tuple[list[tuple], dict]:
             val = float(str(raw).replace(",", ""))
         except (TypeError, ValueError):
             continue
-        code = resolve(code_map, sido, sgg)
+        # 시도가 제 이름으로 앉은 행은 **본청**이다 (도세·시세의 시도 몫).
+        # 버리면 광역시·도가 걷는 취득세가 통째로 사라진다. 지방재정365
+        # 쪽과 같은 규칙으로 시도 코드 두 자리를 열쇠로 둔다.
+        if sgg == sido or sgg == _sido_key(sido):
+            code = (sido_cd or {}).get(_sido_key(sido))
+            if not code:
+                diag["unmatched"][f"{sido} 본청"] = diag["unmatched"].get(
+                    f"{sido} 본청", 0) + 1
+                continue
+            out.append((code, year, val * 1000.0,
+                        f"local_tax_kosis:{item}", "원", "KOSIS 지방세통계"))
+            continue
+        name = KOSIS_SGG_ALIAS.get((_sido_key(sido), sgg), sgg)
+        code = resolve(code_map, sido, name)
         if not code:
             diag["unmatched"][f"{sido} {sgg}"] = diag["unmatched"].get(
                 f"{sido} {sgg}", 0) + 1
@@ -1693,6 +1741,7 @@ def load_local_tax_kosis(con, years: list[str], *, code_map: dict | None = None,
     started = _t.time()
     if code_map is None:
         code_map = build_code_map(con)
+    sido_cd = sido_codes(code_map)
     tables = kosis_tax_tables()
     st = {"tables": len(tables), "calls": 0, "rows": 0, "failed": 0,
           "skipped_done": 0, "unmatched": {}, "stopped": False}
@@ -1733,7 +1782,7 @@ def load_local_tax_kosis(con, years: list[str], *, code_map: dict | None = None,
                     log(f"  ✗ {sido} {y}: {type(exc).__name__} {str(exc)[:120]}")
                 continue
             st["calls"] += 1
-            recs, diag = kosis_tax_rows(rows, sido, code_map)
+            recs, diag = kosis_tax_rows(rows, sido, code_map, sido_cd)
             for k, v in diag["unmatched"].items():
                 st["unmatched"][k] = st["unmatched"].get(k, 0) + v
             if recs:
