@@ -2860,6 +2860,14 @@ check(len(_in) == 3 and _in[0][0] == "local_tax_item:법인지방소득세" and 
 check(len(_ir) == 3 and _ir[0][0] == "41550" and _ir[0][3] == "local_tax_item:법인지방소득세",
       "자치단체 칸이 있으면 시군구 지표로 두고 세목명의 빈칸을 지운다")
 
+_sc = _IND.sido_codes(_cm)
+_se = [{"fyr": "2024", "cap_dv_cd": "2", "cap_dv_nm": "시", "dtmk_cd": "13", "dtmk_nm": "법인지방소득세",
+        "wa_laf_cd": "41", "wa_laf_hg_nm": "경기도", "rcvmt_aggr_amt": "1,000", "rate": "12.5"},
+       {"fyr": "2024", "cap_dv_nm": "군", "dtmk_nm": "법인지방소득세", "wa_laf_hg_nm": "화성국", "rcvmt_aggr_amt": "1", "rate": "1"}]
+_sr, _sd = _IND.lofin_sido_rows(_se, _sc)
+check(_sc.get("경기") == "41" and len(_sr) == 2 and _sr[0][0] == "41" and _sr[0][3] == "local_tax_sido:법인지방소득세:시" and _sr[0][2] == 1000.0
+      and _sd["unmatched"] == {"화성국": 1}, f"시도 × 구분 × 세목을 시도 코드 2자리로 두고, 모르는 시도는 센다 ({_sr[:1]})")
+
 print("46-1. 포털 파일 — 형식을 바이트로 알아본다")
 check(_IND.sniff_ext(b"PK\x03\x04" + b"x" * 100 + b"[Content_Types].xml") == "xlsx" and _IND.sniff_ext(b"PK\x03\x04abc") == "zip"
       and _IND.sniff_ext("단지명,지정일\n".encode("cp949")) == "csv", "xlsx · zip · csv 를 가른다")

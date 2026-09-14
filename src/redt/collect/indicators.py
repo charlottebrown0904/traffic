@@ -927,6 +927,56 @@ LOFIN_PAGE = 1000
 # region_series 로, 없으면 market_series(전국) 로 넣는다. 첫 호출이 정한다.
 LOFIN_ITEMS_URL = "https://www.lofin365.go.kr/lf/hub/KAAAG"
 LOFIN_ITEMS_SOURCE = "lofin365 KAAAG"
+# 도시군세 세목별 비중 (사용자가 찾음, 16:49): /lf/hub/KAAAE · 출력 fyr,
+# cap_dv_cd/cap_dv_nm(시도군구분 — 시세·군세·구세), dtmk_cd/dtmk_nm(세목),
+# wa_laf_cd/wa_laf_hg_nm(시도), rcvmt_aggr_amt(금액), rate(비중). 2010~2024.
+# 시군구 하나하나는 아니고 **시도 × 시·군·구 구분 × 세목** 이다. 시도 단위
+# 법인지방소득세 시계열은 여기서 나온다. 열쇠는 시도 코드 2자리로 둔다 —
+# region_series.sigungu_cd 에 2자리가 들어가면 시도 행이라는 뜻이다.
+LOFIN_SIDO_URL = "https://www.lofin365.go.kr/lf/hub/KAAAE"
+LOFIN_SIDO_SOURCE = "lofin365 KAAAE"
+
+
+def sido_codes(code_map: dict) -> dict:
+    """시도 키('경기') → 시도 코드 2자리. 대조표의 시군구 코드 앞 두 자리에서 —
+    같은 시도에 두 세대가 섞이면 많은 쪽을 고른다."""
+    from collections import Counter
+    cnt: dict[str, Counter] = {}
+    for (sk, _g), code in code_map.items():
+        cnt.setdefault(sk, Counter())[str(code)[:2]] += 1
+    return {sk: c.most_common(1)[0][0] for sk, c in cnt.items()}
+
+
+def lofin_sido_rows(rows: list[dict], codes: dict) -> tuple[list[tuple], dict]:
+    """시도 × 구분 × 세목 행 → region_series (sigungu_cd = 시도 2자리)."""
+    diag = {"rows_in": len(rows), "keys": sorted(rows[0].keys()) if rows else [], "unmatched": {}, "items": set()}
+    out = []
+    for r in rows:
+        try:
+            fyr = int(str(r.get("fyr"))[:4])
+        except (TypeError, ValueError):
+            continue
+        sido = str(r.get("wa_laf_hg_nm") or "").strip()
+        code = codes.get(sido_key(sido)) if sido else None
+        if code is None:
+            for alt in SIDO_FALLBACK.get(sido_key(sido), ()):
+                code = codes.get(alt)
+                if code:
+                    break
+        if code is None:
+            diag["unmatched"][sido or "(빈 시도)"] = diag["unmatched"].get(sido or "(빈 시도)", 0) + 1
+            continue
+        item = re.sub(r"\s+", "", str(r.get("dtmk_nm") or r.get("dtmk_cd") or "")) or "기타"
+        div = re.sub(r"\s+", "", str(r.get("cap_dv_nm") or r.get("cap_dv_cd") or "")) or "전체"
+        diag["items"].add(item)
+        v = _f(r.get("rcvmt_aggr_amt"))
+        if v is not None:
+            out.append((code, f"{fyr:04d}", v, f"local_tax_sido:{item}:{div}", "원", LOFIN_SIDO_SOURCE))
+        sh = _f(r.get("rate"))
+        if sh is not None:
+            out.append((code, f"{fyr:04d}", sh, f"local_tax_sido_share:{item}:{div}", "%", LOFIN_SIDO_SOURCE))
+    diag["items"] = sorted(diag["items"])
+    return out, diag
 
 
 def _lofin_unwrap(res) -> tuple[list[dict], dict]:
@@ -996,21 +1046,27 @@ def lofin_item_rows(rows: list[dict], code_map: dict) -> tuple[list[tuple], list
     return reg, nat, diag
 
 
-def load_tax_items(con, years: list[int], timeout: int = 40, log=print) -> dict:
-    """세목별 징수율(KAAAG)을 회계연도마다 받아 넣는다."""
+def load_tax_items(con, years: list[int], timeout: int = 40, log=print, hub: str = "KAAAG") -> dict:
+    """세목별 표를 회계연도마다 받아 넣는다 — KAAAG(세목별 징수율) · KAAAE(도시군세 세목별 비중)."""
     code_map = build_code_map(con)
-    st = {"calls": 0, "region_rows": 0, "nat_rows": 0, "failed": 0, "unmatched": {}, "items": set(), "keys": [], "years": {}}
+    codes = sido_codes(code_map)
+    url = LOFIN_SIDO_URL if hub == "KAAAE" else LOFIN_ITEMS_URL
+    st = {"hub": hub, "calls": 0, "region_rows": 0, "nat_rows": 0, "failed": 0, "unmatched": {}, "items": set(), "keys": [], "years": {}}
     for y in years:
         pindex, got = 1, 0
         while True:
             try:
-                rows, head = lofin_page(y, pindex, timeout=timeout, url=LOFIN_ITEMS_URL)
+                rows, head = lofin_page(y, pindex, timeout=timeout, url=url)
             except Exception as exc:                      # noqa: BLE001
                 st["failed"] += 1
-                log(f"  ✗ 세목별 {y} p{pindex}: {str(exc)[:200]}")
+                log(f"  ✗ {hub} {y} p{pindex}: {str(exc)[:200]}")
                 break
             st["calls"] += 1
-            reg, nat, diag = lofin_item_rows(rows, code_map)
+            if hub == "KAAAE":
+                reg, diag = lofin_sido_rows(rows, codes)
+                nat = []
+            else:
+                reg, nat, diag = lofin_item_rows(rows, code_map)
             st["keys"] = st["keys"] or diag["keys"]
             st["items"].update(diag["items"])
             for k, v in diag["unmatched"].items():
