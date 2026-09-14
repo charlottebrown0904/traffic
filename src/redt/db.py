@@ -139,6 +139,43 @@ CREATE TABLE IF NOT EXISTS region_series (
     PRIMARY KEY (sigungu_cd, period, metric)
 );
 
+-- 건축인허가 (국토부 건축HUB · 2026-09-14). 허가 → 가동 → 소득 사슬의 첫 마디.
+--
+-- 건 단위로 둔다. 시군구 × 월 × 용도로 모은 것은 region_series 에 따로
+-- 넣는다 (aggregate_permits). 건을 버리고 합만 두면 '공장 허가' 의 정의를
+-- 바꿀 때 다시 훑어야 한다 — 하루 호출 한도가 있는 API 라 그것이 비싸다.
+--
+-- bldNm(건물명)은 담지 않는다 — 상호가 들어오는 칸이다. 지번(platPlc)은
+-- 실거래와 같은 공적 위치 정보라 둔다.
+CREATE TABLE IF NOT EXISTS permit (
+    pms_pk        VARCHAR PRIMARY KEY, -- mgmPmsrgstPk
+    sigungu_cd    VARCHAR,
+    bjdong_cd     VARCHAR,             -- 5자리 (읍면동3+리2)
+    plat_plc      VARCHAR,
+    arch_gb       VARCHAR,             -- 신축·증축·… (archGbCdNm)
+    main_purps    VARCHAR,             -- 주용도 (mainPurpsCdNm)
+    jiyuk         VARCHAR,             -- 용도지역 (jiyukCdNm)
+    plat_area     DOUBLE,
+    arch_area     DOUBLE,
+    tot_area      DOUBLE,              -- 연면적
+    hhld_cnt      INTEGER,
+    pms_day       VARCHAR,             -- 허가일 YYYYMMDD (archPmsDay)
+    stcns_day     VARCHAR,             -- 실착공일 (realStcnsDay)
+    use_apr_day   VARCHAR,             -- 사용승인일
+    crtn_day      VARCHAR
+);
+
+-- 훑은 자리. (시군구, 법정동) 마다 전체 건수와 받은 건수를 남겨 이어받는다.
+-- 러너 90분 한도와 포털 하루 호출 한도 둘 다 한 번에 전국을 못 끝내게 한다.
+CREATE TABLE IF NOT EXISTS permit_crawl (
+    sigungu_cd  VARCHAR,
+    bjdong_cd   VARCHAR,
+    total       INTEGER,
+    fetched     INTEGER,
+    done_at     TIMESTAMP,
+    PRIMARY KEY (sigungu_cd, bjdong_cd)
+);
+
 -- 가설3 패널형: 시군구 × 연도 규모 지표.
 --
 -- 인구가 늘어서 오른 것을 교통량이 늘어서 오른 것으로 읽지 않으려면, 같은

@@ -772,6 +772,29 @@ def cmd_load_indicators(args):
         print(f"  … 외 {len(have) - 60}개")
 
 
+def cmd_load_permits(args):
+    """건축인허가 훑기 — 건축HUB → permit → region_series (2026-09-14).
+
+    (시군구, 법정동) 단위로 부르고, 예산(--max-calls)이 다하면 멈춘다. 다음
+    판은 permit_crawl 을 보고 안 끝난 곳부터 이어간다. 포털 하루 한도와
+    러너 90분 한도 둘 다 한 번에 전국을 못 끝내게 하므로 이것이 맞다.
+    """
+    from .collect import indicators
+    sgg = [x.strip() for x in (args.sigungu or "").split(",") if x.strip()] or None
+    with db.connect() as con:
+        info = indicators.crawl_permits(con, sigungu=sgg, max_calls=int(args.max_calls),
+                                        timeout=int(args.timeout))
+        print(f"\n이 판: 호출 {info['calls']:,} · 새 행 {info['rows']:,} · 끝낸 법정동 {info['finished']:,}"
+              f" · 실패 {info['failed']} · permit 누계 {info['permits']:,}건 · 전국 남은 법정동 {info['left_total']:,}")
+        n = indicators.aggregate_permits(con)
+        print(f"region_series 갱신 {n:,}행 (permit_area_m2:* · permit_count:*)")
+        have = con.execute(
+            "SELECT metric, count(*), min(period), max(period), count(DISTINCT sigungu_cd)"
+            " FROM region_series WHERE metric LIKE 'permit_%' GROUP BY metric ORDER BY metric").fetchall()
+    for metric, cnt, lo, hi, nsgg in have:
+        print(f"  {metric:<26} {cnt:>7,}건 · {lo}~{hi} · 시군구 {nsgg}")
+
+
 def cmd_ecos(args):
     """한국은행 ECOS — 시장 층 계열을 받아 market_series 에 쌓는다.
 
@@ -3380,6 +3403,12 @@ def main(argv=None):
     p.add_argument("--only", default="", help="데이터셋 번호를 쉼표로 (비우면 셋 다)")
     p.add_argument("--timeout", default="120")
     p.set_defaults(func=cmd_load_indicators)
+
+    p = sub.add_parser("load-permits", help="건축인허가 훑기 — 건축HUB → permit (이어받기)")
+    p.add_argument("--sigungu", default="", help="시군구 코드(5) 또는 시도(2)를 쉼표로 (비우면 전국)")
+    p.add_argument("--max-calls", dest="max_calls", default="8000", help="이 판의 호출 예산")
+    p.add_argument("--timeout", default="40")
+    p.set_defaults(func=cmd_load_permits)
 
     p = sub.add_parser("ecos", help="한국은행 ECOS — 금리·물가·성장률 (시장 층)")
     p.add_argument("--start", default="2000")

@@ -667,3 +667,174 @@ def load_power(con, only: list[str] | None = None, timeout: int = 120) -> list[d
                 rows)
         diags.append(diag)
     return diags
+
+
+# ── 건축인허가 훑기 — 건축HUB → permit ────────────────────────────
+#
+# 6차(run 34807146961)에서 확정한 것:
+#   · 법정동 없이는 빈 몸통 → (시군구, 법정동) 단위로 부른다
+#   · 쪽 크기 최대 100 (1000 을 달라 해도 100)
+#   · 허가일 필터(startDate·endDate) 가 먹는다 — 개포동 전체 991 → 2024년 46
+#   · 항목: archPmsDay(허가일) realStcnsDay(실착공) useAprDay(사용승인)
+#          totArea(연면적) mainPurpsCdNm(주용도) jiyukCdNm(용도지역) archGbCdNm
+#
+# 전국은 법정동+리 약 2만 곳 × 쪽수다. 포털은 하루 호출 한도가 있고 러너는
+# 90분에 죽으므로, **이어받기**가 설계의 중심이다: (시군구, 법정동) 마다 전체
+# 건수와 받은 건수를 permit_crawl 에 남기고, 다음 판은 안 끝난 곳부터 간다.
+
+HUB_URL = "https://apis.data.go.kr/1613000/ArchPmsHubService/getApBasisOulnInfo"
+HUB_PAGE = 100
+
+
+def _f(v):
+    try:
+        return float(str(v).replace(",", "")) if v not in (None, "") else None
+    except ValueError:
+        return None
+
+
+def _i(v):
+    try:
+        return int(float(str(v).replace(",", ""))) if v not in (None, "") else None
+    except ValueError:
+        return None
+
+
+def permit_row(item: dict) -> tuple | None:
+    """건축HUB 한 항목 → permit 한 행. 열쇠가 없으면 None."""
+    pk = item.get("mgmPmsrgstPk")
+    if not pk:
+        return None
+    return (str(pk), str(item.get("sigunguCd") or ""), str(item.get("bjdongCd") or ""),
+            item.get("platPlc"), item.get("archGbCdNm"), item.get("mainPurpsCdNm"),
+            item.get("jiyukCdNm"), _f(item.get("platArea")), _f(item.get("archArea")),
+            _f(item.get("totArea")), _i(item.get("hhldCnt")),
+            str(item.get("archPmsDay") or "") or None, str(item.get("realStcnsDay") or "") or None,
+            str(item.get("useAprDay") or "") or None, str(item.get("crtnDay") or "") or None)
+
+
+def hub_page(sgg: str, bjd: str, page: int, timeout: int = 40) -> tuple[list[dict], int]:
+    """한 쪽. (항목들, 전체 건수). 봉투가 이상하면 예외 — 조용히 0 이 되지 않는다."""
+    res = http.get_json(HUB_URL, {"sigunguCd": sgg, "bjdongCd": bjd, "numOfRows": str(HUB_PAGE),
+                                  "pageNo": str(page), "_type": "json"}, timeout=timeout)
+    if "response" not in res:
+        # 키 미등록 등은 OpenAPI_ServiceResponse 로 온다
+        msg = (res.get("OpenAPI_ServiceResponse") or {}).get("cmmMsgHeader") or res
+        raise RuntimeError(f"건축HUB: {msg}")
+    body = res["response"].get("body") or {}
+    total = int(body.get("totalCount") or 0)
+    items = (body.get("items") or {}).get("item") or []
+    if isinstance(items, dict):
+        items = [items]
+    return items, total
+
+
+def bjdong_targets(con, sigungu: list[str] | None = None) -> list[tuple[str, str]]:
+    """훑을 (시군구, 법정동5) 목록 — region_umd 의 읍면동·리 전부.
+
+    리(里)도 따로 부른다. 읍·면의 건물은 '공도읍 승두리'(25321) 같은 리 코드에
+    잡히고 '공도읍'(25300) 자체에는 거의 없다. 리를 빼면 농촌이 통째로 빈다.
+    """
+    q = "SELECT DISTINCT sigungu_cd, substr(region_cd, 6, 5) FROM region_umd WHERE length(region_cd) = 10"
+    rows = con.execute(q).fetchall()
+    out = [(str(a), str(b)) for a, b in rows if a and b]
+    if sigungu:
+        keep = set(sigungu)
+        out = [(a, b) for a, b in out if a in keep or any(a.startswith(k) for k in keep if len(k) == 2)]
+    return sorted(out)
+
+
+def crawl_permits(con, sigungu: list[str] | None = None, max_calls: int = 8000,
+                  timeout: int = 40, log=print) -> dict:
+    """(시군구, 법정동) 을 돌며 permit 을 채운다. 예산이 다하면 멈춘다 — 이어받는다."""
+    from datetime import datetime, timezone
+    targets = bjdong_targets(con, sigungu)
+    done = {(a, b): (t, f) for a, b, t, f in con.execute(
+        "SELECT sigungu_cd, bjdong_cd, total, fetched FROM permit_crawl").fetchall()}
+    todo = [(a, b) for a, b in targets if not (done.get((a, b)) and done[(a, b)][1] >= done[(a, b)][0])]
+    log(f"대상 {len(targets):,}곳 · 끝난 {len(targets) - len(todo):,}곳 · 남은 {len(todo):,}곳 · 예산 {max_calls:,}회")
+    calls = rows = 0
+    finished = failed = 0
+    for sgg, bjd in todo:
+        if calls >= max_calls:
+            break
+        prev = done.get((sgg, bjd))
+        fetched = prev[1] if prev else 0
+        page = fetched // HUB_PAGE + 1
+        total = prev[0] if prev else None
+        try:
+            while calls < max_calls:
+                items, total = hub_page(sgg, bjd, page, timeout=timeout)
+                calls += 1
+                recs = [r for r in (permit_row(it) for it in items) if r]
+                if recs:
+                    con.executemany(
+                        "INSERT OR REPLACE INTO permit VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", recs)
+                    rows += len(recs)
+                fetched = min(total, (page - 1) * HUB_PAGE + len(items))
+                con.execute(
+                    "INSERT OR REPLACE INTO permit_crawl VALUES (?,?,?,?,?)",
+                    [sgg, bjd, total, fetched, datetime.now(timezone.utc)])
+                if fetched >= total or not items:
+                    finished += 1
+                    break
+                page += 1
+        except Exception as exc:                      # noqa: BLE001
+            failed += 1
+            log(f"  ✗ {sgg} {bjd} p{page}: {str(exc)[:160]}")
+            if "SERVICE_KEY" in str(exc) or "LIMITED" in str(exc).upper():
+                log("  키·한도 문제입니다 — 이 판은 여기서 멈춥니다.")
+                break
+    left = con.execute("""
+        SELECT count(*) FROM (
+          SELECT DISTINCT sigungu_cd, substr(region_cd, 6, 5) AS b FROM region_umd WHERE length(region_cd)=10
+        ) t LEFT JOIN permit_crawl c ON c.sigungu_cd = t.sigungu_cd AND c.bjdong_cd = t.b
+        WHERE c.total IS NULL OR c.fetched < c.total
+    """).fetchone()[0]
+    return {"calls": calls, "rows": rows, "finished": finished, "failed": failed, "left_total": left,
+            "permits": con.execute("SELECT count(*) FROM permit").fetchone()[0]}
+
+
+# 주용도 → 갈래. 정규식이 아니라 '들어 있는 말' 로 본다 — 주용도 이름이 길다
+# ('제2종근린생활시설', '공장', '창고시설', '단독주택', '공동주택').
+PURPS_GROUPS = [
+    ("factory",    ("공장",)),
+    ("warehouse",  ("창고", "물류")),
+    ("housing",    ("주택", "아파트", "기숙사", "주거")),
+    ("commercial", ("근린생활", "판매", "업무", "숙박", "위락", "관광")),
+    ("farm",       ("동물", "식물", "축사", "농")),
+]
+
+
+def purps_group(name: str | None) -> str:
+    n = str(name or "")
+    for g, words in PURPS_GROUPS:
+        if any(w in n for w in words):
+            return g
+    return "other"
+
+
+def aggregate_permits(con) -> int:
+    """permit → region_series: 시군구 × 허가월 × 갈래의 연면적 합과 건수."""
+    import pandas as pd
+    df = con.execute("""
+        SELECT sigungu_cd, substr(pms_day, 1, 6) AS period, main_purps, tot_area
+        FROM permit WHERE pms_day IS NOT NULL AND length(pms_day) >= 6 AND sigungu_cd <> ''
+    """).fetchdf()
+    if df.empty:
+        return 0
+    df["grp"] = df["main_purps"].map(purps_group)
+    df["tot_area"] = pd.to_numeric(df["tot_area"], errors="coerce").fillna(0.0)
+    rows = []
+    g = df.groupby(["sigungu_cd", "period", "grp"]).agg(area=("tot_area", "sum"), n=("tot_area", "size")).reset_index()
+    for r in g.itertuples(index=False):
+        rows.append((r.sigungu_cd, r.period, float(r.area), f"permit_area_m2:{r.grp}", "m2", "건축HUB 15136267"))
+        rows.append((r.sigungu_cd, r.period, float(r.n), f"permit_count:{r.grp}", "건", "건축HUB 15136267"))
+    tot = df.groupby(["sigungu_cd", "period"]).agg(area=("tot_area", "sum"), n=("tot_area", "size")).reset_index()
+    for r in tot.itertuples(index=False):
+        rows.append((r.sigungu_cd, r.period, float(r.area), "permit_area_m2:all", "m2", "건축HUB 15136267"))
+        rows.append((r.sigungu_cd, r.period, float(r.n), "permit_count:all", "건", "건축HUB 15136267"))
+    con.executemany(
+        "INSERT OR REPLACE INTO region_series (sigungu_cd, period, value, metric, unit, source)"
+        " VALUES (?,?,?,?,?,?)", rows)
+    return len(rows)

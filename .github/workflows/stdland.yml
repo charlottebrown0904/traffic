@@ -15,6 +15,7 @@
 #                      findin:CODE,말=그 표의 항목을 이름으로 찾기
 #   indicators-probe  지역 지표 원천 탐침 — 법인지방소득세·산업용 전력·건축허가
 #   indicators        지역 지표 적재 — 전력 파일 셋 → region_series (query=번호,번호 로 골라서)
+#   permits           건축인허가 훑기 — 건축HUB → permit (sigungu=코드 · n=호출 예산 · 이어받기)
 #   law-probe   국가법령정보센터 자치법규 API 탐침 (조례 한 건, LAW_OC 필요)
 #   law         전국 도시계획조례 → data/ordinance/ 관심 조문 (브랜치에 커밋)
 #
@@ -26,7 +27,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / ecos / indicators-probe / indicators / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / ecos / indicators-probe / indicators / permits / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -220,6 +221,16 @@ jobs:
           set -o pipefail
           python -m redt.cli load-indicators \
             ${{ inputs.query && format('--only {0}', inputs.query) || '' }} 2>&1 | tee /tmp/stdland.log
+
+      # 건축인허가 훑기 — 건축HUB 를 (시군구, 법정동) 단위로. 예산이 다하면 멈추고
+      # 다음 판이 이어받는다. sigungu 칸에 시군구(5)/시도(2) 코드, n 칸에 예산.
+      - name: 건축인허가 훑기
+        if: inputs.mode == 'permits'
+        run: |
+          set -o pipefail
+          python -m redt.cli load-permits \
+            ${{ inputs.sigungu && inputs.sigungu != '41550' && format('--sigungu {0}', inputs.sigungu) || '' }} \
+            --max-calls "${{ inputs.n != '5' && inputs.n || '8000' }}" 2>&1 | tee /tmp/stdland.log
 
       - name: 자치법규 API 탐침
         if: inputs.mode == 'law-probe'

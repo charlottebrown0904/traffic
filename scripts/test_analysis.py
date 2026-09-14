@@ -2673,6 +2673,61 @@ try:
 except ValueError:
     check(True, "열이 다르면 터진다 — 조용히 0행이 되지 않는다")
 
+print("44. 건축인허가 훑기 — 항목을 행으로, 주용도를 갈래로, 예산이 다하면 멈춘다")
+_it = {"mgmPmsrgstPk": "P1", "sigunguCd": "11680", "bjdongCd": "10300", "platPlc": "서울 강남구 개포동 12",
+       "archGbCdNm": "신축", "mainPurpsCdNm": "공장", "jiyukCdNm": "일반공업지역", "platArea": "1,000.5",
+       "archArea": "400", "totArea": "1200", "hhldCnt": "0", "archPmsDay": "20240315", "realStcnsDay": "",
+       "useAprDay": None, "crtnDay": "20240316"}
+_pr = _IND.permit_row(_it)
+check(_pr[0] == "P1" and _pr[7] == 1000.5 and _pr[9] == 1200.0 and _pr[11] == "20240315" and _pr[12] is None,
+      "항목 하나가 행 하나로 — 쉼표 숫자를 풀고 빈 날짜는 None")
+check(_IND.permit_row({"platPlc": "x"}) is None, "열쇠(mgmPmsrgstPk) 없는 항목은 버린다")
+check(_IND.purps_group("제2종근린생활시설") == "commercial" and _IND.purps_group("공장") == "factory"
+      and _IND.purps_group("창고시설") == "warehouse" and _IND.purps_group("단독주택") == "housing"
+      and _IND.purps_group("종교시설") == "other", "주용도 이름을 갈래로 묶는다")
+
+# 훑기: 가짜 HUB 로 두 법정동 · 예산 3회. 첫 동은 250건(3쪽), 둘째 동은 못 시작해야 한다.
+import duckdb as _ddb                                      # noqa: E402
+_con = _ddb.connect()
+for _stmt in [x for x in __import__("redt.db", fromlist=["SCHEMA"]).SCHEMA.split(";")
+              if "permit" in x or "region_umd" in x or "region_series" in x]:
+    _con.execute(_stmt)
+_con.executemany("INSERT INTO region_umd (region_cd, sigungu_cd, sigungu, umd, level, full_nm) VALUES (?,?,?,?,?,?)",
+                 [("4155025300", "41550", "안성시", "공도읍", "umd", "경기도 안성시 공도읍"),
+                  ("4155025321", "41550", "안성시", "공도읍 승두리", "ri", "경기도 안성시 공도읍 승두리")])
+_calls = []
+def _fake_hub(sgg, bjd, page, timeout=40):
+    _calls.append((sgg, bjd, page))
+    total = 250 if bjd == "25300" else 7
+    start = (page - 1) * 100
+    n = max(0, min(100, total - start))
+    items = [{"mgmPmsrgstPk": f"{bjd}-{start + i}", "sigunguCd": sgg, "bjdongCd": bjd,
+              "mainPurpsCdNm": "공장" if i % 2 else "단독주택", "totArea": "100",
+              "archPmsDay": "20240115"} for i in range(n)]
+    return items, total
+_saved_hub = _IND.hub_page
+try:
+    _IND.hub_page = _fake_hub
+    _info = _IND.crawl_permits(_con, sigungu=["41550"], max_calls=3, log=lambda *a: None)
+    check(_info["calls"] == 3 and _info["permits"] == 250 and _info["finished"] == 1,
+          f"예산 3회에 첫 동 3쪽을 끝내고 멈춘다 ({_info['calls']}회 · {_info['permits']}건)")
+    check(_info["left_total"] == 1, "남은 법정동을 센다 (둘째 동)")
+    _info2 = _IND.crawl_permits(_con, sigungu=["41550"], max_calls=5, log=lambda *a: None)
+    check(_info2["calls"] == 1 and _info2["permits"] == 257 and _info2["left_total"] == 0,
+          f"다음 판은 끝난 동을 건너뛰고 둘째 동만 부른다 ({_info2['calls']}회 · {_info2['permits']}건)")
+    # 이어받기: 중간에 끊긴 동은 그 쪽부터
+    _con.execute("UPDATE permit_crawl SET fetched = 100 WHERE bjdong_cd = '25300'")
+    _calls.clear()
+    _IND.crawl_permits(_con, sigungu=["41550"], max_calls=5, log=lambda *a: None)
+    check(_calls and _calls[0] == ("41550", "25300", 2), f"끊긴 동은 2쪽부터 이어받는다 ({_calls[:1]})")
+    _n = _IND.aggregate_permits(_con)
+    _f = _con.execute("SELECT value FROM region_series WHERE metric='permit_count:factory' AND period='202401'").fetchone()
+    _a = _con.execute("SELECT value FROM region_series WHERE metric='permit_area_m2:all' AND period='202401'").fetchone()
+    check(_f and _f[0] == 128 and _a and _a[0] == 25700.0,
+          f"시군구·월·갈래로 모은다 (공장 {_f[0] if _f else None}건 · 전체 {_a[0] if _a else None}㎡)")
+finally:
+    _IND.hub_page = _saved_hub
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
