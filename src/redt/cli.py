@@ -815,6 +815,29 @@ def cmd_load_power(args):
         print(f"  {metric:<34} {n:>8,}건 · {lo}~{hi} · 시군구 {nsgg}")
 
 
+def cmd_load_local_tax(args):
+    """지방재정365 — 자치단체별 지방세 징수실적(연) → region_series.local_tax_total (2026-09-14)."""
+    from .collect import indicators
+    years = _years(args.years)
+    with db.connect() as con:
+        st = indicators.load_local_tax(con, years, timeout=int(args.timeout))
+        print(f"\n이 판: 호출 {st['calls']} · 새 행 {st['rows']:,} · 실패 {st['failed']} · 시도 본청 행 {st['sido_rows']}")
+        print("  회계연도별 받은 행: " + " · ".join(f"{y}:{n}" for y, n in st["years"].items()))
+        if st["sample"]:
+            print(f"  첫 행 보기: {st['sample']}  ← 금액 단위는 이 크기로 판단한다 (원 / 천원 / 백만원)")
+        um = st["unmatched"]
+        if um:
+            top = sorted(um.items(), key=lambda kv: -kv[1])[:20]
+            print(f"  ⚠ 코드에 못 이은 이름 {len(um)}개 · {sum(um.values()):,}행 — "
+                  + " · ".join(f"{k}({v})" for k, v in top))
+        have = con.execute(
+            "SELECT period, count(*), min(value), max(value) FROM region_series"
+            " WHERE metric = 'local_tax_total' GROUP BY period ORDER BY period").fetchall()
+    print(f"\nregion_series.local_tax_total — 연도별 시군구 수:")
+    for per, n, lo, hi in have:
+        print(f"  {per}  시군구 {n:>4}  최소 {lo:,.0f}  최대 {hi:,.0f}")
+
+
 def cmd_load_permits(args):
     """건축인허가 훑기 — 건축HUB → permit → region_series (2026-09-14).
 
@@ -3453,6 +3476,11 @@ def main(argv=None):
     p.add_argument("--max-calls", dest="max_calls", default="1000", help="이 판의 호출 예산")
     p.add_argument("--timeout", default="40")
     p.set_defaults(func=cmd_load_power)
+
+    p = sub.add_parser("load-local-tax", help="지방재정365 — 자치단체별 지방세 징수실적(연) → region_series")
+    p.add_argument("--years", default="2017-2024", help="회계연도 범위 (보유 2017~2024)")
+    p.add_argument("--timeout", default="40")
+    p.set_defaults(func=cmd_load_local_tax)
 
     p = sub.add_parser("load-permits", help="건축인허가 훑기 — 건축HUB → permit (이어받기)")
     p.add_argument("--sigungu", default="", help="시군구 코드(5) 또는 시도(2)를 쉼표로 (비우면 전국)")

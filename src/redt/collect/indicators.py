@@ -904,6 +904,122 @@ def load_power_api(con, years: list[int], max_calls: int = 1000, timeout: int = 
     return st
 
 
+# ── 지방재정365 Open API — 자치단체별 지방세 징수실적 (연) ─────────────
+#
+# 사용자가 준 명세(2026-09-14): 요청주소 /lf/hub/DFGDGG · 기본인자 Key(필수)
+# Type(필수) pIndex pSize · 검색인자 fyr(회계연도) wa_laf_hg_nm(지역명)
+# laf_hg_nm(자치단체명) · 출력 fyr, wa_laf_hg_nm, laf_cd(자치단체코드),
+# laf_hg_nm, pfin_stl_amt2~5 (회계연도-3 … 회계연도), rate(3년 평균 증가율),
+# lup_ord. 보유연도 2017~2024 · 연간 · 요청제한 없음.
+#
+# 이것은 **지방세 총액**이다 — 세목(법인지방소득세)이 갈라져 있지 않다. 사슬
+# 셋째 마디의 대용치로 우선 쓰고, 세목별 표가 따로 있으면 그것으로 바꾼다.
+# 한 행에 4개년이 실려 오므로 fyr 하나를 부르면 앞 세 해도 같이 채워진다.
+# 키는 Vercel 의 LOFIN_KEY — 중계기가 Key 에 끼운다.
+
+LOFIN_URL = "https://www.lofin365.go.kr/lf/hub/DFGDGG"
+LOFIN_SOURCE = "lofin365 DFGDGG"
+LOFIN_PAGE = 1000
+
+
+def _lofin_unwrap(res) -> tuple[list[dict], dict]:
+    """봉투를 벗겨 (row 목록, head) 를 돌려준다. 봉투 모양은 통계연보와 같다 —
+    {"DFGDGG": [{"head": [...]}, {"row": [...]}]}. 못 벗기면 예외."""
+    node = res
+    if isinstance(node, dict) and "row" not in node and len(node) == 1:
+        node = next(iter(node.values()))
+    rows, head = None, {}
+    if isinstance(node, list):
+        for part in node:
+            if isinstance(part, dict) and "row" in part:
+                rows = part["row"]
+            elif isinstance(part, dict) and "head" in part:
+                for h in part["head"] or []:
+                    if isinstance(h, dict):
+                        head.update(h)
+    elif isinstance(node, dict) and "row" in node:
+        rows = node["row"]
+    if rows is None:
+        result = head.get("RESULT") or (res.get("RESULT") if isinstance(res, dict) else None)
+        raise RuntimeError(f"지방재정365: {result or str(res)[:200]}")
+    return (rows if isinstance(rows, list) else [rows]), head
+
+
+def lofin_page(fyr: int, pindex: int = 1, psize: int = LOFIN_PAGE, timeout: int = 40) -> tuple[list[dict], dict]:
+    res = http.get_json(LOFIN_URL, {"Type": "json", "pIndex": str(pindex), "pSize": str(psize),
+                                    "fyr": str(fyr)}, timeout=timeout)
+    return _lofin_unwrap(res)
+
+
+def lofin_rows(rows: list[dict], code_map: dict) -> tuple[list[tuple], dict]:
+    """한 행 = 자치단체 × 회계연도, 값은 4개년 (amt2=fyr-3 … amt5=fyr).
+
+    시도 본청 행(자치단체명이 시도 이름과 같은 것)은 시군구가 아니라 따로 센다.
+    """
+    diag = {"rows_in": len(rows), "unmatched": {}, "sido_rows": 0, "laf_cd": {}}
+    out = []
+    for r in rows:
+        sido = str(r.get("wa_laf_hg_nm") or "").strip()
+        name = str(r.get("laf_hg_nm") or "").strip()
+        try:
+            fyr = int(str(r.get("fyr"))[:4])
+        except (TypeError, ValueError):
+            continue
+        if not name or sido_key(name) == sido_key(sido) and norm_sgg(name) == norm_sgg(sido):
+            diag["sido_rows"] += 1
+            continue
+        code = resolve(code_map, sido, name)
+        if code is None:
+            k = f"{sido} {name}".strip()
+            diag["unmatched"][k] = diag["unmatched"].get(k, 0) + 1
+            continue
+        if r.get("laf_cd"):
+            diag["laf_cd"][code] = str(r["laf_cd"])
+        for k, off in (("pfin_stl_amt2", 3), ("pfin_stl_amt3", 2), ("pfin_stl_amt4", 1), ("pfin_stl_amt5", 0)):
+            v = _f(r.get(k))
+            if v is None:
+                continue
+            out.append((code, f"{fyr - off:04d}", v, "local_tax_total", "원", LOFIN_SOURCE))
+    diag["rows_out"] = len(out)
+    return out, diag
+
+
+def load_local_tax(con, years: list[int], timeout: int = 40, log=print) -> dict:
+    """회계연도마다 전 자치단체를 받아 region_series.local_tax_total 에 넣는다."""
+    code_map = build_code_map(con)
+    if not code_map:
+        raise RuntimeError("region_umd 가 비어 대조표를 못 만듭니다 — 먼저 읍면동을 채우십시오")
+    st = {"calls": 0, "rows": 0, "failed": 0, "unmatched": {}, "sido_rows": 0, "years": {}, "sample": None}
+    for y in years:
+        pindex, got = 1, 0
+        while True:
+            try:
+                rows, head = lofin_page(y, pindex, timeout=timeout)
+            except Exception as exc:                      # noqa: BLE001
+                st["failed"] += 1
+                log(f"  ✗ {y} p{pindex}: {str(exc)[:200]}")
+                break
+            st["calls"] += 1
+            if rows and st["sample"] is None:
+                st["sample"] = {k: rows[0].get(k) for k in ("fyr", "wa_laf_hg_nm", "laf_cd", "laf_hg_nm", "pfin_stl_amt5")}
+            recs, diag = lofin_rows(rows, code_map)
+            for k, v in diag["unmatched"].items():
+                st["unmatched"][k] = st["unmatched"].get(k, 0) + v
+            st["sido_rows"] += diag["sido_rows"]
+            if recs:
+                con.executemany(
+                    "INSERT OR REPLACE INTO region_series"
+                    " (sigungu_cd, period, value, metric, unit, source) VALUES (?,?,?,?,?,?)", recs)
+                st["rows"] += len(recs)
+            got += len(rows)
+            total = head.get("list_total_count") or head.get("totalCount")
+            if len(rows) < LOFIN_PAGE or (total and got >= int(total)):
+                break
+            pindex += 1
+        st["years"][y] = got
+    return st
+
+
 # ── 건축인허가 훑기 — 건축HUB → permit ────────────────────────────
 #
 # 6차(run 34807146961)에서 확정한 것:

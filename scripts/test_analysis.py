@@ -2830,6 +2830,26 @@ try:
 finally:
     _IND.kepco_page = _saved_k
 
+print("46. 지방재정365 — 봉투를 벗기고, 한 행의 4개년을 네 해로 편다")
+_lres = {"DFGDGG": [{"head": [{"list_total_count": 2}, {"RESULT": {"CODE": "INFO-000", "MESSAGE": "정상"}}]},
+                    {"row": [{"fyr": "2024", "wa_laf_hg_nm": "경기도", "laf_cd": "4100000", "laf_hg_nm": "경기도",
+                              "pfin_stl_amt5": "1"},
+                             {"fyr": "2024", "wa_laf_hg_nm": "경기도", "laf_cd": "4110000", "laf_hg_nm": "안성시",
+                              "pfin_stl_amt2": "100", "pfin_stl_amt3": "110", "pfin_stl_amt4": "120",
+                              "pfin_stl_amt5": "130", "rate": "9.1"}]}]}
+_lrows, _lhead = _IND._lofin_unwrap(_lres)
+check(len(_lrows) == 2 and _lhead.get("list_total_count") == 2, "봉투 {이름:[{head},{row}]} 를 벗긴다")
+_lo, _ld = _IND.lofin_rows(_lrows, _cm)
+_lm = {r[1]: r[2] for r in _lo if r[0] == "41550"}
+check(_lm == {"2021": 100.0, "2022": 110.0, "2023": 120.0, "2024": 130.0} and all(r[3] == "local_tax_total" for r in _lo),
+      f"amt2~5 를 회계연도-3 … 회계연도로 편다 ({_lm})")
+check(_ld["sido_rows"] == 1 and _ld["laf_cd"].get("41550") == "4110000", "시도 본청 행은 따로 세고 자치단체코드를 남긴다")
+try:
+    _IND._lofin_unwrap({"DFGDGG": [{"head": [{"RESULT": {"CODE": "ERROR-300", "MESSAGE": "필수 값이 누락"}}]}]})
+    check(False, "row 가 없으면 예외")
+except RuntimeError as exc:
+    check("ERROR-300" in str(exc), "row 가 없으면 RESULT 메시지를 담아 예외 — 조용히 0행이 되지 않는다")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")
