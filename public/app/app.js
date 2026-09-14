@@ -3018,14 +3018,22 @@ function drawAdminShape(geom, fullName) {
   }
 }
 
-/* 브이월드가 주는 이름. 시군구·읍면동은 full_nm 이 통째로 온다고 실측해
-   두었는데(vworld-render run 1) **리(lt_c_adri)는 아직 안 봤다.** 없으면
-   있는 이름 칸을 이어 붙인다 — 이름이 없다고 경계까지 안 그리면 안 된다. */
+/* 브이월드가 주는 이름. 셋 다 full_nm 이 통째로 온다 — 시군구·읍면동은
+   vworld-render run 1, **리는 배포된 사이트에 직접 물어 확인했다**
+   (2026-09-15, 덕봉리):
+
+     li_cd 4155036035 · li_kor_nm 덕봉리 · li_eng_nm Deokbong-ri
+     cat_nam 리경계 · full_nm '경기도 안성시 양성면 덕봉리'
+
+   리 칸이 `ri_*` 일 것이라 짐작했는데 실제로는 **`li_*`** 였다. full_nm 이
+   있어 화면에는 티가 안 났겠지만, 짐작으로 적어 둔 대비책은 한 칸도 안
+   맞았을 것이다 — 본 이름으로 고친다. 대비책을 두는 까닭은 이름이 없다고
+   경계까지 안 그리면 안 되기 때문이다. */
 function adminName(props) {
   const p = props || {};
   if (p.full_nm) return String(p.full_nm);
-  const parts = ['sido_nm', 'sigg_nm', 'emd_nm', 'ri_nm',
-                 'sido_kor_nm', 'sig_kor_nm', 'emd_kor_nm', 'ri_kor_nm']
+  const parts = ['sido_nm', 'sigg_nm', 'emd_nm', 'li_nm',
+                 'sido_kor_nm', 'sig_kor_nm', 'emd_kor_nm', 'li_kor_nm']
     .map((k) => p[k]).filter(Boolean).map(String);
   return [...new Set(parts)].join(' ') || null;
 }
