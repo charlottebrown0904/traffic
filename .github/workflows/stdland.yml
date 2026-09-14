@@ -18,6 +18,8 @@
 #   indicators        지역 지표 적재 — 전력 파일 셋 → region_series (query=번호,번호 로 골라서)
 #   power             한전 Open API 전력 — 시군구·계약종별·월 → region_series (query=연도 범위 '2015-2026' · limit=호출 예산, 비우면 1000 · 이어받기)
 #   localtax          지방재정365 지방세 징수실적(연) → region_series.local_tax_total (query=회계연도 범위, 비우면 2017-2024)
+#   landprice         R-ONE 지가변동률 → landprice_index (query=표 이름 쉼표)
+#   market-fit        시장 층 적합 — 금리·물가·성장률 → 지가변동률, 시나리오 셋 (limit=년수)
 #   portal-file       포털 파일형 데이터셋 하나 받기 (query=번호,저장이름)
 #   industrial        산업단지 현황(15041930) 받기 → zone_event → 주소 지오코딩 (limit=지오코딩 상한)
 #   permits           건축인허가 훑기 — 건축HUB → permit (query=시군구·시도 코드 쉼표, 비우면 전국 · limit=호출 예산, 비우면 8000 · 이어받기 · 65분에 스스로 멈춤)
@@ -32,7 +34,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / momentum / ecos / indicators-probe / indicators / power / localtax / portal-file / industrial / permits / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -253,6 +255,21 @@ jobs:
           python -m redt.cli load-local-tax \
             --years "${{ inputs.query || '2017-2024' }}" 2>&1 | tee /tmp/stdland.log
 
+      # R-ONE 지가변동률 → landprice_index (캐시 저장). query=표 이름 쉼표 (비우면 용도지역·지역 월별).
+      - name: 지가변동률 적재
+        if: inputs.mode == 'landprice'
+        run: |
+          set -o pipefail
+          python -m redt.cli load-landprice \
+            ${{ inputs.query && format('--tables {0}', inputs.query) || '' }} 2>&1 | tee /tmp/stdland.log
+
+      # 시장 층 적합 — 읽기만. 결과 JSON 첨부.
+      - name: 시장 층 적합
+        if: inputs.mode == 'market-fit'
+        run: |
+          set -o pipefail
+          python -m redt.cli market-fit --years "${{ inputs.limit || '3' }}" 2>&1 | tee /tmp/stdland.log
+
       # 포털 파일 하나 받기 — query="번호,저장이름" (예: 15041930,zones_industrial). 캐시 저장.
       - name: 포털 파일 받기
         if: inputs.mode == 'portal-file'
@@ -319,7 +336,7 @@ jobs:
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -356,6 +373,13 @@ jobs:
             data/processed/ordinance/probe-*.json
             data/processed/ordinance/probe-web-*.html
           if-no-files-found: ignore
+
+      - name: 시장 층 적합 결과 첨부
+        if: always() && inputs.mode == 'market-fit'
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-fit
+          path: data/processed/market_fit.json
 
       - name: 모멘텀 검증 결과 첨부
         if: always() && inputs.mode == 'momentum'

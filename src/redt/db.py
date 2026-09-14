@@ -110,6 +110,19 @@ CREATE TABLE IF NOT EXISTS zone_event (
 --
 -- period 는 받은 그대로 둔다: 월이면 '202601', 분기면 '2026Q1'. 주기마다
 -- 모양이 다른 것을 억지로 한 모양으로 바꾸면 되돌릴 수 없다.
+-- R-ONE 지가변동률·지가지수 — 국가승인통계. 월·용도지역·지역별. 시장 층
+-- 회귀의 종속변수이자 시점수정의 원천. 받은 칸을 그대로 둔다 (GRP=지역,
+-- CLS=용도지역 인지 그 반대인지는 표마다 다르다 — 이름으로 고른다).
+CREATE TABLE IF NOT EXISTS landprice_index (
+    statbl   VARCHAR,
+    period   VARCHAR,          -- YYYYMM · YYYY
+    grp_id   VARCHAR, grp_nm VARCHAR,
+    cls_id   VARCHAR, cls_nm VARCHAR,
+    itm_id   VARCHAR, itm_nm VARCHAR,
+    value    DOUBLE,
+    unit     VARCHAR,
+    PRIMARY KEY (statbl, period, grp_id, cls_id, itm_id)
+);
 CREATE TABLE IF NOT EXISTS market_series (
     series  VARCHAR,                  -- policy_rate / cd91 / bond3 / cpi / gdp_growth
     period  VARCHAR,                  -- 202601 (월) · 2026Q1 (분기)

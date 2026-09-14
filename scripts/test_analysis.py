@@ -2860,6 +2860,33 @@ _pd.DataFrame([["전국산업단지현황", None], ["단지명", "지정일"], [
 _dfx = _IND.read_any_table(_tmpx)
 check(list(_dfx.columns)[:2] == ["단지명", "지정일"] and len(_dfx) == 1, f"제목 줄이 위에 있는 통계표의 머리글을 찾는다 ({list(_dfx.columns)[:2]})")
 
+print("46-2. 시장 층 적합 — 금리가 지가변동률을 시차를 두고 끌어내리는 세상을 되찾는다")
+from redt.analyze import market as _MK                    # noqa: E402
+_mcon = _ddb.connect()
+for _stmt in [x for x in __import__("redt.db", fromlist=["SCHEMA"]).SCHEMA.split(";") if "landprice_index" in x or "market_series" in x]:
+    _mcon.execute(_stmt)
+import random as _rnd, math                               # noqa: E402
+_rnd.seed(3)
+_pers = _pd.period_range("2006-01", "2025-12", freq="M")
+_rate = [3.0 + math.sin(i / 20) for i in range(len(_pers))]
+_lp = []; _ms = []
+for i, per in enumerate(_pers):
+    _ms.append(("policy_rate", str(per).replace("-", ""), _rate[i], "기준금리", "M", "검사"))
+    _ms.append(("cpi", str(per).replace("-", ""), 100 * (1.02 ** (i / 12)), "CPI", "M", "검사"))
+    y = 0.6 - 0.15 * _rate[i - 6] + _rnd.gauss(0, 0.05) if i >= 6 else None      # 금리 6개월 시차, 음의 계수
+    if y is not None:
+        _lp.append(("A_2024_00007", str(per).replace("-", ""), "G0", "전국", "C1", "관리", "I1", "지가변동률", y, "%"))
+_mcon.executemany("INSERT INTO market_series VALUES (?,?,?,?,?,?)", _ms)
+_mcon.executemany("INSERT INTO landprice_index VALUES (?,?,?,?,?,?,?,?,?,?)", _lp)
+_mo = _MK.run(_mcon, years=3)
+_mz = _mo["zones"]["관리"]
+check(_mz["lags"]["rate"] == 6 and -0.2 < _mz["coef"]["rate"] < -0.1 and _mz["p"]["rate"] < 0.05,
+      f"금리 시차 6·계수 −0.15 를 되찾는다 (시차 {_mz['lags']['rate']} · 계수 {_mz['coef']['rate']:+.3f} · p {_mz['p']['rate']:.3g})")
+_s = _mz["scenarios"]
+check(_s["하락"]["multiplier"]["3y"] > _s["유지"]["multiplier"]["3y"] > _s["상승"]["multiplier"]["3y"],
+      f"금리 하락 시나리오가 가장 높다 ({_s['하락']['multiplier']['3y']} > {_s['유지']['multiplier']['3y']} > {_s['상승']['multiplier']['3y']})")
+check("관리" in _MK.describe(_mo) and "HAC" in _MK.describe(_mo), "표에 용도지역과 읽는 법이 찍힌다")
+
 print("47. 모멘텀 검증 — 잡음은 가짜 반전을 만들고, 건너뛴 창은 그것을 걷어낸다")
 import random as _rnd                                      # noqa: E402
 from redt.analyze import momentum as _MM                   # noqa: E402

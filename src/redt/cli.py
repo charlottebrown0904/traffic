@@ -838,6 +838,58 @@ def cmd_load_local_tax(args):
         print(f"  {per}  시군구 {n:>4}  최소 {lo:,.0f}  최대 {hi:,.0f}")
 
 
+def cmd_load_landprice(args):
+    """R-ONE 지가변동률·지가지수를 landprice_index 에 쌓는다 (2026-09-14).
+
+    scripts/reb_stats.py 의 pull 은 tsv 를 아티팩트로만 남겼다 — 캐시에 안
+    들어가 다음 판이 못 쓴다. 여기는 DB 에 넣는다. 받은 칸을 그대로 둔다.
+    """
+    from .collect import reb
+    names = [x.strip() for x in args.tables.split(",") if x.strip()]
+    with db.connect() as con:
+        for name in names:
+            sid = reb.TABLES.get(name)
+            if not sid:
+                print(f"  ✗ 모르는 표 {name} — 쓸 수 있는 이름: {', '.join(reb.TABLES)}")
+                continue
+            try:
+                rows = reb.data(sid, start=args.start, end=args.end, max_pages=int(args.max_pages))
+            except reb.Truncated as exc:
+                rows = exc.rows
+                print(f"  ⚠ {name}: {exc.limit}장에서 잘림 — 받은 만큼만 넣는다")
+            recs = []
+            for r in rows:
+                try:
+                    v = float(str(r.get("DTA_VAL", "")).replace(",", ""))
+                except ValueError:
+                    continue
+                recs.append((sid, str(r.get("WRTTIME_IDTFR_ID", "")), str(r.get("GRP_ID", "")), str(r.get("GRP_NM", "")),
+                             str(r.get("CLS_ID", "")), str(r.get("CLS_NM", "")), str(r.get("ITM_ID", "")),
+                             str(r.get("ITM_NM", "")), v, str(r.get("UI_NM", ""))))
+            if recs:
+                con.executemany("INSERT OR REPLACE INTO landprice_index VALUES (?,?,?,?,?,?,?,?,?,?)", recs)
+            grp = sorted({x[3] for x in recs})[:8]
+            cls = sorted({x[5] for x in recs})[:12]
+            per = sorted({x[1] for x in recs})
+            print(f"  {name} ({sid}): {len(recs):,}행 · 시점 {per[0] if per else '-'}~{per[-1] if per else '-'}")
+            print(f"     GRP: {grp}")
+            print(f"     CLS: {cls}")
+        n = con.execute("SELECT count(*) FROM landprice_index").fetchone()[0]
+    print(f"landprice_index 누계 {n:,}행")
+
+
+def cmd_market_fit(args):
+    """시장 층 적합 — 금리·물가·성장률 → 전국 용도지역별 지가변동률, 시나리오 셋."""
+    import json
+    from .analyze import market as MK
+    with db.connect(read_only=True) as con:
+        out = MK.run(con, years=int(args.years))
+    print(MK.describe(out))
+    path = PROCESSED / "market_fit.json"
+    path.write_text(json.dumps(out, ensure_ascii=False, indent=1))
+    print(f"→ {path}")
+
+
 def cmd_portal_file(args):
     """포털 파일형 데이터셋 하나를 번호로 받아 data/raw 에 둔다 (2026-09-14).
 
@@ -3575,6 +3627,17 @@ def main(argv=None):
     p.add_argument("--years", default="2017-2024", help="회계연도 범위 (보유 2017~2024)")
     p.add_argument("--timeout", default="40")
     p.set_defaults(func=cmd_load_local_tax)
+
+    p = sub.add_parser("load-landprice", help="R-ONE 지가변동률·지가지수 → landprice_index")
+    p.add_argument("--tables", default="지가변동률_용도지역_월,지가변동률_지역_월", help="reb.TABLES 이름을 쉼표로")
+    p.add_argument("--start", default="200601")
+    p.add_argument("--end", default="202612")
+    p.add_argument("--max-pages", dest="max_pages", default="400")
+    p.set_defaults(func=cmd_load_landprice)
+
+    p = sub.add_parser("market-fit", help="시장 층 적합 — 거시 → 지가변동률, 시나리오 셋")
+    p.add_argument("--years", default="3")
+    p.set_defaults(func=cmd_market_fit)
 
     p = sub.add_parser("portal-file", help="포털 파일형 데이터셋을 번호로 받아 data/raw 에 (산업단지 15041930 등)")
     p.add_argument("--id", required=True, help="데이터셋 번호")
