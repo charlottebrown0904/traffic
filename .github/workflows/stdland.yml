@@ -384,8 +384,8 @@ jobs:
       - name: OpenDART 탐침
         if: inputs.mode == 'dart-probe'
         run: |
-          IFS=, read -r BGN END <<< "${{ inputs.query || '20250101,20251231' }}"
-          python -m redt.cli dart-probe --bgn "${BGN}" --end "${END}" \
+          IFS=, read -r BGN END TY <<< "${{ inputs.query || '20250101,20251231,all' }}"
+          python -m redt.cli dart-probe --bgn "${BGN}" --end "${END}" --ty "${TY:-all}" \
             2>&1 | tee /tmp/stdland.log
 
       - name: 자치법규 API 탐침

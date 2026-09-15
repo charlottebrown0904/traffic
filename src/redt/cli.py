@@ -3897,23 +3897,47 @@ def cmd_dart_probe(args):
     """
     from .collect import indicators as ind
 
-    print(f"OpenDART 탐침 — {args.bgn}~{args.end} · 공시유형 {args.ty}"
-          f"({ind.DART_TYPES.get(args.ty, '?')})")
+    # **공시유형을 짐작하지 않는다.** '신규 시설투자등' 은 주요사항보고서(B)가
+    # 아니라 거래소 수시공시(I) 일 수 있다 — 어느 쪽인지는 물어 봐야 안다.
+    # ty=all 이면 B·I·A 를 다 훑어 어디에 있는지 사실로 가린다.
+    tys = list(ind.DART_TYPES) if str(args.ty).lower() == "all" else [args.ty]
+    print(f"OpenDART 탐침 — {args.bgn}~{args.end} · 공시유형"
+          f" {'·'.join(f'{t}({ind.DART_TYPES.get(t, chr(63))})' for t in tys)}")
     wins = ind.dart_windows(args.bgn, args.end)
     print(f"  89일 토막 {len(wins)}개 — corp_code 없이 부르면 3개월 제한이다")
-    try:
-        rows = ind.dart_list_all(args.bgn, args.end, args.ty)
-    except Exception as exc:                          # noqa: BLE001
-        print(f"  실패: {exc}")
-        return
-    print(f"  공시 {len(rows):,}건")
+
+    best, rows = None, []
+    for ty in tys:
+        try:
+            got = ind.dart_list_all(args.bgn, args.end, ty)
+        except Exception as exc:                      # noqa: BLE001
+            print(f"  [{ty}] 실패: {exc}")
+            continue
+        hit = [r for r in got
+               if any(w in str(r.get("report_nm", "")) for w in ind.DART_WANT)]
+        print(f"  [{ty}] 공시 {len(got):,}건 · 그중 '시설투자' 든 것 {len(hit)}건")
+        if hit and (best is None or len(hit) > best[1]):
+            best, rows = (ty, len(hit), hit), got
+        elif not rows:
+            rows = got
     if not rows:
+        print("  아무 유형에서도 공시가 안 옵니다")
         return
     print(f"  열쇠: {sorted(rows[0])}")
 
-    want = [r for r in rows
-            if any(w in str(r.get("report_nm", "")) for w in ind.DART_WANT)]
-    print(f"  '{'·'.join(ind.DART_WANT[:2])}' 든 보고서 {len(want)}/{len(rows)}건")
+    if best:
+        print(f"  ▶ '{best[0]}({ind.DART_TYPES.get(best[0], '?')})' 에 있습니다"
+              f" — {best[1]}건")
+        want = best[2]
+    else:
+        want = []
+        # 한 건도 못 찾으면 **보고서 이름이 실제로 어떻게 생겼는지** 보인다.
+        # 이름을 지어내 거르면 영영 0건이다.
+        from collections import Counter                # noqa: PLC0415
+        cnt = Counter(str(r.get("report_nm", ""))[:30] for r in rows)
+        print("  '시설투자' 든 보고서가 없습니다 — 실제 보고서 이름 상위:")
+        for nm, n in cnt.most_common(12):
+            print(f"    {n:>5,}  {nm}")
     for r in (want or rows)[:args.top]:
         print(f"    {r.get('rcept_dt','')} {str(r.get('report_nm',''))[:50]}"
               f"  corp={r.get('corp_code','')} {r.get('corp_cls','')}")
@@ -3932,6 +3956,10 @@ def cmd_dart_probe(args):
     print(f"  주소: {adres[:60] or '(빈 칸)'}")
     if adres:
         print("  → 주소가 온다. 시군구로 접는 일은 지오코딩과 같은 길이다")
+        print("  ※ 다만 이것은 **본사 주소**다. 신규시설투자의 값어치는")
+        print("     '어디에 짓는가' 에 있으므로, 공시 본문의 투자 소재지를")
+        print("     못 읽으면 본사 시군구로 대신 붙이게 된다 — 그 경우")
+        print("     수도권 본사에 지방 공장이 몰려 붙어 인자가 망가진다.")
     else:
         print("  → 주소가 빈 칸이다. 시군구에 못 붙인다 — 다른 칸을 찾아야 한다")
 
@@ -4690,7 +4718,8 @@ def main(argv=None):
                        help="OpenDART 탐침 — 신규시설투자 공시와 회사 주소")
     p.add_argument("--bgn", default="20250101", help="시작일 YYYYMMDD")
     p.add_argument("--end", default="20251231", help="끝일 YYYYMMDD")
-    p.add_argument("--ty", default="B", help="공시유형 (B=주요사항보고서)")
+    p.add_argument("--ty", default="all",
+                   help="공시유형 (B=주요사항보고서 · I=거래소공시 · all=전부 훑기)")
     p.add_argument("--size", type=int, default=100)
     p.add_argument("--top", type=int, default=15)
     p.set_defaults(func=cmd_dart_probe)
