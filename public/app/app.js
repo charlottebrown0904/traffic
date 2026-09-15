@@ -31,7 +31,11 @@ const state = {
   // 꺼진 채로 시작한다. 켜면 지도가 확 복잡해지고, 이 화면의 주인공은
   // 값이다. 네 갈래를 따로 껐다 켤 수 있다.
   develop: false,
-  devParts: { industry: true, housing: true, planroad: true, rail: true },
+  /* **갈래도 전부 꺼진 채로 시작한다** (2026-09-15 지시: "개발 클릭 시
+     기본은 전부 Off 입니다"). 넷이 한꺼번에 켜지면 개발을 켠 순간 지도가
+     산업단지 색면·지구 폴리곤·계획도로 선·역 점으로 통째로 덮인다.
+     무엇을 보려고 켰는지는 누르는 사람이 안다 — 고르게 둔다. */
+  devParts: { industry: false, housing: false, planroad: false, rail: false },
   // "완공된 것은 표기 안하는 것이 좋을 것 같습니다" (2026-09-14).
   // 기본으로 감춘다 — 이미 난 길과 끝난 지구는 앞으로의 값과 상관이 없다.
   devDone: false,

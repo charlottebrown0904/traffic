@@ -896,11 +896,14 @@ async function stubCommon(pg) {
     console.log();
     console.log('2. 배경 지도에 키가 필요 없다');
     const tiles = await page.evaluate(() => window.__map.tiles);
-    // 배경 지도(OSM) + 용도지역 색면 + 개발 층 = 3장. 필지 경계선은
-    // **타일이 아니다** — 브이월드 WMS 가 배율 18 아래로 빈 그림만 줘서
-    // 도형(WFS)으로 받아 직접 그린다 (2026-09-10 실측). 개발 층도
-    // 꺼진 채로 시작하지만 타일 원천 자체는 만들어 둔다 (2026-09-14).
-    check('타일 원천이 셋이다 (배경 + 용도지역 + 개발)', tiles.length === 3,
+    // 배경 지도(OSM) + 용도지역 색면 = 2장. 필지 경계선은 **타일이 아니다**
+    // — 브이월드 WMS 가 배율 18 아래로 빈 그림만 줘서 도형(WFS)으로 받아
+    // 직접 그린다 (2026-09-10 실측).
+    //
+    // 개발 층은 여기 없다. 2026-09-15 지시로 **갈래가 전부 꺼진 채로**
+    // 시작하므로 부를 타일 자체가 없다 — 산업단지를 켜야 생긴다
+    // (그 확인은 아래 6절에 있다).
+    check('타일 원천이 둘이다 (배경 + 용도지역)', tiles.length === 2,
           tiles.join(' '));
     check('API 키를 요구하는 서비스가 아니다',
           tiles.every((u) => !/carto|stadia|mapbox|thunderforest|apikey/i.test(u)),
@@ -1573,7 +1576,9 @@ async function stubCommon(pg) {
                hidden: document.querySelector('.sheet-pane[data-cat="develop"]').hidden,
                cat: sh.dataset.cat, sheetHidden: sh.hidden,
                title: (document.getElementById('sheet-title').textContent || '').trim(),
-               sideOpen: document.getElementById('side').classList.contains('is-open') };
+               sideOpen: document.getElementById('side').classList.contains('is-open'),
+               boxes: [...document.querySelectorAll('#dev-parts input')].map((b) => b.checked),
+               legend: document.getElementById('dev-legend').hidden };
     });
     check('개발을 켜면 켜진다', devAfter.on === true, `on=${devAfter.on}`);
     check('켜면 갈래 칸이 펼쳐진다', devAfter.hidden === false,
@@ -1583,12 +1588,32 @@ async function stubCommon(pg) {
           && devAfter.sideOpen && devAfter.title === '개발',
           `cat=${devAfter.cat} 제목=${devAfter.title} 열림=${devAfter.sideOpen}`);
 
+    /* **갈래는 전부 꺼진 채로 펼쳐진다** (2026-09-15 지시: "개발 클릭 시
+       기본은 전부 Off 입니다"). 넷이 한꺼번에 켜지면 개발을 켠 순간
+       지도가 색면·폴리곤·선·점으로 통째로 덮인다. */
+    check('켜도 갈래는 전부 꺼져 있다 (무엇을 볼지는 누르는 사람이 고른다)',
+          devAfter.boxes.length === 5 && devAfter.boxes.every((b) => !b),
+          devAfter.boxes.join(','));
+    check('아무 갈래도 안 켜졌으면 부를 타일이 없다', devAfter.key === null,
+          `key=${devAfter.key}`);
+    check('아무 갈래도 안 켜졌으면 범례도 감춘다', devAfter.legend === true,
+          `hidden=${devAfter.legend}`);
+
+    // 여기서부터는 넷을 켜고 본다.
+    await page.evaluate(() => {
+      document.querySelectorAll('#dev-parts input[data-part]').forEach((b) => {
+        b.checked = true;
+        b.dispatchEvent(new Event('change'));
+      });
+    });
+    await page.waitForTimeout(400);
+    const devOnAll = await page.evaluate(() => (window.__develop || {}).key);
     /* 계획도로·택지지구는 **그림이 아니라 도형**이다 (2026-09-14 지시).
        브이월드가 이미 칠해서 주는 그림으로는 완공된 것을 못 거른다.
        그래서 타일로 남은 것은 산업단지뿐이고, 나머지 둘은 WFS 로 받아
        화면이 거르고 우리 색으로 그린다. */
-    check('타일로 남은 것은 산업단지뿐이다', devAfter.key === 'industry',
-          `key=${devAfter.key}`);
+    check('타일로 남은 것은 산업단지뿐이다', devOnAll === 'industry',
+          `key=${devOnAll}`);
     const devLeg = await page.evaluate(() => {
       const box = document.getElementById('dev-legend');
       return { hidden: box.hidden, text: (box.textContent || '').trim() };
@@ -1678,9 +1703,11 @@ async function stubCommon(pg) {
        개발을 켜는 순간 그 갈피가 개발로 바뀌었다. 되돌리지 않으면 뒤에서
        #kind-filters 를 누르려 할 때 '보이지 않는다' 로 멈춘다. */
     await page.evaluate(() => {
-      const box = document.querySelector('#dev-parts input[data-part="industry"]');
-      box.checked = true;
-      box.dispatchEvent(new Event('change'));
+      // 갈래는 **기본이 꺼짐**이므로 꺼 둔 채로 넘긴다 (2026-09-15).
+      document.querySelectorAll('#dev-parts input[data-part]').forEach((b) => {
+        b.checked = false;
+        b.dispatchEvent(new Event('change'));
+      });
       const d = document.getElementById('dev-done');
       d.checked = false;
       d.dispatchEvent(new Event('change'));
