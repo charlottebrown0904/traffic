@@ -2512,6 +2512,64 @@ check("산업단지" in _out and "한 건도 못 골랐습니다" in _out,
       "빈 갈래는 까닭과 함께 소리를 낸다")
 check("zones_housing.csv" in _out, "무엇을 읽었는지 원천 파일 이름을 밝힌다")
 
+print("41-2. 아직 반영 안 된 몫 — 상대연도별 계수 (2026-09-15)")
+#
+# β 를 미래 가치에 그대로 곱하면 두 번 센다. 2015년에 뚫린 IC 옆 필지의
+# 현재 가치에는 그 IC 가 이미 들어 있다. 그래서 값이 **언제** 움직였는지를
+# 보고, 고원에서 지금 위치를 뺀 것만 미래 몫으로 쓴다.
+#
+# 아는 세상을 만들어 되찾는지 본다. 사건은 2015년, 참값(로그):
+#   r ≤ -2 : 0 · r = -1 : 0(기준) · r = 0 : 0.10 · r = 1 : 0.18 · r ≥ 2 : 0.22
+# 그러면 남은 몫은 r=0 에서 exp(0.22-0.10)=1.127 · r≥2 에서 1.00 이어야 한다.
+_TRUE = {0: 0.10, 1: 0.18}
+_rng2 = _np.random.default_rng(11)
+_rows2, _ics2 = [], []
+for _u in range(240):
+    _lat, _lon = 36.0 + 0.30 * (_u // 16), 127.0 + 0.30 * (_u % 16)
+    _treated = _u % 2 == 0
+    if _treated:
+        _ics2.append({"lat": _lat, "lon": _lon, "year": 2015})
+    for _y in range(2008, 2026):
+        _eff = 0.0
+        if _treated:
+            _r = _y - 2015
+            _eff = _TRUE.get(_r, 0.22 if _r >= 2 else 0.0)
+        for _k in range(4):
+            _rows2.append({"umd_cd": f"V{_u:03d}", "deal_year": _y,
+                           "price_per_m2": float(_np.exp(11 + _eff + _rng2.normal(0, .03))),
+                           "lat": _lat, "lon": _lon, "sigungu_cd": f"T{_u // 8:02d}"})
+_pan2 = _FA.mark(_FA.panel(_pd.DataFrame(_rows2)), {"ic": _pd.DataFrame(_ics2)})
+check("r_ic" in _pan2.columns
+      and _pan2.loc[_pan2["d_ic"] == 1, "r_ic"].min() == -_FA.LEAD_YEARS
+      and _pan2["r_ic"].isna().sum() > 0,
+      "사건에서 몇 해째인지가 패널에 붙는다 (사건 없는 동네는 비어 있다)")
+_fit2, _cols2 = _FA.event_study(_pan2, "ic")
+_pr2 = _FA.remaining(_FA.profile(_fit2, _cols2, _pan2, "ic"))
+_at = lambda r: _pr2.loc[_pr2["상대연도"] == r].iloc[0]
+check(abs(float(_at(-1)["배율"]) - 1.0) < 1e-9 and bool(_at(-1)["기준"]),
+      "기준은 사건 한 해 전이고 배율 1.00 이다")
+check(abs(float(_at(-3)["배율"]) - 1.0) < 0.03,
+      f"사건 전에는 안 움직인다 ({float(_at(-3)['배율'])}) — 움직이면 설계가 틀린 것")
+check(abs(float(_at(0)["배율"]) - _np.exp(0.10)) < 0.03,
+      f"사건 해의 몫을 되찾는다 ({float(_at(0)['배율'])} vs {round(float(_np.exp(0.10)), 3)})")
+check(abs(float(_at(4)["배율"]) - _np.exp(0.22)) < 0.03,
+      f"고원을 되찾는다 ({float(_at(4)['배율'])} vs {round(float(_np.exp(0.22)), 3)})")
+# **이 검사가 이 단계의 요지다.**
+check(abs(float(_at(0)["남은 몫"]) - _np.exp(0.12)) < 0.04,
+      f"사건 해에는 남은 몫이 있다 ({float(_at(0)['남은 몫'])} vs 1.127)")
+check(abs(float(_at(4)["남은 몫"]) - 1.0) < 0.02,
+      f"다 오른 뒤에는 남은 몫이 1.00 이다 ({float(_at(4)['남은 몫'])}) — '살 이유가 없다' 도 답이다")
+check(float(_at(-3)["남은 몫"]) > float(_at(0)["남은 몫"]) > float(_at(4)["남은 몫"]),
+      "사건이 멀수록 남은 몫이 크다")
+# 얇은 칸은 고원으로 삼지 않는다 — 우연히 높은 칸이 남은 몫을 부풀린다.
+_thin2 = _pr2.copy()
+_thin2.loc[_thin2["상대연도"] == 4, ["배율", "얇음"]] = [9.0, True]
+check(_FA.remaining(_thin2).loc[_thin2["상대연도"] == 0, "남은 몫"].iloc[0] < 2.0,
+      "얇은 칸이 높아도 고원으로 안 쓴다")
+check(_pd.isna(_FA.remaining(_thin2).loc[_thin2["상대연도"] == 4, "남은 몫"].iloc[0]),
+      "얇은 칸에는 남은 몫을 안 적는다")
+check(_FA.remaining(_pd.DataFrame()).empty, "빈 표를 줘도 터지지 않는다")
+
 print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")
 from redt.collect import indicators as _IND               # noqa: E402
 

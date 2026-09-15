@@ -124,15 +124,23 @@ def mark(pan: pd.DataFrame, events: dict, pop: pd.DataFrame | None = None) -> pd
             df[f"d_{key}"] = 0
             continue
         ev = pd.DataFrame(ev).dropna(subset=["lat", "lon", "year"])
-        flags = []
+        flags, rels = [], []
         for row in df.itertuples(index=False):
             hit = near(ev, row.lat, row.lon, radius[key])
-            on = 0
+            on, rel = 0, None
             if not hit.empty:
+                # **가장 이른 사건이 시계를 건다.** 여럿이 몰린 동네에서는
+                # 첫 사건이 값을 움직이기 시작한 때다.
+                first = float(hit["year"].min())
+                rel = row.year - first
                 # 이미 있었거나 곧 온다 — 한 번 켜지면 계속 켜져 있다.
-                on = int((hit["year"] <= row.year + LEAD_YEARS).any())
+                on = int(first <= row.year + LEAD_YEARS)
             flags.append(on)
+            rels.append(rel)
         df[f"d_{key}"] = flags
+        # 상대연도 — 사건에서 몇 해째인가. 음수면 아직 안 왔다는 뜻이다.
+        # '아직 반영 안 된 몫' 은 이것 없이는 못 잰다 (event_study).
+        df[f"r_{key}"] = rels
     # 인구는 거리가 아니라 그 시군구의 증가율이다.
     if pop is not None and not pop.empty:
         df = df.merge(pop[["sigungu_cd", "year", "d_pop"]],
@@ -244,6 +252,121 @@ def multipliers(fit) -> pd.DataFrame:
                              "p": round(float(fit.pvalues[inter]), 3),
                              "겹친 몫": round(math.exp(b[inter]), 3)})
     return pd.DataFrame(rows)
+
+
+# ─────────────────────────────────────────────────────────────────
+# 상대연도 — '아직 반영 안 된 몫' (2026-09-15)
+# ─────────────────────────────────────────────────────────────────
+#
+# β 를 미래 가치에 그대로 곱하면 **두 번 센다.** 2015년에 뚫린 IC 옆
+# 필지의 현재 가치에는 그 IC 가 이미 들어 있다 — 표준지공시지가도
+# 거래사례도 IC 가 뚫린 뒤의 값이다. 앞으로 더 오를 몫은 β 전체가 아니라
+# **아직 안 오른 부분**이다. 설계 메모(docs/future-value.md §3-2 ①)가
+# "인자는 사건의 크기가 아니라 아직 반영 안 된 몫이어야 한다" 고 적어 둔
+# 그것이고, 지금까지 코드에 없던 것이다.
+#
+# 언제 얼마나 움직였는지는 상대연도별 계수가 답한다.
+#
+#   ln(P) = α + Σ_{r≠기준} δ_r·1[사건에서 r년째] + 읍면동FE + 연도FE
+#   남은 몫(r) = exp(δ_고원 − δ_r)      고원 = r ≥ 0 에서 가장 큰 δ
+#
+# 지정·발표 때 이미 다 올랐다면 (δ_0 ≈ δ_고원) 남은 몫은 1.00 이다 —
+# **'살 이유가 없다' 도 답이다.** 그것을 1.20 으로 적는 것이 거짓이다.
+#
+# 기준은 사건 한 해 전(−1). 사건이 없는 동네와 기준 해는 모든 더미가 0 이라
+# 같은 자리에 선다 — 표준적인 '기준기간 + 무처치' 설계이고, 그래야 읍면동
+# 고정효과와 겹치지 않는다 (무처치 동네에 따로 더미를 세우면 그 동네의
+# 고정효과와 완전히 같은 열이 되어 계수가 갈라진다).
+REL_LO, REL_HI = -5, 8
+REL_BASE = -1
+# 한 상대연도 칸이 이만큼 안 되면 그 계수는 안 적는다 — cells 와 같은 태도다.
+MIN_REL_UMD = 30
+
+
+def _rel_name(v: int) -> str:
+    return ("es_m" if v < 0 else "es_p") + str(abs(int(v)))
+
+
+def event_cols(df: pd.DataFrame, key: str,
+               lo: int = REL_LO, hi: int = REL_HI) -> list[tuple[int, str]]:
+    """상대연도 더미를 붙이고 (상대연도, 열이름) 목록을 준다.
+
+    양 끝은 **열어 둔다** (≤lo · ≥hi). 안 그러면 오래된 사건이 표본에서
+    조용히 빠져 고원이 낮게 잡힌다.
+    """
+    col = f"r_{key}"
+    if col not in df.columns:
+        return []
+    r = pd.to_numeric(df[col], errors="coerce")
+    out = []
+    for v in range(int(lo), int(hi) + 1):
+        if v == REL_BASE:
+            continue
+        hit = (r <= v) if v == lo else ((r >= v) if v == hi else (r == v))
+        name = _rel_name(v)
+        df[name] = (hit & r.notna()).astype(int)
+        if df[name].sum():
+            out.append((v, name))
+    return out
+
+
+def event_study(df: pd.DataFrame, key: str,
+                lo: int = REL_LO, hi: int = REL_HI):
+    """상대연도별 계수. 읍면동FE · 연도FE, 표준오차는 시군구로 묶는다."""
+    import statsmodels.formula.api as smf              # noqa: PLC0415
+    data = df.dropna(subset=["ln_price", "umd_cd", "year"]).copy()
+    cols = event_cols(data, key, lo, hi)
+    if not cols or data.empty:
+        return None, []
+    fe = []
+    if data["umd_cd"].nunique() > 1:
+        fe.append("C(umd_cd)")
+    if data["year"].nunique() > 1:
+        fe.append("C(year)")
+    f = "ln_price ~ " + " + ".join([n for _v, n in cols] + fe)
+    fit = smf.ols(f, data=data).fit(
+        cov_type="cluster", cov_kwds={"groups": data["sigungu_cd"].fillna("?")})
+    return fit, cols
+
+
+def profile(fit, cols, df: pd.DataFrame, key: str) -> pd.DataFrame:
+    """상대연도별 배율 + 그 칸의 동네 수. 얇은 칸은 '얇음' 으로 적는다."""
+    if fit is None or not cols:
+        return pd.DataFrame()
+    r = pd.to_numeric(df.get(f"r_{key}"), errors="coerce")
+    rows = [{"상대연도": REL_BASE, "배율": 1.0, "p": None,
+             "동네": int(df.loc[r == REL_BASE, "umd_cd"].nunique()), "기준": True}]
+    for v, name in cols:
+        if name not in fit.params:
+            continue
+        hit = (r <= v) if v == REL_LO else ((r >= v) if v == REL_HI else (r == v))
+        rows.append({"상대연도": v, "배율": round(math.exp(fit.params[name]), 3),
+                     "p": round(float(fit.pvalues[name]), 3),
+                     "동네": int(df.loc[hit.fillna(False), "umd_cd"].nunique()),
+                     "기준": False})
+    out = pd.DataFrame(rows).sort_values("상대연도").reset_index(drop=True)
+    out["얇음"] = out["동네"] < MIN_REL_UMD
+    return out
+
+
+def remaining(prof: pd.DataFrame) -> pd.DataFrame:
+    """남은 몫 = exp(고원 − 지금). **고원은 두꺼운 칸에서만 고른다.**
+
+    얇은 칸이 우연히 높으면 그것이 고원이 되어 남은 몫이 부풀려진다.
+    그리고 남은 몫은 1.00 아래로 안 내려간다 — '이미 다 반영됐다' 까지가
+    우리가 말할 수 있는 것이고, 그 아래는 사건이 값을 깎았다는 다른 주장이다.
+    """
+    if prof.empty:
+        return prof
+    p = prof.copy()
+    after = p[(p["상대연도"] >= 0) & (~p["얇음"])]
+    if after.empty:
+        p["남은 몫"] = None
+        return p
+    top = float(after["배율"].max())
+    p["남은 몫"] = [None if bool(t) else round(max(top / float(b), 1.0), 3)
+                    for b, t in zip(p["배율"], p["얇음"])]
+    return p
 
 
 # 개발사건을 갈래로 나누는 말. **칸이 아니라 갈래를 봐야 한다.**

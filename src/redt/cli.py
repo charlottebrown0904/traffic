@@ -1422,23 +1422,71 @@ def cmd_factor_cells(args):
         print(f"  {mark} {r.조합:<28} 칸 {r.셀:>6,} · 동네 {r.읍면동:>5,} · 거래 {r.거래:>8,}")
     print(f"  ○ = 교차항을 세울 만큼 있다 (동네 {FA.MIN_CELL_UMD}곳 이상)")
 
+    out = {"since": int(args.since), "until": int(args.until),
+           "cells": c.to_dict("records"), "min_cell_umd": FA.MIN_CELL_UMD,
+           "events": {k: int(len(ev.get(k, []))) for k, _n, _r in FA.TREATMENTS if k in ev}}
+
+    def _save():
+        path = PROCESSED / "factor_cells.json"
+        path.write_text(json.dumps(out, ensure_ascii=False, indent=1, default=str),
+                        encoding="utf-8")
+        print(f"\n→ {path}")
+
     if not args.estimate:
         print("\n(--estimate 를 주면 이원고정효과까지 돌립니다)")
+        _save()
         return
     print("\n── 추정식 ──")
     f = FA.formula(pan)
     print("  " + f.split(" + C(")[0] + " + 읍면동FE + 연도FE")
     fit = FA.estimate(pan)
-    print("\n── 조합별 배율 (현재 가치에 곱하는 값) ──")
+    print("\n── 조합별 배율 (수준 이동) ──")
     m = FA.multipliers(fit)
     if m.empty:
         print("  계수를 못 세웠습니다")
-        return
-    for r in m.itertuples(index=False):
-        ov = f" · 겹친 몫 {r.겹친_몫}" if hasattr(r, "겹친_몫") and pd.notna(getattr(r, "겹친_몫", None)) else ""
-        print(f"  {r.조합:<28} ×{r.배율:<6} (p={r.p}){ov}")
-    print("\n  '둘 같이' 가 각각의 곱보다 작으면 겹치는 몫이 있다는 뜻이고,")
-    print("  크면 같이 와야 생기는 몫이 있다는 뜻이다.")
+    else:
+        for _i, r in m.iterrows():
+            # itertuples 는 이름에 빈칸이 있으면 _3 같은 자리 이름으로 바꾼다.
+            # '겹친 몫' 이 그래서 지금까지 한 줄도 안 찍혔다 — 사전으로 읽는다.
+            g = r.get("겹친 몫")
+            ov = f" · 겹친 몫 {g}" if pd.notna(g) else ""
+            print(f"  {r['조합']:<28} ×{r['배율']:<6} (p={r['p']}){ov}")
+        print("\n  '둘 같이' 가 각각의 곱보다 작으면 겹치는 몫이 있다는 뜻이고,")
+        print("  크면 같이 와야 생기는 몫이 있다는 뜻이다.")
+        out["multipliers"] = m.to_dict("records")
+
+    # ── 아직 반영 안 된 몫 (2026-09-15) ───────────────────────────────
+    #
+    # 위의 배율은 **수준 이동**이다. 미래 가치에 그대로 곱하면 두 번 센다 —
+    # 2015년에 뚫린 IC 옆 필지의 현재 가치에는 그 IC 가 이미 들어 있다.
+    # 앞으로 더 오를 몫은 배율 전체가 아니라 아직 안 오른 부분이고, 그것은
+    # 값이 **언제** 움직였는지를 봐야 나온다.
+    #
+    # 덤으로, 위의 수준 더미는 읍면동 고정효과와 거의 겹친다 — 2010년 전에
+    # 뚫린 IC 는 표본 내내 켜져 있어 안에서 변하지 않는다. 상대연도 더미는
+    # 그 자체가 동네 안에서 변하므로 그 문제도 같이 푼다.
+    out["event_study"] = {}
+    for key, name, rad in FA.TREATMENTS:
+        if rad is None or f"r_{key}" not in pan.columns:
+            continue
+        if pan[f"r_{key}"].notna().sum() == 0:
+            continue
+        es_fit, cols = FA.event_study(pan, key)
+        prof = FA.remaining(FA.profile(es_fit, cols, pan, key))
+        if prof.empty:
+            continue
+        print(f"\n── {name} — 사건에서 몇 해째인가 (기준 −1년) ──")
+        print(f"    {'상대연도':>6s} {'배율':>6s} {'남은 몫':>7s} {'동네':>6s}")
+        for _i, r in prof.iterrows():
+            thin = " ← 얇음" if r["얇음"] else ""
+            rem = r.get("남은 몫")
+            rem_s = "—" if rem is None or pd.isna(rem) else f"{float(rem):.3f}"
+            print(f"    {int(r['상대연도']):>6d} {float(r['배율']):>6.3f}"
+                  f" {rem_s:>7s} {int(r['동네']):>6,}{thin}")
+        print("    남은 몫 = 고원 ÷ 지금. 1.00 이면 이미 다 반영됐다는 뜻이다.")
+        out["event_study"][key] = {"name": name, "radius_km": rad,
+                                   "rows": prof.to_dict("records")}
+    _save()
 
 
 def cmd_probe_history(args):

@@ -391,6 +391,15 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # 인자 표는 화면이 쓸 것이라 로그가 아니라 파일로도 남긴다.
+      - name: 인자 칸·계수 첨부
+        if: always() && inputs.mode == 'factor-cells'
+        uses: actions/upload-artifact@v4
+        with:
+          name: factor-cells
+          path: data/processed/factor_cells.json
+          if-no-files-found: warn
+
       - name: 검증 결과 첨부
         if: always() && inputs.mode == 'value-test'
         uses: actions/upload-artifact@v4
@@ -452,6 +461,10 @@ jobs:
           elif grep -q "실거래 ÷ 산출" /tmp/stdland.log; then
             head -n 3 /tmp/stdland.log
             awk '/실거래 ÷ 산출/,/비공개 인자 DB/' /tmp/stdland.log | head -n 70
+          elif grep -q "상대연도" /tmp/stdland.log; then
+            # 인자 추정은 상대연도 표가 길어 꼬리 30줄로는 잘린다.
+            head -n 3 /tmp/stdland.log
+            awk '/── 조합 칸/,0' /tmp/stdland.log | head -n 130
           else
             tail -n 30 /tmp/stdland.log
           fi
