@@ -1719,7 +1719,8 @@ def cmd_forecast(args):
           f" · {int(price['year'].min()) if len(price) else 0}~"
           f"{int(price['year'].max()) if len(price) else 0})")
     print(f"문턱 |r| ≥ {min_r} ({min_r * 100:.0f}%) · 내다보는 기간 {horizon}년"
-          f" · 창 {'·'.join(str(w) for w in windows)}년")
+          f" · 창 {'·'.join(str(w) for w in windows)}년"
+          f" · 미래 가치는 {FC.BAND:.0%} 띠로 냅니다")
     if price.empty:
         sys.exit("땅값 칸이 비었습니다 — trade 를 먼저 채우세요")
 
@@ -1728,32 +1729,41 @@ def cmd_forecast(args):
         sys.exit("맞혀 볼 기준점이 없습니다 — 해가 모자랍니다")
 
     print("\n── 기준점마다 (학습은 창 안, 맞히는 해는 학습에 안 썼다) ──")
-    print(f"    {'창':>3s} {'기준점':>5s} {'→대상':>5s} {'학습':>6s} {'맞힘':>5s}"
-          f" {'쓴지표':>5s} {'MAE인자':>7s} {'MAE동네':>7s} {'MAE무변':>7s} {'방향':>6s}")
+    print(f"    {'창':>3s} {'기준점':>5s} {'→대상':>5s} {'맞힘':>5s} {'쓴지표':>5s}"
+          f" {'방향':>6s} {'늘오름':>6s} {'띠':>13s} {'덮개':>5s} {'MAE인자':>7s}")
     for _i, r in bt.iterrows():
         print(f"    {int(r['창']):>3,} {int(r['기준점']):>5,} {int(r['기준점']) + horizon:>5,}"
-              f" {int(r['학습']):>6,} {int(r['맞힘']):>5,} {int(r['쓴 지표']):>5,}"
-              f" {r['MAE 인자']:>7.4f} {r['MAE 동네추세']:>7.4f} {r['MAE 무변화']:>7.4f}"
-              f" {r['방향 인자']:>6.3f}")
+              f" {int(r['맞힘']):>5,} {int(r['쓴 지표']):>5,}"
+              f" {r['방향 인자']:>6.1%} {r['방향 늘오름']:>6.1%}"
+              f" {r['띠 아래']:>5.2f}~{r['띠 위']:<7.2f} {r['띠 덮개']:>5.0%}"
+              f" {r['MAE 인자']:>7.4f}")
 
     sm = FC.summary(bt)
-    print("\n── 창 길이마다 (**이득% 가 결론이다** · 음수면 기준선한테 졌다) ──")
-    print(f"    {'창':>3s} {'기준점':>4s} {'쓴지표':>6s} {'MAE인자':>8s} {'무변화':>8s}"
-          f" {'창평균':>8s} {'동네추세':>8s} {'이득%':>7s} {'방향':>6s}")
+    print("\n── 창 길이마다 (**방향이 으뜸** · 늘오름을 못 넘으면 진 것이다) ──")
+    print(f"    {'창':>4s} {'기준점':>4s} {'쓴지표':>6s} {'방향':>7s} {'늘오름':>7s}"
+          f" {'%p':>7s} {'2년 뒤 띠':>14s} {'덮개':>6s} {'오차이득%':>9s}")
     for _i, r in sm.iterrows():
-        print(f"    {int(r['창']):>3,}년 {int(r['기준점']):>4,} {r['쓴지표']:>6.1f}"
-              f" {r['MAE인자']:>8.4f} {r['MAE무변화']:>8.4f} {r['MAE창평균']:>8.4f}"
-              f" {r['MAE동네추세']:>8.4f} {r['이득%']:>+7.2f} {r['방향인자']:>6.1%}")
+        mark = "  " if r["방향 이겼나"] else " ×"
+        print(f"  {mark}{int(r['창']):>2,}년 {int(r['기준점']):>4,} {r['쓴지표']:>6.1f}"
+              f" {r['방향인자']:>7.1%} {r['방향늘오름']:>7.1%} {r['방향 이득%p']:>+7.2f}"
+              f" {r['띠아래']:>6.2f}~{r['띠위']:<7.2f} {r['띠덮개']:>6.0%}"
+              f" {r['이득%']:>+9.2f}")
 
     print(f"\n  ▶ {FC.verdict(sm)}")
-    print("\n  읽는 법. **이득%** 는 가장 센 기준선 대비 오차가 몇 % 줄었나다.")
-    print("  음수면 '인자를 본 것' 이 '아무것도 안 본 것' 보다 못했다는 뜻이다.")
-    print("  쓴 지표가 많은데 이득이 없으면 그것은 1% 문턱이 우연을 통과시킨 것이다.")
+    print("\n  읽는 법. **방향**이 으뜸이다 — 땅을 살지 말지는 오르나 내리나로")
+    print("  갈리지 몇 % 인지로 갈리지 않는다. 다만 방향 적중률은 혼자 보면")
+    print("  속는다: 오른 해가 많으면 '늘 오른다' 고만 답해도 높다. 그래서")
+    print("  **늘오름**을 나란히 적는다 — 그것을 못 넘으면 인자가 방향을 맞힌")
+    print("  것이 아니라 시대를 맞힌 것이다.")
+    print("  **띠**는 미래 가치의 범위다. 공식이 아니라 우리가 실제로 틀렸던")
+    print("  만큼으로 긋는다. **덮개**는 그 띠가 정말 그만큼 담는지다 —")
+    print("  80% 라 해 놓고 60% 만 담으면 띠가 좁은 것이니 넓혀야 한다.")
 
     path = PROCESSED / "forecast.json"
     path.write_text(json.dumps(
         {"since": int(args.since), "horizon": horizon, "min_r": min_r,
-         "windows": list(windows), "origins": bt.to_dict("records"),
+         "windows": list(windows), "band": FC.BAND,
+         "origins": bt.to_dict("records"),
          "summary": sm.to_dict("records"), "verdict": FC.verdict(sm)},
         ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"\n→ {path}")

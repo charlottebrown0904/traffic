@@ -2906,9 +2906,50 @@ check(set(_bt["창"]) <= {5, 10, 15, 20}, "창 길이는 지시한 넷뿐이다"
 check(_bt["쓴 지표"].mean() > 15,
       f"1% 문턱은 잡음까지 통과시킨다 (평균 {_bt['쓴 지표'].mean():.1f}종/41종)")
 _sm = _FC.summary(_bt)
-check(bool(_sm["이겼나"].any()),
-      f"진짜 선행 인자가 있으면 기준선을 이긴다 (이득 {list(_sm['이득%'])})")
-check("창" in _FC.verdict(_sm), f"문이 열리면 창 길이를 적는다 ({_FC.verdict(_sm)})")
+check(bool(_sm["방향 이겼나"].any()),
+      f"진짜 선행 인자가 있으면 방향이 '늘오름' 을 넘는다"
+      f" (%p {list(_sm['방향 이득%p'])})")
+check(float(_sm["이득%"].max()) > 0,
+      f"오차도 같이 줄어든다 (이득 {list(_sm['이득%'])})")
+check("방향 적중" in _FC.verdict(_sm), f"문이 열리면 방향부터 적는다 ({_FC.verdict(_sm)})")
+check("배" in _FC.verdict(_sm), "미래 가치는 **범위로** 적는다 (점 하나가 아니다)")
+
+# **방향 적중률은 혼자 보면 속는다** (2026-09-15 지시에 붙인 짝).
+# 늘 오르기만 하는 세상에서는 아무 신호 없이도 적중률이 100% 가 된다.
+_PU, _LU = [], []
+_rngu = _np.random.default_rng(77)
+for _i in range(80):
+    _sg = f"U{_i:03d}"
+    _lvl = 10.0
+    for _yr in range(2000, 2025):
+        _PU.append({"sigungu_cd": _sg, "deal_year": _yr, "price_per_m2": _math.exp(_lvl)})
+        _lvl += 0.05 + abs(_rngu.normal(0, .005))      # 해마다 반드시 오른다
+        for _k in range(20):
+            _LU.append({"sigungu_cd": _sg, "year": _yr, "metric": f"n{_k:02d}",
+                        "value": _math.exp(_rngu.normal(0, .3))})
+_pu = _FC.price_panel(_pd.DataFrame([r for r in _PU for _ in range(6)]), min_n=5)
+_btu = _FC.backtest(_pu, _pd.DataFrame(_LU), windows=(10, 20))
+_smu = _FC.summary(_btu)
+check(float(_smu["방향인자"].min()) > 0.95,
+      f"늘 오르는 세상에서는 적중률이 저절로 높다 ({_smu['방향인자'].min():.1%})")
+check(float(_smu["방향늘오름"].min()) > 0.95,
+      f"그런데 '늘 오른다' 고만 답해도 똑같이 높다 ({_smu['방향늘오름'].min():.1%})")
+check(not bool(_smu["방향 이겼나"].any()),
+      f"그러니 이긴 것으로 안 센다 (%p {list(_smu['방향 이득%p'])})")
+check("시대" in _FC.verdict(_smu) or "못 넘습니다" in _FC.verdict(_smu),
+      f"문을 닫고 왜인지 적는다 ({_FC.verdict(_smu)})")
+
+# **띠** — 미래 가치는 범위다. 그 범위가 정말 그만큼 담는지까지 잰다.
+check(all(_bt["띠 아래"] < _bt["띠 위"]), "띠는 아래가 위보다 작다")
+check(0.55 <= float(_bt["띠 덮개"].mean()) <= 0.95,
+      f"80% 띠는 실제로도 대략 그만큼 담는다 (덮개 {_bt['띠 덮개'].mean():.0%})")
+_wide = _FC.backtest(_pf, _pd.DataFrame(_LN), windows=(10,), band=0.95)
+check(float(_wide["띠 너비"].mean()) > float(
+          _bt[_bt["창"] == 10]["띠 너비"].mean()),
+      "95% 띠는 80% 띠보다 넓다 (넓은 띠는 정직한 것이지 틀린 것이 아니다)")
+_bt_row = _FC.summary(_bt).iloc[0]
+check("~" in _FC.band_text(_bt_row) and "배" in _FC.band_text(_bt_row),
+      f"띠를 사람 말로 적는다 ({_FC.band_text(_bt_row)})")
 
 # **잡음만 있는 세상**: 1% 문턱을 통과해도 밖에서는 못 이겨야 한다.
 _LN2 = [r for r in _LN if r["metric"] != "real"]
@@ -2916,8 +2957,8 @@ _bt2 = _FC.backtest(_pf, _pd.DataFrame(_LN2), windows=(5, 10, 15, 20))
 _sm2 = _FC.summary(_bt2)
 check(_bt2["쓴 지표"].mean() > 10,
       f"잡음도 1% 문턱은 넘는다 (평균 {_bt2['쓴 지표'].mean():.1f}종)")
-check(float(_sm2["이득%"].max()) < 2.0,
-      f"그래도 밖에서는 못 이긴다 (최대 이득 {_sm2['이득%'].max():+.2f}%)")
+check(not bool(_sm2["방향 이겼나"].any()),
+      f"그래도 밖에서는 방향을 못 맞힌다 (%p {list(_sm2['방향 이득%p'])})")
 check("보류" in _FC.verdict(_sm2),
       f"그러면 문을 닫는다 ({_FC.verdict(_sm2)})")
 

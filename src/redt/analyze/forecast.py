@@ -42,6 +42,29 @@ r_m 은 **학습 창 안에서만** 잰 상관이고, z 는 학습 창 안의 �
 있으면 쓴다" 를 그대로 옮긴 것이다. 그 다음 ŷ = a + b·점수 하나만
 맞춘다. 칸이 모자라 무너지는 일이 없다.
 
+## 으뜸 잣대는 **방향 적중**이다 (2026-09-15 지시)
+
+    "미래 가치에 대한 %도 중요하지만 방향 적중에 대한 신뢰도가 제일
+     중요할 것 같습니다. 미래 가치는 범위로 표현합니다."
+
+맞다. 땅을 살지 말지는 '오르나 내리나' 로 갈리지, 몇 % 인지로 갈리지
+않는다. 그래서 채점의 으뜸을 오차(MAE)에서 **방향 적중**으로 옮기고,
+값은 점이 아니라 **띠**로 낸다.
+
+**다만 방향 적중률은 혼자 보면 속는다.** 오른 해가 많은 시기에는
+"늘 오른다" 고만 답해도 적중률이 높다. 그래서 늘 그 기준선과 나란히
+적는다 — **늘오름**(actual > 0 인 칸의 비율). 인자 모형의 적중률이
+이것을 못 넘으면 인자는 방향을 맞힌 것이 아니라 시대를 맞힌 것이다.
+
+## 띠는 어떻게 긋나 (그리고 그 띠를 믿을 수 있나)
+
+학습 창에서 남은 오차(잔차)의 10%·90% 칸을 떼어 예측값 양옆에 붙인다.
+공식에서 나온 띠가 아니라 **실제로 우리가 틀렸던 만큼**의 띠다.
+
+띠를 그었으면 그 띠가 맞는지도 재야 한다 — **덮개**(coverage): 80% 띠라고
+해 놓고 실제로 80% 를 담는가. 덮개가 모자라면 띠가 좁은 것이니 그렇게
+적는다. 넓은 띠는 정직한 것이지, 틀린 것이 아니다.
+
 ## 무엇과 견주나 (기준선 셋)
 
     무변화     ŷ = 0                     "2년 뒤에도 그대로"
@@ -64,6 +87,8 @@ MIN_R = 0.01            # **지시의 1%.** 학습 창 상관이 이만큼만 �
 MIN_TRAIN = 60          # 학습 짝이 이만큼은 있어야 그 기준점을 잰다
 MIN_TEST = 30           # 맞혀 볼 칸이 이만큼은 있어야 성적을 적는다
 MIN_METRIC_OBS = 40     # 지표 하나가 학습 창에서 이만큼은 겹쳐야 상관을 잰다
+BAND = 0.80             # 미래 가치는 **범위**로 낸다 — 기본 80% 띠 (지시)
+MIN_EDGE = 0.02         # 방향 적중이 '늘오름' 을 이만큼은 넘어야 이긴 것으로 센다
 
 
 def price_panel(trades: pd.DataFrame, min_n: int = 5) -> pd.DataFrame:
@@ -156,7 +181,7 @@ def _score(wide: pd.DataFrame, keep: dict[str, float],
 
 
 def _origin(tgt: pd.DataFrame, dx_wide: pd.DataFrame, t0: int, window: int,
-            horizon: int, min_r: float) -> dict | None:
+            horizon: int, min_r: float, band: float = BAND) -> dict | None:
     """기준점 하나. 학습은 [t0-L+1 … t0-2], 맞히는 것은 t0 (대상 t0+2)."""
     lo = t0 - window + 1
     tr = tgt[(tgt["year"] >= lo) & (tgt["year"] <= t0 - horizon)]
@@ -194,6 +219,16 @@ def _origin(tgt: pd.DataFrame, dx_wide: pd.DataFrame, t0: int, window: int,
     actual = tex["y"].to_numpy()
     mae = lambda v: float(np.mean(np.abs(actual - v)))
     hit = lambda v: float(np.mean(np.sign(v) == np.sign(actual))) if len(actual) else float("nan")
+
+    # 띠 — 학습 창에서 **실제로 틀렸던 만큼**을 양옆에 붙인다.
+    resid = y_tr - (a + b * s_tr)
+    q_lo, q_hi = np.quantile(resid, [(1 - band) / 2, 1 - (1 - band) / 2])
+    lo, hi = pred + q_lo, pred + q_hi
+    covered = float(np.mean((actual >= lo) & (actual <= hi)))
+    width = float(np.mean(np.exp(hi) - np.exp(lo)))       # 배율로 몇 폭인가
+
+    # **혼자 보면 속는 값이라 짝을 붙인다** — "늘 오른다" 고만 답했을 때의 적중률.
+    always_up = float(np.mean(actual > 0))
     return {
         "기준점": int(t0), "창": int(window), "학습": int(len(tr)), "맞힘": int(len(te)),
         "쓴 지표": int(len(keep)), "후보 지표": int(len(cols)),
@@ -201,12 +236,17 @@ def _origin(tgt: pd.DataFrame, dx_wide: pd.DataFrame, t0: int, window: int,
         "MAE 인자": round(mae(pred), 4), "MAE 무변화": round(mae(base_flat), 4),
         "MAE 창평균": round(mae(base_mean), 4), "MAE 동네추세": round(mae(base_own), 4),
         "방향 인자": round(hit(pred), 3), "방향 동네추세": round(hit(base_own), 3),
+        "방향 늘오름": round(always_up, 3),
+        "띠 덮개": round(covered, 3), "띠 너비": round(width, 4),
+        "띠 아래": round(float(np.mean(np.exp(lo))), 4),
+        "띠 위": round(float(np.mean(np.exp(hi))), 4),
         "실제 평균": round(float(actual.mean()), 4),
     }
 
 
 def backtest(price: pd.DataFrame, long: pd.DataFrame, windows=WINDOWS,
-             horizon: int = HORIZON, min_r: float = MIN_R) -> pd.DataFrame:
+             horizon: int = HORIZON, min_r: float = MIN_R,
+             band: float = BAND) -> pd.DataFrame:
     """창 길이마다 기준점을 굴려 가며 2년 뒤를 맞혀 본다."""
     tgt = targets(price, horizon)
     dx = deltas(long)
@@ -221,44 +261,61 @@ def backtest(price: pd.DataFrame, long: pd.DataFrame, windows=WINDOWS,
         for t0 in years:
             if t0 - w + 1 < min(years):
                 continue
-            r = _origin(tgt, dx_wide, int(t0), int(w), horizon, min_r)
+            r = _origin(tgt, dx_wide, int(t0), int(w), horizon, min_r, band)
             if r:
                 rows.append(r)
     return pd.DataFrame(rows)
 
 
 def summary(bt: pd.DataFrame) -> pd.DataFrame:
-    """창 길이마다 성적을 접는다. **'이겼나' 가 결론이다.**"""
+    """창 길이마다 성적을 접는다. **으뜸은 방향, 그 다음이 띠, 오차는 참고다.**"""
     if bt is None or bt.empty:
         return pd.DataFrame()
     g = (bt.groupby("창")
          .agg(기준점=("기준점", "size"), 쓴지표=("쓴 지표", "mean"),
+              방향인자=("방향 인자", "mean"), 방향늘오름=("방향 늘오름", "mean"),
+              방향동네추세=("방향 동네추세", "mean"),
+              띠덮개=("띠 덮개", "mean"), 띠아래=("띠 아래", "mean"), 띠위=("띠 위", "mean"),
               MAE인자=("MAE 인자", "mean"), MAE무변화=("MAE 무변화", "mean"),
-              MAE창평균=("MAE 창평균", "mean"), MAE동네추세=("MAE 동네추세", "mean"),
-              방향인자=("방향 인자", "mean"), 방향동네추세=("방향 동네추세", "mean"))
+              MAE창평균=("MAE 창평균", "mean"), MAE동네추세=("MAE 동네추세", "mean"))
          .reset_index())
+    # **으뜸 잣대**: 방향 적중이 '늘 오른다' 보다 몇 %p 나은가. 음수면 진 것이다.
+    g["방향 이득%p"] = ((g["방향인자"] - g["방향늘오름"]) * 100).round(2)
+    g["방향 이겼나"] = g["방향 이득%p"] > MIN_EDGE * 100
     g["최고 기준선"] = g[["MAE무변화", "MAE창평균", "MAE동네추세"]].min(axis=1)
-    # 이득 = 가장 센 기준선 대비 오차가 몇 % 줄었나. 음수면 **졌다**.
     g["이득%"] = ((g["최고 기준선"] - g["MAE인자"]) / g["최고 기준선"] * 100).round(2)
-    g["이겼나"] = g["이득%"] > 0
-    for c in ("쓴지표", "MAE인자", "MAE무변화", "MAE창평균", "MAE동네추세",
-              "최고 기준선", "방향인자", "방향동네추세"):
+    for c in ("쓴지표", "방향인자", "방향늘오름", "방향동네추세", "띠덮개",
+              "띠아래", "띠위", "MAE인자", "MAE무변화", "MAE창평균",
+              "MAE동네추세", "최고 기준선"):
         g[c] = g[c].round(4)
     return g.sort_values("창")
 
 
-def verdict(sm: pd.DataFrame) -> str:
-    """문. 이기지 못하면 숫자를 안 낸다 — 다른 마디와 같은 규칙이다."""
+def band_text(row, band: float = BAND) -> str:
+    """미래 가치를 **범위로** 적는다 (지시). 점 하나로 안 적는다."""
+    return (f"{float(row['띠아래']):.2f}~{float(row['띠위']):.2f}배"
+            f" ({band:.0%} 띠 · 실제로 담긴 비율 {float(row['띠덮개']):.0%})")
+
+
+def verdict(sm: pd.DataFrame, band: float = BAND) -> str:
+    """문. **방향이 먼저다** — 오차는 방향이 선 다음에야 뜻이 있다.
+
+    '늘 오른다' 를 못 넘으면 그 적중률은 인자가 아니라 시대를 맞힌 것이다.
+    """
     if sm is None or sm.empty:
         return "산출 보류 — 맞혀 볼 칸이 모자랍니다"
-    win = sm[sm["이겼나"]]
+    win = sm[sm["방향 이겼나"]]
     if win.empty:
-        best = sm.loc[sm["이득%"].idxmax()]
-        return (f"산출 보류 — 어느 창에서도 기준선을 못 이깁니다"
-                f" (가장 나은 창 {int(best['창'])}년도 {best['이득%']:+.2f}%)")
-    best = win.loc[win["이득%"].idxmax()]
-    if float(best["이득%"]) < 2.0:
-        return (f"산출 보류 — 이겼지만 이득이 {best['이득%']:+.2f}% 뿐입니다"
-                f" (창 {int(best['창'])}년). 해마다 뒤집힐 크기입니다")
-    return (f"창 {int(best['창'])}년 · 기준선 대비 오차 {best['이득%']:+.2f}%"
-            f" · 방향 적중 {best['방향인자']:.1%}")
+        best = sm.loc[sm["방향 이득%p"].idxmax()]
+        return ("산출 보류 — 방향이 '늘 오른다' 를 못 넘습니다"
+                f" (가장 나은 창 {int(best['창'])}년: 인자 {best['방향인자']:.1%}"
+                f" vs 늘오름 {best['방향늘오름']:.1%} · {best['방향 이득%p']:+.2f}%p)")
+    best = win.loc[win["방향 이득%p"].idxmax()]
+    note = ""
+    if float(best["띠덮개"]) < band - 0.05:
+        note = (f" ※ 띠가 좁습니다 — {band:.0%} 라 해 놓고"
+                f" {float(best['띠덮개']):.0%} 만 담습니다")
+    return (f"창 {int(best['창'])}년 · 방향 적중 {best['방향인자']:.1%}"
+            f" (늘오름 {best['방향늘오름']:.1%} 대비 {best['방향 이득%p']:+.2f}%p)"
+            f" · 2년 뒤 {band_text(best, band)}"
+            f" · 오차 {best['이득%']:+.2f}%{note}")
