@@ -72,3 +72,9 @@ docs/ebook/
 #
 # 다시 만들려면:  redt export-web && redt web-upload
 public/app/data/
+
+# 산업단지·공장등록 통계 (2026-09-15 사장님 제공). 공표 통계라 사람 정보가
+# 없고 크기도 작다 — 저장소에 두어야 러너가 같은 것을 읽는다.
+!data/raw/kicox_*.csv
+!data/raw/kicox_*.xlsx
+!data/raw/factoryon_*.xlsx
