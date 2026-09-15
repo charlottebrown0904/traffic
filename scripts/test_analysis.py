@@ -2939,6 +2939,29 @@ check(not bool(_smu["방향 이겼나"].any()),
 check("시대" in _FC.verdict(_smu) or "못 넘습니다" in _FC.verdict(_smu),
       f"문을 닫고 왜인지 적는다 ({_FC.verdict(_smu)})")
 
+# **기울기가 터지지 않는다** (run 124 의 inf 버그).
+# 점수가 거의 안 흔들리면 b = cov/var 가 폭발해 exp 에서 inf 가 되고
+# MAE 가 435억으로 찍혔다. 숫자가 터진 것을 성적표에 적으면 고장이다.
+check(all(_np.isfinite(_bt["띠 아래"])) and all(_np.isfinite(_bt["띠 위"])),
+      "띠가 inf 가 되지 않는다")
+check(all(_np.isfinite(_bt["MAE 인자"])) and float(_bt["MAE 인자"].max()) < 100,
+      f"MAE 가 터지지 않는다 (최대 {_bt['MAE 인자'].max():.4f})")
+check("잘림" in _bt and int(_bt["잘림"].sum()) >= 0,
+      "본 적 없는 크기로 튀면 잘라 내고, 자른 횟수를 남긴다")
+# 점수가 상수인 세상 — 기울기는 0 이어야지 터지면 안 된다.
+_flat = [{"sigungu_cd": r["sigungu_cd"], "year": r["year"], "metric": "flat",
+          "value": 7.0} for r in _LN if r["metric"] == "real"]
+_btf = _FC.backtest(_pf, _pd.DataFrame(_flat), windows=(10,))
+if len(_btf):
+    check(all(abs(_btf["기울기"]) < 1e-6),
+          f"흔들리지 않는 점수에는 기울기 0 을 준다 ({list(_btf['기울기'])[:3]})")
+    check(all(_np.isfinite(_btf["띠 위"])), "그래도 띠는 유한하다")
+
+# **모든 동네에 같은 방향을 말했는가.** 0%/100% 면 동네를 안 가른 것이다.
+check("예측 오름비율" in _bt, "오름비율을 기준점마다 남긴다")
+check(all((_bt["예측 오름비율"] >= 0) & (_bt["예측 오름비율"] <= 1)),
+      "오름비율은 0~1 이다")
+
 # **기준선은 늘오름과 동네추세 중 센 쪽이다.** 늘오름만 넘어 놓고
 # 이겼다고 적으면 눈속임이다.
 check(all(_sm["최고 방향 기준선"] >= _sm["방향늘오름"])

@@ -89,6 +89,7 @@ MIN_TEST = 30           # 맞혀 볼 칸이 이만큼은 있어야 성적을 적
 MIN_METRIC_OBS = 40     # 지표 하나가 학습 창에서 이만큼은 겹쳐야 상관을 잰다
 BAND = 0.80             # 미래 가치는 **범위**로 낸다 — 기본 80% 띠 (지시)
 MIN_EDGE = 0.02         # 방향 적중이 '늘오름' 을 이만큼은 넘어야 이긴 것으로 센다
+SCORE_SD_MIN = 1e-6     # 점수가 이보다 덜 흔들리면 기울기를 0 으로 둔다 (터짐 방지)
 
 
 def price_panel(trades: pd.DataFrame, min_n: int = 5) -> pd.DataFrame:
@@ -236,12 +237,26 @@ def _origin(tgt: pd.DataFrame, dx_wide: pd.DataFrame, t0: int, window: int,
 
     y_tr = trx["y"].to_numpy()
     # 점수 하나에 대고 직선 하나. 칸보다 인자가 많아지는 일이 없다.
-    if np.std(s_tr) > 0:
+    #
+    # **점수가 거의 안 흔들리면 기울기가 터진다.** run 124 의 창 5년 ·
+    # 2021 기준점이 그랬다: b 가 폭발해 예측이 exp 에서 inf 가 되고
+    # MAE 가 435억으로 찍혔다. 숫자가 터진 것을 성적표에 적으면 그것은
+    # 성적이 아니라 고장이다. 흔들림이 없으면 기울기를 0 으로 둔다.
+    s_sd = float(np.std(s_tr))
+    if s_sd > SCORE_SD_MIN:
         b = float(np.cov(s_tr, y_tr, ddof=0)[0, 1] / np.var(s_tr))
         a = float(y_tr.mean() - b * s_tr.mean())
     else:
         a, b = float(y_tr.mean()), 0.0
     pred = a + b * s_te
+
+    # **본 적 없는 값은 예측이 아니다.** 학습 창에서 한 번도 안 나온
+    # 크기의 변화를 내놓으면 그것은 셈이 튄 것이다 — 창 안 y 의 폭에
+    # 여유를 더한 데까지만 자른다. 자른 횟수를 남겨 숨기지 않는다.
+    span = float(y_tr.max() - y_tr.min()) or 1.0
+    lo_lim, hi_lim = float(y_tr.min()) - span, float(y_tr.max()) + span
+    clipped = int(np.sum((pred < lo_lim) | (pred > hi_lim)))
+    pred = np.clip(pred, lo_lim, hi_lim)
 
     # 기준선 셋.
     base_flat = np.zeros(len(tex))
@@ -256,7 +271,8 @@ def _origin(tgt: pd.DataFrame, dx_wide: pd.DataFrame, t0: int, window: int,
     # 띠 — 학습 창에서 **실제로 틀렸던 만큼**을 양옆에 붙인다.
     resid = y_tr - (a + b * s_tr)
     q_lo, q_hi = np.quantile(resid, [(1 - band) / 2, 1 - (1 - band) / 2])
-    lo, hi = pred + q_lo, pred + q_hi
+    lo = np.clip(pred + q_lo, lo_lim, hi_lim)
+    hi = np.clip(pred + q_hi, lo_lim, hi_lim)
     covered = float(np.mean((actual >= lo) & (actual <= hi)))
     width = float(np.mean(np.exp(hi) - np.exp(lo)))       # 배율로 몇 폭인가
 
@@ -271,6 +287,10 @@ def _origin(tgt: pd.DataFrame, dx_wide: pd.DataFrame, t0: int, window: int,
         "방향 인자": round(hit(pred), 3), "방향 동네추세": round(hit(base_own), 3),
         "방향 늘오름": round(always_up, 3),
         "띠 덮개": round(covered, 3), "띠 너비": round(width, 4),
+        "잘림": clipped, "점수 흔들림": round(s_sd, 5),
+        # **모든 동네에 같은 방향을 말했는가.** 0% 나 100% 면 그 모형은
+        # 동네를 안 가른 것이다 — 전국 하나를 놓고 동전을 던진 셈이다.
+        "예측 오름비율": round(float(np.mean(pred > 0)), 3),
         "띠 아래": round(float(np.mean(np.exp(lo))), 4),
         "띠 위": round(float(np.mean(np.exp(hi))), 4),
         "실제 평균": round(float(actual.mean()), 4),
@@ -313,6 +333,7 @@ def summary(bt: pd.DataFrame) -> pd.DataFrame:
               방향인자=("방향 인자", "mean"), 방향늘오름=("방향 늘오름", "mean"),
               방향동네추세=("방향 동네추세", "mean"),
               띠덮개=("띠 덮개", "mean"), 띠아래=("띠 아래", "mean"), 띠위=("띠 위", "mean"),
+              오름비율=("예측 오름비율", "mean"), 잘림=("잘림", "sum"),
               MAE인자=("MAE 인자", "mean"), MAE무변화=("MAE 무변화", "mean"),
               MAE창평균=("MAE 창평균", "mean"), MAE동네추세=("MAE 동네추세", "mean"))
          .reset_index())
@@ -325,7 +346,7 @@ def summary(bt: pd.DataFrame) -> pd.DataFrame:
     g["최고 기준선"] = g[["MAE무변화", "MAE창평균", "MAE동네추세"]].min(axis=1)
     g["이득%"] = ((g["최고 기준선"] - g["MAE인자"]) / g["최고 기준선"] * 100).round(2)
     for c in ("쓴지표", "방향인자", "방향늘오름", "방향동네추세",
-              "최고 방향 기준선", "띠덮개",
+              "최고 방향 기준선", "띠덮개", "오름비율",
               "띠아래", "띠위", "MAE인자", "MAE무변화", "MAE창평균",
               "MAE동네추세", "최고 기준선"):
         g[c] = g[c].round(4)
