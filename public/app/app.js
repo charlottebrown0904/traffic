@@ -5850,15 +5850,15 @@ function individualFactor(subject, std, T) {
     return { kind, items, factor: r, warnings, special: '현황도로' };
   }
   let r = ratioOf(roadIndexOf(subject.road_side, T), roadIndexOf(std.road_side, T));
-  add('가로·접근 (도로접면)', subject.road_side, std.road_side, r, r === null ? '도로접면을 한쪽이라도 모른다' : null);
+  add('가로·접근 (도로접면)', subject.road_side, std.road_side, r, r === null ? '도로접면을 한쪽이라도 몰라 견주지 못합니다' : null);
   if (r === null) warnings.push('도로접면을 알 수 없어 격차율에서 뺐습니다');
   if (kind !== '임야지대') {
     r = ratioOf(idxOf(subject.shape, T.shape_index), idxOf(std.shape, T.shape_index));
-    add('획지 (형상)', subject.shape, std.shape, r, r === null ? '형상을 한쪽이라도 모른다' : null);
+    add('획지 (형상)', subject.shape, std.shape, r, r === null ? '형상을 한쪽이라도 몰라 견주지 못합니다' : null);
   }
   const slopeTable = T.slope_index[kind] || T.slope_index['*'];
   r = ratioOf(idxOf(subject.slope, slopeTable), idxOf(std.slope, slopeTable));
-  add('자연·획지 (지세)', subject.slope, std.slope, r, r === null ? '지세를 한쪽이라도 모른다' : null);
+  add('자연·획지 (지세)', subject.slope, std.slope, r, r === null ? '지세를 한쪽이라도 몰라 견주지 못합니다' : null);
   if (r === null) warnings.push('지세를 알 수 없어 격차율에서 뺐습니다');
   const rules = T.area_rules[kind];
   if (rules && subject.area_m2 && std.area_m2) {
@@ -6052,7 +6052,8 @@ window.__timeFactorOf = (stdYear, trend, T, ctx) => timeFactorOf(stdYear, trend,
  * 넓은 쪽. */
 function otherFactorOf(subject, std, T) {
   const zg = zoneGroupOf(subject.land_use, T);
-  if (!zg) return { factor: null, basis: '자료 없음 (용도지역군 없음)', sources: [] };
+  if (!zg) return { factor: null, sources: [],
+                    basis: '용도지역을 알 수 없어 견줄 칸을 못 찾습니다' };
   const stdUg = useGroupOf(std.jimok, std.use_situation);
   const subjUg = useGroupOf(subject.jimok, subject.use_situation);
   const sido = String(subject.pnu || '').slice(0, 2);
@@ -6074,7 +6075,23 @@ function otherFactorOf(subject, std, T) {
     }
   }
   const have = [ledger, trade].filter(Boolean);
-  if (!have.length) return { factor: null, basis: '자료 없음', sources: [] };
+  if (!have.length) {
+    /* **왜 비는지를 이름으로 적는다.** 예전에는 '자료 없음' 한 마디였고,
+       화면은 그마저 버리고 '자료 없음' 만 보였다. 그러면 한계인지 고장인지
+       읽는 사람이 가를 수 없다 — 오늘 같은 것을 두 번 겪었다.
+
+       가장 흔한 까닭은 **지목이 우리 넷(임야·전·답·대·공장·도로) 밖**인
+       경우다. 하천·구거·제방·유지 같은 땅이 그렇다. 그런 땅은 거래도
+       평가선례도 사실상 없어서 견줄 자리가 만들어지지 않는다. */
+    const jimok = String(subject.jimok || '').trim();
+    const basis = subjUg
+      ? `${zg}·${subjUg} 조건의 거래·평가선례가 아직 없습니다`
+      : (jimok
+        // '(이)라' 같은 자리표시자를 또 쓰지 않는다 — 조사가 필요 없게 쓴다.
+        ? `지목 ${jimok} 에는 견줄 거래·평가선례가 없습니다`
+        : '지목을 알 수 없어 견줄 거래·평가선례를 못 찾습니다');
+    return { factor: null, basis, sources: [] };
+  }
   if (have.length === 1) {
     const o = have[0];
     return { factor: o.median, q1: o.q1, q3: o.q3, n: o.n, sources: have,
@@ -6224,14 +6241,32 @@ function renderValuation(res) {
   rows.push(['개별요인 비교', `<b>${f3(ind.factor)}</b><span class="pcv-desc">[${e(ind.kind)}] 조건별 격차율의 곱`
     + ' — 대상 / 비교표준지</span>'
     + '<ul class="pcv-items">' + itemRows + '</ul>']);
+  // 비었을 때야말로 까닭이 필요하다. 예전에는 factor 가 null 이면 basis 를
+  // 통째로 버리고 '자료 없음' 만 찍었다 — 화면이 아는 것을 안 말한 셈이다.
   rows.push(['그 밖의 요인 보정', res.other.factor == null
-    ? '<em>자료 없음</em>'
+    ? `<em>자료 없음</em><span class="pcv-desc">${e(res.other.basis || '')}</span>`
     : `<b>${res.other.factor}</b><span class="pcv-desc">${e(res.other.basis)}</span>`]);
+
+  /* 보류한 까닭. '비어 있는 마디: 그 밖의 요인' 은 우리끼리 쓰는 말이고,
+     읽는 사람에게는 '왜 못 냈나' 가 답이다 (2026-09-15 지시). 마디마다
+     산출이 이미 들고 있는 까닭을 그대로 꺼내 쓴다 — 없으면 마디 이름. */
+  const holdWhy = (name) => {
+    if (name === '그 밖의 요인') return (res.other || {}).basis;
+    if (name === '시점수정') {
+      const src = (res.time || {}).source;
+      return src && src !== '자료 없음' ? src
+        : '지가변동률도 또래 거래 추세도 없어 시점을 못 맞춥니다';
+    }
+    if (name === '표준지공시지가') return '비교표준지의 공시지가가 없습니다';
+    return null;
+  };
 
   let bottom;
   if (res.missing.length) {
-    bottom = `<p class="pcv-hold">산출 보류 — 비어 있는 마디: ${e(res.missing.join(', '))}. `
-      + '1.00 으로 메우지 않습니다.</p>';
+    const why = res.missing.map(holdWhy).filter(Boolean);
+    bottom = '<p class="pcv-hold">산출 보류'
+      + (why.length ? ` — ${e(why.join(' · '))}` : ` — ${e(res.missing.join(', '))}`)
+      + '</p>';
   } else {
     const p = res.parts;
     bottom = '<div class="pcv-sum">'
