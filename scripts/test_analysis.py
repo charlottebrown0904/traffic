@@ -2751,6 +2751,72 @@ check("C(umd_cd)" in _RS.formula(_dfr.assign(umd_cd=_dfr["sigungu_cd"] + "|동")
       "울타리를 읍·면·동으로 좁힐 수 있다")
 check("C(sigungu_cd)" in _RS.formula(_dfr, "sigungu"), "기본 울타리는 시·군·구다")
 
+print("41-4. 31개 인자 교차 분석 — 수준·변화·시차 (2026-09-15)")
+from redt.analyze import crossfactors as _CF                # noqa: E402
+
+# 아는 세상을 만든다. 시군구 60곳 × 15해.
+#   lead   : 땅값보다 **한 해 먼저** 움직인다      → 시차1 이 가장 세야 한다
+#   same   : 같이 움직인다                        → 변화가 가장 세다
+#   big    : 도시가 클수록 크지만 변화는 무관     → 수준만 크고 동네 안은 0
+#   noise  : 아무 상관 없다
+_rngc = _np.random.default_rng(31)
+_P, _X = [], []
+# **지표의 변화가 땅값의 변화를 따라가게 만든다.** 처음에는 지표의
+# *수준*을 충격에 비례시켰는데, 그러면 차분이 '충격의 차분' 이 되어
+# 참값이 0.71 로 깎인다 — 만들려던 세상이 아니었다.
+for _i in range(60):
+    _sgg = f"C{_i:03d}"
+    _size = _rngc.normal(0, 1.0)                  # 도시 크기 (고정)
+    _shock = _rngc.normal(0, .05, 17)             # 해마다의 땅값 충격
+    _lvl, _same, _lead = 11 + _size, 1.0, 1.0
+    for _t, _y in enumerate(range(2010, 2026)):
+        _lvl += _shock[_t]
+        _same += 4.0 * _shock[_t]                 # 같이 움직인다
+        _lead += 4.0 * _shock[_t + 1]             # 한 해 먼저 움직인다
+        _P.append({"sigungu_cd": _sgg, "deal_year": _y,
+                   "price_per_m2": float(_np.exp(_lvl))})
+        for _m, _v in (("lead", _lead), ("same", _same),
+                       ("big", 1.0 + 2.0 * _size), ("noise", 1.0)):
+            _X.append({"sigungu_cd": _sgg, "year": _y, "metric": _m,
+                       "value": float(_np.exp(_v + _rngc.normal(0, .02)))})
+_price = _CF.price_panel(_pd.DataFrame(_P), min_n=1)
+check(len(_price) == 60 * 16, f"시군구×연 땅값 칸이 선다 ({len(_price)})")
+_tabc = _CF.against_price(_pd.DataFrame(_X), _price)
+_get = lambda m, c: _tabc.loc[_tabc["metric"] == m, c].iloc[0]
+check(abs(float(_get("same", "변화"))) > 0.8,
+      f"동행 지표는 변화 상관이 크다 ({_get('same', '변화')})")
+check(abs(float(_get("same", "시차1"))) < 0.3,
+      f"동행 지표는 시차에서 죽는다 ({_get('same', '시차1')})")
+check(abs(float(_get("lead", "시차1"))) > 0.8,
+      f"선행 지표는 시차1 에서 산다 ({_get('lead', '시차1')})")
+check(abs(float(_get("lead", "변화"))) < 0.3,
+      f"선행 지표는 동행 상관이 약하다 ({_get('lead', '변화')})")
+# **이 표의 요점**: 수준만 큰 것은 인자가 아니라 도시 크기다.
+check(abs(float(_get("big", "수준"))) > 0.7
+      and abs(float(_get("big", "수준(동네 안)"))) < 0.2,
+      f"도시 크기는 수준만 크고 동네 안에서는 사라진다"
+      f" (수준 {_get('big', '수준')} · 동네안 {_get('big', '수준(동네 안)')})")
+_nz = _get("noise", "변화")
+check(_nz is None or (isinstance(_nz, float) and _nz != _nz) or abs(float(_nz)) < 0.2,
+      f"잡음은 안 선다 ({_nz})")
+
+# 덮개는 재기 전에 본다 — 얇은 것은 아예 안 잰다.
+_thin = _pd.DataFrame([{"sigungu_cd": "C000", "year": 2020,
+                        "metric": "thin", "value": 1.0}])
+_cov = _CF.coverage(_pd.concat([_pd.DataFrame(_X), _thin], ignore_index=True))
+check(bool(_cov.loc[_cov["metric"] == "thin", "쓸만"].iloc[0]) is False,
+      "시군구가 적은 지표는 '쓸만' 이 아니다")
+check(bool(_cov.loc[_cov["metric"] == "same", "쓸만"].iloc[0]) is True,
+      "두꺼운 지표는 쓸만이다")
+
+# 같은 것을 재는 쌍 — 겹치는 지표를 회귀에 같이 넣지 않게 미리 본다.
+_X2 = _X + [{"sigungu_cd": r["sigungu_cd"], "year": r["year"], "metric": "same2",
+             "value": r["value"] * 1.01}
+            for r in _X if r["metric"] == "same"]
+_dup = _CF.among_factors(_pd.DataFrame(_X2))
+check(len(_dup) and {"same", "same2"} == set(_dup.iloc[0][["가", "나"]]),
+      f"같은 것을 재는 쌍을 찾아낸다 ({_dup.iloc[0].to_dict() if len(_dup) else '못 찾음'})")
+
 print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")
 from redt.collect import indicators as _IND               # noqa: E402
 

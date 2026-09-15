@@ -12,6 +12,7 @@
 #               estimate-zone 이면 용도지역군별 IC 곡선까지)
 #   events      개통 전후 지가 (필지 단위 이중차분 + 이벤트 스터디) — 읽기만 한다
 #   road-step   필지 층 — 도로가 붙으면 얼마나 오르는가 (맹지 기준 사다리 · years=시작연도 · min_price)
+#   cross       31개 인자 교차 분석 — 덮개 · 땅값 상관(수준·변화·시차) · 겹치는 쌍 (years=시작연도)
 #   momentum    모멘텀 검증 — 시군구×용도지역군 연 중앙단가의 추세 지속·거래량 선행 (limit=칸 최소 건수)
 #   ecos        한국은행 ECOS 금리·물가·성장률
 #               query: (비움)=전부 적재 · probe=받아만 봄 · browse:CODE=표 목록
@@ -41,7 +42,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / cross / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -219,6 +220,14 @@ jobs:
           python -m redt.cli road-step --since "${{ inputs.years || '2015' }}" \
             --min-price "${{ inputs.min_price || '0' }}" \
             --zone "${{ inputs.zone || 'all' }}" 2>&1 | tee /tmp/stdland.log
+
+      # 31개 인자 교차 분석 — 읽기만 한다.
+      - name: 인자 교차 분석
+        if: inputs.mode == 'cross'
+        run: |
+          set -o pipefail
+          python -m redt.cli cross-factors --since "${{ inputs.years || '2010' }}" \
+            --min-n "${{ inputs.n || '5' }}" 2>&1 | tee /tmp/stdland.log
 
       # 모멘텀 검증 — 읽기만 하므로 캐시는 안 남기고 결과 JSON 을 첨부한다.
       # limit=칸 최소 건수(비우면 30).
@@ -407,7 +416,7 @@ jobs:
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'events' && inputs.mode != 'road-step' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'events' && inputs.mode != 'road-step' && inputs.mode != 'cross' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -427,6 +436,14 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       # 인자 표는 화면이 쓸 것이라 로그가 아니라 파일로도 남긴다.
+      - name: 인자 교차 분석 첨부
+        if: always() && inputs.mode == 'cross'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cross-factors
+          path: data/processed/cross_factors.json
+          if-no-files-found: warn
+
       - name: 도로 사다리 첨부
         if: always() && inputs.mode == 'road-step'
         uses: actions/upload-artifact@v4
@@ -504,9 +521,17 @@ jobs:
           elif grep -q "실거래 ÷ 산출" /tmp/stdland.log; then
             head -n 3 /tmp/stdland.log
             awk '/실거래 ÷ 산출/,/비공개 인자 DB/' /tmp/stdland.log | head -n 70
+          elif grep -q "땅값과의 상관" /tmp/stdland.log; then
+            # 덮개 표가 길어 꼬리로는 잘린다 — 상관 표부터 통째로 보인다.
+            head -n 2 /tmp/stdland.log
+            awk '/땅값과의 상관/,0' /tmp/stdland.log | head -n 80
           elif grep -q "세 사다리 나란히" /tmp/stdland.log; then
-            head -n 3 /tmp/stdland.log
-            awk '/우리 실거래로 잰 사다리/,0' /tmp/stdland.log | head -n 40
+            # **등급별 건수부터** 보인다. 앞서 '우리 실거래로 잰 사다리'
+            # 부터 잘랐더니 그 앞의 울타리 비교·조사연도 표가 통째로
+            # 안 보였다 (run 115). 창을 좁게 잡으면 정작 새로 넣은 것이
+            # 안 나온다 — 시작점은 넉넉히 앞에 둔다.
+            head -n 2 /tmp/stdland.log
+            awk '/등급별 건수/,0' /tmp/stdland.log | head -n 60
           elif grep -q "상대연도" /tmp/stdland.log; then
             # 인자 추정은 상대연도 표가 길어 꼬리 30줄로는 잘린다.
             head -n 3 /tmp/stdland.log

@@ -1561,6 +1561,105 @@ def cmd_factor_cells(args):
     _save()
 
 
+def cmd_cross_factors(args):
+    """31개 인자 교차 분석 (2026-09-15 지시).
+
+    docs/future-value-indicators.md 의 후보 가운데 **우리가 실제로 받아서
+    넣은 것**만 잰다. 안 받은 것은 상관을 못 내니 '없음' 으로 적는다 —
+    빈칸을 0 으로 채우지 않는다.
+
+    수준·변화·시차 셋을 따로 낸다. 수준 상관은 거의 늘 크게 나온다
+    (서울이 인구도 전력도 땅값도 높다) — 그것은 인자가 아니라 도시
+    크기다. **변화**가 본론이고, **시차**가 이 표의 값어치다.
+    """
+    from .analyze import crossfactors as CF
+    with db.connect(read_only=True) as con:
+        trades = con.execute("""
+            SELECT sigungu_cd, deal_year, price_per_m2
+            FROM trade
+            WHERE kind = 'land' AND NOT coalesce(is_cancelled, FALSE)
+              AND NOT coalesce(is_share_deal, FALSE)
+              AND price_per_m2 > 0 AND sigungu_cd IS NOT NULL
+              AND deal_year >= ?
+        """, [int(args.since)]).fetchdf()
+        ser = con.execute("SELECT sigungu_cd, period, metric, value FROM region_series").fetchdf()
+        ryr = con.execute("SELECT sigungu_cd, year, metric, value FROM region_year").fetchdf()
+        # 교통량과 건축허가는 제 표에 있다 — 같은 모양으로 접어 넣는다.
+        tg = con.execute("""
+            SELECT g.sigungu_cd, t.year, 'ic_traffic' AS metric,
+                   sum(t.avg_daily) AS value
+            FROM traffic t JOIN tollgate g ON g.tollgate_id = t.tollgate_id
+            WHERE g.sigungu_cd IS NOT NULL AND t.avg_daily > 0
+            GROUP BY 1, 2
+        """).fetchdf()
+        pm = con.execute("""
+            SELECT sigungu_cd, CAST(substr(pms_day, 1, 4) AS INTEGER) AS year,
+                   'permit_area' AS metric, sum(tot_area) AS value
+            FROM permit
+            WHERE sigungu_cd IS NOT NULL AND length(pms_day) >= 4 AND tot_area > 0
+            GROUP BY 1, 2
+        """).fetchdf()
+
+    price = CF.price_panel(trades, min_n=int(args.min_n))
+    long = pd.concat([CF.to_year(ser), ryr, tg, pm], ignore_index=True)
+    long = long.dropna(subset=["sigungu_cd", "year", "metric", "value"])
+    long["year"] = pd.to_numeric(long["year"], errors="coerce")
+    long = long.dropna(subset=["year"])
+    long["year"] = long["year"].astype(int)
+
+    print(f"땅값 칸 {len(price):,} (시군구 {price['sigungu_cd'].nunique() if len(price) else 0}"
+          f" · {int(price['year'].min()) if len(price) else 0}~"
+          f"{int(price['year'].max()) if len(price) else 0})")
+    cov = CF.coverage(long)
+    usable = cov[cov["쓸만"]] if len(cov) else cov
+    print(f"지표 {len(cov)}종 · 그중 쓸 만한 것 {len(usable)}종"
+          f" (시군구 {CF.MIN_SGG}곳 · 관측 {CF.MIN_OBS}개 이상)")
+    print("\n── 덮개 (재기 전에 이 표다) ──")
+    print(f"    {'지표':<34s} {'시군구':>5s} {'관측':>7s} {'기간':>12s}")
+    for _i, r in cov.iterrows():
+        mark = " " if r["쓸만"] else "×"
+        print(f"  {mark} {str(r['metric'])[:33]:<34s} {int(r['시군구']):>5,}"
+              f" {int(r['관측']):>7,} {int(r['처음'])}~{int(r['끝']):>4}")
+
+    if price.empty:
+        sys.exit("땅값 칸이 비었습니다 — trade 를 먼저 채우세요")
+
+    tab = CF.against_price(long, price)
+    print("\n── 땅값과의 상관 (수준은 참고 · **변화가 본론** · 시차가 값어치) ──")
+    print(f"    {'지표':<30s} {'시군구':>5s} {'관측':>7s} {'수준':>6s} {'동네안':>6s}"
+          f" {'변화':>6s} {'시차1':>6s} {'시차2':>6s}")
+    f = lambda v: "—" if v is None or (isinstance(v, float) and v != v) else f"{float(v):+.3f}"
+    for _i, r in tab.iterrows():
+        if r.get("얇음"):
+            print(f"  × {str(r['metric'])[:29]:<30s} {int(r.get('시군구') or 0):>5,}"
+                  f" {int(r.get('n') or 0):>7,}   (얇아서 안 잽니다)")
+            continue
+        print(f"    {str(r['metric'])[:29]:<30s} {int(r['시군구']):>5,} {int(r['n']):>7,}"
+              f" {f(r.get('수준')):>6s} {f(r.get('수준(동네 안)')):>6s}"
+              f" {f(r.get('변화')):>6s} {f(r.get('시차1')):>6s} {f(r.get('시차2')):>6s}")
+
+    keep = [m for m in (usable["metric"].tolist() if len(usable) else [])]
+    dup = CF.among_factors(long, keep)
+    print(f"\n── 같은 것을 재는 쌍 (변화끼리 |r| ≥ {CF.DUP_R}) ──")
+    if dup.empty:
+        print("    없습니다 — 지표들이 서로 다른 것을 재고 있습니다")
+    else:
+        for _i, r in dup.iterrows():
+            print(f"    {str(r['가'])[:26]:<27s} ↔ {str(r['나'])[:26]:<27s} r={r['r']:+.3f} (n={int(r['n']):,})")
+
+    print("\n  읽는 법. **수준**이 크고 **동네 안**이 작으면 그것은 인자가 아니라")
+    print("  도시 크기다. **변화**가 서고 **시차**까지 살아남는 것만 미래 가치에")
+    print("  쓸 수 있다 — 동행하는 지표는 그때 가서야 알므로 예측에 못 쓴다.")
+
+    path = PROCESSED / "cross_factors.json"
+    path.write_text(json.dumps(
+        {"since": int(args.since), "min_n": int(args.min_n),
+         "price_cells": int(len(price)), "coverage": cov.to_dict("records"),
+         "against_price": tab.to_dict("records"), "duplicates": dup.to_dict("records")},
+        ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    print(f"\n→ {path}")
+
+
 def cmd_road_step(args):
     """필지 층 첫 칸 — 도로가 붙으면 얼마나 오르는가 (2026-09-15).
 
@@ -4393,6 +4492,13 @@ def main(argv=None):
     p.add_argument("--by-zone", dest="by_zone", action="store_true",
                    help="용도지역군별로 갈라 IC 상대연도 곡선을 따로 낸다")
     p.set_defaults(func=cmd_factor_cells)
+
+    p = sub.add_parser("cross-factors",
+                       help="31개 인자 교차 분석 — 덮개 · 땅값 상관(수준·변화·시차) · 겹치는 쌍")
+    p.add_argument("--since", default="2010", help="이 해 이후 거래로 땅값 칸을 만든다")
+    p.add_argument("--min-n", dest="min_n", default="5",
+                   help="시군구×연 칸에 최소 몇 건 (기본 5)")
+    p.set_defaults(func=cmd_cross_factors)
 
     p = sub.add_parser("road-step",
                        help="필지 층 — 도로가 붙으면 얼마나 오르는가 (맹지 기준 사다리)")
