@@ -14,6 +14,7 @@
 #   road-step   필지 층 — 도로가 붙으면 얼마나 오르는가 (맹지 기준 사다리 · years=시작연도 · min_price)
 #   cross       31개 인자 교차 분석 — 덮개 · 땅값 상관(수준·변화·시차) · 겹치는 쌍 (years=시작연도)
 #   forecast    2년 뒤 예측 백테스트 — 1% 문턱을 밖에서 채점한다 (years=시작연도 · n=칸 최소건수)
+#   industrial-probe  산업단지 지정일 — 포털 후보를 한 판에 다 두드린다 (query=번호들 쉼표)
 #   momentum    모멘텀 검증 — 시군구×용도지역군 연 중앙단가의 추세 지속·거래량 선행 (limit=칸 최소 건수)
 #   ecos        한국은행 ECOS 금리·물가·성장률
 #               query: (비움)=전부 적재 · probe=받아만 봄 · browse:CODE=표 목록
@@ -43,7 +44,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / cross / forecast / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / cross / forecast / industrial / industrial-probe / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -354,6 +355,15 @@ jobs:
             python -m redt.cli geocode-zones --limit "${{ inputs.limit || '2000' }}"
           } 2>&1 | tee /tmp/stdland.log
 
+      # 산업단지 지정일 — 읽기만 한다. 후보를 한 판에 다 두드린다.
+      - name: 산업단지 지정일 탐침
+        if: inputs.mode == 'industrial-probe'
+        run: |
+          set -o pipefail
+          python -m redt.cli industrial-probe \
+            --ids "${{ inputs.query || '3041272,15015588,15100060,3042071,15085901,15041930' }}" \
+            2>&1 | tee /tmp/stdland.log
+
       # 건축인허가 훑기 — 건축HUB 를 (시군구, 법정동) 단위로. 예산이 다하면 멈추고
       # 다음 판이 이어받는다. sigungu 칸에 시군구(5)/시도(2) 코드, n 칸에 예산.
       - name: 건축인허가 훑기
@@ -428,7 +438,7 @@ jobs:
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'events' && inputs.mode != 'road-step' && inputs.mode != 'cross' && inputs.mode != 'forecast' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'events' && inputs.mode != 'road-step' && inputs.mode != 'cross' && inputs.mode != 'forecast' && inputs.mode != 'industrial-probe' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
         uses: actions/cache/save@v4
         with:
           path: |

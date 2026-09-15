@@ -1129,6 +1129,131 @@ def cmd_portal_file(args):
             print(f"  {k:<16} {g or '—'}")
 
 
+def cmd_industrial_probe(args):
+    """산업단지 **지정일**을 어디서 얻을 수 있는지, 후보를 한 판에 다 두드린다.
+
+    (나) 2026-09-15 지시: "찾아보시고 정 안되면 저한테 알려주세요."
+
+    폴리곤은 이미 있다 (국가·일반·첨단 9 + 농공 147). 없는 것은 **지정일
+    하나**뿐인데, 사건 연구는 날짜가 있어야 전후를 가르므로 그것 하나
+    때문에 인자가 통째로 안 선다.
+
+    번호를 하나씩 던지면 워크플로 대기열이 하나뿐이라 후보마다 한 판씩
+    든다. 그래서 **한 판에 다 두드리고 표로 답한다** — 어느 번호가
+    지정일을 주는가, 아니면 아무도 안 주는가.
+
+    죽은 번호·빈 화면·권한 거절을 **모두 결과로 적는다.** 하나가 죽어도
+    다음으로 넘어간다 — 중간에 멈추면 뒤의 것을 영영 못 본다.
+    """
+    from .collect import indicators as ind
+    from .collect.h3_files import ZONE_COLS, _pick
+
+    ids = [x.strip() for x in str(args.ids).split(",") if x.strip()]
+    print(f"산업단지 지정일 — 후보 {len(ids)}개를 한 판에 두드립니다")
+    print(f"  찾는 칸: 지정일 {ZONE_COLS['designated_date'][:6]}")
+    print(f"  같이 보는 칸: 이름 · 소재지 · 면적 · 좌표\n")
+
+    table = []
+    for did in ids:
+        row = {"번호": did, "형식": "", "제목": "", "지정일": "", "소재지": "",
+               "행": "", "말": ""}
+        got = None
+        for kind in ("fileData", "standard", "openapi"):
+            d = ind.detail(did, kind, timeout=int(args.timeout))
+            if d.get("error"):
+                continue
+            if d.get("downloads") or d.get("endpoints") or d.get("operations"):
+                got, row["형식"] = d, kind
+                break
+            got = got or d
+        if got is None:
+            row["말"] = "상세 화면을 못 읽었습니다"
+            table.append(row); print(f"  ✗ {did}  {row['말']}"); continue
+        row["제목"] = str(got.get("title", ""))[:50]
+        print(f"  ── {did} [{row['형식'] or '?'}] {row['제목']}")
+        if got.get("uddis"):
+            print(f"     uddi: {got['uddis'][:2]}")
+        if got.get("endpoints"):
+            for e in got["endpoints"][:3]:
+                print(f"     주소: {e[:110]}")
+
+        if got.get("downloads"):
+            try:
+                raw, ext, _ = ind.fetch_portal_dataset(did, timeout=int(args.timeout))
+            except Exception as exc:                  # noqa: BLE001
+                row["말"] = f"내려받기 실패: {str(exc)[:80]}"
+                table.append(row); print(f"     ✗ {row['말']}"); continue
+            out = ROOT / "data" / "raw" / f"ind_{did}.{ext}"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(raw)
+            print(f"     받음 {len(raw):,}바이트 · {ext}")
+            if ext == "zip":
+                import zipfile                        # noqa: PLC0415
+                with zipfile.ZipFile(out) as z:
+                    tabs = [n for n in z.namelist()
+                            if n.lower().endswith((".csv", ".xlsx", ".xls"))]
+                    print(f"     zip 안: {z.namelist()[:8]}")
+                    if len(tabs) == 1:
+                        out = out.with_suffix("." + tabs[0].rsplit(".", 1)[-1].lower())
+                        out.write_bytes(z.read(tabs[0]))
+            if out.suffix.lower() not in (".csv", ".xlsx", ".xls"):
+                row["말"] = f"표가 아닙니다 ({out.suffix})"
+                table.append(row); continue
+            try:
+                df = ind.read_any_table(out)
+            except Exception as exc:                  # noqa: BLE001
+                row["말"] = f"표를 못 읽습니다: {str(exc)[:70]}"
+                table.append(row); print(f"     ✗ {row['말']}"); continue
+            row["행"] = f"{len(df):,}"
+            print(f"     {len(df):,}행 · 열 {len(df.columns)}: {list(df.columns)[:18]}")
+            row["지정일"] = _pick(df, ZONE_COLS["designated_date"]) or ""
+            row["소재지"] = _pick(df, ZONE_COLS["address"]) or ""
+            nm = _pick(df, ZONE_COLS["name"]) or ""
+            print(f"     지정일 {row['지정일'] or '—'} · 소재지"
+                  f" {row['소재지'] or '—'} · 이름 {nm or '—'}")
+            if row["지정일"]:
+                # **찾았으면 실제 값을 본다.** 칸 이름만 맞고 속이 비어 있는
+                # 표가 흔하다 — 이름으로 '있다' 고 적으면 그것이 거짓이다.
+                vals = df[row["지정일"]].dropna().astype(str)
+                vals = vals[vals.str.strip() != ""]
+                print(f"     지정일 채워진 행 {len(vals):,}/{len(df):,}"
+                      f" · 보기 {list(vals.head(3))}")
+                if len(vals) == 0:
+                    row["지정일"] = ""
+                    row["말"] = "칸은 있는데 **속이 비었습니다**"
+        else:
+            row["말"] = ("내려받기 링크 없음"
+                         + (" · API 주소는 있음" if got.get("endpoints") else ""))
+            print(f"     {row['말']}")
+            if not got.get("endpoints"):
+                print(f"     화면 앞부분: {str(got.get('_raw_head', ''))[:180]}")
+        table.append(row)
+
+    print("\n── 한눈에 ──")
+    print(f"    {'번호':<10s} {'형식':<9s} {'행':>8s} {'지정일 칸':<14s}"
+          f" {'소재지 칸':<12s} 말")
+    for r in table:
+        print(f"    {r['번호']:<10s} {r['형식']:<9s} {r['행']:>8s}"
+              f" {(r['지정일'] or '—'):<14s} {(r['소재지'] or '—'):<12s} {r['말']}")
+
+    win = [r for r in table if r["지정일"]]
+    if win:
+        print(f"\n  ▶ 지정일을 주는 곳: {', '.join(r['번호'] for r in win)}")
+        print("    → load-h3 로 접어 zone_event 에 넣고, e_name 으로 폴리곤에 잇습니다")
+    else:
+        print("\n  ▶ **후보 어디에도 지정일이 없습니다.**")
+        print("    포털 길은 여기까지입니다. 남은 길은 사람 손이 필요합니다:")
+        print("      · 한국산업단지공단 팩토리온(kicox.or.kr) → 통계 → 산업단지현황 xlsx")
+        print("      · 국토부 산업입지정보시스템(industryland.or.kr) 단지별 고시 이력")
+        print("      · 관보/시도 고시문에서 지정고시일 (건별 수작업)")
+        print("    셋 다 로그인·수작업이라 우리가 러너에서 못 받습니다.")
+
+    path = PROCESSED / "industrial_probe.json"
+    path.write_text(json.dumps(table, ensure_ascii=False, indent=1, default=str),
+                    encoding="utf-8")
+    print(f"\n→ {path}")
+
+
 def cmd_geocode_zones(args):
     """zone_event 에서 좌표 없는 사건을 주소로 지오코딩한다 (브이월드).
 
@@ -4643,6 +4768,13 @@ def main(argv=None):
     p.add_argument("--search", default="",
                    help="번호가 죽었을 때 이 말로 포털을 찾아 후보를 보인다")
     p.set_defaults(func=cmd_portal_file)
+
+    p = sub.add_parser("industrial-probe",
+                       help="산업단지 지정일 — 포털 후보를 한 판에 다 두드린다")
+    p.add_argument("--ids", default="3041272,15015588,15100060,3042071,15085901,15041930",
+                   help="데이터셋 번호들 (쉼표)")
+    p.add_argument("--timeout", default="90")
+    p.set_defaults(func=cmd_industrial_probe)
 
     p = sub.add_parser("geocode-zones", help="zone_event 의 좌표 없는 사건을 주소로 지오코딩")
     p.add_argument("--limit", default="2000")

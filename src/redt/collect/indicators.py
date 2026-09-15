@@ -148,9 +148,15 @@ def detail(dataset_id: str, kind: str = "openapi", timeout: int = 40) -> dict:
     # 2차(run 34805702626)에서 운영 이름은 잡혔는데 주소는 하나도 안 잡혔다.
     # 화면이 'http://' 없이 쓰거나 입력칸(value=)에 넣어 둔 것이다. 스킴을
     # 선택으로 두고, 못 잡으면 주소가 있을 법한 낱말 둘레를 그대로 남긴다.
+    # **콜론을 넣는다.** 표준데이터 주소는 `api.odcloud.kr/api/15100060/v1/
+    # uddi:1e3e...` 꼴인데, 글자 묶음에 ':' 가 빠져 있어 uddi 앞에서 잘렸다.
+    # 잘린 주소로는 부를 수 없고, 그러면 '표준데이터는 못 받는다' 는 틀린
+    # 결론이 난다 — 실은 주소를 못 읽은 것이다.
     out["endpoints"] = sorted(set(re.findall(
-        r"(?:https?://)?(?:apis\.data\.go\.kr|api\.odcloud\.kr|api\.data\.go\.kr)/[A-Za-z0-9_./\-{}]+",
+        r"(?:https?://)?(?:apis\.data\.go\.kr|api\.odcloud\.kr|api\.data\.go\.kr)"
+        r"/[A-Za-z0-9_./\-{}:]+",
         page)))[:20]
+    out["uddis"] = sorted(set(re.findall(r"uddi:[0-9a-fA-F\-]{8,}", page)))[:10]
     # 3차에서 '활용신청' 발췌가 앞을 다 차지해 주소 발췌가 밀렸다. 주소가 먼저다.
     out["excerpts"] = _around(page, ("apis.data.go.kr", "End Point", "endPoint", "요청주소",
                                      "서비스URL", "fn_fileDataDown"), width=320, limit=8)
