@@ -1578,7 +1578,7 @@ def cmd_road_step(args):
         rows = con.execute(f"""
             SELECT t.price_per_m2, t.area_m2, t.deal_year, t.sigungu_cd,
                    t.sigungu_cd || '|' || coalesce(t.umd, '') AS umd_cd,
-                   pc.jimok, pc.land_use, pc.road_side
+                   pc.jimok, pc.land_use, pc.road_side, pc.stdr_year
             FROM trade t
             JOIN trade_parcel tp ON tp.trade_id = t.trade_id
             JOIN parcel pc ON pc.pnu = tp.pnu
@@ -1629,6 +1629,40 @@ def cmd_road_step(args):
     for _fe, (label, _r, _t, okx, whyx) in fits.items():
         print(f"    [{label}] {'▶ ' + whyx if okx else '산출 보류 — ' + whyx}")
 
+    # ── 조사 시점이 거래 시점과 얼마나 떨어져 있나 ────────────────────
+    #
+    # **필지 특성은 한 번 조사한 값이다.** parcel.road_side 에 붙은
+    # stdr_year 가 그 조사 연도인데, 2015년 거래에 2024년 도로조건을
+    # 붙이면 그 사이에 난 길이 '처음부터 있던 길' 이 된다. 계단을 재려는
+    # 우리에게는 그만큼 흐려지는 쪽으로만 틀어진다.
+    #
+    # 그러니 먼저 **얼마나 떨어져 있는지 세고**, 가까운 건만으로 다시 잰다.
+    if "stdr_year" in df.columns and df["stdr_year"].notna().any():
+        gap = (pd.to_numeric(df["stdr_year"], errors="coerce")
+               - pd.to_numeric(df["deal_year"], errors="coerce")).dropna()
+        yrs = sorted(set(pd.to_numeric(df["stdr_year"], errors="coerce").dropna().astype(int)))
+        print(f"\n  필지특성 조사연도 {yrs[:6]}{' …' if len(yrs) > 6 else ''}"
+              f" · 거래연도와의 차이 중앙 {gap.median():.0f}년"
+              f" (0~2년 안 {int((gap.abs() <= 2).sum()):,} / {len(gap):,}건)")
+        near_df = df[(pd.to_numeric(df["stdr_year"], errors="coerce")
+                      - pd.to_numeric(df["deal_year"], errors="coerce")).abs() <= 2]
+        if len(near_df) >= 5000 and near_df["grade"].nunique() >= 3:
+            nt = RS.ladder(near_df, RS.fit(near_df, fe="umd"))
+            okn, whyn = RS.verdict(near_df, nt)
+            print(f"  조사연도가 거래연도와 2년 안인 {len(near_df):,}건만 (읍·면·동 안):")
+            print("    " + " · ".join(
+                f"{r['등급']} {float(r['배율']):.3f}" for _i, r in nt.iterrows()))
+            print(f"    {'▶ ' + whyn if okn else '산출 보류 — ' + whyn}")
+            out_near = {"n": int(len(near_df)), "ok": bool(okn), "why": whyn,
+                        "rows": nt.to_dict("records")}
+        else:
+            print(f"  조사연도가 가까운 건이 {len(near_df):,}건뿐이라 따로 안 셉니다")
+            out_near = {"n": int(len(near_df)), "ok": False, "why": "표본 부족"}
+    else:
+        print("\n  ⚠ 필지특성 조사연도(stdr_year)가 없습니다 —"
+              " 거래 시점과 얼마나 떨어진 조사인지 못 가릅니다")
+        out_near = None
+
     print(f"\n── 우리 실거래로 잰 사다리 (읍·면·동 안 · 기준 맹지 = 1.00) ──")
     print(f"    {'등급':<9s} {'n':>8s} {'배율':>6s} {'95% 구간':>15s} {'p':>7s}")
     for _i, r in tab.iterrows():
@@ -1662,7 +1696,7 @@ def cmd_road_step(args):
     path.write_text(json.dumps(
         {"since": int(args.since), "min_price": int(args.min_price), "zone": zone,
          "n": int(len(df)), "dropped_unknown": int(drop),
-         "fe": "umd",
+         "fe": "umd", "near_survey": out_near,
          "ladder_by_fe": {fe: {"label": v[0], "ok": bool(v[3]), "why": v[4],
                                "rows": v[2].to_dict("records")}
                           for fe, v in fits.items()},
