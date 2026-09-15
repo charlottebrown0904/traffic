@@ -592,6 +592,15 @@ jobs:
             # 덮개 표가 길어 꼬리로는 잘린다 — 상관 표부터 통째로 보인다.
             head -n 2 /tmp/stdland.log
             awk '/땅값과의 상관/,0' /tmp/stdland.log | head -n 80
+          elif grep -q "누적 배율이 시군구마다" /tmp/stdland.log; then
+            # 세 땅 추이 — 흩어짐 표가 길다. **누적 배율부터** 보인다.
+            head -n 3 /tmp/stdland.log
+            awk '/누적 배율이 시군구마다/,0' /tmp/stdland.log | head -n 80
+          elif grep -q "한눈에" /tmp/stdland.log; then
+            head -n 3 /tmp/stdland.log
+            awk '/한눈에/,0' /tmp/stdland.log | head -n 40
+          elif grep -q "담긴 것" /tmp/stdland.log; then
+            awk '/잎 /,0' /tmp/stdland.log | head -n 60
           elif grep -q "창 길이마다" /tmp/stdland.log; then
             # 기준점 표가 길다 — **창 길이마다** 접은 표부터 보인다.
             # 거기에 이득% 가 있고, 그것이 결론이다.
