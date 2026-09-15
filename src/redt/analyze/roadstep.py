@@ -71,30 +71,43 @@ def prepare(trades: pd.DataFrame) -> pd.DataFrame:
     df["ln_price"] = pd.to_numeric(df["price_per_m2"]).map(math.log)
     df["ln_area"] = pd.to_numeric(df["area_m2"]).map(math.log)
     df["corner"] = df["road_side"].map(is_corner).fillna(0).astype(int)
-    for col in ("jimok", "land_use", "sigungu_cd"):
+    for col in ("jimok", "land_use", "sigungu_cd", "umd_cd"):
         if col in df:
             df[col] = df[col].fillna("NA").replace("", "NA").astype(str)
     return df
 
 
-def formula(df: pd.DataFrame) -> str:
+# 어느 울타리 안에서 견줄 것인가.
+#
+# **이것이 사다리의 크기를 정한다.** 감정평가의 격차율은 *같은 인근지역*
+# 안에서 표준지와 견준 값이다 (한 리, 길 하나 차이). 우리가 시군구
+# 안에서 재면 울타리가 훨씬 넓어 '길이 좋아서' 와 '길 좋은 동네라서' 가
+# 섞인다 — 좋은 길은 좋은 동네에 몰려 있으므로 그 섞임은 한쪽으로만
+# 기운다. 읍·면·동이 인근지역에 더 가깝다.
+FE_COLS = {"sigungu": ["sigungu_cd"], "umd": ["umd_cd"]}
+
+
+def formula(df: pd.DataFrame, fe: str = "sigungu") -> str:
     terms = [f"C(grade, Treatment(reference={BASE_GRADE}))", "ln_area"]
     if "corner" in df and df["corner"].nunique() > 1:
         terms.append("corner")
-    for col in ("jimok", "land_use", "sigungu_cd", "deal_year"):
+    cols = list(FE_COLS.get(fe, FE_COLS["sigungu"]))
+    for col in ["jimok", "land_use"] + cols + ["deal_year"]:
         if col in df and df[col].nunique() > 1:
             terms.append(f"C({col})")
     return "ln_price ~ " + " + ".join(terms)
 
 
-def fit(df: pd.DataFrame, fit_max: int = FIT_MAX, seed: int = 20260915):
-    """적합. 표준오차는 시군구로 묶는다 (같은 군의 필지는 서로 닮는다)."""
+def fit(df: pd.DataFrame, fit_max: int = FIT_MAX, seed: int = 20260915,
+        fe: str = "sigungu"):
+    """적합. 표준오차는 **시군구로 묶는다** — 울타리를 읍·면·동으로 좁혀도
+    오차는 시군구로 묶는다. 같은 군의 필지는 동네가 달라도 서로 닮는다."""
     import statsmodels.formula.api as smf              # noqa: PLC0415
     if df.empty or df["grade"].nunique() < 2:
         return None
     use = df if len(df) <= fit_max else df.sample(fit_max, random_state=seed)
     groups = use["sigungu_cd"] if "sigungu_cd" in use else pd.Series("?", index=use.index)
-    return smf.ols(formula(use), data=use).fit(
+    return smf.ols(formula(use, fe), data=use).fit(
         cov_type="cluster", cov_kwds={"groups": groups})
 
 

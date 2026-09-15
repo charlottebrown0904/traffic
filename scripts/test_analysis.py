@@ -2674,6 +2674,14 @@ check(abs(float(_row("소로")["평가서 원장"]) - 1.375) < 0.002,
 check(_RS.verdict(_pd.DataFrame(), _pd.DataFrame())[0] is False,
       "빈 표를 줘도 터지지 않는다")
 
+# 울타리를 바꿀 수 있어야 한다 — 감정평가의 격차율은 *같은 인근지역* 안에서
+# 잰 값이라 시군구 울타리로는 '길 좋은 동네라서' 가 섞여 든다.
+check("C(umd_cd)" in _RS.formula(_dfr.assign(umd_cd=_dfr["sigungu_cd"] + "|동"), "umd")
+      and "C(sigungu_cd)" not in _RS.formula(
+          _dfr.assign(umd_cd=_dfr["sigungu_cd"] + "|동"), "umd"),
+      "울타리를 읍·면·동으로 좁힐 수 있다")
+check("C(sigungu_cd)" in _RS.formula(_dfr, "sigungu"), "기본 울타리는 시·군·구다")
+
 print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")
 from redt.collect import indicators as _IND               # noqa: E402
 

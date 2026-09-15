@@ -1576,6 +1576,7 @@ def cmd_road_step(args):
     with db.connect(read_only=True) as con:
         rows = con.execute(f"""
             SELECT t.price_per_m2, t.area_m2, t.deal_year, t.sigungu_cd,
+                   t.sigungu_cd || '|' || coalesce(t.umd, '') AS umd_cd,
                    pc.jimok, pc.land_use, pc.road_side
             FROM trade t
             JOIN trade_parcel tp ON tp.trade_id = t.trade_id
@@ -1604,10 +1605,30 @@ def cmd_road_step(args):
     print("  등급별 건수: " + " · ".join(
         f"{RS.GRADE_NAME[g]} {n:,}" for g, n in sorted(df['grade'].value_counts().items())))
 
-    res = RS.fit(df)
-    tab = RS.ladder(df, res)
-    ok, why = RS.verdict(df, tab)
-    print(f"\n── 우리 실거래로 잰 사다리 (기준 맹지 = 1.00) ──")
+    # **울타리를 둘 다 잰다.** 감정평가의 격차율은 *같은 인근지역* 안에서
+    # 표준지와 견준 값이다. 시군구는 그보다 훨씬 넓어 '길이 좋아서' 와
+    # '길 좋은 동네라서' 가 섞이고, 좋은 길은 좋은 동네에 몰려 있으므로
+    # 그 섞임은 한쪽으로만 기운다. 어느 쪽이 맞다고 고르지 않고 둘을
+    # 나란히 놓는다 — 차이 자체가 그 섞임의 크기다.
+    fes = [("읍·면·동", "umd"), ("시·군·구", "sigungu")]
+    fits = {}
+    for label, fe in fes:
+        r = RS.fit(df, fe=fe)
+        t = RS.ladder(df, r)
+        fits[fe] = (label, r, t) + RS.verdict(df, t)
+    res, tab = fits["umd"][1], fits["umd"][2]
+    ok, why = fits["umd"][3], fits["umd"][4]
+    print("\n── 울타리를 바꿔 가며 (기준 맹지 = 1.00) ──")
+    print(f"    {'등급':<9s} {'읍·면·동 안':>11s} {'시·군·구 안':>11s}")
+    for _i, r0 in fits["umd"][2].iterrows():
+        other = fits["sigungu"][2]
+        hit = other[other["등급"] == r0["등급"]]
+        v2 = "—" if hit.empty else f"{float(hit.iloc[0]['배율']):.3f}"
+        print(f"    {r0['등급']:<9s} {float(r0['배율']):>11.3f} {v2:>11s}")
+    for _fe, (label, _r, _t, okx, whyx) in fits.items():
+        print(f"    [{label}] {'▶ ' + whyx if okx else '산출 보류 — ' + whyx}")
+
+    print(f"\n── 우리 실거래로 잰 사다리 (읍·면·동 안 · 기준 맹지 = 1.00) ──")
     print(f"    {'등급':<9s} {'n':>8s} {'배율':>6s} {'95% 구간':>15s} {'p':>7s}")
     for _i, r in tab.iterrows():
         thin = " ← 얇음" if r["얇음"] else ""
@@ -1640,6 +1661,10 @@ def cmd_road_step(args):
     path.write_text(json.dumps(
         {"since": int(args.since), "min_price": int(args.min_price), "zone": zone,
          "n": int(len(df)), "dropped_unknown": int(drop),
+         "fe": "umd",
+         "ladder_by_fe": {fe: {"label": v[0], "ok": bool(v[3]), "why": v[4],
+                               "rows": v[2].to_dict("records")}
+                          for fe, v in fits.items()},
          "ladder": tab.to_dict("records"), "compare": cmp.to_dict("records"),
          "refs": refs, "car_step": step, "ok": bool(ok), "why": why},
         ensure_ascii=False, indent=1, default=str), encoding="utf-8")
