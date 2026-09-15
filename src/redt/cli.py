@@ -1492,7 +1492,9 @@ def cmd_factor_cells(args):
         es_fit, cols = FA.event_study(pan, key)
         prof = FA.profile(es_fit, cols, pan, key)
         ok, why = FA.verdict(es_fit, cols, prof)
-        prof = FA.remaining(prof) if ok else prof.assign(**{"남은 몫": None})
+        post = FA.post_effect(es_fit, cols, prof)
+        prof = (FA.remaining(prof, post.get("level")) if ok
+                else prof.assign(**{"남은 몫": None}))
         if prof.empty:
             continue
         print(f"\n── {name} — 사건에서 몇 해째인가 (기준 −1년) ──")
@@ -1541,7 +1543,9 @@ def cmd_factor_cells(args):
             fz, cz = FA.event_study(pan_z, "ic")
             pz = FA.profile(fz, cz, pan_z, "ic")
             okz, whyz = FA.verdict(fz, cz, pz)
-            pz = FA.remaining(pz) if okz else pz.assign(**{"남은 몫": None})
+            postz = FA.post_effect(fz, cz, pz)
+            pz = (FA.remaining(pz, postz.get("level")) if okz
+                  else pz.assign(**{"남은 몫": None}))
             print(f"\n  [{zg}] 칸 {len(pan_z):,} · 동네 {pan_z['umd_cd'].nunique():,}"
                   f" · 거래 {int(pan_z['n'].sum()):,}")
             line = " ".join(f"{int(r['상대연도']):+d}:{float(r['배율']):.2f}"

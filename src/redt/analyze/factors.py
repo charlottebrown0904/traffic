@@ -356,6 +356,39 @@ def profile(fit, cols, df: pd.DataFrame, key: str) -> pd.DataFrame:
     return out
 
 
+def post_effect(fit, cols, prof: pd.DataFrame) -> dict:
+    """사건 **뒤 전체**가 위로 옮겨졌는가.
+
+    처음에는 '가장 높은 칸' 하나만 봤다. 그것으로는 녹지 같은 자리를
+    놓친다 — +1년부터 +8년까지 여덟 칸이 모두 1.07~1.12 인데 칸마다의
+    p 는 0.12 다. 한 칸씩 보면 어느 것도 안 서지만, **여덟이 함께 위에
+    있는 것**은 잡음으로 설명하기 어렵다.
+    그리고 '왜 하필 r=2 인가' 에 답할 수 없다 — 가장 높은 칸을 고르는 것은
+    본 뒤에 고르는 것이라 p 가 이미 편향돼 있다.
+
+    그래서 사건 뒤 계수가 **모두 0** 이라는 가설을 F 로 한 번에 보고,
+    그 계수들의 (동네 수로 가중한) 평균을 수준 이동으로 쓴다. 이벤트
+    스터디의 표준 요약이다.
+    """
+    if fit is None or not cols or prof.empty:
+        return {"p": None, "level": None, "n_cells": 0}
+    post = [(v, n) for v, n in cols if v >= 0 and n in fit.params]
+    thick = set(prof.loc[~prof["얇음"], "상대연도"].tolist())
+    post = [(v, n) for v, n in post if v in thick]
+    if not post:
+        return {"p": None, "level": None, "n_cells": 0}
+    try:
+        pv = float(fit.f_test(" = 0, ".join(n for _v, n in post) + " = 0").pvalue)
+    except Exception:                                   # noqa: BLE001
+        pv = float("nan")
+    # 두꺼운 칸일수록 더 센다 — 동네 30곳짜리와 700곳짜리를 같이 셀 수 없다.
+    w = {int(r["상대연도"]): float(r["동네"]) for _i, r in prof.iterrows()}
+    num = sum(float(fit.params[n]) * w.get(v, 1.0) for v, n in post)
+    den = sum(w.get(v, 1.0) for v, _n in post) or 1.0
+    return {"p": None if pv != pv else round(pv, 4),
+            "level": round(math.exp(num / den), 3), "n_cells": len(post)}
+
+
 def verdict(fit, cols, prof: pd.DataFrame) -> tuple[bool, str]:
     """이 곡선으로 '남은 몫' 을 낼 수 있는가. **못 내는 쪽이 기본이다.**
 
@@ -385,32 +418,45 @@ def verdict(fit, cols, prof: pd.DataFrame) -> tuple[bool, str]:
     after = prof[(prof["상대연도"] >= 0) & (~prof["얇음"])]
     if after.empty:
         return False, "사건 뒤 칸이 다 얇습니다"
-    top = after.loc[after["배율"].idxmax()]
-    tp = top["p"]
-    if tp is None or (isinstance(tp, float) and tp != tp) or float(tp) >= 0.05:
-        return False, (f"사건 뒤 고원이 안 섭니다 (가장 높은 칸 r={int(top['상대연도'])}"
-                       f" ×{top['배율']}, p={tp}) — 잡음의 최댓값을 고원이라 부를 수 없습니다")
-    if float(top["배율"]) <= 1.0:
-        return False, f"사건 뒤에 값이 안 올랐습니다 (가장 높은 칸이 ×{top['배율']})"
-    return True, f"고원 r={int(top['상대연도'])} ×{top['배율']} (p={tp})"
+    # **사건 뒤 전체를 한 번에 본다** (post_effect 주석 참고). 가장 높은
+    # 칸 하나를 고르면 '왜 하필 그 칸인가' 에 답할 수 없고, 본 뒤에 고른
+    # 것이라 p 가 이미 편향돼 있다.
+    post = post_effect(fit, cols, prof)
+    if post["p"] is None:
+        return False, "사건 뒤 계수를 못 세웠습니다"
+    if float(post["p"]) >= 0.05:
+        return False, (f"사건 뒤가 통째로 0 과 안 갈립니다"
+                       f" (칸 {post['n_cells']}개 묶어 p={post['p']}, 평균 ×{post['level']})")
+    if float(post["level"]) <= 1.0:
+        return False, f"사건 뒤에 값이 안 올랐습니다 (평균 ×{post['level']})"
+    return True, (f"사건 뒤 평균 ×{post['level']}"
+                  f" (칸 {post['n_cells']}개 묶어 p={post['p']})")
 
 
-def remaining(prof: pd.DataFrame) -> pd.DataFrame:
-    """남은 몫 = exp(고원 − 지금). **고원은 두꺼운 칸에서만 고른다.**
+def remaining(prof: pd.DataFrame, level: float | None = None) -> pd.DataFrame:
+    """남은 몫 = 사건 뒤 수준 ÷ 지금.
 
-    얇은 칸이 우연히 높으면 그것이 고원이 되어 남은 몫이 부풀려진다.
-    그리고 남은 몫은 1.00 아래로 안 내려간다 — '이미 다 반영됐다' 까지가
-    우리가 말할 수 있는 것이고, 그 아래는 사건이 값을 깎았다는 다른 주장이다.
+    `level` 은 post_effect 가 낸 **사건 뒤 평균**이다 (안 주면 두꺼운 칸의
+    최댓값으로 물러난다 — 옛 방식). 평균을 쓰는 까닭은 post_effect 주석에
+    있다: 가장 높은 칸 하나는 본 뒤에 고른 것이라 부풀려져 있다.
+
+    읽는 법이 이것으로 분명해진다. 사건이 **아직 안 온** 필지(r<0, 지정은
+    났는데 개통 전)의 남은 몫이 곧 그 사건의 값이고, 이미 온 필지는
+    1.00 에 가깝다 — 그 몫은 벌써 값에 들어가 있다.
+
+    남은 몫은 1.00 아래로 안 내려간다. '이미 다 반영됐다' 까지가 우리가
+    말할 수 있는 것이고, 그 아래는 사건이 값을 깎았다는 다른 주장이다.
     """
     if prof.empty:
         return prof
     p = prof.copy()
     after = p[(p["상대연도"] >= 0) & (~p["얇음"])]
-    if after.empty:
-        p["남은 몫"] = None
-        return p
-    top = float(after["배율"].max())
-    p["남은 몫"] = [None if bool(t) else round(max(top / float(b), 1.0), 3)
+    if level is None:
+        if after.empty:
+            p["남은 몫"] = None
+            return p
+        level = float(after["배율"].max())
+    p["남은 몫"] = [None if bool(t) else round(max(float(level) / float(b), 1.0), 3)
                     for b, t in zip(p["배율"], p["얇음"])]
     return p
 

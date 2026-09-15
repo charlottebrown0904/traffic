@@ -2626,8 +2626,50 @@ for _u in range(240):
 _pan3 = _FA.mark(_FA.panel(_pd.DataFrame(_rows3)), {"ic": _pd.DataFrame(_ics3)})
 _fit3, _cols3 = _FA.event_study(_pan3, "ic")
 _ok3, _why3 = _FA.verdict(_fit3, _cols3, _FA.profile(_fit3, _cols3, _pan3, "ic"))
-check(not _ok3 and "고원" in _why3,
+check(not _ok3 and "0 과 안 갈립니다" in _why3,
       f"사건이 값을 안 움직이면 문이 닫힌다 ({_why3})")
+
+# **가장 높은 칸 하나로 문을 여는 것을 그만둔 까닭.**
+#
+# 힘을 더 얻으려는 것이 아니다 — 계수들이 서로 닮아 있어 묶는다고 더
+# 세지지 않는다. 그만둔 까닭은 둘이다.
+#   ① '왜 하필 그 칸인가' 에 답할 수 없다. 본 뒤에 가장 높은 것을
+#      고르는 것이라 그 p 는 이미 편향돼 있다.
+#   ② 그 최댓값을 남은 몫의 분자로 쓰면 **잡음만큼 부풀려진다.**
+# 그래서 사건 뒤 계수가 모두 0 이라는 가설을 한 번에 보고, 남은 몫에는
+# 그 계수들의 평균을 쓴다.
+_rows4, _ics4 = [], []
+_rng4 = _np.random.default_rng(23)
+for _u in range(240):
+    _lat, _lon = 36.0 + 0.30 * (_u // 16), 127.0 + 0.30 * (_u % 16)
+    _treated = _u % 2 == 0
+    if _treated:
+        _ics4.append({"lat": _lat, "lon": _lon, "year": 2015})
+    for _y in range(2008, 2026):
+        _eff = 0.05 if (_treated and _y >= 2015) else 0.0
+        for _k in range(4):
+            _rows4.append({"umd_cd": f"Y{_u:03d}", "deal_year": _y,
+                           "price_per_m2": float(_np.exp(11 + _eff + _rng4.normal(0, .22))),
+                           "lat": _lat, "lon": _lon, "sigungu_cd": f"Z{_u // 8:02d}"})
+_pan4 = _FA.mark(_FA.panel(_pd.DataFrame(_rows4)), {"ic": _pd.DataFrame(_ics4)})
+_fit4, _cols4 = _FA.event_study(_pan4, "ic")
+_pr4 = _FA.profile(_fit4, _cols4, _pan4, "ic")
+_post4 = _FA.post_effect(_fit4, _cols4, _pr4)
+_ok4, _why4 = _FA.verdict(_fit4, _cols4, _pr4)
+check(_ok4 and _post4["p"] is not None and _post4["p"] < 0.05,
+      f"사건 뒤를 통째로 보고 문을 연다 ({_why4})")
+check(abs(_post4["level"] - 1.05) < 0.03,
+      f"사건 뒤 평균을 되찾는다 ({_post4['level']} vs 1.05)")
+# 최댓값을 쓰면 잡음만큼 부풀려진다 — 같은 표에서 둘을 견준다.
+_by_avg = _FA.remaining(_pr4, _post4["level"])
+_by_max = _FA.remaining(_pr4)
+_pick = lambda t: float(t.loc[(t["상대연도"] == -3), "남은 몫"].iloc[0])
+check(_pick(_by_avg) < _pick(_by_max),
+      f"평균을 쓰면 최댓값보다 덜 부풀린다 (평균 {_pick(_by_avg)} < 최댓값 {_pick(_by_max)})")
+# 남은 몫은 그 평균을 기준으로 — 사건 전 칸이 곧 '앞으로 오를 몫' 이다.
+_pre = _by_avg[(_by_avg["상대연도"] < 0) & (~_by_avg["얇음"])]["남은 몫"].astype(float)
+check(len(_pre) and abs(_pre.median() - 1.05) < 0.04,
+      f"사건 전 필지의 남은 몫이 곧 그 사건의 값이다 ({_pre.median()})")
 check(_FA.verdict(None, [], _pd.DataFrame())[0] is False,
       "계수가 없으면 당연히 닫힌다")
 
