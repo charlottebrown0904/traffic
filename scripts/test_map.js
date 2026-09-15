@@ -3829,6 +3829,34 @@ async function stubCommon(pg) {
     check('저울 — √ 는 건수를 제곱근으로 (거래 √30)',
           Math.abs(wts['선례3배√'][1] - Math.sqrt(30)) < 1e-9,
           JSON.stringify(wts['선례3배√']));
+    /* **섞은 결과를 본다.** 저울만 따로 재는 것으로는 못 잡는 버그가
+       화면까지 나갔다 (2026-09-15): `have.map(otherWeightOf)` 가 둘째
+       갈래에 자리번호 1 을 저울 이름으로 넘겨 거래사례만 '현행' 으로
+       떨어졌다. 글은 '평가선례 3배 가중' 인데 값은 1.33(현행)이었다.
+       캡처의 그 칸으로 값을 못박는다. */
+    const blend = await page.evaluate(() => {
+      const L = { source: '평가선례', median: 2.36, n: 4,
+                  level: '같은 시·도 · 용도지역군 · 지목군' };
+      const T = { source: '거래사례', median: 1.31, n: 278, level: '시군구' };
+      const out = { now: window.__blendOther([L, T]) };
+      for (const name of ['현행', '선례3배√']) out[name] = window.__blendOther([L, T], name);
+      return out;
+    });
+    check('섞은 값이 지금 저울의 값이다 (1.61 · 현행이면 1.33)',
+          blend.now.factor === blend['선례3배√'].factor
+          && blend.now.factor !== blend['현행'].factor,
+          `지금 ${blend.now.factor} · 선례3배√ ${blend['선례3배√'].factor}`
+          + ` · 현행 ${blend['현행'].factor}`);
+    check('캡처의 칸이 1.61 이다', Math.abs(blend.now.factor - 1.61) < 0.02,
+          `${blend.now.factor} · 무게 ${JSON.stringify(blend.now.weights)}`);
+    check('두 갈래가 같은 저울을 쓴다 (자리번호가 저울 이름으로 안 샌다)',
+          Math.abs(blend.now.weights[1] - Math.sqrt(30)) < 1e-9,
+          JSON.stringify(blend.now.weights));
+    check('적은 말과 낸 값이 같은 저울이다',
+          /평가선례 3배 가중/.test(blend.now.basis)
+          && /건수 가중/.test(blend['현행'].basis),
+          blend.now.basis);
+
     // 지금 쓰는 저울 이름이 파이썬 쪽과 같은가 — 글자를 직접 본다.
     {
       const py = fs.readFileSync(path.join(ROOT, 'src', 'redt', 'valuation.py'), 'utf8');

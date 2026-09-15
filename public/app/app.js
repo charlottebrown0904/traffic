@@ -6135,6 +6135,33 @@ function otherWeightOf(o, prof) {
 
 /* 섞는 법을 글로. '건수 가중' 이라고만 적으면 4건이 278건을 어떻게 이겼는지
    읽는 사람이 알 길이 없다 (valuation._other_basis 와 같은 말). */
+/* 두 갈래를 섞는다 (valuation.decide_other 와 같은 규칙).
+ *
+ * **따로 떼어 둔 까닭.** 예전에는 이 셈이 otherFactorOf 안에 묻혀 있어
+ * 검사가 저울(otherWeightOf)만 따로 불러 볼 수 있었고, 정작 **섞은 결과**는
+ * 아무도 안 봤다. 그래서 2026-09-15 에 아래 버그가 화면까지 나갔다:
+ *
+ *     const w = have.map(otherWeightOf);      // ← 틀림
+ *
+ * Array.map 은 (값, 자리, 배열) 셋을 넘긴다. 그래서 둘째 갈래에는
+ * prof=1 이 들어가 OTHER_WEIGHTS[1] → undefined → '현행' 으로 떨어졌다.
+ * 첫 갈래는 prof=0 이 거짓이라 제 저울을 썼으니, **한 저울에서 두 규칙**이
+ * 섞였다. 글은 '평가선례 3배 가중' 이라 적으면서 값은 1.33(현행)이었다.
+ * 이제 이 함수를 검사가 직접 부른다. */
+function blendOther(have, prof) {
+  const w = have.map((o) => otherWeightOf(o, prof));
+  const lg = have.reduce((acc, o, i) => acc + w[i] * Math.log(o.median), 0)
+    / w.reduce((a, b) => a + b, 0);
+  const f = Math.round(Math.exp(lg) * 100) / 100;
+  const q1 = Math.min(...have.map((o) => o.q1 || f));
+  const q3 = Math.max(...have.map((o) => o.q3 || f));
+  return { factor: f, q1: Math.round(q1 * 100) / 100, q3: Math.round(q3 * 100) / 100,
+           n: have.reduce((a, o) => a + Number(o.n), 0), sources: have, weights: w,
+           basis: have.map((o) => `${o.source} ${Number(o.median).toFixed(2)} (n=${o.n})`).join(' · ')
+                  + ` → ${otherBasisWord(prof)}` };
+}
+window.__blendOther = blendOther;            // 검사가 부른다
+
 function otherBasisWord(prof) {
   const w = OTHER_WEIGHTS[prof || OTHER_WEIGHT] || OTHER_WEIGHTS['현행'];
   const led = w.src['평가선례'] || 1, trd = w.src['거래사례'] || 1;
@@ -6202,15 +6229,7 @@ function otherFactorOf(subject, std, T) {
     return { factor: o.median, q1: o.q1, q3: o.q3, n: o.n, sources: have,
              basis: `${o.source} 기준 (n=${o.n}, ${o.level})` };
   }
-  const w = have.map(otherWeightOf);
-  const lg = have.reduce((acc, o, i) => acc + w[i] * Math.log(o.median), 0) / w.reduce((a, b) => a + b, 0);
-  const f = Math.round(Math.exp(lg) * 100) / 100;
-  const q1 = Math.min(...have.map((o) => o.q1 || f));
-  const q3 = Math.max(...have.map((o) => o.q3 || f));
-  return { factor: f, q1: Math.round(q1 * 100) / 100, q3: Math.round(q3 * 100) / 100,
-           n: have.reduce((a, o) => a + Number(o.n), 0), sources: have,
-           basis: have.map((o) => `${o.source} ${Number(o.median).toFixed(2)} (n=${o.n})`).join(' · ')
-                  + ` → ${otherBasisWord()}` };
+  return blendOther(have);
 }
 window.__otherFactorOf = otherFactorOf;      // 검사(test_map.js)가 부른다
 
