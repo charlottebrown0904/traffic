@@ -2024,7 +2024,7 @@ def cmd_load_kicox(args):
                         fac_rows.append((code, year, metric, float(v)))
 
         # ── ③ 신규지정·해제 → zone_event (지정일이 있는 유일한 표) ──
-        ev = 0
+        ev, ev_miss = 0, {}
         for f in sorted(RAW.glob("kicox_parks_full_*.xlsx")):
             try:
                 nd = K.read_new_parks(f)
@@ -2040,14 +2040,19 @@ def cmd_load_kicox(args):
                 d = r.get("지정일자")
                 if pd.isna(d):
                     continue
+                # **주소 글자가 아니라 시군구코드로 넣는다.** zone_event 에는
+                # address 칸이 없고(run 127 이 여기서 죽었다), 코드로 넣어야
+                # 거래·지표와 바로 이어 붙는다.
+                code = code_map.get(key(r.get("시도", ""), r.get("시군구", "")))
+                if not code:
+                    ev_miss[f"{r.get('시도','')} {r.get('시군구','')}"] = 1
                 zid = f"kicox:{r.get('시도','')}:{str(r.get('단지명',''))[:40]}"
                 con.execute(
                     "INSERT OR REPLACE INTO zone_event"
-                    " (zone_id, name, type, designated_date, address, source)"
+                    " (zone_id, name, type, designated_date, sigungu_cd, source)"
                     " VALUES (?,?,?,?,?,?)",
                     [zid, str(r.get("단지명", ""))[:80],
-                     f"산업단지:{r.get('유형','')}", str(d)[:10],
-                     f"{r.get('시도','')} {r.get('시군구','')}".strip(),
+                     f"산업단지:{r.get('유형','')}", str(d)[:10], code,
                      "KICOX 전국산업단지현황통계 부록1"])
                 ev += 1
 
@@ -2058,6 +2063,8 @@ def cmd_load_kicox(args):
                 " (sigungu_cd, year, metric, value, source) VALUES (?,?,?,?,?)",
                 [(c, y, m, v, "KICOX·팩토리온") for c, y, m, v in rows])
         print(f"\n싣기: region_year {len(rows):,}행 · zone_event {ev}건")
+        if ev_miss:
+            print(f"  ⚠ 사건에서 시군구 코드를 못 이은 곳: {sorted(ev_miss)[:8]}")
         if park_miss or fac_miss:
             # **못 이은 곳은 조용히 빠뜨리지 않는다.** 빠지면 그 지역이 0 인
             # 줄 알게 되고, 0 과 '모름' 은 전혀 다르다.

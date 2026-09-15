@@ -3170,6 +3170,21 @@ if _nat.exists():
         check(_v["맞나"], f"국가산단 {_k} 가 공표와 맞는다"
               f" (우리 {_v['우리']:,.0f} · 공표 {_v['공표']:,.0f})")
 
+# **넣으려는 칸이 실제로 있는가.** run 127 이 zone_event.address 로 죽었다 —
+# 다른 표(rail_station)의 칸을 보고 적었다. 스키마는 물어 보면 되는 것이라
+# 러너 한 판을 버릴 일이 아니다.
+from redt import db as _db                                  # noqa: E402
+_WRITES = {
+    "zone_event": {"zone_id", "name", "type", "designated_date",
+                   "sigungu_cd", "source"},
+    "region_year": {"sigungu_cd", "year", "metric", "value", "source"},
+}
+with _db.connect(read_only=True) as _con:
+    for _t, _need in _WRITES.items():
+        _cols = {r[1] for r in _con.execute(f"PRAGMA table_info('{_t}')").fetchall()}
+        _miss = sorted(_need - _cols)
+        check(not _miss, f"{_t} 에 우리가 쓰는 칸이 다 있다 (없는 것 {_miss or '없음'})")
+
 # 밀도 — '몇 개' 를 '얼마나 빽빽한가' 로 바꾼다. 나눌 것이 없으면 **비운다.**
 _ry = _pd.DataFrame([
     {"sigungu_cd": "S1", "year": 2025, "metric": "factory_all", "value": 500.0},
