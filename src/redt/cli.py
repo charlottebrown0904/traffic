@@ -2068,9 +2068,19 @@ def cmd_load_kicox(args):
         if park_miss or fac_miss:
             # **못 이은 곳은 조용히 빠뜨리지 않는다.** 빠지면 그 지역이 0 인
             # 줄 알게 되고, 0 과 '모름' 은 전혀 다르다.
-            print("  ⚠ 시군구 코드를 못 이은 곳:")
-            for nm, n in sorted({**park_miss, **fac_miss}.items())[:20]:
-                print(f"     {nm} ({n}행)")
+            #
+            # 그리고 **왜 못 이었는지까지 보인다.** run 128 이 산단 866개 중
+            # 468개만 담고 화성시·창원시를 놓쳤는데, 이름만 찍혀 있어서
+            # 대조표에 뭐가 들었는지를 몰랐다 — 한 판을 또 써야 했다.
+            # 같은 시도의 대조표 열쇠를 같이 보이면 그 자리에서 알 수 있다.
+            miss = {**park_miss, **fac_miss}
+            print(f"  ⚠ 시군구 코드를 못 이은 곳 {len(miss)}개:")
+            for nm, n in sorted(miss.items())[:14]:
+                sido = ind.sido_key(nm.split()[0]) if nm.split() else ""
+                near = sorted(k[1] for k in code_map if k[0] == sido)
+                hit = [x for x in near if nm.split()[-1][:2] in x][:4]
+                print(f"     {nm} ({n}행)  ← 대조표의 '{sido}' 에 있는 비슷한 것:"
+                      f" {hit or near[:4] or '(그 시도 자체가 없다)'}")
         got = con.execute(
             "SELECT metric, count(*), sum(value) FROM region_year"
             " WHERE source = 'KICOX·팩토리온' GROUP BY 1 ORDER BY 1").fetchall()
