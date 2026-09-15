@@ -2473,7 +2473,8 @@ _ROWS = {
          "lat": 36.81, "lon": 127.01, "year": 2013},
         {"type": "환지", "source": "zones_housing.csv",
          "lat": 36.85, "lon": 127.05, "year": 2016}]),
-    "FROM tollgate": _pd.DataFrame([{"lat": 36.82, "lon": 127.02, "year": 2014}]),
+    # 개통연도는 tollgate 에 없다 — events 판정표에서 온다 (아래에서 끼운다).
+    "FROM tollgate": _pd.DataFrame([{"tollgate_id": "T1", "lat": 36.82, "lon": 127.02}]),
     "FROM region_year": _pd.DataFrame(columns=["sigungu_cd", "year", "metric", "value"]),
 }
 
@@ -2496,7 +2497,13 @@ def _fake_connect(*a, **k):
     yield _Con()
 
 
+from redt.analyze import events as _EV2                  # noqa: E402
+
 _real_connect, _db2.connect = _db2.connect, _fake_connect
+# **교통량 첫 해를 개통연도로 쓰지 않는다** — 좌측절단·코드승계·재개통을
+# 거른 판정표(analyze.events)가 개통연도의 유일한 원천이다.
+_real_load, _EV2.load_events = _EV2.load_events, lambda: _pd.DataFrame(
+    [{"tollgate_id": "T1", "open_year": 2014}])
 _buf = io.StringIO()
 try:
     with contextlib.redirect_stdout(_buf):
@@ -2505,6 +2512,10 @@ try:
     _out = _buf.getvalue()
 finally:
     _db2.connect = _real_connect
+    _EV2.load_events = _real_load
+
+check("개통 판정 영업소" in _out and "개통연도 2014~2014" in _out,
+      "개통연도를 판정표에서 가져다 쓴다 (교통량 첫 해가 아니다)")
 
 check("택지지구" in _out and "IC 신설 + 택지지구" in _out,
       "명령이 끝까지 돌고 택지 조합이 표에 선다")
@@ -2569,6 +2580,29 @@ check(_FA.remaining(_thin2).loc[_thin2["상대연도"] == 0, "남은 몫"].iloc[
 check(_pd.isna(_FA.remaining(_thin2).loc[_thin2["상대연도"] == 4, "남은 몫"].iloc[0]),
       "얇은 칸에는 남은 몫을 안 적는다")
 check(_FA.remaining(_pd.DataFrame()).empty, "빈 표를 줘도 터지지 않는다")
+
+# **못 내는 쪽이 기본이다.** 곡선이 서야만 남은 몫을 낸다.
+_ok, _why = _FA.verdict(_fit2, _cols2, _FA.profile(_fit2, _cols2, _pan2, "ic"))
+check(_ok, f"곡선이 서면 문이 열린다 ({_why})")
+# 사건이 값을 안 움직이는 세상 — 여기서 숫자를 내면 잡음을 파는 것이다.
+_rows3, _ics3 = [], []
+_rng3 = _np.random.default_rng(7)
+for _u in range(240):
+    _lat, _lon = 36.0 + 0.30 * (_u // 16), 127.0 + 0.30 * (_u % 16)
+    if _u % 2 == 0:
+        _ics3.append({"lat": _lat, "lon": _lon, "year": 2015})
+    for _y in range(2008, 2026):
+        for _k in range(4):
+            _rows3.append({"umd_cd": f"W{_u:03d}", "deal_year": _y,
+                           "price_per_m2": float(_np.exp(11 + _rng3.normal(0, .05))),
+                           "lat": _lat, "lon": _lon, "sigungu_cd": f"X{_u // 8:02d}"})
+_pan3 = _FA.mark(_FA.panel(_pd.DataFrame(_rows3)), {"ic": _pd.DataFrame(_ics3)})
+_fit3, _cols3 = _FA.event_study(_pan3, "ic")
+_ok3, _why3 = _FA.verdict(_fit3, _cols3, _FA.profile(_fit3, _cols3, _pan3, "ic"))
+check(not _ok3 and "고원" in _why3,
+      f"사건이 값을 안 움직이면 문이 닫힌다 ({_why3})")
+check(_FA.verdict(None, [], _pd.DataFrame())[0] is False,
+      "계수가 없으면 당연히 닫힌다")
 
 print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")
 from redt.collect import indicators as _IND               # noqa: E402

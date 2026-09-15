@@ -1376,15 +1376,32 @@ def cmd_factor_cells(args):
             SELECT type, source, lat, lon, year(designated_date) AS year
             FROM zone_event WHERE lat IS NOT NULL AND designated_date IS NOT NULL
         """).fetchdf()
-        ics = con.execute("""
-            SELECT g.lat, g.lon, min(t.year) AS year
-            FROM tollgate g JOIN traffic t ON t.tollgate_id = g.tollgate_id
-            WHERE g.lat IS NOT NULL GROUP BY g.lat, g.lon
-        """).fetchdf()
+        # **개통연도는 교통량 첫 해가 아니다.** 예전에는 min(traffic.year) 를
+        # 썼는데, 교통량 자료가 2003년부터라 그전에 뚫린 영업소가 전부
+        # '2003년 개통' 으로 찍혔다. 그러면 상대연도가 통째로 뭉개지고
+        # (run 107: r≥8 칸에만 동네 1,670곳) 곡선이 설 수가 없다.
+        #
+        # 개통 판정은 이미 있다 — analyze.events 가 좌측절단(자료 첫 달부터
+        # 보이는 것)·코드 승계·재개통을 빼고 남긴 것이다. 그것을 쓴다.
+        tg = con.execute("SELECT tollgate_id, lat, lon FROM tollgate "
+                         "WHERE lat IS NOT NULL").fetchdf()
         ry = con.execute("SELECT sigungu_cd, year, metric, value FROM region_year").fetchdf()
 
+    from .analyze import events as EV
+    opened = EV.load_events()
+    ics = tg.merge(opened, on="tollgate_id", how="inner").rename(
+        columns={"open_year": "year"})[["lat", "lon", "year"]] if len(opened) \
+        else pd.DataFrame(columns=["lat", "lon", "year"])
     print(f"거래 {len(tr):,}건 (지번 좌표 · {args.since}~{args.until})"
-          f" · 개발사건 {len(zones):,} · 영업소 {len(ics):,}")
+          f" · 개발사건 {len(zones):,} · 개통 판정 영업소 {len(opened):,}"
+          f" (좌표까지 있는 것 {len(ics):,})")
+    if len(ics):
+        yrs = ics["year"]
+        print(f"  개통연도 {int(yrs.min())}~{int(yrs.max())}"
+              f" · {args.since} 년 이후 개통 {int((yrs >= int(args.since)).sum()):,}개")
+    else:
+        print("  ⚠ 개통연도를 아는 영업소가 없습니다 —"
+              " data/raw/tollgate_events.csv 가 있는지 보십시오")
     pan = FA.panel(tr, min_n=int(args.min_n))
     print(f"읍·면·동 × 연도 패널 {len(pan):,}칸 · 동네 {pan['umd_cd'].nunique():,}곳"
           if not pan.empty else "패널이 비었습니다")
@@ -1472,7 +1489,9 @@ def cmd_factor_cells(args):
         if pan[f"r_{key}"].notna().sum() == 0:
             continue
         es_fit, cols = FA.event_study(pan, key)
-        prof = FA.remaining(FA.profile(es_fit, cols, pan, key))
+        prof = FA.profile(es_fit, cols, pan, key)
+        ok, why = FA.verdict(es_fit, cols, prof)
+        prof = FA.remaining(prof) if ok else prof.assign(**{"남은 몫": None})
         if prof.empty:
             continue
         print(f"\n── {name} — 사건에서 몇 해째인가 (기준 −1년) ──")
@@ -1483,9 +1502,14 @@ def cmd_factor_cells(args):
             rem_s = "—" if rem is None or pd.isna(rem) else f"{float(rem):.3f}"
             print(f"    {int(r['상대연도']):>6d} {float(r['배율']):>6.3f}"
                   f" {rem_s:>7s} {int(r['동네']):>6,}{thin}")
-        print("    남은 몫 = 고원 ÷ 지금. 1.00 이면 이미 다 반영됐다는 뜻이다.")
-        out["event_study"][key] = {"name": name, "radius_km": rad,
-                                   "rows": prof.to_dict("records")}
+        if ok:
+            print(f"    남은 몫 = 고원 ÷ 지금. 1.00 이면 이미 다 반영됐다는 뜻이다. ({why})")
+        else:
+            # **못 내는 것을 못 낸다고 적는다.** 잡음의 최댓값을 고원이라
+            # 부르면 남은 몫은 잡음의 폭을 값으로 파는 짓이 된다.
+            print(f"    ▶ 남은 몫 산출 보류 — {why}")
+        out["event_study"][key] = {"name": name, "radius_km": rad, "ok": bool(ok),
+                                   "why": why, "rows": prof.to_dict("records")}
     _save()
 
 

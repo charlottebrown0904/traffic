@@ -349,6 +349,45 @@ def profile(fit, cols, df: pd.DataFrame, key: str) -> pd.DataFrame:
     return out
 
 
+def verdict(fit, cols, prof: pd.DataFrame) -> tuple[bool, str]:
+    """이 곡선으로 '남은 몫' 을 낼 수 있는가. **못 내는 쪽이 기본이다.**
+
+    두 가지를 본다. 둘 중 하나라도 걸리면 숫자를 안 낸다.
+
+      ① 사건 **전** 계수가 이미 움직이는가 (평행추세). 움직였다면 뒤의
+         차이도 사건이 만든 것이 아니다. r<0 계수가 모두 0 이라는 가설을
+         F 로 본다.
+      ② 사건 **뒤** 고원이 섰는가. 고원 계수가 0 과 안 갈리면 곡선이
+         없는 것이고, 그 잡음의 최댓값을 고원이라 부르면 '남은 몫' 은
+         잡음의 폭을 값으로 파는 짓이 된다.
+
+    2026-09-15 전국 첫 실행이 정확히 ② 에 걸렸다 — IC 계수가 −5년부터
+    +8년까지 0.93~1.06 사이를 오갔다. 그래서 이 문을 세운다.
+    """
+    if fit is None or not cols or prof.empty:
+        return False, "계수를 못 세웠습니다"
+    pre = [n for v, n in cols if v < 0 and n in fit.params]
+    if pre:
+        try:
+            pv = float(fit.f_test(" = 0, ".join(pre) + " = 0").pvalue)
+        except Exception:                                   # noqa: BLE001
+            pv = float("nan")
+        if pv == pv and pv < 0.05:
+            return False, (f"사건 전에 이미 움직입니다 (평행추세 p={pv:.3f})"
+                           " — 뒤의 차이를 사건 몫이라 할 수 없습니다")
+    after = prof[(prof["상대연도"] >= 0) & (~prof["얇음"])]
+    if after.empty:
+        return False, "사건 뒤 칸이 다 얇습니다"
+    top = after.loc[after["배율"].idxmax()]
+    tp = top["p"]
+    if tp is None or (isinstance(tp, float) and tp != tp) or float(tp) >= 0.05:
+        return False, (f"사건 뒤 고원이 안 섭니다 (가장 높은 칸 r={int(top['상대연도'])}"
+                       f" ×{top['배율']}, p={tp}) — 잡음의 최댓값을 고원이라 부를 수 없습니다")
+    if float(top["배율"]) <= 1.0:
+        return False, f"사건 뒤에 값이 안 올랐습니다 (가장 높은 칸이 ×{top['배율']})"
+    return True, f"고원 r={int(top['상대연도'])} ×{top['배율']} (p={tp})"
+
+
 def remaining(prof: pd.DataFrame) -> pd.DataFrame:
     """남은 몫 = exp(고원 − 지금). **고원은 두꺼운 칸에서만 고른다.**
 
