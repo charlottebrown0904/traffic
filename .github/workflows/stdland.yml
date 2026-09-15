@@ -191,11 +191,22 @@ jobs:
       # 훨씬 많고, 오르는 것은 개발 가능한 용도지역뿐이다. 이쪽은 거리
       # 밴드(0-1·1-3km)로 처치군을 잡고 같은 시군구를 대조군으로 쓴다.
       # 읽기만 하므로 캐시를 안 남긴다.
+      #
+      # **공간 조인을 먼저 만든다.** trade_tollgate_link 1,961만 행은 캐시를
+      # 작게 두려고 보관 전에 일부러 비운다(cmd_compact) — 그래서 캐시를
+      # 되살려도 0쌍이고, run 109 가 '거래 또는 공간조인이 비어 있습니다'
+      # 로 죽은 것이 그 까닭이다. 다시 만드는 데 9분쯤 걸린다.
+      - name: 거래-영업소 공간 조인 (events 준비)
+        if: inputs.mode == 'events'
+        run: |
+          set -o pipefail
+          python -m redt.cli link 2>&1 | tail -n 5 | tee /tmp/stdland.log
+
       - name: 개통 전후 지가 (필지 단위 이중차분)
         if: inputs.mode == 'events'
         run: |
           set -o pipefail
-          python -m redt.cli events --kind "${{ inputs.query || 'land' }}" 2>&1 | tee /tmp/stdland.log
+          python -m redt.cli events --kind "${{ inputs.query || 'land' }}" 2>&1 | tee -a /tmp/stdland.log
 
       # 모멘텀 검증 — 읽기만 하므로 캐시는 안 남기고 결과 JSON 을 첨부한다.
       # limit=칸 최소 건수(비우면 30).
@@ -384,7 +395,7 @@ jobs:
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'events' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
         uses: actions/cache/save@v4
         with:
           path: |
