@@ -1513,6 +1513,96 @@ def cmd_factor_cells(args):
     _save()
 
 
+def cmd_road_step(args):
+    """필지 층 첫 칸 — 도로가 붙으면 얼마나 오르는가 (2026-09-15).
+
+    미래 가치의 필지 층에서 우리가 이미 자료를 갖고 있는 유일한 항목이다
+    (parcel.road_side, 전국). 사다리가 이미 둘 있지만 둘 다 거래에서 나온
+    것이 아니다 — 평가서 원장과 관의 비준표. 셋째로 **우리 실거래로 잰
+    사다리**를 만들어 셋을 나란히 놓는다.
+
+    기준은 맹지다. 헤도닉(transform.panel)이 찍는 도로접 계수는 결측을
+    'NA' 로 채운 뒤 그것을 기준으로 잡아서 '맹지 +3.2%' 같은 값이 나온다 —
+    조사 안 된 땅 대비라 사다리의 기준으로 못 쓴다. 여기서는 등급을 모르는
+    건을 **섞지 않고 버린다.**
+    """
+    from .analyze import roadstep as RS
+    zone = str(args.zone or "").strip()
+    if zone.lower() in ("all", "*", "전체"):
+        zone = ""
+    with db.connect(read_only=True) as con:
+        rows = con.execute(f"""
+            SELECT t.price_per_m2, t.area_m2, t.deal_year, t.sigungu_cd,
+                   pc.jimok, pc.land_use, pc.road_side
+            FROM trade t
+            JOIN trade_parcel tp ON tp.trade_id = t.trade_id
+            JOIN parcel pc ON pc.pnu = tp.pnu
+            WHERE t.kind = 'land'
+              AND NOT coalesce(t.is_cancelled, FALSE)
+              AND NOT coalesce(t.is_share_deal, FALSE)
+              AND t.price_per_m2 > 0 AND t.area_m2 > 0
+              AND pc.road_side IS NOT NULL
+              AND t.price_krw >= ?
+              AND t.deal_year >= ?
+              {"AND pc.land_use LIKE ?" if zone else ""}
+              -- 지번 지오코딩이 옆 필지에 떨어진 건을 뺀다 (value-test 와 같은 울타리).
+              AND t.area_m2 BETWEEN pc.area_m2 * 0.5 AND pc.area_m2 * 2.0
+        """, [int(args.min_price), int(args.since)] + ([f"%{zone}%"] if zone else [])).fetchdf()
+
+    print(f"도로접면이 붙은 토지 거래 {len(rows):,}건"
+          f" ({args.since}년 이후 · {int(args.min_price):,}원 이상"
+          f" · {zone or '용도지역 전체'})")
+    df = RS.prepare(rows)
+    if df.empty:
+        sys.exit("등급을 읽을 수 있는 거래가 없습니다 — parcel.road_side 를 먼저 채우세요")
+    drop = len(rows) - len(df)
+    print(f"  등급을 아는 것 {len(df):,}건 · 모르는 것 {drop:,}건은 **버립니다**"
+          f" (맹지와 섞으면 기준이 오염됩니다)")
+    print("  등급별 건수: " + " · ".join(
+        f"{RS.GRADE_NAME[g]} {n:,}" for g, n in sorted(df['grade'].value_counts().items())))
+
+    res = RS.fit(df)
+    tab = RS.ladder(df, res)
+    ok, why = RS.verdict(df, tab)
+    print(f"\n── 우리 실거래로 잰 사다리 (기준 맹지 = 1.00) ──")
+    print(f"    {'등급':<9s} {'n':>8s} {'배율':>6s} {'95% 구간':>15s} {'p':>7s}")
+    for _i, r in tab.iterrows():
+        thin = " ← 얇음" if r["얇음"] else ""
+        rng = "—" if r["기준"] else f"{r['낮']:.3f}~{r['높']:.3f}"
+        pv = "기준" if r["p"] is None else f"{r['p']:.4f}"
+        print(f"    {r['등급']:<9s} {int(r['n']):>8,} {float(r['배율']):>6.3f}"
+              f" {rng:>15s} {pv:>7s}{thin}")
+
+    print("\n── 세 사다리 나란히 (전부 맹지 = 1.00 으로 다시 맞춤) ──")
+    cmp = RS.compare(tab)
+    refs = RS.reference_ladders()
+    print(f"    {'등급':<9s} {'우리 실거래':>10s} {'평가서 원장':>10s} {'비준표':>8s}")
+    for _i, r in cmp.iterrows():
+        f = lambda v: "—" if v is None or pd.isna(v) else f"{float(v):.3f}"
+        print(f"    {r['등급']:<9s} {f(r['우리 실거래']):>10s}"
+              f" {f(r['평가서 원장']):>10s} {f(r['비준표']):>8s}")
+    if refs.get("비준표 출처"):
+        print(f"    비준표: {refs['비준표 출처']} (한 읍·면 시트다 — 전국이 아니다)")
+
+    step = RS.car_step(tab)
+    print()
+    if ok:
+        print(f"  ▶ 필지 층에 쓸 계단: {step['why']}")
+        print("    도로 개설로 실제로 일어나는 변화가 이것이다. 차 진입 가능한")
+        print("    등급 중 **가장 낮은 것**을 쓴다 — 광대로가 붙는다고 보면 부풀린다.")
+    else:
+        print(f"  ▶ 산출 보류 — {why}")
+
+    path = PROCESSED / "road_step.json"
+    path.write_text(json.dumps(
+        {"since": int(args.since), "min_price": int(args.min_price), "zone": zone,
+         "n": int(len(df)), "dropped_unknown": int(drop),
+         "ladder": tab.to_dict("records"), "compare": cmp.to_dict("records"),
+         "refs": refs, "car_step": step, "ok": bool(ok), "why": why},
+        ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    print(f"\n→ {path}")
+
+
 def cmd_probe_history(args):
     ex_api.probe_history(args.endpoint, args.date_param)
 
@@ -4194,6 +4284,14 @@ def main(argv=None):
                    help="읍면동×연도 셀에 최소 몇 건 (기본 3)")
     p.add_argument("--estimate", action="store_true", help="이원고정효과까지 돌린다")
     p.set_defaults(func=cmd_factor_cells)
+
+    p = sub.add_parser("road-step",
+                       help="필지 층 — 도로가 붙으면 얼마나 오르는가 (맹지 기준 사다리)")
+    p.add_argument("--since", default="2015", help="이 해 이후 거래만")
+    p.add_argument("--min-price", dest="min_price", default="0",
+                   help="거래금액 하한(원). 자투리·가족 간 거래를 걸러 낸다")
+    p.add_argument("--zone", default="all", help="용도지역 조각 (all 이면 전체)")
+    p.set_defaults(func=cmd_road_step)
 
     p = sub.add_parser("events", help="지시2 — 신규 개통 영업소 전후 지가 (이중차분)")
     p.add_argument("--kind", default="land", choices=["land", "factory"])

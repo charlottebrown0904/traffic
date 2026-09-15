@@ -2604,6 +2604,76 @@ check(not _ok3 and "고원" in _why3,
 check(_FA.verdict(None, [], _pd.DataFrame())[0] is False,
       "계수가 없으면 당연히 닫힌다")
 
+print("41-3. 필지 층 — 도로가 붙으면 얼마나 오르는가 (2026-09-15)")
+from redt.analyze import roadstep as _RS                # noqa: E402
+
+# 아는 사다리를 만들어 되찾는지 본다. **일부러 뒤집어 둔다** — 실측에서
+# 중로가 광대로보다 비쌌다(usage.py). 순서를 강요하지 않는지가 요점이다.
+_TRUE_ROAD = {"맹지": 1.00, "세로(불)": 1.05, "세로(가)": 1.70,
+              "소로한면": 1.85, "중로한면": 2.05, "광대로한면": 1.95}
+_rngr = _np.random.default_rng(5)
+_rows_r = []
+_names_r = list(_TRUE_ROAD)
+# **주기로 돌리지 않는다.** 처음에 road=i%6 · 시군구=i%40 · 연도=i%9 로
+# 만들었더니 서로 나눠떨어져 도로 등급이 시군구·지목과 얽혔고, 고정효과가
+# 도로 계수를 먹어 참값을 못 되찾았다. 실측에서 맞닥뜨릴 문제는 바로
+# 그것이지만, **되찾는지를 보는 시험**에서는 독립으로 뽑아야 한다.
+for _i in range(24000):
+    _road = _names_r[int(_rngr.integers(0, 6))]
+    _sggi = int(_rngr.integers(0, 40))
+    _yr = int(_rngr.integers(2016, 2025))
+    _base = 11 + 0.02 * _sggi + 0.03 * (_yr - 2016)
+    _rows_r.append({"price_per_m2": float(_np.exp(
+                        _base + _np.log(_TRUE_ROAD[_road]) + _rngr.normal(0, .12))),
+                    "area_m2": float(_np.exp(6 + _rngr.normal(0, .4))),
+                    "deal_year": _yr, "sigungu_cd": f"R{_sggi:02d}",
+                    "jimok": "전" if _rngr.random() < .5 else "답",
+                    "land_use": "계획관리지역", "road_side": _road})
+# 조사가 안 된 건을 섞어 넣는다 — 맹지로 셈하면 기준이 오염된다.
+for _i in range(3000):
+    _rows_r.append({"price_per_m2": 50000.0, "area_m2": 400.0, "deal_year": 2020,
+                    "sigungu_cd": "R00", "jimok": "전", "land_use": "계획관리지역",
+                    "road_side": "지정되지않음"})
+_dfr = _RS.prepare(_pd.DataFrame(_rows_r))
+check(len(_dfr) == 24000 and set(_dfr["grade"]) == {0, 1, 2, 3, 4, 5},
+      f"등급을 모르는 건은 버린다 (남은 {len(_dfr)}건 · 등급 {sorted(set(_dfr['grade']))})")
+_resr = _RS.fit(_dfr)
+_tabr = _RS.ladder(_dfr, _resr)
+_getr = lambda 이름: float(_tabr.loc[_tabr["등급"] == 이름, "배율"].iloc[0])
+check(abs(_getr("맹지") - 1.0) < 1e-9, "기준은 맹지 1.00 이다")
+for _nm, _true in (("세로(불)", 1.05), ("세로(가)", 1.70),
+                   ("소로", 1.85), ("중로", 2.05), ("광대로", 1.95)):
+    check(abs(_getr(_nm) - _true) < 0.06, f"{_nm} 배율을 되찾는다 ({_getr(_nm)} vs {_true})")
+check(_getr("중로") > _getr("광대로"),
+      f"뒤집힘을 그대로 담는다 (중로 {_getr('중로')} > 광대로 {_getr('광대로')})")
+
+_okr, _whyr = _RS.verdict(_dfr, _tabr)
+_stepr = _RS.car_step(_tabr)
+check(_okr and _stepr["등급"] == "세로(가)" and abs(_stepr["배율"] - 1.70) < 0.06,
+      f"필지 층에 쓸 계단은 맹지 → 세로(가) 다 ({_whyr})")
+# 광대로를 쓰면 부풀린다 — 가장 낮은 칸을 쓰는지 못박는다.
+check(_stepr["배율"] < _getr("중로"), "가장 낮은 칸을 쓴다 (광대로·중로로 부풀리지 않는다)")
+
+# 도로가 값을 안 움직이는 세상에서는 문이 닫힌다.
+_flat = [dict(r, price_per_m2=float(_np.exp(11 + _rngr.normal(0, .12))))
+         for r in _rows_r if r["road_side"] != "지정되지않음"]
+_dff = _RS.prepare(_pd.DataFrame(_flat))
+_tabf = _RS.ladder(_dff, _RS.fit(_dff))
+_okf, _whyf = _RS.verdict(_dff, _tabf)
+check(not _okf, f"도로가 값을 안 움직이면 숫자를 안 낸다 ({_whyf})")
+
+# 세 사다리는 **전부 맹지=1.00** 으로 맞춰 나란히 놓는다. 기준이 다른
+# 숫자를 나란히 적으면 읽는 사람이 반드시 잘못 읽는다.
+_cmpr = _RS.compare(_tabr)
+_row = lambda 이름: _cmpr.loc[_cmpr["등급"] == 이름].iloc[0]
+check(abs(float(_row("맹지")["평가서 원장"]) - 1.0) < 1e-9
+      and abs(float(_row("맹지")["비준표"]) - 1.0) < 1e-9,
+      "관의 두 표도 맹지=1.00 으로 다시 맞춘다 (원래는 세로(가)=1.00)")
+check(abs(float(_row("소로")["평가서 원장"]) - 1.375) < 0.002,
+      f"평가서 원장 소로 = 1.10/0.80 = 1.375 ({_row('소로')['평가서 원장']})")
+check(_RS.verdict(_pd.DataFrame(), _pd.DataFrame())[0] is False,
+      "빈 표를 줘도 터지지 않는다")
+
 print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")
 from redt.collect import indicators as _IND               # noqa: E402
 
