@@ -1773,6 +1773,12 @@ function buildMap() {
   map = L.map('map', { zoomControl: false, preferCanvas: false })
     .setView([36.5, 127.8], 7);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
+  // **지금 몇 배율인지, 끝이 어디인지를 숫자로 보인다** (2026-09-15 지시:
+  // "(-)(+) 위? 옆? 어디까지가 최대/최소인지 모르겠음"). +/− 만으로는
+  // 더 눌러도 되는지 알 수 없다. 끝에 닿으면 그 쪽을 흐리게도 한다.
+  // **꾸밈 하나가 지도를 죽이지 않게 감싼다.** 첫 판에서 이것이 던져
+  // 배경 지도 고르기까지 통째로 안 만들어졌다 (검사가 잡았다).
+  try { addZoomReadout(); } catch (e) { /* 눈금은 없어도 지도는 돈다 */ }
   // 보이는 영역만 그리므로, 움직이면 다시 그려야 한다. moveend 는
   // 확대·축소 뒤에도 온다.
   // 누름과 끌기를 가른다. 순서는 pointerdown → dragstart → click 이라,
@@ -2825,8 +2831,75 @@ function drawDevelop() {
  * 얕을수록 한 칸에 든 도형이 기하급수로 늘어 상한에 걸리고, 그러면 선이
  * 군데군데 빠진다 — 빠진 선은 없는 선보다 나쁘다.
  */
+/* 배율 눈금 — +/− 바로 위에 'z 14 / 7~19' 를 적는다.
+ *
+ * 무엇이 언제 보이는지도 같이 적는다. 층마다 켜지는 배율이 다른데(계획도로
+ * z12, 개발 z10, 필지경계 z16) 화면이 그것을 말해 주지 않으면 "왜 안
+ * 보이지" 가 된다. */
+const ZOOM_GATES = [
+  [DEVELOP_MIN_ZOOM, '개발'],
+  [12, '계획도로·사업지구'],
+  [ZONING_MIN_ZOOM, '용도지역'],
+  [CADASTRAL_MIN_ZOOM, '필지경계'],
+];
+
+function zoomReadoutText() {
+  const z = map.getZoom();
+  const lo = map.getMinZoom();
+  const hi = map.getMaxZoom();
+  const next = ZOOM_GATES
+    .filter(([g]) => Number.isFinite(g) && z < g)
+    .sort((a, b) => a[0] - b[0])[0];
+  return {
+    main: `z ${z} / ${lo}~${hi}`,
+    hint: next ? `z${next[0]} 부터 ${next[1]}` : '',
+    atMin: z <= lo, atMax: z >= hi,
+  };
+}
+window.__zoomReadout = zoomReadoutText;   // 검사가 부른다
+
+function addZoomReadout() {
+  const box = document.createElement('div');
+  box.id = 'zoom-readout';
+  box.className = 'zoom-readout';
+  const host = document.querySelector('.leaflet-bottom.leaflet-right')
+            || map.getContainer();
+  host.insertBefore(box, host.firstChild);
+  L.DomEvent.disableClickPropagation(box);
+  const paint = () => {
+    const r = zoomReadoutText();
+    box.innerHTML = `<b>${escapeHtml(r.main)}</b>`
+      + (r.hint ? `<span>${escapeHtml(r.hint)}</span>` : '');
+    box.classList.toggle('at-min', r.atMin);
+    box.classList.toggle('at-max', r.atMax);
+    // 끝에 닿은 쪽 단추를 흐리게 — 더 눌러도 안 된다는 것을 눈으로.
+    const zin = document.querySelector('.leaflet-control-zoom-in');
+    const zout = document.querySelector('.leaflet-control-zoom-out');
+    if (zin) zin.classList.toggle('is-end', r.atMax);
+    if (zout) zout.classList.toggle('is-end', r.atMin);
+  };
+  map.on('zoomend', paint);
+  map.on('zoomlevelschange', paint);
+  // **첫 그리기는 미룬다.** 이 함수는 지도를 만드는 길에서 불리는데, 그때는
+  // ZOOM_GATES 가 아직 초기화 전(TDZ)이라 바로 그리면 던진다 — const 는
+  // typeof 로도 못 피한다. 모듈이 다 읽힌 뒤에 그리면 값이 서 있다.
+  setTimeout(() => { try { paint(); } catch (e) { /* 눈금뿐이다 */ } }, 0);
+}
+
 const DEVVEC_MIN_ZOOM = 12;
-const DEVVEC_MAX_TILES = 10;
+/* **한 번에 새로 물어 오는 칸 수**다. 이미 받아 둔 칸은 이 한도와 무관하게
+ * 다 그린다 — 2026-09-15 지시: "확대/축소 또는 좌/우 이동 시 계획도로가
+ * 사라졌다. 생겼다 자기 마음대로입니다."
+ *
+ * 그 원인이 여기였다. 전에는 화면 안 칸 목록을 통째로 10개로 **잘라서**
+ * 그것만 그렸다. z12 화면 하나는 스무 칸이 넘으므로 늘 대부분이 잘려 나갔고,
+ * 어느 열 칸이 살아남는지는 북서쪽부터 세는 순서에 달려 있었다. 조금만
+ * 움직여도 살아남는 칸이 바뀌니 길이 나타났다 사라졌다 한 것이다.
+ *
+ * 고친 방식: 자르는 것은 **새로 물어 오는 일**에만 적용하고, 그리는 것은
+ * 받아 둔 칸 전부에 한다. 화면을 옮기면 덮개가 쌓이기만 하고 줄지 않는다.
+ * 물어 오는 차례는 **화면 한가운데부터** — 보고 있는 곳이 먼저 채워진다. */
+const DEVVEC_FETCH_PER_PASS = 12;
 const devVecCache = new Map();      // 'kind/z/x/y' → {items}
 const devVecAsked = new Set();
 let devVecLayer = null;
@@ -2861,7 +2934,13 @@ function devVecTiles() {
       if (x >= 0 && y >= 0 && x < n && y < n) out.push([z, x, y]);
     }
   }
-  return out.slice(0, DEVVEC_MAX_TILES);
+  // **가운데부터** 차례를 매긴다. 물어 오는 수를 줄일 때 잘려 나가는 것이
+  // 화면 가장자리가 되도록 — 보고 있는 곳이 먼저 채워져야 한다.
+  const cx = (x0 + x1) / 2;
+  const cy = (y0 + y1) / 2;
+  out.sort((a, b) => ((a[1] - cx) ** 2 + (a[2] - cy) ** 2)
+                   - ((b[1] - cx) ** 2 + (b[2] - cy) ** 2));
+  return out;
 }
 
 function devVecKinds() {
@@ -2878,12 +2957,19 @@ function drawDevVec() {
   if (!kinds.length) return;
   const tiles = devVecTiles();
   let drawn = 0;
+  let asked = 0;
+  let missing = 0;
   kinds.forEach((kind) => {
     tiles.forEach(([z, x, y]) => {
       const key = `${kind}/${z}/${x}/${y}`;
       const got = devVecCache.get(key);
+      // **받아 둔 칸은 무조건 그린다.** 한도는 그리는 데가 아니라
+      // 물어 오는 데에만 건다.
       if (got) { drawn += paintDevVec(kind, got); return; }
+      missing += 1;
       if (devVecAsked.has(key)) return;
+      if (asked >= DEVVEC_FETCH_PER_PASS) return;   // 나머지는 다음 판에
+      asked += 1;
       devVecAsked.add(key);
       fetch(`/api/tile?mode=devvec&kind=${kind}&z=${z}&x=${x}&y=${y}`)
         .then((r) => (r.ok ? r.json() : null))
@@ -2896,7 +2982,7 @@ function drawDevVec() {
         .catch(() => { devVecAsked.delete(key); });
     });
   });
-  window.__devvec = { kinds, tiles: tiles.length, drawn,
+  window.__devvec = { kinds, tiles: tiles.length, drawn, asked, missing,
                       cached: devVecCache.size };
 }
 
@@ -2939,13 +3025,38 @@ const PLANROAD_STAGE_WHY = {
   '집행완료': '결정된 폭으로 다 났습니다',
 };
 
+/* **결정 폭을 숫자로 적는다** (2026-09-15 재확인 요청: "위성 지도를 보시면
+   이미 지도엔 도로가 완공 상태입니다").
+
+   말로 '결정된 폭' 이라고만 하면 확인할 길이 없다. 등급마다 폭이 정해져
+   있으므로(도시·군계획시설의 결정·구조 및 설치기준에 관한 규칙 제9조)
+   그 숫자를 같이 보이면, 위성에 보이는 길과 견줘 볼 수 있다 —
+   6m 길 위에 '중로 12~20m' 가 결정돼 있으면 미집행이 맞다.
+
+   화면에 그리는 빨간 띠는 **결정된 폭의 자리**다. 그 띠가 지금 아스팔트보다
+   넓게 걸쳐 있으면 그 차이가 곧 아직 안 난 몫이다. */
+const PLANROAD_WIDTH = {
+  '광로': '40~70m 이상', '대로': '25~40m', '중로': '12~25m', '소로': '8~12m',
+};
+function planroadWidth(atr) {
+  const t = String(atr || '');
+  const k = Object.keys(PLANROAD_WIDTH).find((w) => t.includes(w));
+  return k ? PLANROAD_WIDTH[k] : '';
+}
+window.__planroadWidth = planroadWidth;
+
 function devVecTip(kind, p, stage) {
   if (kind === 'planroad') {
     const why = PLANROAD_STAGE_WHY[stage];
+    const w = planroadWidth(p.atr_nam);
     return `<b>${escapeHtml(p.atr_nam || '계획도로')}</b>`
+      + (w ? ` <span class="dev-why">결정 폭 ${escapeHtml(w)}</span>` : '')
       + (p.pmi_nam ? `<br>${escapeHtml(p.pmi_nam)}` : '')
       + (stage ? `<br><b>${escapeHtml(stage)}</b>` : '')
-      + (why ? `<br><span class="dev-why">${escapeHtml(why)}</span>` : '');
+      + (why ? `<br><span class="dev-why">${escapeHtml(why)}</span>` : '')
+      + (stage === '미집행' && w
+          ? '<br><span class="dev-why">빨간 띠가 결정 폭의 자리입니다 —'
+            + ' 지금 길보다 넓으면 그 차이가 아직 안 난 몫입니다</span>' : '');
   }
   return `<b>${escapeHtml(p.zonename || '사업지구')}</b>`
     + (stage ? `<br><b>${escapeHtml(stage)}</b>` : '');

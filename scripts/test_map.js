@@ -116,6 +116,10 @@ const FAKE_LEAFLET = () => {
       // 달라지는데(시도 → 시군 → 구), 7 로 고정해 두면 그 셋 중 하나만
       // 보고 통과라고 말하게 된다. window.__setZoom 으로 흔든다.
       getZoom() { return window.__zoom == null ? 7 : window.__zoom; },
+      // 진짜 Leaflet 이 주는 것과 같은 끝값. 배율 눈금이 이것으로
+      // '어디까지가 최대/최소' 를 적는다 (2026-09-15 지시).
+      getMinZoom() { return 7; },
+      getMaxZoom() { return 19; },
       // 화면 한가운데. '지금 이 지역을 보는 사람' 이 이 값으로 어느
       // 시·군·구인지를 고른다. window.__center 로 옮긴다.
       getCenter() {
@@ -1626,6 +1630,49 @@ async function stubCommon(pg) {
     check('미집행이 무슨 뜻인지 말풍선이 적는다',
           /결정된 폭으로는 아직 안 났습니다/.test(roadTip) && /중로1류/.test(roadTip),
           roadTip || '(devVecTip 을 안 내보냄)');
+    // **결정 폭을 숫자로** (2026-09-15 재확인: "위성 지도를 보시면 이미
+    // 도로가 완공 상태입니다"). 말로 '결정된 폭' 이라고만 하면 확인할
+    // 길이 없다 — 숫자가 있어야 위성과 견줄 수 있다.
+    const wid = await page.evaluate(() => ({
+      중로: window.__planroadWidth ? window.__planroadWidth('중로2류') : null,
+      광로: window.__planroadWidth ? window.__planroadWidth('광로1류') : null,
+      소로: window.__planroadWidth ? window.__planroadWidth('소로3류') : null,
+      빈칸: window.__planroadWidth ? window.__planroadWidth('') : null,
+      done: window.__devVecTip ? window.__devVecTip('planroad',
+        { atr_nam: '중로2류' }, '집행완료') : '',
+    }));
+    check('등급마다 결정 폭을 숫자로 적는다',
+          wid.중로 === '12~25m' && /40/.test(wid.광로 || '')
+          && wid.소로 === '8~12m',
+          `중로 ${wid.중로} · 광로 ${wid.광로} · 소로 ${wid.소로}`);
+    check('등급을 모르면 폭을 지어내지 않는다', wid.빈칸 === '', `${wid.빈칸}`);
+    check('미집행이면 위성과 견주는 법을 적는다',
+          /빨간 띠가 결정 폭의 자리/.test(roadTip) && /12~25m/.test(roadTip),
+          roadTip.slice(-80));
+    check('집행완료에는 그 말을 안 붙인다',
+          !/빨간 띠가 결정 폭의 자리/.test(wid.done), wid.done.slice(-60));
+
+    // **배율 눈금** — 지금 몇이고 끝이 어디인지 (2026-09-15 지시).
+    const zr = await page.evaluate(() => {
+      if (!window.__zoomReadout) return null;
+      // 가짜 지도는 window.__zoom 으로 배율을 받는다 (stub 의 getZoom).
+      // **window.__map 을 덮어쓰면 안 된다** — 그건 검사 자신의 기록기다.
+      const keep = window.__zoom;
+      const out = {};
+      [7, 14, 19].forEach((z) => { window.__zoom = z; out[z] = window.__zoomReadout(); });
+      window.__zoom = keep;
+      return out;
+    });
+    check('배율을 숫자로 적고 끝을 보인다',
+          zr && zr[14].main === 'z 14 / 7~19',
+          zr ? zr[14].main : '(__zoomReadout 을 안 내보냄)');
+    check('최소·최대에 닿은 것을 알린다',
+          zr && zr[7].atMin && !zr[7].atMax && zr[19].atMax && !zr[19].atMin,
+          zr ? `z7 min=${zr[7].atMin} · z19 max=${zr[19].atMax}` : '');
+    check('다음에 무엇이 켜지는지 적는다',
+          zr && /필지경계/.test(zr[14].hint) && zr[19].hint === '',
+          zr ? `z14 "${zr[14].hint}" · z19 "${zr[19].hint}"` : '');
+
     check('색이 뜻하는 단계를 범례가 적는다',
           !devLeg.hidden && devLeg.text.includes('지구지정')
           && devLeg.text.includes('미집행'),

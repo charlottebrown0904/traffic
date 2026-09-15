@@ -1952,3 +1952,29 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .pcv-layers { margin: .5rem 0 .6rem; display: grid; gap: .35rem .6rem; }
 .pcv-layers dt { font-weight: 600; font-size: .82rem; }
 .pcv-layers dd { margin: 0 0 .1rem; font-size: .78rem; color: var(--muted); line-height: 1.45; }
+
+/* 배율 눈금 — +/− 바로 위. 지금 몇이고 끝이 어디인지 숫자로 (2026-09-15
+   지시: "(-)(+) 위? 옆? 어디까지가 최대/최소인지 모르겠음"). */
+.zoom-readout {
+  clear: both;
+  float: right;
+  margin: 0 10px 6px 0;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--line, #d8dee6);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .18);
+  font: 600 12px/1.35 system-ui, sans-serif;
+  color: var(--ink, #1f2937);
+  text-align: right;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.zoom-readout span {
+  display: block;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--ink-3, #6b7280);
+}
+/* 끝에 닿은 쪽 단추는 흐리게 — 더 눌러도 안 된다는 것을 눈으로. */
+.leaflet-control-zoom a.is-end { opacity: .38; }
