@@ -1760,13 +1760,29 @@ def cmd_forecast(args):
     sm = FC.summary(bt)
     print("\n── 창 길이마다 (**방향이 으뜸** · 늘오름을 못 넘으면 진 것이다) ──")
     print(f"    {'창':>4s} {'기준점':>4s} {'쓴지표':>6s} {'방향':>7s} {'늘오름':>7s}"
-          f" {'%p':>7s} {'2년 뒤 띠':>14s} {'덮개':>6s} {'오차이득%':>9s}")
+          f" {'동네추세':>7s} {'%p':>7s} {'2년 뒤 띠':>14s} {'덮개':>6s} {'오차이득%':>9s}")
     for _i, r in sm.iterrows():
         mark = "  " if r["방향 이겼나"] else " ×"
         print(f"  {mark}{int(r['창']):>2,}년 {int(r['기준점']):>4,} {r['쓴지표']:>6.1f}"
-              f" {r['방향인자']:>7.1%} {r['방향늘오름']:>7.1%} {r['방향 이득%p']:>+7.2f}"
+              f" {r['방향인자']:>7.1%} {r['방향늘오름']:>7.1%}"
+              f" {r['방향동네추세']:>7.1%} {r['방향 이득%p']:>+7.2f}"
               f" {r['띠아래']:>6.2f}~{r['띠위']:<7.2f} {r['띠덮개']:>6.0%}"
               f" {r['이득%']:>+9.2f}")
+
+    # **내림 해** — '늘 오른다' 는 정의상 여기서 0점이다. 인자가 이길 수
+    # 있는 유일한 자리이고, 장사에서 값어치가 큰 쪽도 이쪽이다.
+    dn = FC.down_calls(bt)
+    print("\n── 땅값이 **내린** 해에 무엇이라 했나 ──")
+    if dn.empty:
+        print("    창 안에 내린 해가 없습니다 — 이 표본에서는 못 잽니다")
+    else:
+        print(f"    {'창':>3s} {'기준점':>5s} {'맞힘':>5s} {'실제':>7s}"
+              f" {'방향':>6s} {'늘오름':>6s} {'2년 뒤 띠':>14s}")
+        for _i, r in dn.iterrows():
+            print(f"    {int(r['창']):>3,} {int(r['기준점']):>5,} {int(r['맞힘']):>5,}"
+                  f" {r['실제 평균']:>+7.3f} {r['방향 인자']:>6.1%}"
+                  f" {r['방향 늘오름']:>6.1%}"
+                  f" {r['띠 아래']:>6.2f}~{r['띠 위']:<7.2f}")
 
     last = bt.sort_values(["창", "기준점"]).iloc[-1]
     if last.get("큰 지표"):
@@ -1781,6 +1797,8 @@ def cmd_forecast(args):
     print("  속는다: 오른 해가 많으면 '늘 오른다' 고만 답해도 높다. 그래서")
     print("  **늘오름**을 나란히 적는다 — 그것을 못 넘으면 인자가 방향을 맞힌")
     print("  것이 아니라 시대를 맞힌 것이다.")
+    print("  기준선은 **늘오름과 동네추세 중 센 쪽**이다. 늘오름만 넘어 놓고")
+    print("  이겼다고 적으면 그것이 눈속임이다.")
     print("  **띠**는 미래 가치의 범위다. 공식이 아니라 우리가 실제로 틀렸던")
     print("  만큼으로 긋는다. **덮개**는 그 띠가 정말 그만큼 담는지다 —")
     print("  80% 라 해 놓고 60% 만 담으면 띠가 좁은 것이니 넓혀야 한다.")
@@ -1790,7 +1808,9 @@ def cmd_forecast(args):
         {"since": int(args.since), "horizon": horizon, "min_r": min_r,
          "windows": list(windows), "band": FC.BAND,
          "origins": bt.to_dict("records"),
-         "summary": sm.to_dict("records"), "verdict": FC.verdict(sm)},
+         "summary": sm.to_dict("records"),
+         "down_calls": FC.down_calls(bt).to_dict("records"),
+         "verdict": FC.verdict(sm)},
         ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"\n→ {path}")
 
@@ -3932,18 +3952,31 @@ def cmd_dart_probe(args):
     wins = ind.dart_windows(args.bgn, args.end)
     print(f"  89일 토막 {len(wins)}개 — corp_code 없이 부르면 3개월 제한이다")
 
-    best, rows = None, []
+    from collections import Counter                    # noqa: PLC0415
+    best, rows, want = None, [], []
     for ty in tys:
         try:
-            got = ind.dart_list_all(args.bgn, args.end, ty)
+            got, cut = ind.dart_list_all2(args.bgn, args.end, ty,
+                                          max_pages=args.max_pages)
         except Exception as exc:                      # noqa: BLE001
             print(f"  [{ty}] 실패: {exc}")
             continue
         hit = [r for r in got
                if any(w in str(r.get("report_nm", "")) for w in ind.DART_WANT)]
-        print(f"  [{ty}] 공시 {len(got):,}건 · 그중 '시설투자' 든 것 {len(hit)}건")
+        tail = ""
+        if cut:
+            # **잘렸으면 잘렸다고 적는다.** 앞 판이 4,000 을 실제 건수처럼
+            # 찍어 '거래소공시엔 49건뿐' 이라는 틀린 결론을 낼 뻔했다.
+            tail = ("   ⚠ 잘렸습니다 — " +
+                    " · ".join(f"{w} {seen}/{tot}쪽" for w, seen, tot in cut))
+        print(f"  [{ty}] 공시 {len(got):,}건 · 그중 '시설투자' 든 것 {len(hit)}건{tail}")
+        # **유형마다 실제 보고서 이름을 보인다.** 한 유형만 보고 고르면
+        # 다른 유형에 있는 진짜 '신규시설투자등' 을 영영 못 만난다.
+        names = Counter(str(r.get("report_nm", ""))[:36] for r in (hit or got))
+        for nm, n in names.most_common(6):
+            print(f"       {n:>5,}  {nm}")
         if hit and (best is None or len(hit) > best[1]):
-            best, rows = (ty, len(hit), hit), got
+            best, rows, want = (ty, len(hit), hit), got, hit
         elif not rows:
             rows = got
     if not rows:
@@ -3952,18 +3985,16 @@ def cmd_dart_probe(args):
     print(f"  열쇠: {sorted(rows[0])}")
 
     if best:
-        print(f"  ▶ '{best[0]}({ind.DART_TYPES.get(best[0], '?')})' 에 있습니다"
-              f" — {best[1]}건")
-        want = best[2]
+        print(f"  ▶ '시설투자' 가 가장 많은 곳: {best[0]}"
+              f"({ind.DART_TYPES.get(best[0], '?')}) — {best[1]}건")
     else:
-        want = []
-        # 한 건도 못 찾으면 **보고서 이름이 실제로 어떻게 생겼는지** 보인다.
-        # 이름을 지어내 거르면 영영 0건이다.
-        from collections import Counter                # noqa: PLC0415
-        cnt = Counter(str(r.get("report_nm", ""))[:30] for r in rows)
-        print("  '시설투자' 든 보고서가 없습니다 — 실제 보고서 이름 상위:")
-        for nm, n in cnt.most_common(12):
-            print(f"    {n:>5,}  {nm}")
+        print("  '시설투자' 든 보고서가 한 유형에도 없습니다")
+    # 정말 '신규시설투자' 라는 이름이 있는지 따로 센다 — '유형자산양수'
+    # 와는 다른 것이다. 둘을 뭉뚱그리면 무엇을 쥔 것인지 모르게 된다.
+    strict = [r for r in (want or rows)
+              if "시설투자" in str(r.get("report_nm", ""))]
+    print(f"  그중 이름에 **'시설투자'** 가 든 것: {len(strict)}건"
+          f" (나머지는 '유형자산양수·양도결정' 입니다)")
     for r in (want or rows)[:args.top]:
         print(f"    {r.get('rcept_dt','')} {str(r.get('report_nm',''))[:50]}"
               f"  corp={r.get('corp_code','')} {r.get('corp_cls','')}")
@@ -4750,6 +4781,8 @@ def main(argv=None):
                    help="공시유형 (B=주요사항보고서 · I=거래소공시 · all=전부 훑기)")
     p.add_argument("--size", type=int, default=100)
     p.add_argument("--top", type=int, default=15)
+    p.add_argument("--max-pages", dest="max_pages", type=int, default=60,
+                   help="토막마다 몇 쪽까지 (넘치면 '잘렸습니다' 로 적는다)")
     p.set_defaults(func=cmd_dart_probe)
 
     p = sub.add_parser("kosis-peek",

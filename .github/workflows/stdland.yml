@@ -86,6 +86,9 @@ on:
 permissions:
   contents: write
 
+# 한 번에 하나만 돈다. **대기열은 하나뿐이다** — 돌고 있는 것 하나에
+# 대기 하나가 차 있는데 셋째를 던지면 대기하던 것이 취소된다(run 122).
+# 여러 판을 볼 때는 하나씩 끝내고 던진다.
 concurrency:
   group: collect
   cancel-in-progress: false
@@ -546,7 +549,7 @@ jobs:
             # 기준점 표가 길다 — **창 길이마다** 접은 표부터 보인다.
             # 거기에 이득% 가 있고, 그것이 결론이다.
             head -n 2 /tmp/stdland.log
-            awk '/창 길이마다/,0' /tmp/stdland.log | head -n 40
+            awk '/기준점마다/,0' /tmp/stdland.log | head -n 70
           elif grep -q "세 사다리 나란히" /tmp/stdland.log; then
             # **등급별 건수부터** 보인다. 앞서 '우리 실거래로 잰 사다리'
             # 부터 잘랐더니 그 앞의 울타리 비교·조사연도 표가 통째로

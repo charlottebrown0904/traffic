@@ -1567,21 +1567,41 @@ def dart_windows(bgn: str, end: str, days: int = 89) -> list[tuple[str, str]]:
 def dart_list_all(bgn: str, end: str, ty: str = "B", max_pages: int = 20,
                   timeout: int = 40) -> list[dict]:
     """기간 전체를 89일씩·쪽마다 훑는다. 빈 토막은 [013] 으로 오니 넘긴다."""
-    rows = []
+    rows, _ = dart_list_all2(bgn, end, ty, max_pages, timeout)
+    return rows
+
+
+def dart_list_all2(bgn: str, end: str, ty: str = "B", max_pages: int = 20,
+                   timeout: int = 40) -> tuple[list[dict], list[tuple]]:
+    """위와 같되 **잘린 토막을 같이 돌려준다.**
+
+    첫 판(run 121)이 [I] 4,000건 · [A] 4,000건을 찍었는데 그것은 실제
+    건수가 아니라 **max_pages 에 걸린 수**였다. 4,000 을 사실로 읽으면
+    '거래소공시에는 49건뿐' 이라는 틀린 결론이 나온다 — 못 본 쪽에
+    무엇이 있는지 모르면서.
+
+    잘린 토막을 (토막, 본 쪽, 전체 쪽) 으로 돌려주어 부르는 쪽이
+    '여기까지만 봤다' 고 적을 수 있게 한다.
+    """
+    rows: list[dict] = []
+    cut: list[tuple] = []
     for lo, hi in dart_windows(bgn, end):
-        page = 1
+        page, pages = 1, 1
         while page <= max_pages:
             try:
                 got, pages = dart_list(lo, hi, ty, page=page, timeout=timeout)
             except RuntimeError as exc:
                 if "013" in str(exc):                   # 그 토막에 공시가 없다
+                    pages = 0
                     break
                 raise
             rows.extend(got)
             if page >= pages:
                 break
             page += 1
-    return rows
+        if pages and pages > max_pages:
+            cut.append((f"{lo}~{hi}", max_pages, pages))
+    return rows, cut
 
 
 def dart_address(corp_code: str, timeout: int = 40) -> str:

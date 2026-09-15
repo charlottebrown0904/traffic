@@ -2939,6 +2939,30 @@ check(not bool(_smu["방향 이겼나"].any()),
 check("시대" in _FC.verdict(_smu) or "못 넘습니다" in _FC.verdict(_smu),
       f"문을 닫고 왜인지 적는다 ({_FC.verdict(_smu)})")
 
+# **기준선은 늘오름과 동네추세 중 센 쪽이다.** 늘오름만 넘어 놓고
+# 이겼다고 적으면 눈속임이다.
+check(all(_sm["최고 방향 기준선"] >= _sm["방향늘오름"])
+      and all(_sm["최고 방향 기준선"] >= _sm["방향동네추세"]),
+      "기준선은 늘오름·동네추세 중 센 쪽을 쓴다")
+_fake = _sm.copy()
+_fake.loc[:, "방향동네추세"] = 0.99          # 동네추세가 훨씬 세다면
+_fake.loc[:, "최고 방향 기준선"] = _fake[["방향늘오름", "방향동네추세"]].max(axis=1)
+_fake.loc[:, "방향 이득%p"] = ((_fake["방향인자"] - _fake["최고 방향 기준선"]) * 100).round(2)
+_fake.loc[:, "방향 이겼나"] = _fake["방향 이득%p"] > _FC.MIN_EDGE * 100
+check(not bool(_fake["방향 이겼나"].any()),
+      "동네추세가 더 세면 늘오름을 넘어도 이긴 것이 아니다")
+check("동네추세" in _FC.verdict(_fake),
+      f"문에 어느 기준선에 졌는지 적는다 ({_FC.verdict(_fake)})")
+
+# **내림 해를 불렀는가** — '늘 오른다' 는 정의상 여기서 0점이다.
+_dn = _FC.down_calls(_bt)
+check(isinstance(_dn, _pd.DataFrame), "내림 해 표가 선다 (없으면 빈 표)")
+if len(_dn):
+    check(all(_dn["실제 평균"] < 0), "내림 해만 골라 담는다")
+_up_only = _bt.copy(); _up_only.loc[:, "실제 평균"] = 0.05
+check(len(_FC.down_calls(_up_only)) == 0,
+      "내린 해가 없으면 빈 표다 (0 을 지어내지 않는다)")
+
 # **띠** — 미래 가치는 범위다. 그 범위가 정말 그만큼 담는지까지 잰다.
 check(all(_bt["띠 아래"] < _bt["띠 위"]), "띠는 아래가 위보다 작다")
 check(0.55 <= float(_bt["띠 덮개"].mean()) <= 0.95,

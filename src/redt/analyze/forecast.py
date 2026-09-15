@@ -316,16 +316,41 @@ def summary(bt: pd.DataFrame) -> pd.DataFrame:
               MAE인자=("MAE 인자", "mean"), MAE무변화=("MAE 무변화", "mean"),
               MAE창평균=("MAE 창평균", "mean"), MAE동네추세=("MAE 동네추세", "mean"))
          .reset_index())
-    # **으뜸 잣대**: 방향 적중이 '늘 오른다' 보다 몇 %p 나은가. 음수면 진 것이다.
-    g["방향 이득%p"] = ((g["방향인자"] - g["방향늘오름"]) * 100).round(2)
+    # **으뜸 잣대**: 방향 적중이 **가장 센 기준선**보다 몇 %p 나은가.
+    # 늘오름만 상대하면 안 된다 — 동네추세 쪽이 더 셀 수 있고, 그때
+    # 늘오름만 넘어 놓고 이겼다고 적으면 그것이 곧 눈속임이다.
+    g["최고 방향 기준선"] = g[["방향늘오름", "방향동네추세"]].max(axis=1)
+    g["방향 이득%p"] = ((g["방향인자"] - g["최고 방향 기준선"]) * 100).round(2)
     g["방향 이겼나"] = g["방향 이득%p"] > MIN_EDGE * 100
     g["최고 기준선"] = g[["MAE무변화", "MAE창평균", "MAE동네추세"]].min(axis=1)
     g["이득%"] = ((g["최고 기준선"] - g["MAE인자"]) / g["최고 기준선"] * 100).round(2)
-    for c in ("쓴지표", "방향인자", "방향늘오름", "방향동네추세", "띠덮개",
+    for c in ("쓴지표", "방향인자", "방향늘오름", "방향동네추세",
+              "최고 방향 기준선", "띠덮개",
               "띠아래", "띠위", "MAE인자", "MAE무변화", "MAE창평균",
               "MAE동네추세", "최고 기준선"):
         g[c] = g[c].round(4)
     return g.sort_values("창")
+
+
+def down_calls(bt: pd.DataFrame) -> pd.DataFrame:
+    """**땅값이 내린 해를 불렀는가.**
+
+    전체 적중률 69% 인데 내림을 한 번도 못 부르는 모형과, 55% 지만
+    내림을 부르는 모형은 장사에서 값어치가 완전히 다르다. '늘 오른다'
+    는 정의상 내림을 절대 못 부른다 — 그러니 여기가 인자가 이길 수
+    있는 유일한 자리다.
+
+    기준점마다 실제 평균이 음(−)인 해만 골라, 그때 모형이 무엇이라
+    했는지 센다.
+    """
+    if bt is None or bt.empty or "실제 평균" not in bt:
+        return pd.DataFrame()
+    d = bt[bt["실제 평균"] < 0].copy()
+    if d.empty:
+        return pd.DataFrame()
+    d["모형도 내림"] = d["기울기"].notna() & (d["방향 인자"] > 0.5)
+    return d[["창", "기준점", "맞힘", "실제 평균", "방향 인자",
+              "방향 늘오름", "띠 아래", "띠 위"]].sort_values(["창", "기준점"])
 
 
 def band_text(row, band: float = BAND) -> str:
@@ -344,15 +369,19 @@ def verdict(sm: pd.DataFrame, band: float = BAND) -> str:
     win = sm[sm["방향 이겼나"]]
     if win.empty:
         best = sm.loc[sm["방향 이득%p"].idxmax()]
-        return ("산출 보류 — 방향이 '늘 오른다' 를 못 넘습니다"
+        who = ("늘오름" if float(best["방향늘오름"]) >= float(best["방향동네추세"])
+               else "동네추세")
+        return ("산출 보류 — 방향이 기준선을 못 넘습니다"
                 f" (가장 나은 창 {int(best['창'])}년: 인자 {best['방향인자']:.1%}"
-                f" vs 늘오름 {best['방향늘오름']:.1%} · {best['방향 이득%p']:+.2f}%p)")
+                f" vs {who} {best['최고 방향 기준선']:.1%}"
+                f" · {best['방향 이득%p']:+.2f}%p)")
     best = win.loc[win["방향 이득%p"].idxmax()]
     note = ""
     if float(best["띠덮개"]) < band - 0.05:
         note = (f" ※ 띠가 좁습니다 — {band:.0%} 라 해 놓고"
                 f" {float(best['띠덮개']):.0%} 만 담습니다")
     return (f"창 {int(best['창'])}년 · 방향 적중 {best['방향인자']:.1%}"
-            f" (늘오름 {best['방향늘오름']:.1%} 대비 {best['방향 이득%p']:+.2f}%p)"
+            f" (기준선 {best['최고 방향 기준선']:.1%} 대비"
+            f" {best['방향 이득%p']:+.2f}%p)"
             f" · 2년 뒤 {band_text(best, band)}"
             f" · 오차 {best['이득%']:+.2f}%{note}")
