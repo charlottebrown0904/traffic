@@ -1665,6 +1665,100 @@ def cmd_cross_factors(args):
     print(f"\n→ {path}")
 
 
+def cmd_forecast(args):
+    """2년 뒤 예측 백테스트 (2026-09-15 지시).
+
+    "(5년, 10년, 15년, 20년)간의 실거래 데이터와 31가지의 인자들을 봤을 때
+    상관 관계가 1%(1.01)이라도 있으면 그 추세로 2년 뒤 가격이 이렇게 될
+    것이다... 라는 예측 기준으로 검토해서 갑시다."
+
+    1% 문턱은 210종에 걸면 우연만으로 거의 다 통과한다. 그러니 통과
+    여부로 판정하지 않고, 통과시킨 것들로 예측을 만들어 **학습에 한 번도
+    안 쓴 해**에 대고 맞혀 본다. 기준선 셋(무변화·창 평균·동네 추세)을
+    못 이기면 인자는 값어치가 없다.
+    """
+    from .analyze import forecast as FC
+    with db.connect(read_only=True) as con:
+        trades = con.execute("""
+            SELECT sigungu_cd, deal_year, price_per_m2
+            FROM trade
+            WHERE kind = 'land' AND NOT coalesce(is_cancelled, FALSE)
+              AND NOT coalesce(is_share_deal, FALSE)
+              AND price_per_m2 > 0 AND sigungu_cd IS NOT NULL
+              AND deal_year >= ?
+        """, [int(args.since)]).fetchdf()
+        ser = con.execute("SELECT sigungu_cd, period, metric, value FROM region_series").fetchdf()
+        ryr = con.execute("SELECT sigungu_cd, year, metric, value FROM region_year").fetchdf()
+        tg = con.execute("""
+            SELECT g.sigungu_cd, t.year, 'ic_traffic' AS metric,
+                   sum(t.avg_daily) AS value
+            FROM traffic t JOIN tollgate g ON g.tollgate_id = t.tollgate_id
+            WHERE g.sigungu_cd IS NOT NULL AND t.avg_daily > 0
+            GROUP BY 1, 2
+        """).fetchdf()
+        pm = con.execute("""
+            SELECT sigungu_cd, CAST(substr(pms_day, 1, 4) AS INTEGER) AS year,
+                   'permit_area' AS metric, sum(tot_area) AS value
+            FROM permit
+            WHERE sigungu_cd IS NOT NULL AND length(pms_day) >= 4 AND tot_area > 0
+            GROUP BY 1, 2
+        """).fetchdf()
+
+    from .analyze import crossfactors as CF
+    price = FC.price_panel(trades, min_n=int(args.min_n))
+    long = pd.concat([CF.to_year(ser), ryr, tg, pm], ignore_index=True)
+    long = long.dropna(subset=["sigungu_cd", "year", "metric", "value"])
+    long["year"] = pd.to_numeric(long["year"], errors="coerce")
+    long = long.dropna(subset=["year"])
+    long["year"] = long["year"].astype(int)
+
+    horizon = int(args.horizon)
+    min_r = float(args.min_r)
+    windows = tuple(int(w) for w in str(args.windows).split(",") if w.strip())
+    print(f"땅값 칸 {len(price):,} (시군구 {price['sigungu_cd'].nunique() if len(price) else 0}"
+          f" · {int(price['year'].min()) if len(price) else 0}~"
+          f"{int(price['year'].max()) if len(price) else 0})")
+    print(f"문턱 |r| ≥ {min_r} ({min_r * 100:.0f}%) · 내다보는 기간 {horizon}년"
+          f" · 창 {'·'.join(str(w) for w in windows)}년")
+    if price.empty:
+        sys.exit("땅값 칸이 비었습니다 — trade 를 먼저 채우세요")
+
+    bt = FC.backtest(price, long, windows=windows, horizon=horizon, min_r=min_r)
+    if bt.empty:
+        sys.exit("맞혀 볼 기준점이 없습니다 — 해가 모자랍니다")
+
+    print("\n── 기준점마다 (학습은 창 안, 맞히는 해는 학습에 안 썼다) ──")
+    print(f"    {'창':>3s} {'기준점':>5s} {'→대상':>5s} {'학습':>6s} {'맞힘':>5s}"
+          f" {'쓴지표':>5s} {'MAE인자':>7s} {'MAE동네':>7s} {'MAE무변':>7s} {'방향':>6s}")
+    for _i, r in bt.iterrows():
+        print(f"    {int(r['창']):>3,} {int(r['기준점']):>5,} {int(r['기준점']) + horizon:>5,}"
+              f" {int(r['학습']):>6,} {int(r['맞힘']):>5,} {int(r['쓴 지표']):>5,}"
+              f" {r['MAE 인자']:>7.4f} {r['MAE 동네추세']:>7.4f} {r['MAE 무변화']:>7.4f}"
+              f" {r['방향 인자']:>6.3f}")
+
+    sm = FC.summary(bt)
+    print("\n── 창 길이마다 (**이득% 가 결론이다** · 음수면 기준선한테 졌다) ──")
+    print(f"    {'창':>3s} {'기준점':>4s} {'쓴지표':>6s} {'MAE인자':>8s} {'무변화':>8s}"
+          f" {'창평균':>8s} {'동네추세':>8s} {'이득%':>7s} {'방향':>6s}")
+    for _i, r in sm.iterrows():
+        print(f"    {int(r['창']):>3,}년 {int(r['기준점']):>4,} {r['쓴지표']:>6.1f}"
+              f" {r['MAE인자']:>8.4f} {r['MAE무변화']:>8.4f} {r['MAE창평균']:>8.4f}"
+              f" {r['MAE동네추세']:>8.4f} {r['이득%']:>+7.2f} {r['방향인자']:>6.1%}")
+
+    print(f"\n  ▶ {FC.verdict(sm)}")
+    print("\n  읽는 법. **이득%** 는 가장 센 기준선 대비 오차가 몇 % 줄었나다.")
+    print("  음수면 '인자를 본 것' 이 '아무것도 안 본 것' 보다 못했다는 뜻이다.")
+    print("  쓴 지표가 많은데 이득이 없으면 그것은 1% 문턱이 우연을 통과시킨 것이다.")
+
+    path = PROCESSED / "forecast.json"
+    path.write_text(json.dumps(
+        {"since": int(args.since), "horizon": horizon, "min_r": min_r,
+         "windows": list(windows), "origins": bt.to_dict("records"),
+         "summary": sm.to_dict("records"), "verdict": FC.verdict(sm)},
+        ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    print(f"\n→ {path}")
+
+
 def cmd_road_step(args):
     """필지 층 첫 칸 — 도로가 붙으면 얼마나 오르는가 (2026-09-15).
 
@@ -4504,6 +4598,17 @@ def main(argv=None):
     p.add_argument("--min-n", dest="min_n", default="5",
                    help="시군구×연 칸에 최소 몇 건 (기본 5)")
     p.set_defaults(func=cmd_cross_factors)
+
+    p = sub.add_parser("forecast",
+                       help="2년 뒤 예측 백테스트 — 1% 문턱을 밖에서 채점한다")
+    p.add_argument("--since", default="2006", help="이 해 이후 거래로 땅값 칸을 만든다")
+    p.add_argument("--min-n", dest="min_n", default="5",
+                   help="시군구×연 칸에 최소 몇 건 (기본 5)")
+    p.add_argument("--horizon", default="2", help="몇 해 뒤를 맞히나 (기본 2)")
+    p.add_argument("--min-r", dest="min_r", default="0.01",
+                   help="지시의 1%% 문턱. 학습 창 상관이 이만큼이면 쓴다")
+    p.add_argument("--windows", default="5,10,15,20", help="창 길이들 (쉼표)")
+    p.set_defaults(func=cmd_forecast)
 
     p = sub.add_parser("road-step",
                        help="필지 층 — 도로가 붙으면 얼마나 오르는가 (맹지 기준 사다리)")

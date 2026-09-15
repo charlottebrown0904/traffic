@@ -2752,6 +2752,7 @@ check("C(umd_cd)" in _RS.formula(_dfr.assign(umd_cd=_dfr["sigungu_cd"] + "|동")
 check("C(sigungu_cd)" in _RS.formula(_dfr, "sigungu"), "기본 울타리는 시·군·구다")
 
 print("41-4. 31개 인자 교차 분석 — 수준·변화·시차 (2026-09-15)")
+import math as _math
 from redt.analyze import crossfactors as _CF                # noqa: E402
 
 # 아는 세상을 만든다. 시군구 60곳 × 15해.
@@ -2849,6 +2850,76 @@ _X2 = _X + [{"sigungu_cd": r["sigungu_cd"], "year": r["year"], "metric": "same2"
 _dup = _CF.among_factors(_pd.DataFrame(_X2))
 check(len(_dup) and {"same", "same2"} == set(_dup.iloc[0][["가", "나"]]),
       f"같은 것을 재는 쌍을 찾아낸다 ({_dup.iloc[0].to_dict() if len(_dup) else '못 찾음'})")
+
+print()
+print("41-5. 2년 뒤 예측 백테스트 — 1% 문턱을 밖에서 채점한다 (2026-09-15)")
+from redt.analyze import forecast as _FC                    # noqa: E402
+
+# 아는 세상 하나. 시군구 80곳 × 25해.
+#   real  : **2년 뒤 땅값 변화를 실제로 앞서 안다** → 인자 모형이 이겨야 한다
+#   noise : 아무 상관 없는 것 40종 → 1% 문턱은 이것들도 다 통과시킨다
+# 요점은 '1% 문턱이 쓰레기를 통과시키는가' 가 아니라 **'통과시키고도
+# 밖에서 이기는가'** 다.
+_rngf = _np.random.default_rng(55)
+_PR, _LN = [], []
+for _i in range(80):
+    _sg = f"F{_i:03d}"
+    _lvl = 10.0
+    _sig = _rngf.normal(0, .08, 30)          # 해마다의 '앞선 신호'
+    for _t, _yr in enumerate(range(2000, 2025)):
+        _PR.append({"sigungu_cd": _sg, "deal_year": _yr,
+                    "price_per_m2": _math.exp(_lvl), "n": 20})
+        # 2년 뒤까지의 변화 = 올해 신호 × 1.0 + 잡음
+        _lvl += _sig[_t] * 0.5 + _rngf.normal(0, .01)
+        # 지표는 **수준이 아니라 변화**가 신호를 담게 누적한다.
+        _LN.append({"sigungu_cd": _sg, "year": _yr, "metric": "real",
+                    "value": _math.exp(2.0 + float(_np.sum(_sig[:_t + 1])))})
+        for _k in range(40):
+            _LN.append({"sigungu_cd": _sg, "year": _yr, "metric": f"noise{_k:02d}",
+                        "value": _math.exp(1.0 + _rngf.normal(0, .3))})
+
+_trf = _pd.DataFrame([{"sigungu_cd": r["sigungu_cd"], "deal_year": r["deal_year"],
+                       "price_per_m2": r["price_per_m2"]}
+                      for r in _PR for _ in range(6)])
+_pf = _FC.price_panel(_trf, min_n=5)
+check(len(_pf) == 80 * 25, f"시군구×연 땅값 칸이 선다 ({len(_pf)})")
+
+# 시점을 안 흘리는지부터 본다 — 이게 무너지면 성적은 전부 거짓이다.
+_tg = _FC.targets(_pf, horizon=2)
+_one = _tg[(_tg["sigungu_cd"] == "F000") & (_tg["year"] == 2010)].iloc[0]
+_p10 = _pf[(_pf["sigungu_cd"] == "F000") & (_pf["year"] == 2010)]["ln_price"].iloc[0]
+_p12 = _pf[(_pf["sigungu_cd"] == "F000") & (_pf["year"] == 2012)]["ln_price"].iloc[0]
+check(abs(float(_one["y"]) - (_p12 - _p10)) < 1e-9,
+      "대상은 딱 2년 뒤다 (ln P(t+2) − ln P(t))")
+check(int(_tg["year"].max()) == 2022,
+      f"2년 뒤가 없는 해는 짝이 안 된다 ({int(_tg['year'].max())})")
+# 칸이 빈 해를 건너뛰어 '2년' 으로 세지 않는다.
+_gap = _pf[~((_pf["sigungu_cd"] == "F001") & (_pf["year"] == 2011))]
+_tgg = _FC.targets(_gap, horizon=2)
+check(len(_tgg[(_tgg["sigungu_cd"] == "F001") & (_tgg["year"] == 2011)]) == 0,
+      "빠진 해는 기준점이 안 된다 (건너뛰어 잇지 않는다)")
+
+_bt = _FC.backtest(_pf, _pd.DataFrame(_LN), windows=(5, 10, 15, 20))
+check(len(_bt) > 0, f"기준점을 굴려 성적이 쌓인다 ({len(_bt)}개)")
+check(set(_bt["창"]) <= {5, 10, 15, 20}, "창 길이는 지시한 넷뿐이다")
+# 1% 문턱은 잡음 40종도 거의 다 통과시킨다 — 그걸 확인해 둔다.
+check(_bt["쓴 지표"].mean() > 15,
+      f"1% 문턱은 잡음까지 통과시킨다 (평균 {_bt['쓴 지표'].mean():.1f}종/41종)")
+_sm = _FC.summary(_bt)
+check(bool(_sm["이겼나"].any()),
+      f"진짜 선행 인자가 있으면 기준선을 이긴다 (이득 {list(_sm['이득%'])})")
+check("창" in _FC.verdict(_sm), f"문이 열리면 창 길이를 적는다 ({_FC.verdict(_sm)})")
+
+# **잡음만 있는 세상**: 1% 문턱을 통과해도 밖에서는 못 이겨야 한다.
+_LN2 = [r for r in _LN if r["metric"] != "real"]
+_bt2 = _FC.backtest(_pf, _pd.DataFrame(_LN2), windows=(5, 10, 15, 20))
+_sm2 = _FC.summary(_bt2)
+check(_bt2["쓴 지표"].mean() > 10,
+      f"잡음도 1% 문턱은 넘는다 (평균 {_bt2['쓴 지표'].mean():.1f}종)")
+check(float(_sm2["이득%"].max()) < 2.0,
+      f"그래도 밖에서는 못 이긴다 (최대 이득 {_sm2['이득%'].max():+.2f}%)")
+check("보류" in _FC.verdict(_sm2),
+      f"그러면 문을 닫는다 ({_FC.verdict(_sm2)})")
 
 print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")
 from redt.collect import indicators as _IND               # noqa: E402

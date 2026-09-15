@@ -13,6 +13,7 @@
 #   events      개통 전후 지가 (필지 단위 이중차분 + 이벤트 스터디) — 읽기만 한다
 #   road-step   필지 층 — 도로가 붙으면 얼마나 오르는가 (맹지 기준 사다리 · years=시작연도 · min_price)
 #   cross       31개 인자 교차 분석 — 덮개 · 땅값 상관(수준·변화·시차) · 겹치는 쌍 (years=시작연도)
+#   forecast    2년 뒤 예측 백테스트 — 1% 문턱을 밖에서 채점한다 (years=시작연도 · n=칸 최소건수)
 #   momentum    모멘텀 검증 — 시군구×용도지역군 연 중앙단가의 추세 지속·거래량 선행 (limit=칸 최소 건수)
 #   ecos        한국은행 ECOS 금리·물가·성장률
 #               query: (비움)=전부 적재 · probe=받아만 봄 · browse:CODE=표 목록
@@ -42,7 +43,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / cross / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / cross / forecast / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -227,6 +228,14 @@ jobs:
         run: |
           set -o pipefail
           python -m redt.cli cross-factors --since "${{ inputs.years || '2010' }}" \
+            --min-n "${{ inputs.n || '5' }}" 2>&1 | tee /tmp/stdland.log
+
+      # 2년 뒤 예측 백테스트 — 읽기만 한다.
+      - name: 2년 뒤 예측 백테스트
+        if: inputs.mode == 'forecast'
+        run: |
+          set -o pipefail
+          python -m redt.cli forecast --since "${{ inputs.years || '2006' }}" \
             --min-n "${{ inputs.n || '5' }}" 2>&1 | tee /tmp/stdland.log
 
       # 모멘텀 검증 — 읽기만 하므로 캐시는 안 남기고 결과 JSON 을 첨부한다.
@@ -416,7 +425,7 @@ jobs:
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'events' && inputs.mode != 'road-step' && inputs.mode != 'cross' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'events' && inputs.mode != 'road-step' && inputs.mode != 'cross' && inputs.mode != 'forecast' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -442,6 +451,14 @@ jobs:
         with:
           name: cross-factors
           path: data/processed/cross_factors.json
+          if-no-files-found: warn
+
+      - name: 예측 백테스트 첨부
+        if: always() && inputs.mode == 'forecast'
+        uses: actions/upload-artifact@v4
+        with:
+          name: forecast
+          path: data/processed/forecast.json
           if-no-files-found: warn
 
       - name: 도로 사다리 첨부
@@ -525,6 +542,11 @@ jobs:
             # 덮개 표가 길어 꼬리로는 잘린다 — 상관 표부터 통째로 보인다.
             head -n 2 /tmp/stdland.log
             awk '/땅값과의 상관/,0' /tmp/stdland.log | head -n 80
+          elif grep -q "창 길이마다" /tmp/stdland.log; then
+            # 기준점 표가 길다 — **창 길이마다** 접은 표부터 보인다.
+            # 거기에 이득% 가 있고, 그것이 결론이다.
+            head -n 2 /tmp/stdland.log
+            awk '/창 길이마다/,0' /tmp/stdland.log | head -n 40
           elif grep -q "세 사다리 나란히" /tmp/stdland.log; then
             # **등급별 건수부터** 보인다. 앞서 '우리 실거래로 잰 사다리'
             # 부터 잘랐더니 그 앞의 울타리 비교·조사연도 표가 통째로
