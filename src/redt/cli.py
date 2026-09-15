@@ -4257,6 +4257,88 @@ def cmd_dart_probe(args):
         print("  → 주소가 빈 칸이다. 시군구에 못 붙인다 — 다른 칸을 찾아야 한다")
 
 
+def cmd_company_probe(args):
+    """대기업 자리 — **본사와 공장 두 길을 나란히 두드린다** (2026-09-15 지시).
+
+    "대기업의 주소를 표시할 수 있는 방법 없습니까? (본사, 공장 등 포함)"
+
+    둘이 주는 것이 다르므로 섞지 않는다.
+
+      본사  OpenDART corpCode.xml → company.json 의 adres
+            **되지만 본사 하나뿐이다.** 수도권 본사에 지방 공장이 몰려
+            붙는 문제가 여기서 온다 — 그래서 공장 길을 따로 본다.
+      공장  한국산업단지공단 공장등록현황 (포털 openapi)
+            **공장 자리 그 자체다.** 활용신청이 필요한지 두드려서 가린다.
+
+    **법인명은 담고 대표자 이름은 안 담는다.** 법인명은 회사 이름이라
+    지도에 찍어야 쓸모가 있지만 대표자는 사람이다.
+    """
+    from .collect import indicators as ind
+
+    print("대기업 자리 — 본사(DART)와 공장(공장등록) 두 길\n")
+
+    print("── ① 본사 : OpenDART 전체 기업 고유번호 ──")
+    corps = []
+    try:
+        corps = ind.dart_corp_codes(timeout=int(args.timeout))
+    except Exception as exc:                          # noqa: BLE001
+        print(f"  ✗ 못 받았습니다: {str(exc)[:220]}")
+    if corps:
+        listed = [c for c in corps if c.get("stock_code")]
+        print(f"  기업 {len(corps):,}곳 · 그중 **상장 {len(listed):,}곳**")
+        print(f"  열쇠: {sorted(corps[0])}  (대표자 이름은 이 표에 없습니다)")
+        # 주소가 정말 오는가를 표본으로 센다 — 한 건만 보고 '온다' 고 적지 않는다.
+        take = listed[:int(args.sample)] or corps[:int(args.sample)]
+        ok, miss, rows = 0, 0, []
+        for c in take:
+            try:
+                info = ind.dart_company(c["corp_code"], timeout=int(args.timeout))
+            except Exception as exc:                  # noqa: BLE001
+                miss += 1
+                if miss <= 2:
+                    print(f"    ✗ {c['corp_name'][:20]}: {str(exc)[:90]}")
+                continue
+            if info.get("adres"):
+                ok += 1
+                rows.append(info)
+            else:
+                miss += 1
+        print(f"  표본 {len(take)}곳 중 주소가 온 곳 {ok} · 못 받은 곳 {miss}")
+        for r in rows[:int(args.top)]:
+            print(f"    {r['corp_name'][:18]:<19s} [{r['corp_cls']}]"
+                  f" {r['adres'][:52]}")
+        if ok:
+            print("  → **본사 주소는 전량 받을 수 있습니다.** 지오코딩은 우리가 이미 합니다")
+            print("     다만 이것은 본사 한 점입니다 — 공장은 다른 자리입니다")
+    print()
+
+    print("── ② 공장 : 공장등록현황 (포털) ──")
+    for did, kind, name in ind.FACTORY_SETS:
+        d = ind.detail(did, kind, timeout=int(args.timeout))
+        if d.get("error"):
+            print(f"  ✗ {did} {name}: {str(d['error'])[:90]}")
+            continue
+        eps = d.get("endpoints") or []
+        ops = d.get("operations") or []
+        dls = d.get("downloads") or []
+        print(f"  {did} [{kind}] {name}")
+        print(f"     주소 {len(eps)} · 오퍼레이션 {len(ops)} · 내려받기 {len(dls)}")
+        for e in eps[:2]:
+            print(f"     주소: {e[:110]}")
+        if ops:
+            print(f"     오퍼레이션: {ops[:6]}")
+        if not (eps or ops or dls):
+            print(f"     화면 앞부분: {str(d.get('_raw_head',''))[:150]}")
+
+    print("\n── 한눈에 ──")
+    print(f"    본사(DART)      {'○ 받힙니다 — 상장 %d곳' % len([c for c in corps if c.get('stock_code')]) if corps else '✗ 막혔습니다'}")
+    print("    공장(공장등록)   위 표의 '오퍼레이션' 이 보이면 활용신청만 하면 됩니다")
+    print("\n  읽는 법. 본사 주소만으로 '대기업이 여기 있다' 를 그리면,")
+    print("  삼성 공장이 평택이 아니라 서초에 찍힙니다. **공장 길이 본론**이고")
+    print("  본사는 보조입니다. 다만 본사도 그 자체로 쓸모가 있습니다 —")
+    print("  '이 시군구에 본사를 둔 상장사가 몇 곳인가' 는 지역 체력의 한 칸입니다.")
+
+
 def cmd_kosis_peek(args):
     """표 하나의 **속을 열어 본다** — 분류축·항목·기간, 그리고 한 해 맛보기.
 
@@ -5041,6 +5123,13 @@ def main(argv=None):
     p.add_argument("--max-pages", dest="max_pages", type=int, default=60,
                    help="토막마다 몇 쪽까지 (넘치면 '잘렸습니다' 로 적는다)")
     p.set_defaults(func=cmd_dart_probe)
+
+    p = sub.add_parser("company-probe",
+                       help="대기업 자리 — 본사(DART)와 공장(공장등록) 두 길을 두드린다")
+    p.add_argument("--sample", default="12", help="본사 주소를 몇 곳 표본으로 확인하나")
+    p.add_argument("--top", default="8", help="몇 곳을 보여 주나")
+    p.add_argument("--timeout", default="90")
+    p.set_defaults(func=cmd_company_probe)
 
     p = sub.add_parser("kosis-peek",
                        help="표 하나의 분류축·항목·기간 보기 (+ 한 해 맛보기)")

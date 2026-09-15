@@ -1619,6 +1619,78 @@ def dart_address(corp_code: str, timeout: int = 40) -> str:
     return str(body.get("adres", "") or "")
 
 
+# ── 대기업 자리 — 본사와 공장 (2026-09-15 지시) ──────────────────────
+#
+# "대기업의 주소를 표시할 수 있는 방법 없습니까? (본사, 공장 등 포함)"
+#
+# 길이 둘이고, 주는 것이 다르다. 섞으면 안 된다.
+#
+#   본사 : OpenDART corpCode.xml (전체 기업 고유번호) → company.json 의 adres
+#          **되지만 본사 주소 하나뿐이다.** 수도권 본사에 지방 공장이 몰려
+#          붙는 그 문제가 여기서 온다.
+#   공장 : 한국산업단지공단 공장등록현황 (공공데이터포털 openapi)
+#          **공장 자리 그 자체다.** 활용신청이 필요할 수 있어 먼저 두드린다.
+#
+# **법인명은 담고 대표자 이름(ceo_nm)은 안 담는다.** 법인명은 회사 이름이라
+# 지도에 찍어야 쓸모가 있지만, 대표자는 사람이다.
+DART_CORPCODE = "https://opendart.fss.or.kr/api/corpCode.xml"
+
+# 공장 자리 후보. 번호를 짐작하지 않고 두드려서 가린다.
+FACTORY_SETS = (
+    ("15087615", "openapi", "공장등록필지정보조회서비스"),
+    ("15087611", "openapi", "공장등록생산정보조회서비스"),
+    ("3041646", "fileData", "공장등록 현황 통계정보"),
+)
+
+
+def dart_corp_codes(timeout: int = 120) -> list[dict]:
+    """전체 기업 고유번호. zip 안의 CORPCODE.xml 을 푼다.
+
+    **JSON 이 아니라 zip 이다.** dart_call 은 resp.json() 을 부르므로 여기선
+    못 쓴다 — 그대로 쓰면 '자료가 없다' 가 아니라 파싱 오류로 죽는다.
+
+    돌려주는 것: corp_code · corp_name · stock_code (상장이면 여섯 자리).
+    **ceo_nm 은 애초에 이 표에 없다** — 담을 일이 없다.
+    """
+    import io                                          # noqa: PLC0415
+    import zipfile                                     # noqa: PLC0415
+    from xml.etree import ElementTree                   # noqa: PLC0415
+
+    resp = http.get(DART_CORPCODE, {"crtfc_key": "__via_relay__"}, timeout=timeout)
+    raw = resp.content
+    if raw[:2] != b"PK":
+        # 키가 거절당하면 OpenDART 는 200 에 XML 한 줄로 status 를 보낸다.
+        head = raw[:300].decode("utf-8", "replace")
+        raise RuntimeError(f"zip 이 아닙니다 — {head}")
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        names = [n for n in z.namelist() if n.lower().endswith(".xml")]
+        if not names:
+            raise RuntimeError(f"zip 안에 xml 이 없습니다 — {z.namelist()[:5]}")
+        root = ElementTree.fromstring(z.read(names[0]))
+    out = []
+    for el in root.iter("list"):
+        code = (el.findtext("corp_code") or "").strip()
+        if not code:
+            continue
+        out.append({"corp_code": code,
+                    "corp_name": (el.findtext("corp_name") or "").strip(),
+                    "stock_code": (el.findtext("stock_code") or "").strip(),
+                    "modify_date": (el.findtext("modify_date") or "").strip()})
+    return out
+
+
+def dart_company(corp_code: str, timeout: int = 40) -> dict:
+    """회사 한 곳의 **주소와 업종**. 대표자 이름은 **일부러 안 담는다.**
+
+    dart_address 는 주소 한 줄만 주는데, 지도에 찍으려면 업종·설립일·
+    시장구분도 있어야 '대기업' 을 가릴 수 있다.
+    """
+    body = dart_call(DART_COMPANY, {"corp_code": corp_code}, timeout=timeout)
+    keep = ("corp_name", "corp_cls", "adres", "induty_code", "est_dt",
+            "stock_code", "jurir_no")
+    return {k: str(body.get(k, "") or "") for k in keep}
+
+
 # ── KOSIS 지방세통계 — 시군구 × 세목 (2026-09-14) ────────────────────
 #
 # 지방재정365 가 준 것은 **총액**뿐이었다 (2014~2024, 세목은 전국 순계).
