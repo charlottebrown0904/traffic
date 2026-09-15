@@ -505,11 +505,22 @@ def cmd_value_test(args):
                 print("   비교표준지 없음 — 같은 용도지역 세분의 표준지가 이 시군구에 없다")
                 out.append({"trade_id": t["trade_id"], "sgg": sgg, "actual": actual, "hold": True})
                 continue
+            # **저울을 여럿 나란히 잰다** (2026-09-15 지시: 평가선례 비중을
+            # 더 높여서 실거래와 견줄 것). 같은 표본·같은 표준지·같은 시점에
+            # 그 밖의 요인만 바꿔 대므로, 차이는 저울 몫이다.
+            pairs = [("결정", V.decide_other(led, tc))]
+            for name in V.OTHER_WEIGHTS:
+                if name != V.OTHER_WEIGHT:
+                    pairs.append((name, V.decide_other(led, tc, weights=name)))
+            pairs += [("평가선례만", V.decide_other(led, None)),
+                      ("거래사례만", V.decide_other(None, tc))]
             res = {}
-            for label, other in (("결정", V.decide_other(led, tc)), ("평가선례만", V.decide_other(led, None)),
-                                 ("거래사례만", V.decide_other(None, tc))):
+            for label, other in pairs:
                 res[label] = V.appraise(subject, stds3[0], at=today, time=tf, other=other, region=True)
             r0 = res["결정"]
+            # 저울이 실제로 갈리는 것은 **두 갈래가 다 있는** 건뿐이다.
+            # 한쪽뿐이면 어느 저울이든 같은 값이라 섞어 재면 차이가 묽어진다.
+            both = bool((led or {}).get("median")) and bool((tc or {}).get("median"))
             # A/B ① 선정의 가격 수준 벌점을 끈 선정
             off = V.pick_standard(subject, cands, top=1, price_penalty=False)
             changed = bool(off) and off[0].get("pnu") != stds3[0].get("pnu")
@@ -538,7 +549,8 @@ def cmd_value_test(args):
                 u = r.get("unit_decided")
                 line.append(f"{label} {u:,.0f} (실거래/산출 {actual / u:.2f})" if u else f"{label} 보류")
             print("   ▶ " + " · ".join(line))
-            out.append({"trade_id": t["trade_id"], "pnu": t["pnu"], "sgg": sgg, "sido": subject["sido"],
+            out.append({"both": both,
+                        "trade_id": t["trade_id"], "pnu": t["pnu"], "sgg": sgg, "sido": subject["sido"],
                         "umd": t.get("umd"), "jibun": t.get("jibun"),
                         "deal": f"{t['deal_year']}-{int(t['deal_month']):02d}",
                         "ug": ug, "zg": zg, "jimok": t["jimok"],
@@ -562,13 +574,30 @@ def cmd_value_test(args):
     print()
     done = [o for o in out if not o.get("hold")]
     print(f"산출 {len(done)}/{len(out)}건 (보류 {len(out) - len(done)})")
-    for label in ("결정", "평가선례만", "거래사례만"):
+    labels = (["결정"] + [n for n in V.OTHER_WEIGHTS if n != V.OTHER_WEIGHT]
+              + ["평가선례만", "거래사례만"])
+    for label in labels:
         d = _digest([o["actual"] / o["unit"][label] for o in done if o["unit"].get(label)])
         if d:
             mid, in30, in2x, n = d
             print(f"실거래 ÷ 산출 [{label}]  중앙 {mid:.2f} · n={n} · ±30% 안 {in30} · 2배 안 {in2x}")
         else:
             print(f"실거래 ÷ 산출 [{label}]  산출된 건 없음")
+    # ── 그 밖의 요인 저울 (2026-09-15 지시) ──────────────────────────
+    #
+    # "현재가치에서 거래사례보다 평가 선례를 비중을 더 높여서 실거래 가격과
+    #  검증해 주세요." — 높이는 것은 손이 하지만, **얼마나** 높일지는 이 표가
+    # 정한다. 두 갈래가 다 있는 건만 따로 재야 저울 차이가 안 묽어진다.
+    dual = [o for o in done if o.get("both")]
+    print(f"\n그 밖의 요인 저울 — 두 갈래가 다 있는 {len(dual)}건만 (섞으면 차이가 묽어진다)")
+    print(f"  {'저울':<10s} {'중앙':>6s} {'±30% 안':>8s} {'2배 안':>7s}   (n={len(dual)})")
+    for label in labels:
+        d = _digest([o["actual"] / o["unit"][label] for o in dual if o["unit"].get(label)])
+        if not d:
+            continue
+        mark = "  ← 지금 쓰는 것" if label == "결정" else ""
+        print(f"  {label:<10s} {d[0]:>6.2f} {d[1]:>8d} {d[2]:>7d}{mark}")
+    print("  (중앙이 1.00 에 가까울수록, ±30% 안 건수가 많을수록 실거래에 맞다)")
     # A/B — 같은 표본에서 손질 하나만 끄고 켠 차이.
     for name, key, flag in (("선정의 가격 수준 벌점", "unit_sel_off", "changed"),
                             ("지역요인 추정", "unit_reg_off", None),

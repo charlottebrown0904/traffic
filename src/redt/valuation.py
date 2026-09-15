@@ -999,22 +999,71 @@ def trade_cell(cells: dict, sigungu_cd: str | None, zg: str | None, ug: str | No
 # 물러난 스물 몇 건인데, 건수를 30 에서 자르면 둘이 비슷한 무게가 되어
 # 먼 칸이 가까운 칸을 끌어내렸다. 무게 = min(건수, 상한) × 층 계수.
 # 층 계수는 시군구 1 · 시·도 0.5 · 전국 0.25 — 멀리서 온 값은 그만큼만.
-_OTHER_N_CAP = {"거래사례": 100.0, "평가선례": 30.0}
 _OTHER_LEVEL = (("시군구", 1.0), ("시·도", 0.5), ("전국", 0.25))
 
+# 2026-09-15 지시: "거래사례보다 평가 선례를 비중을 더 높여서 실거래 가격과
+# 검증해 주세요." 무게를 한 자리에 모아 **이름 붙인 저울**로 두고, 같은 표본에
+# 여러 저울을 나란히 대 본다 (value-test 가 한 실행에서 다 잰다). 화면이 쓰는
+# 것은 OTHER_WEIGHT 하나뿐이고, app.js otherFactorOf 가 그것과 같아야 한다.
+#
+#   무게 = f(min(건수, 상한)) × 갈래 계수 × 층 계수      f = n 또는 √n
+#   층 계수: 시군구 1 · 시·도 0.5 · 전국 0.25 (멀리서 온 값은 그만큼만)
+#
+# '현행' 이 왜 거래사례 쪽으로 기울어 있었나: 거래사례 칸은 그 시군구의 수백
+# 건이고 평가선례는 대개 시·도·전국으로 물러난 스물 몇 건인데, 상한이 같으면
+# 먼 칸이 가까운 칸을 끌어내렸다 (2026-09-13 전국 254건).
+# 상한을 30 으로 맞추면 건수 차이가 줄고, 갈래 계수가 선례를 위로 올린다.
+# √ 는 건수의 힘을 더 줄인다 — 278건이 4건보다 70배 더 아는 것은 아니다.
+OTHER_WEIGHTS: dict[str, dict] = {
+    "현행": {"cap": {"거래사례": 100.0, "평가선례": 30.0},
+             "src": {"거래사례": 1.0, "평가선례": 1.0}, "root": False},
+    "선례2배": {"cap": {"거래사례": 30.0, "평가선례": 30.0},
+                "src": {"거래사례": 1.0, "평가선례": 2.0}, "root": False},
+    "선례3배": {"cap": {"거래사례": 30.0, "평가선례": 30.0},
+                "src": {"거래사례": 1.0, "평가선례": 3.0}, "root": False},
+    "선례3배√": {"cap": {"거래사례": 30.0, "평가선례": 30.0},
+                 "src": {"거래사례": 1.0, "평가선례": 3.0}, "root": True},
+}
 
-def _other_weight(s: dict) -> float:
-    n = min(float(s.get("n") or 0), _OTHER_N_CAP.get(s.get("source"), 30.0))
+# 지금 쓰는 저울. **여기를 바꾸면 app.js 의 OTHER_WEIGHT 도 같이 바꾼다.**
+OTHER_WEIGHT = "현행"
+
+
+def other_weights(prof: str | dict | None = None) -> dict:
+    if isinstance(prof, dict):
+        return prof
+    return OTHER_WEIGHTS.get(str(prof or OTHER_WEIGHT), OTHER_WEIGHTS["현행"])
+
+
+def _other_weight(s: dict, prof: str | dict | None = None) -> float:
+    w = other_weights(prof)
+    src = str(s.get("source") or "")
+    n = min(float(s.get("n") or 0), float(w["cap"].get(src, 30.0)))
+    if w.get("root"):
+        n = math.sqrt(n)
     level = str(s.get("level") or "")
     mult = 1.0
     for key, m in _OTHER_LEVEL:
         if key in level:
             mult = m
             break
-    return max(n * mult, 0.5)
+    return max(n * mult * float(w["src"].get(src, 1.0)), 0.5)
 
 
-def decide_other(ledger: dict | None, trade: dict | None) -> dict:
+def _other_basis(prof: str | dict | None = None) -> str:
+    """화면에 적는 섞는 법. 선례에 갈래 계수가 붙어 있으면 그렇게 적는다 —
+    '건수 가중' 이라고만 적어 두면 읽는 사람이 4건이 278건을 어떻게 이겼는지
+    알 길이 없다."""
+    w = other_weights(prof)
+    led = float(w["src"].get("평가선례", 1.0))
+    trd = float(w["src"].get("거래사례", 1.0))
+    if led > trd:
+        return f"평가선례 {led / trd:.0f}배 가중 기하평균"
+    return "건수·층 가중 기하평균"
+
+
+def decide_other(ledger: dict | None, trade: dict | None,
+                 weights: str | dict | None = None) -> dict:
     """두 갈래에서 하나를 정한다.
 
     둘 다 있으면 건수로 가중한 기하평균 — 거래사례가 수십 건이면 그쪽이
@@ -1029,14 +1078,14 @@ def decide_other(ledger: dict | None, trade: dict | None) -> dict:
         return {"factor": s["median"], "q1": s.get("q1"), "q3": s.get("q3"),
                 "basis": f"{s['source']} 기준 (n={s['n']}, {s.get('level') or '시군구'})",
                 "sources": have}
-    w = [_other_weight(s) for s in have]
+    w = [_other_weight(s, weights) for s in have]
     lg = sum(wi * math.log(s["median"]) for wi, s in zip(w, have)) / sum(w)
     f = math.exp(lg)
     q1 = min(s.get("q1") or f for s in have)
     q3 = max(s.get("q3") or f for s in have)
     return {"factor": round(f, 2), "q1": round(q1, 2), "q3": round(q3, 2),
             "basis": " · ".join(f"{s['source']} {s['median']} (n={s['n']}, {s.get('level') or '시군구'})" for s in have)
-            + " → 건수·층 가중 기하평균",
+            + f" → {_other_basis(weights)}",
             "sources": have}
 
 

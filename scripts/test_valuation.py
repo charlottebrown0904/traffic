@@ -124,6 +124,29 @@ check(2.0 < _d["factor"] < 2.3, f"결정이 거래사례 쪽에 붙는다 ({_d['
 _d2 = V.decide_other({**_led, "level": "같은 시군구 · 용도지역군 · 지목군", "n": 30}, {**_trd, "n": 30})
 check(abs(_d2["factor"] - math.sqrt(8.0)) < 0.02, "같은 층·같은 건수면 기하평균 그대로")
 
+print("1-5-2. 저울을 이름으로 고른다 (2026-09-15 지시 — 선례 비중을 올린다)")
+# 화면 캡처의 그 칸: 평가선례 2.36 (n=4, 시·도) · 거래사례 1.31 (n=278, 시군구).
+_L = {"median": 2.36, "n": 4, "source": "평가선례", "level": "같은 시·도 · 용도지역군 · 지목군"}
+_T = {"median": 1.31, "n": 278, "source": "거래사례", "level": "시군구"}
+_f = {name: V.decide_other(_L, _T, weights=name)["factor"] for name in V.OTHER_WEIGHTS}
+check(_f["현행"] < _f["선례2배"] < _f["선례3배"] < _f["선례3배√"],
+      "선례 계수를 올릴수록 결정이 선례 쪽으로 간다 " + str(_f))
+check(all(_T["median"] < v < _L["median"] for v in _f.values()),
+      "어느 저울이든 두 갈래 사이에 있다 (바깥으로 안 나간다)")
+check(V.decide_other(_L, None, weights="선례3배")["factor"] == 2.36
+      and V.decide_other(None, _T, weights="선례3배")["factor"] == 1.31,
+      "한 갈래뿐이면 저울과 무관하게 그 값 그대로")
+check("평가선례 3배 가중" in V.decide_other(_L, _T, weights="선례3배")["basis"]
+      and "건수·층 가중" in V.decide_other(_L, _T, weights="현행")["basis"],
+      "섞는 법을 화면 글에 적는다 — 4건이 278건을 어떻게 이겼는지 보이게")
+check(V.OTHER_WEIGHT in V.OTHER_WEIGHTS
+      and V.decide_other(_L, _T)["factor"] == V.decide_other(_L, _T, weights=V.OTHER_WEIGHT)["factor"],
+      f"기본 저울은 OTHER_WEIGHT 하나 ({V.OTHER_WEIGHT})")
+# √ 는 건수의 힘을 줄인다 — 278건이 4건보다 70배 더 아는 것은 아니다.
+check(abs(V._other_weight(_T, "선례3배") - 30.0) < 1e-9
+      and abs(V._other_weight(_T, "선례3배√") - math.sqrt(30.0)) < 1e-9,
+      "√ 저울은 건수를 제곱근으로 본다")
+
 print("2. 격차율 — 대상 ÷ 표준지")
 r = V.individual_factor(
     {"land_use": "자연녹지지역", "jimok": "임야", "road_side": "세로(가)", "slope": "완경사"},
