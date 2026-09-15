@@ -3051,6 +3051,101 @@ check(any(len(r) > 0 for r in _bt["큰 지표"]),
       f"적어도 한 기준점에는 지표가 담긴다")
 
 
+print()
+print("41-6. 세 땅의 지역별 가격 추이 — 전국 평균을 안 낸다 (2026-09-15)")
+from redt.analyze import zonetrend as _ZT                   # noqa: E402
+
+# **군으로 뭉치지 않는다** — 생산관리와 계획관리는 다른 땅이다.
+check(_ZT.pick_zone("계획관리지역") == "계획관리", "계획관리를 가려낸다")
+check(_ZT.pick_zone("생산관리지역") == "생산관리", "생산관리를 가려낸다")
+check(_ZT.pick_zone("자연녹지지역") == "자연녹지", "자연녹지를 가려낸다")
+check(_ZT.pick_zone("보전관리지역") is None, "보전관리는 우리 땅이 아니다")
+check(_ZT.pick_zone("제1종일반주거지역") is None, "주거는 안 섞는다")
+check(_ZT.pick_zone(None) is None, "빈 칸은 조용히 버린다")
+
+# 아는 세상. 시군구 60곳 × 2006~2025 × 세 용도지역.
+#   앞 절반(30곳)은 **저마다 제 속도로** 꾸준히 오른다 (지역성이 이어진다)
+#   뒤 절반(30곳)은 해마다 **뒤집힌다** (평균 회귀)
+# 지속성 잣대가 이 둘을 갈라야 한다.
+#
+# **처음엔 꾸준한 30곳에 같은 오름폭(0.06)을 줬는데 그것이 틀렸다.**
+# 다 같은 속도로 오르면 시군구끼리 차이가 없고, 그러면 '이어질 지역성'
+# 자체가 없다 — 지난 오름의 차이도 앞으로의 차이도 잡음뿐이라 상관이
+# 0 근처로 나온다(실제로 −0.09 가 나왔다). 지역성이 이어진다는 말은
+# **곳마다 제 속도가 있고 그 속도가 유지된다**는 뜻이다.
+_rngz = _np.random.default_rng(99)
+_rows = []
+for _i in range(60):
+    _sg = f"Z{_i:03d}"
+    _steady = _i < 30
+    _drift = (0.01 + 0.005 * _i) if _steady else 0.0   # 곳마다 제 속도
+    for _z, _lvl0 in (("계획관리", 11.0), ("생산관리", 10.6), ("자연녹지", 11.3)):
+        _lvl = _lvl0 + _rngz.normal(0, .3)
+        _flip = 1.0
+        for _yr in range(2006, 2026):
+            for _ in range(8):                     # 칸마다 8건 (min_n=5 통과)
+                _rows.append({"sigungu_cd": _sg, "deal_year": _yr,
+                              "land_use": f"{_z}지역",
+                              "price_per_m2": _math.exp(_lvl + _rngz.normal(0, .02))})
+            if _steady:
+                _lvl += _drift + _rngz.normal(0, .01)
+            else:
+                _lvl += _flip * 0.10 + _rngz.normal(0, .01)
+                _flip = -_flip                      # 해마다 뒤집는다
+_tz = _pd.DataFrame(_rows)
+_pan = _ZT.panel(_tz, min_n=5)
+check(set(_pan["zone"]) == {"계획관리", "생산관리", "자연녹지"},
+      f"세 용도지역이 따로 선다 ({sorted(set(_pan['zone']))})")
+check(len(_pan) == 60 * 3 * 20, f"시군구×용도지역×연 칸이 선다 ({len(_pan)})")
+_cov = _ZT.coverage(_pan)
+check(int(_cov["시군구"].min()) == 60, "덮개가 시군구 수를 센다")
+
+# 얇은 칸은 버린다 — 칸에 4건뿐이면 중앙값이 한 건에 흔들린다.
+_thin = _pd.DataFrame([{"sigungu_cd": "Q1", "deal_year": 2020,
+                        "land_use": "계획관리지역", "price_per_m2": 100.0}] * 4)
+check(len(_ZT.panel(_thin, min_n=5)) == 0, "5건이 안 되는 칸은 버린다")
+
+# 흩어짐 — 평균 한 줄이 아니라 분위수로 말한다.
+_sp = _ZT.spread(_pan)
+check(set(_sp.columns) >= {"하위10%", "중앙", "상위10%", "위아래 배"},
+      "흩어짐을 분위수로 적는다 (평균이 아니다)")
+check(all(_sp["상위10%"] >= _sp["중앙"]) and all(_sp["중앙"] >= _sp["하위10%"]),
+      "분위수 순서가 맞는다")
+
+# 누적 배율 — 꾸준한 곳과 뒤집히는 곳이 갈려야 한다.
+_gr = _ZT.growth(_pan, 2015, 2025)
+_gs = _ZT.growth_spread(_gr)
+check(len(_gs) == 3 and all(_gs["시군구"] == 60), "세 용도지역 모두 배율이 선다")
+check(float(_gs["위아래 배"].min()) > 1.2,
+      f"지역차가 있으면 위아래가 벌어진다 ({_gs['위아래 배'].tolist()})")
+# 한쪽만 있는 해는 배율을 못 낸다 — 다른 기간의 배율을 섞지 않는다.
+_half = _pan[~((_pan["sigungu_cd"] == "Z000") & (_pan["year"] == 2015))]
+_gh = _ZT.growth(_half, 2015, 2025)
+check(len(_gh[(_gh["sigungu_cd"] == "Z000")]) == 0,
+      "출발 해가 없는 시군구는 배율에서 빠진다")
+
+# **지속성** — 이 표의 값어치. 꾸준한 세상은 양수, 뒤집히는 세상은 음수.
+_pr = _ZT.persistence(_pan, look=5, horizon=2)
+check(len(_pr) > 0, f"지속성을 잰다 ({len(_pr)}칸)")
+_steady_only = _pan[_pan["sigungu_cd"] < "Z030"]
+_flip_only = _pan[_pan["sigungu_cd"] >= "Z030"]
+_ps = _ZT.persistence(_steady_only, look=5, horizon=2)
+_pf = _ZT.persistence(_flip_only, look=5, horizon=2)
+check(float(_ps["지난오름↔앞으로"].mean()) > 0.3,
+      f"꾸준한 세상은 지속성이 양수다 ({_ps['지난오름↔앞으로'].mean():+.3f})")
+check(float(_pf["지난오름↔앞으로"].mean()) < 0,
+      f"뒤집히는 세상은 지속성이 음수다 ({_pf['지난오름↔앞으로'].mean():+.3f})")
+check("평균 r=" in _ZT.persistence_verdict(_ps),
+      f"문에 용도지역마다 평균을 적는다 ({_ZT.persistence_verdict(_ps)[:60]})")
+check("보류" in _ZT.persistence_verdict(_pd.DataFrame()),
+      "잴 칸이 없으면 보류로 말한다")
+
+# 위·아래 이름 — 눈으로 보게 한다.
+_tb = _ZT.top_bottom(_gr, {"Z000": "가나 다시"}, k=5)
+check(len(_tb) == 3 * 10 and set(_tb["쪽"]) == {"위", "아래"},
+      f"용도지역마다 위·아래를 뽑는다 ({len(_tb)}행)")
+
+
 print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")
 from redt.collect import indicators as _IND               # noqa: E402
 

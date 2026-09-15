@@ -15,6 +15,7 @@
 #   cross       31개 인자 교차 분석 — 덮개 · 땅값 상관(수준·변화·시차) · 겹치는 쌍 (years=시작연도)
 #   forecast    2년 뒤 예측 백테스트 — 1% 문턱을 밖에서 채점한다 (years=시작연도 · n=칸 최소건수)
 #   industrial-probe  산업단지 지정일 — 포털 후보를 한 판에 다 두드린다 (query=번호들 쉼표)
+#   zone-trend  세 땅(생산관리·계획관리·자연녹지)의 **지역별** 가격 추이 (years=시작연도 · query=base,last)
 #   momentum    모멘텀 검증 — 시군구×용도지역군 연 중앙단가의 추세 지속·거래량 선행 (limit=칸 최소 건수)
 #   ecos        한국은행 ECOS 금리·물가·성장률
 #               query: (비움)=전부 적재 · probe=받아만 봄 · browse:CODE=표 목록
@@ -44,7 +45,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / cross / forecast / industrial / industrial-probe / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / cross / forecast / zone-trend / industrial / industrial-probe / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -355,6 +356,16 @@ jobs:
             python -m redt.cli geocode-zones --limit "${{ inputs.limit || '2000' }}"
           } 2>&1 | tee /tmp/stdland.log
 
+      # 세 땅의 지역별 가격 추이 — 읽기만 한다. 전국 평균을 안 낸다.
+      - name: 세 땅 지역별 추이
+        if: inputs.mode == 'zone-trend'
+        run: |
+          set -o pipefail
+          IFS=, read -r BASE LAST <<< "${{ inputs.query || '2015,2025' }}"
+          python -m redt.cli zone-trend --since "${{ inputs.years || '2006' }}" \
+            --min-n "${{ inputs.n || '5' }}" --base "${BASE}" --last "${LAST}" \
+            2>&1 | tee /tmp/stdland.log
+
       # 산업단지 지정일 — 읽기만 한다. 후보를 한 판에 다 두드린다.
       - name: 산업단지 지정일 탐침
         if: inputs.mode == 'industrial-probe'
@@ -438,7 +449,7 @@ jobs:
         run: rm -f data/processed/stdland.csv
 
       - name: 수집분 보관
-        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'events' && inputs.mode != 'road-step' && inputs.mode != 'cross' && inputs.mode != 'forecast' && inputs.mode != 'industrial-probe' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
+        if: always() && inputs.mode != 'probe' && inputs.mode != 'value-test' && inputs.mode != 'law-probe' && inputs.mode != 'xy-probe' && inputs.mode != 'factor-cells' && inputs.mode != 'events' && inputs.mode != 'road-step' && inputs.mode != 'cross' && inputs.mode != 'forecast' && inputs.mode != 'zone-trend' && inputs.mode != 'industrial-probe' && inputs.mode != 'indicators-probe' && inputs.mode != 'momentum' && inputs.mode != 'market-fit'
         uses: actions/cache/save@v4
         with:
           path: |
@@ -464,6 +475,14 @@ jobs:
         with:
           name: cross-factors
           path: data/processed/cross_factors.json
+          if-no-files-found: warn
+
+      - name: 세 땅 추이 첨부
+        if: always() && inputs.mode == 'zone-trend'
+        uses: actions/upload-artifact@v4
+        with:
+          name: zone-trend
+          path: data/processed/zone_trend.json
           if-no-files-found: warn
 
       - name: 예측 백테스트 첨부

@@ -1944,6 +1944,113 @@ def cmd_forecast(args):
     print(f"\n→ {path}")
 
 
+def cmd_zone_trend(args):
+    """세 땅(생산관리·계획관리·자연녹지)의 **지역별** 가격 추이 (2026-09-15 지시).
+
+    "전국으로 넓혀서 검토하는 것은 지양바랍니다. 지역적 상승이 크다고
+    생각합니다."
+
+    전국 평균을 한 줄도 안 낸다. 흩어짐과 분위수로 말하고, 마지막에
+    **지난 오름이 앞일을 예고하는가**(지속성)를 묻는다 — 그것이 서야
+    "어디가 오를 것이다" 를 말할 수 있다.
+    """
+    from .analyze import zonetrend as ZT
+    zones = tuple(z.strip() for z in str(args.zones).split(",") if z.strip())
+    with db.connect(read_only=True) as con:
+        trades = con.execute("""
+            SELECT sigungu_cd, sido, sigungu, deal_year, price_per_m2, land_use
+            FROM trade
+            WHERE kind = 'land' AND NOT coalesce(is_cancelled, FALSE)
+              AND NOT coalesce(is_share_deal, FALSE)
+              AND price_per_m2 > 0 AND sigungu_cd IS NOT NULL
+              AND land_use IS NOT NULL AND deal_year >= ?
+        """, [int(args.since)]).fetchdf()
+    names = {}
+    if len(trades):
+        nm = trades.dropna(subset=["sigungu_cd"]).drop_duplicates("sigungu_cd")
+        names = {r["sigungu_cd"]: f"{r.get('sido','')} {r.get('sigungu','')}".strip()
+                 for _i, r in nm.iterrows()}
+
+    pan = ZT.panel(trades, zones=zones, min_n=int(args.min_n))
+    print(f"세 땅만 봅니다: {' · '.join(zones)}"
+          f"  (전국 평균은 한 줄도 안 냅니다)")
+    if pan.empty:
+        sys.exit("칸이 비었습니다 — 그 용도지역 거래가 없습니다")
+    cov = ZT.coverage(pan)
+    print(f"\n── 덮개 (재기 전에 이 표다) ──")
+    print(f"    {'용도지역':<10s} {'시군구':>5s} {'칸':>7s} {'거래':>10s} {'기간':>12s}")
+    for _i, r in cov.iterrows():
+        print(f"    {str(r['zone']):<10s} {int(r['시군구']):>5,} {int(r['칸']):>7,}"
+              f" {int(r['거래']):>10,} {int(r['처음'])}~{int(r['끝'])}")
+
+    sp = ZT.spread(pan)
+    print(f"\n── 같은 해에 시군구끼리 얼마나 다른가 (원/㎡ · 평균 안 냄) ──")
+    print(f"    {'용도지역':<10s} {'해':>5s} {'시군구':>5s} {'하위10%':>10s}"
+          f" {'중앙':>10s} {'상위10%':>11s} {'위아래':>6s}")
+    for _i, r in sp.iterrows():
+        if int(r["year"]) % int(args.every) and int(r["year"]) != int(sp["year"].max()):
+            continue
+        print(f"    {str(r['zone']):<10s} {int(r['year']):>5,} {int(r['시군구']):>5,}"
+              f" {int(r['하위10%']):>10,} {int(r['중앙']):>10,}"
+              f" {int(r['상위10%']):>11,} {r['위아래 배']:>6.2f}배")
+
+    base, last = int(args.base), int(args.last)
+    gr = ZT.growth(pan, base, last)
+    gs = ZT.growth_spread(gr)
+    print(f"\n── {base}→{last} 누적 배율이 시군구마다 얼마나 다른가 ──")
+    if gs.empty:
+        print("    두 해가 다 있는 시군구가 없습니다")
+    else:
+        print(f"    {'용도지역':<10s} {'시군구':>5s} {'10%':>6s} {'25%':>6s}"
+              f" {'중앙':>6s} {'75%':>6s} {'90%':>6s} {'위아래':>6s}"
+              f" {'내린곳':>6s} {'2배↑':>6s}")
+        for _i, r in gs.iterrows():
+            print(f"    {str(r['zone']):<10s} {int(r['시군구']):>5,}"
+                  f" {r['10%']:>6.2f} {r['25%']:>6.2f} {r['중앙']:>6.2f}"
+                  f" {r['75%']:>6.2f} {r['90%']:>6.2f} {r['위아래 배']:>5.2f}배"
+                  f" {int(r['내린 곳']):>6,} {int(r['두 배 넘은 곳']):>6,}")
+
+    tb = ZT.top_bottom(gr, names, k=int(args.top))
+    if not tb.empty:
+        print(f"\n── 가장 오른 곳과 가장 안 오른 곳 ({base}→{last}) ──")
+        for z in tb["zone"].unique():
+            blk = tb[tb["zone"] == z]
+            up = blk[blk["쪽"] == "위"]; dn = blk[blk["쪽"] == "아래"]
+            print(f"  [{z}]")
+            print("    위: " + " · ".join(
+                f"{r['이름'] or r['sigungu_cd']} {r['배율']:.2f}" for _i, r in up.iterrows()))
+            print("    아래: " + " · ".join(
+                f"{r['이름'] or r['sigungu_cd']} {r['배율']:.2f}" for _i, r in dn.iterrows()))
+
+    pr = ZT.persistence(pan, look=int(args.look), horizon=int(args.horizon))
+    print(f"\n── **지난 {args.look}년 오른 곳이 뒤 {args.horizon}년에도 오르는가** ──")
+    if pr.empty:
+        print("    잴 칸이 모자랍니다")
+    else:
+        print(f"    {'용도지역':<10s} {'기준해':>6s} {'시군구':>5s}"
+              f" {'지난↔앞으로':>10s} {'앞으로 중앙':>11s}")
+        for _i, r in pr.iterrows():
+            print(f"    {str(r['zone']):<10s} {int(r['기준해']):>6,} {int(r['시군구']):>5,}"
+                  f" {r['지난오름↔앞으로']:>+10.3f} {r['앞으로 중앙']:>+11.4f}")
+        print(f"\n  ▶ {ZT.persistence_verdict(pr)}")
+
+    print("\n  읽는 법. **위아래 배**가 크면 같은 용도지역이라도 어디냐에 따라")
+    print("  값이 크게 갈린다는 뜻이다 — 전국 평균 한 줄이 왜 쓸모없는지가 여기 있다.")
+    print("  **지난↔앞으로**가 양수면 오르던 곳이 계속 오른다(지역성이 이어진다),")
+    print("  음수면 되돌아온다(평균 회귀), 0 이면 지난 오름은 앞일에 대해")
+    print("  아무 말도 안 한다. 이어져야 '어디가 오를 것이다' 를 말할 수 있다.")
+
+    path = PROCESSED / "zone_trend.json"
+    path.write_text(json.dumps(
+        {"zones": list(zones), "since": int(args.since), "base": base, "last": last,
+         "coverage": cov.to_dict("records"), "spread": sp.to_dict("records"),
+         "growth_spread": gs.to_dict("records"), "top_bottom": tb.to_dict("records"),
+         "persistence": pr.to_dict("records"),
+         "verdict": ZT.persistence_verdict(pr)},
+        ensure_ascii=False, indent=1, default=str), encoding="utf-8")
+    print(f"\n→ {path}")
+
+
 def cmd_road_step(args):
     """필지 층 첫 칸 — 도로가 붙으면 얼마나 오르는가 (2026-09-15).
 
@@ -4842,6 +4949,20 @@ def main(argv=None):
     p.add_argument("--no-macro", dest="macro", action="store_false",
                    help="시장 층(금리 등 전국 지표)을 빼고 지역 지표만으로 잰다")
     p.set_defaults(func=cmd_forecast, macro=True)
+
+    p = sub.add_parser("zone-trend",
+                       help="세 땅(생산관리·계획관리·자연녹지)의 지역별 가격 추이")
+    p.add_argument("--zones", default="생산관리,계획관리,자연녹지")
+    p.add_argument("--since", default="2006", help="이 해 이후 거래만")
+    p.add_argument("--min-n", dest="min_n", default="5",
+                   help="시군구×용도지역×연 칸에 최소 몇 건 (기본 5)")
+    p.add_argument("--base", default="2015", help="누적 배율의 출발 해")
+    p.add_argument("--last", default="2025", help="누적 배율의 끝 해")
+    p.add_argument("--look", default="5", help="지속성: 지난 몇 해를 보나")
+    p.add_argument("--horizon", default="2", help="지속성: 뒤 몇 해를 묻나")
+    p.add_argument("--every", default="2", help="흩어짐 표를 몇 해마다 찍나")
+    p.add_argument("--top", default="8", help="위·아래 몇 곳씩")
+    p.set_defaults(func=cmd_zone_trend)
 
     p = sub.add_parser("road-step",
                        help="필지 층 — 도로가 붙으면 얼마나 오르는가 (맹지 기준 사다리)")
