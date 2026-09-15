@@ -4707,9 +4707,17 @@ function lpTip(it, level, w) {
     //
     // 0건과 1~4건을 굳이 가르지 않습니다. 둘 다 '다섯 건이 안 된다' 가
     // 참이고, 그것이 값을 안 쓰는 이유 전부입니다.
+    // 용도지역을 하나도 안 골랐으면 '거래 5건 미만' 은 거짓이다 —
+    // 세어 본 적이 없다. 값이 없는 까닭을 있는 그대로 적는다.
+    const on = lpGroups();
+    if (!on.length) {
+      return `<div class="lp-tip-h">${escapeHtml(it.full || it.name)}</div>`
+        + '<div class="lp-tip-m">용도지역을 켜면 이 자리에 평당 단가가'
+        + ' 붙습니다</div>';
+    }
     return `<div class="lp-tip-h">${escapeHtml(it.full || it.name)}</div>`
       + `<div class="lp-tip-m">${escapeHtml(w ? w.label : '')}`
-      + ` · ${escapeHtml(lpGroups().join('·'))}`
+      + ` · ${escapeHtml(on.join('·'))}`
       + ` · 거래 ${LP_MIN_LABEL}건 미만</div>`;
   }
   const per = perM2Str(it.v);
@@ -4811,7 +4819,16 @@ function drawLandPriceInner(have) {
   // 꺼 두었으면 한 장도 안 그린다. 고른 행정구역도 같이 걷는다 —
   // 태그가 없는데 그 태그의 경계만 남으면 '이게 뭔가' 가 된다.
   if (!state.placeTags) { clearAdminShape(); updateLpNote(null); return; }
-  if (!have || !groups.length) { updateLpNote(null); return; }
+  // **용도지역을 전부 끄면 지역 태그가 통째로 사라졌다** (보고된 문제
+  // 2026-09-15: "실거래 가격에서 용도지역을 전부 해제하면 지역 테그들이
+  // 전부 사라집니다. 회색으로 처리해 주세요.").
+  //
+  // 지도에서 이름이 사라지면 사람은 '고를 것을 안 골랐다' 가 아니라
+  // '이 지도가 고장났다' 로 읽는다. 거래가 없는 지자체를 이미 회색
+  // 이름표로 남기고 있으니(2026-09-09), 하나도 안 골랐을 때도 같은 길로
+  // 간다 — 이름과 인구는 그대로, 값 줄은 없고, 칸은 회색이다. 값이 없는
+  // 것은 null 이라 lpColor 가 알아서 회색을 준다.
+  if (!have) { updateLpNote(null); return; }
 
   const zoom = map.getZoom();
   if (zoom >= LP_UMD_ZOOM) {
@@ -4909,7 +4926,8 @@ function drawLandPriceInner(have) {
     cached: Object.keys(lpUmdCache),
     // 조회수 열쇠도 내놓는다. 이것이 없으면 '별표가 시·군 안에서
     // 뽑혔는가' 를 밖에서 셀 수가 없다.
-    items: shown.map((it) => ({ pk: it.pk, sg: it.sg, name: it.name })),
+    items: shown.map((it) => ({ pk: it.pk, sg: it.sg, name: it.name,
+                                 v: it.v, pop: it.pop || 0 })),
   };
   updateLpNote({ n: shown.length, withValue: withValue.length,
                  total: all.length, level: level.label, scale, w });
@@ -4978,7 +4996,10 @@ function updateLpNote(info) {
   if (!el) return;
   const groups = lpGroups();
   if (!info || !groups.length) {
-    el.textContent = '용도지역을 켜면 그 땅의 최근 실거래 단가를 지역마다 적습니다.';
+    // 태그는 그대로 있고 값만 없는 상태다. 몇 곳이 회색으로 남았는지
+    // 말해 주지 않으면 '아무것도 안 나온다' 로 읽힌다.
+    el.textContent = '용도지역을 켜면 그 땅의 최근 실거래 단가를 지역마다 적습니다.'
+      + (info && info.n ? ` 지금은 ${info.n}곳의 이름만 회색으로 적었습니다.` : '');
     lpSuggest(null);
     return;
   }

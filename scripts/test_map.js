@@ -1526,6 +1526,65 @@ async function stubCommon(pg) {
     const tagBack = await page.evaluate(() => (window.__lp || {}).n);
     check('다시 켜면 돌아온다', (tagBack || 0) > 0, `${tagBack}장`);
 
+    /* **용도지역을 전부 꺼도 이름표는 남는다** (보고된 문제 2026-09-15:
+       "실거래 가격에서 용도지역을 전부 해제하면 지역 테그들이 전부
+       사라집니다. 회색으로 처리해 주세요.").
+
+       고를 것을 안 골랐다는 것과 지도가 고장났다는 것은 다른 일이다.
+       값만 사라지고 이름·인구는 회색으로 남아야 한다. 여기 지도는
+       가짜라 divIcon 이 DOM 에 안 들어온다 — 그래서 카드 수가 아니라
+       __lp 를 센다. 값이 없는 칸은 lpColor 가 회색을 준다. */
+    const zonePressed = await page.evaluate(() =>
+      [...document.querySelectorAll('#lp-groups .zone-opt[aria-pressed="true"]')]
+        .map((b) => b.dataset.group));
+    const zoneOff = await page.evaluate(async () => {
+      document.querySelectorAll('#lp-groups .zone-opt[aria-pressed="true"]')
+        .forEach((b) => b.click());
+      await new Promise((r) => setTimeout(r, 300));
+      const lp = window.__lp || {};
+      const items = lp.items || [];
+      return {
+        groups: (lp.groups || []).length,
+        on: lp.on,
+        n: lp.n,
+        withValue: lp.withValue,
+        // 값이 붙어 있는 칸. 하나도 없어야 한다 — 잰 적이 없으니까.
+        priced: items.filter((x) => x.v != null).length,
+        named: items.filter((x) => x.name).length,
+        note: (document.getElementById('lp-note') || {}).textContent || '',
+      };
+    });
+    check('용도지역을 하나라도 켜 둔 채로 시작했다', zonePressed.length > 0,
+          zonePressed.join(','));
+    check('전부 꺼도 지역 태그는 남는다',
+          zoneOff.groups === 0 && zoneOff.on === true && zoneOff.n > 0,
+          `용도지역 ${zoneOff.groups}개 · 태그 ${zoneOff.n}장`);
+    check('전부 끄면 값이 붙은 칸이 하나도 없다 (모두 회색)',
+          zoneOff.priced === 0 && zoneOff.withValue === 0,
+          `값 ${zoneOff.priced}장 · withValue ${zoneOff.withValue}`);
+    check('회색 태그에도 이름은 적힌다', zoneOff.named === zoneOff.n,
+          `${zoneOff.named}/${zoneOff.n}`);
+    check('아래 줄이 회색 이름표를 몇 곳인지 말한다',
+          /이름만 회색으로/.test(zoneOff.note), zoneOff.note);
+
+    // **켜 두었던 것을 그대로 되돌린다.** 아무거나 하나 켜고 넘어가면
+    // 뒤따르는 절이 '처음 켜지는 것은 계획관리·생산관리·자연녹지' 를
+    // 볼 때 내가 바꿔 놓은 상태를 본다.
+    const zoneBack = await page.evaluate(async (want) => {
+      const box = document.getElementById('lp-groups');
+      box.querySelectorAll('.zone-opt').forEach((b) => {
+        const on = b.getAttribute('aria-pressed') === 'true';
+        if (on !== want.includes(b.dataset.group)) b.click();
+      });
+      await new Promise((r) => setTimeout(r, 300));
+      const lp = window.__lp || {};
+      return { groups: (lp.groups || []).length,
+               priced: (lp.items || []).filter((x) => x.v != null).length };
+    }, zonePressed);
+    check('다시 켜면 값이 돌아온다',
+          zoneBack.groups === zonePressed.length && zoneBack.priced > 0,
+          `용도지역 ${zoneBack.groups}개 · 값 ${zoneBack.priced}장`);
+
     /* '개발' 층 (요구사항 2026-09-14) — 켜면 타일이 실제로 깔리고 철도역이
        그려지는가. 층 이름이 살아 있다는 것은 vworld-render 탐침이 따로
        확인했다(칠해진 화소까지 셌다). 여기서 보는 것은 **화면이 그 층을
@@ -2731,11 +2790,18 @@ async function stubCommon(pg) {
           `${swapped.rail.join(',')} → ${(swapped.peek.groups || []).join(',')}`);
     await page.evaluate(() => { window.__bbox = null; });
 
-    // 다 끄면 사라진다.
+    /* 다 끄면 **값만** 사라진다 — 이름표는 남는다 (요구사항 2026-09-15).
+       예전에는 여기서 한 장도 안 그렸다. 그러면 지도에 지역 이름이 통째로
+       없어져 사람이 '고장' 으로 읽는다. 값이 없는 지자체를 이미 회색으로
+       남기고 있으니 같은 길로 간다. */
     await lpRail([]);
     const lpOff = await lpRead();
-    check('용도지역을 다 끄면 지도에서 사라진다', lpOff.n === 0 && !lpOff.peek.on,
-          `${lpOff.n}곳`);
+    check('용도지역을 다 끄면 값이 사라진다',
+          (lpOff.peek.withValue || 0) === 0,
+          `값 ${lpOff.peek.withValue}곳`);
+    check('그래도 지역 태그는 회색으로 남는다',
+          lpOff.n > 0 && lpOff.peek.on === true,
+          `${lpOff.n}곳 · on=${lpOff.peek.on}`);
     await lpRail(['계획관리', '생산관리', '자연녹지']);
     await page.evaluate(() => { window.__zoom = 7; });
 
