@@ -1944,6 +1944,134 @@ def cmd_forecast(args):
     print(f"\n→ {path}")
 
 
+def cmd_load_kicox(args):
+    """산업단지·공장등록 파일을 region_year / region_series 에 싣는다 (2026-09-15).
+
+    파일은 data/raw 에 있다 (공표 통계라 저장소에 둔다). 무엇을 실었는지와
+    **공표 요약표와 얼마나 어긋나는지**를 같이 적는다 — 맞는 줄 알고 쓰면
+    그 뒤의 모든 결론이 조용히 틀린다.
+    """
+    from .collect import kicox as K
+    from .collect import indicators as ind
+
+    RAW = ROOT / "data" / "raw"
+    year = int(args.year)
+    with db.connect() as con:
+        code_map = ind.build_code_map(con)
+        if not code_map:
+            sys.exit("region_umd 가 비어 대조표를 못 만듭니다 — 읍면동을 먼저 채우십시오")
+        key = lambda sido, sgg: (ind.sido_key(sido), ind.norm_sgg(
+            ind.SGG_ALIAS.get((ind.sido_key(sido), ind.norm_sgg(sgg)), sgg)))
+
+        # ── ① 산업단지 현황 → region_year ──
+        want = {"kicox_park_national": {"지정면적": 802695, "입주업체": 67974,
+                                        "가동업체": 62743},
+                "kicox_park_general": {"지정면적": 591704, "입주업체": 51371,
+                                       "가동업체": 47339}}
+        park_rows, park_miss = [], {}
+        for f in sorted(RAW.glob("kicox_park_*.csv")):
+            if "industry" in f.name:
+                continue
+            try:
+                df = K.read_parks(f)
+            except Exception as exc:                  # noqa: BLE001
+                print(f"  ✗ {f.name}: {str(exc)[:120]}")
+                continue
+            stem = f.stem.rsplit("_", 1)[0]
+            chk = K.check_parks(df, want.get(stem, {}))
+            print(f"\n[{f.name}] 잎 {len(df):,}개")
+            for k, v in chk["대조"].items():
+                mark = "OK" if v["맞나"] else "어긋남"
+                print(f"   {k:<6s} 우리 {v['우리']:>11,.0f} · 공표 {v['공표']:>11,.0f}"
+                      f" · 차이 {v['차이']:>+8,.0f}  {mark}")
+            df["_key"] = [key(a, b) for a, b in zip(df["시도"], df["시군"])]
+            for k2, blk in df.groupby("_key"):
+                code = code_map.get(k2)
+                if not code:
+                    park_miss[" ".join(k2)] = int(len(blk))
+                    continue
+                park_rows.append((code, year, "park_count", float(len(blk))))
+                for src, metric, sc in (("지정면적", "park_area_km2", 0.001),
+                                        ("입주업체", "park_tenant", 1.0),
+                                        ("가동업체", "park_active", 1.0)):
+                    if src in blk.columns:
+                        park_rows.append((code, year, metric,
+                                          float(blk[src].sum()) * sc))
+
+        # ── ② 공장등록 → region_year (한 시점 스냅샷이라 연 단위로 둔다) ──
+        fac_rows, fac_miss = [], {}
+        for f in sorted(RAW.glob("factoryon_registry_*.xlsx")):
+            try:
+                fd = K.read_factory_sigungu(f)
+            except Exception as exc:                  # noqa: BLE001
+                print(f"  ✗ {f.name}: {str(exc)[:120]}")
+                continue
+            print(f"\n[{f.name}] 시군구 {len(fd):,}행 · 등록공장 합계"
+                  f" {fd['합계'].sum():,.0f}개")
+            for _i, r in fd.iterrows():
+                code = code_map.get(key(r["시도명"], r["시군구명"]))
+                if not code:
+                    nm = f"{r['시도명']} {r['시군구명']}"
+                    fac_miss[nm] = fac_miss.get(nm, 0) + 1
+                    continue
+                for src, metric in (("등록완료", "factory_done"),
+                                    ("부분등록", "factory_part"),
+                                    ("휴업", "factory_rest"),
+                                    ("영업정지", "factory_stop"),
+                                    ("합계", "factory_all")):
+                    v = r.get(src)
+                    if pd.notna(v):
+                        fac_rows.append((code, year, metric, float(v)))
+
+        # ── ③ 신규지정·해제 → zone_event (지정일이 있는 유일한 표) ──
+        ev = 0
+        for f in sorted(RAW.glob("kicox_parks_full_*.xlsx")):
+            try:
+                nd = K.read_new_parks(f)
+            except Exception as exc:                  # noqa: BLE001
+                print(f"  ✗ {f.name}: {str(exc)[:120]}")
+                continue
+            if nd.empty:
+                continue
+            print(f"\n[{f.name}] 부록1 사건 {len(nd)}건"
+                  f" (신규 {int((nd['사건']=='신규').sum())} ·"
+                  f" 해제 {int((nd['사건']=='해제').sum())})")
+            for _i, r in nd.iterrows():
+                d = r.get("지정일자")
+                if pd.isna(d):
+                    continue
+                zid = f"kicox:{r.get('시도','')}:{str(r.get('단지명',''))[:40]}"
+                con.execute(
+                    "INSERT OR REPLACE INTO zone_event"
+                    " (zone_id, name, type, designated_date, address, source)"
+                    " VALUES (?,?,?,?,?,?)",
+                    [zid, str(r.get("단지명", ""))[:80],
+                     f"산업단지:{r.get('유형','')}", str(d)[:10],
+                     f"{r.get('시도','')} {r.get('시군구','')}".strip(),
+                     "KICOX 전국산업단지현황통계 부록1"])
+                ev += 1
+
+        rows = park_rows + fac_rows
+        if rows:
+            con.executemany(
+                "INSERT OR REPLACE INTO region_year"
+                " (sigungu_cd, year, metric, value, source) VALUES (?,?,?,?,?)",
+                [(c, y, m, v, "KICOX·팩토리온") for c, y, m, v in rows])
+        print(f"\n싣기: region_year {len(rows):,}행 · zone_event {ev}건")
+        if park_miss or fac_miss:
+            # **못 이은 곳은 조용히 빠뜨리지 않는다.** 빠지면 그 지역이 0 인
+            # 줄 알게 되고, 0 과 '모름' 은 전혀 다르다.
+            print("  ⚠ 시군구 코드를 못 이은 곳:")
+            for nm, n in sorted({**park_miss, **fac_miss}.items())[:20]:
+                print(f"     {nm} ({n}행)")
+        got = con.execute(
+            "SELECT metric, count(*), sum(value) FROM region_year"
+            " WHERE source = 'KICOX·팩토리온' GROUP BY 1 ORDER BY 1").fetchall()
+        print("\n  담긴 것:")
+        for m, n, v in got:
+            print(f"     {m:<18s} {n:>4,}곳 · 합 {v:>12,.0f}")
+
+
 def cmd_zone_trend(args):
     """세 땅(생산관리·계획관리·자연녹지)의 **지역별** 가격 추이 (2026-09-15 지시).
 
@@ -2022,6 +2150,45 @@ def cmd_zone_trend(args):
             print("    아래: " + " · ".join(
                 f"{r['이름'] or r['sigungu_cd']} {r['배율']:.2f}" for _i, r in dn.iterrows()))
 
+    # ── 공장·산단과 나란히 (2026-09-15 지시) ──
+    with db.connect(read_only=True) as con:
+        ry = con.execute(
+            "SELECT sigungu_cd, year, metric, value FROM region_year").fetchdf()
+    ind = ZT.industry_wide(ry, int(args.ind_year))
+    if ind.empty:
+        print(f"\n── 공장·산단 — {args.ind_year}년 칸이 없습니다"
+              f" (load-kicox 를 먼저 돌리세요) ──")
+    else:
+        have = [c for c in ZT.IND_LABEL if c in ind.columns]
+        print(f"\n── 공장·산단 덮개 ({args.ind_year}년 · 시군구 {len(ind):,}곳) ──")
+        for c in have:
+            v = pd.to_numeric(ind[c], errors="coerce")
+            print(f"    {ZT.IND_LABEL[c]:<18s} {int(v.notna().sum()):>4,}곳"
+                  f" · 중앙 {v.median():>12,.1f} · 합 {v.sum():>14,.0f}")
+
+        ai = ZT.against_industry(gr, ind)
+        print(f"\n── **{base}→{last} 누적 배율 ↔ 공장·산단** (ln↔ln 상관) ──")
+        if ai.empty:
+            print("    짝이 모자랍니다")
+        else:
+            print(f"    {'용도지역':<10s} {'지표':<20s} {'n':>5s} {'r':>7s}")
+            for _i, r in ai.iterrows():
+                print(f"    {str(r['zone']):<10s} {str(r['이름']):<20s}"
+                      f" {int(r['n']):>5,} {r['r']:>+7.3f}")
+
+        for col in [c for c in ("밀도:공장/만명", "factory_all", "park_area_km2")
+                    if c in ind.columns]:
+            qt = ZT.quintiles(gr, ind, col)
+            if qt.empty:
+                continue
+            print(f"\n── {ZT.IND_LABEL.get(col, col)} 다섯 칸마다 배율 ──")
+            print(f"    {'용도지역':<10s} {'칸':<6s} {'시군구':>5s}"
+                  f" {'지표 중앙':>12s} {'배율 중앙':>9s} {'내린 곳':>7s}")
+            for _i, r in qt.iterrows():
+                print(f"    {str(r['zone']):<10s} {str(r['칸']):<6s}"
+                      f" {int(r['시군구']):>5,} {r[f'{col} 중앙']:>12,.2f}"
+                      f" {r['배율 중앙']:>9.3f} {int(r['내린 곳']):>7,}")
+
     pr = ZT.persistence(pan, look=int(args.look), horizon=int(args.horizon))
     print(f"\n── **지난 {args.look}년 오른 곳이 뒤 {args.horizon}년에도 오르는가** ──")
     if pr.empty:
@@ -2046,6 +2213,8 @@ def cmd_zone_trend(args):
          "coverage": cov.to_dict("records"), "spread": sp.to_dict("records"),
          "growth_spread": gs.to_dict("records"), "top_bottom": tb.to_dict("records"),
          "persistence": pr.to_dict("records"),
+         "industry": (ZT.against_industry(gr, ind).to_dict("records")
+                      if not ind.empty else []),
          "verdict": ZT.persistence_verdict(pr)},
         ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"\n→ {path}")
@@ -5032,6 +5201,11 @@ def main(argv=None):
                    help="시장 층(금리 등 전국 지표)을 빼고 지역 지표만으로 잰다")
     p.set_defaults(func=cmd_forecast, macro=True)
 
+    p = sub.add_parser("load-kicox",
+                       help="산업단지·공장등록 파일 → region_year · zone_event")
+    p.add_argument("--year", default="2025", help="스냅샷을 어느 해로 둘까")
+    p.set_defaults(func=cmd_load_kicox)
+
     p = sub.add_parser("zone-trend",
                        help="세 땅(생산관리·계획관리·자연녹지)의 지역별 가격 추이")
     p.add_argument("--zones", default="생산관리,계획관리,자연녹지")
@@ -5044,6 +5218,8 @@ def main(argv=None):
     p.add_argument("--horizon", default="2", help="지속성: 뒤 몇 해를 묻나")
     p.add_argument("--every", default="2", help="흩어짐 표를 몇 해마다 찍나")
     p.add_argument("--top", default="8", help="위·아래 몇 곳씩")
+    p.add_argument("--ind-year", dest="ind_year", default="2025",
+                   help="공장·산단 스냅샷 연도")
     p.set_defaults(func=cmd_zone_trend)
 
     p = sub.add_parser("road-step",

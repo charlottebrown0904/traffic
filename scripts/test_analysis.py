@@ -2753,6 +2753,7 @@ check("C(sigungu_cd)" in _RS.formula(_dfr, "sigungu"), "기본 울타리는 시�
 
 print("41-4. 31개 인자 교차 분석 — 수준·변화·시차 (2026-09-15)")
 import math as _math
+import pathlib as _pathlib
 from redt.analyze import crossfactors as _CF                # noqa: E402
 
 # 아는 세상을 만든다. 시군구 60곳 × 15해.
@@ -3144,6 +3145,73 @@ check("보류" in _ZT.persistence_verdict(_pd.DataFrame()),
 _tb = _ZT.top_bottom(_gr, {"Z000": "가나 다시"}, k=5)
 check(len(_tb) == 3 * 10 and set(_tb["쪽"]) == {"위", "아래"},
       f"용도지역마다 위·아래를 뽑는다 ({len(_tb)}행)")
+
+
+print()
+print("41-7. 공장·산단을 세 땅 추이와 나란히 (2026-09-15 지시)")
+from redt.collect import kicox as _KX                       # noqa: E402
+
+# **묶음 행** — 상위와 하위가 같이 들어 있고 숫자가 겹친다. 게다가 묶음은
+# 여러 시군구에 걸쳐 있어, 남기면 시군구가 통째로 틀린다.
+check(bool(_KX.BUNDLE.search("한국수출산업 (①)")), "(①) 은 묶음이다")
+check(bool(_KX.BUNDLE.search("명지·녹산 (① + ②)")), "(① + ②) 도 묶음이다")
+check(bool(_KX.BUNDLE.search("구미국가(4단지) (② + ③)")),
+      "**② 로 시작하는 묶음**도 잡는다 (이것 하나를 놓쳐 6,766 이 어긋났다)")
+check(not _KX.BUNDLE.search("녹산지구(산업단지) ①"), "괄호 안이 글자면 묶음이 아니다")
+check(not _KX.BUNDLE.search("▷구미4(산업) ②"), "▷ 잎은 묶음이 아니다")
+check(not _KX.BUNDLE.search("대구국가"), "단독 단지는 묶음이 아니다")
+
+# 실제 파일이 저장소에 있으면 **공표 요약표와 맞는지 그 자리에서 검산한다.**
+_nat = _pathlib.Path("data/raw/kicox_park_national_20251231.csv")
+if _nat.exists():
+    _p = _KX.read_parks(_nat)
+    _c = _KX.check_parks(_p, {"지정면적": 802695, "입주업체": 67974, "가동업체": 62743})
+    for _k, _v in _c["대조"].items():
+        check(_v["맞나"], f"국가산단 {_k} 가 공표와 맞는다"
+              f" (우리 {_v['우리']:,.0f} · 공표 {_v['공표']:,.0f})")
+
+# 밀도 — '몇 개' 를 '얼마나 빽빽한가' 로 바꾼다. 나눌 것이 없으면 **비운다.**
+_ry = _pd.DataFrame([
+    {"sigungu_cd": "S1", "year": 2025, "metric": "factory_all", "value": 500.0},
+    {"sigungu_cd": "S1", "year": 2025, "metric": "factory_done", "value": 450.0},
+    {"sigungu_cd": "S1", "year": 2025, "metric": "population", "value": 250_000.0},
+    {"sigungu_cd": "S1", "year": 2025, "metric": "park_area_km2", "value": 10.0},
+    {"sigungu_cd": "S2", "year": 2025, "metric": "factory_all", "value": 500.0},
+    {"sigungu_cd": "S2", "year": 2025, "metric": "population", "value": 1_000_000.0},
+    {"sigungu_cd": "S3", "year": 2024, "metric": "factory_all", "value": 999.0},
+])
+_iw = _ZT.industry_wide(_ry, 2025)
+check(set(_iw["sigungu_cd"]) == {"S1", "S2"}, f"다른 해는 안 섞는다 ({sorted(_iw['sigungu_cd'])})")
+_s1 = _iw[_iw["sigungu_cd"] == "S1"].iloc[0]
+_s2 = _iw[_iw["sigungu_cd"] == "S2"].iloc[0]
+check(abs(float(_s1["밀도:공장/만명"]) - 20.0) < 1e-9,
+      f"공장 500개 · 인구 25만 → 만명당 20 ({_s1['밀도:공장/만명']:.1f})")
+check(float(_s1["밀도:공장/만명"]) > float(_s2["밀도:공장/만명"]),
+      "공장 수가 같아도 인구가 적으면 밀도가 높다 (수와 밀도는 다른 물음이다)")
+check(abs(float(_s1["밀도:공장/산단㎢"]) - 50.0) < 1e-9, "산단 ㎢당 밀도도 낸다")
+check(_pd.isna(_s2.get("밀도:공장/산단㎢")),
+      "나눌 것이 없으면 **비운다** (0 으로 안 채운다)")
+check(abs(float(_s1["비율:가동/등록"]) - 0.9) < 1e-9, "가동/등록 비율을 낸다")
+
+# 다섯 칸 표 — 관계가 곧은 직선이 아니어도 보이게.
+_rngq = _np.random.default_rng(7)
+_grq, _indq = [], []
+for _i in range(120):
+    _sg = f"Q{_i:03d}"
+    _dens = 1.0 + _i * 0.5
+    _grq.append({"sigungu_cd": _sg, "zone": "계획관리",
+                 "배율": 1.0 + _dens * 0.01 + _rngq.normal(0, .02)})
+    _indq.append({"sigungu_cd": _sg, "밀도:공장/만명": _dens})
+_qt = _ZT.quintiles(_pd.DataFrame(_grq), _pd.DataFrame(_indq), "밀도:공장/만명")
+check(len(_qt) == 5, f"다섯 칸이 선다 ({len(_qt)})")
+check(float(_qt.iloc[-1]["배율 중앙"]) > float(_qt.iloc[0]["배율 중앙"]),
+      f"밀도가 높을수록 배율이 크면 표에 그대로 보인다"
+      f" ({_qt.iloc[0]['배율 중앙']:.3f} → {_qt.iloc[-1]['배율 중앙']:.3f})")
+_ai = _ZT.against_industry(_pd.DataFrame(_grq), _pd.DataFrame(_indq))
+check(len(_ai) and float(_ai.iloc[0]["r"]) > 0.7,
+      f"상관도 같은 방향으로 선다 ({_ai.iloc[0]['r'] if len(_ai) else None})")
+check(len(_ZT.against_industry(_pd.DataFrame(), _pd.DataFrame())) == 0,
+      "빈 표를 줘도 터지지 않는다")
 
 
 print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")

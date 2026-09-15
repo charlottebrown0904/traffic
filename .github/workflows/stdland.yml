@@ -17,6 +17,7 @@
 #   industrial-probe  산업단지 지정일 — 포털 후보를 한 판에 다 두드린다 (query=번호들 쉼표)
 #   zone-trend  세 땅(생산관리·계획관리·자연녹지)의 **지역별** 가격 추이 (years=시작연도 · query=base,last)
 #   company-probe  대기업 자리 — 본사(DART)와 공장(공장등록) 두 길 (n=표본 곳수)
+#   kicox       산업단지·공장등록 파일 적재 → region_year · zone_event (years=스냅샷 연도)
 #   momentum    모멘텀 검증 — 시군구×용도지역군 연 중앙단가의 추세 지속·거래량 선행 (limit=칸 최소 건수)
 #   ecos        한국은행 ECOS 금리·물가·성장률
 #               query: (비움)=전부 적재 · probe=받아만 봄 · browse:CODE=표 목록
@@ -46,7 +47,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / cross / forecast / zone-trend / company-probe / industrial / industrial-probe / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / road-step / cross / forecast / zone-trend / kicox / company-probe / industrial / industrial-probe / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -356,6 +357,14 @@ jobs:
             python -m redt.cli load-h3
             python -m redt.cli geocode-zones --limit "${{ inputs.limit || '2000' }}"
           } 2>&1 | tee /tmp/stdland.log
+
+      # 산업단지·공장등록 적재 — data/raw 의 공표 통계를 읽어 DB 에 넣는다.
+      - name: 산업단지·공장등록 적재
+        if: inputs.mode == 'kicox'
+        run: |
+          set -o pipefail
+          python -m redt.cli load-kicox --year "${{ inputs.years || '2025' }}" \
+            2>&1 | tee /tmp/stdland.log
 
       # 대기업 자리 — 읽기만 한다. 본사와 공장 두 길을 나란히 두드린다.
       - name: 대기업 자리 탐침

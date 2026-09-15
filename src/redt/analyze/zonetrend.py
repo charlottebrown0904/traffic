@@ -198,3 +198,112 @@ def top_bottom(gr: pd.DataFrame, names: dict | None = None, k: int = 10) -> pd.D
                              "이름": (names or {}).get(r["sigungu_cd"], ""),
                              "배율": r["배율"]})
     return pd.DataFrame(rows)
+
+
+# ── 공장·산단과 세 땅의 추이를 나란히 (2026-09-15 지시) ──────────────
+#
+# "적재하고 기업체 수, 밀도 등을 세 땅 추이와 함께 검토해 주세요"
+#
+# **한 시점 스냅샷이다.** 공장등록은 2025-10 한 장뿐이라 '공장이 늘어서
+# 올랐다' 를 못 본다. 볼 수 있는 것은 '공장이 많은 곳이 더 올랐는가' —
+# 횡단면이다. 인과가 아니라 동행이고, 그렇게만 적는다.
+
+IND_LABEL = {
+    "factory_all": "등록공장 수", "factory_done": "가동 공장 수",
+    "factory_rest": "휴업 공장 수",
+    "park_count": "산단 수", "park_area_km2": "산단 면적(㎢)",
+    "park_tenant": "산단 입주업체", "park_active": "산단 가동업체",
+    "population": "인구",
+    "밀도:공장/만명": "공장 밀도 (만명당)",
+    "밀도:공장/산단㎢": "공장 밀도 (산단㎢당)",
+    "비율:가동/등록": "가동 비율",
+}
+MIN_PAIR = 25       # 짝이 이만큼은 있어야 상관을 적는다
+QUINTILE = 5
+
+
+def industry_wide(region_year: pd.DataFrame, year: int) -> pd.DataFrame:
+    """시군구 × 지표 한 장. **밀도는 여기서 만든다.**
+
+    밀도는 '몇 개' 를 '얼마나 빽빽한가' 로 바꾼다. 서울 중구와 화성시는
+    공장 수가 비슷해도 전혀 다른 곳이다 — 나누는 것이 있어야 갈린다.
+    나눌 것이 없으면 그 칸은 **비운다** (0 으로 채우지 않는다).
+    """
+    if region_year is None or len(region_year) == 0:
+        return pd.DataFrame()
+    r = pd.DataFrame(region_year)
+    r = r[r["year"] == year]
+    if r.empty:
+        return pd.DataFrame()
+    w = r.pivot_table(index="sigungu_cd", columns="metric", values="value")
+    w.columns.name = None
+    if "factory_all" in w and "population" in w:
+        pop = w["population"].where(w["population"] > 0)
+        w["밀도:공장/만명"] = w["factory_all"] / (pop / 10_000)
+    if "factory_all" in w and "park_area_km2" in w:
+        ar = w["park_area_km2"].where(w["park_area_km2"] > 0)
+        w["밀도:공장/산단㎢"] = w["factory_all"] / ar
+    if "factory_done" in w and "factory_all" in w:
+        al = w["factory_all"].where(w["factory_all"] > 0)
+        w["비율:가동/등록"] = w["factory_done"] / al
+    return w.reset_index()
+
+
+def against_industry(gr: pd.DataFrame, ind: pd.DataFrame,
+                     cols: list[str] | None = None) -> pd.DataFrame:
+    """용도지역마다 **누적 배율 ↔ 공장 지표**의 상관.
+
+    수준(공장 수)과 밀도를 같이 본다. 수 는 도시 크기를 타고, 밀도는 덜
+    탄다 — 둘이 갈리면 그것이 '큰 도시라서' 인지 '빽빽해서' 인지를 가른다.
+    """
+    if gr is None or gr.empty or ind is None or ind.empty:
+        return pd.DataFrame()
+    use = [c for c in (cols or list(IND_LABEL)) if c in ind.columns]
+    m = gr.merge(ind, on="sigungu_cd", how="inner")
+    rows = []
+    for z, blk in m.groupby("zone"):
+        for c in use:
+            v = pd.to_numeric(blk[c], errors="coerce")
+            g = pd.to_numeric(blk["배율"], errors="coerce")
+            ok = v.notna() & g.notna() & (v > 0) & (g > 0)
+            n = int(ok.sum())
+            if n < MIN_PAIR:
+                continue
+            x, y = np.log(v[ok]), np.log(g[ok])
+            if x.std() == 0 or y.std() == 0:
+                continue
+            rows.append({"zone": z, "지표": c, "이름": IND_LABEL.get(c, c),
+                         "n": n, "r": round(float(np.corrcoef(x, y)[0, 1]), 3)})
+    out = pd.DataFrame(rows)
+    return out.sort_values(["zone", "r"], key=lambda s: s.abs() if s.name == "r" else s,
+                           ascending=[True, False]) if len(out) else out
+
+
+def quintiles(gr: pd.DataFrame, ind: pd.DataFrame, col: str,
+              q: int = QUINTILE) -> pd.DataFrame:
+    """지표로 시군구를 다섯 칸에 나누고 칸마다 **중앙 배율**을 본다.
+
+    상관 하나보다 이 표가 낫다 — 관계가 곧은 직선이 아닐 때(가운데가 가장
+    많이 오르는 꼴) 상관은 0 으로 나오지만 이 표에는 그대로 보인다.
+    """
+    if gr is None or gr.empty or ind is None or ind.empty or col not in ind.columns:
+        return pd.DataFrame()
+    m = gr.merge(ind[["sigungu_cd", col]], on="sigungu_cd", how="inner")
+    m[col] = pd.to_numeric(m[col], errors="coerce")
+    m = m[m[col].notna() & m["배율"].notna()]
+    rows = []
+    for z, blk in m.groupby("zone"):
+        if len(blk) < q * 4:
+            continue
+        try:
+            lab = pd.qcut(blk[col].rank(method="first"), q,
+                          labels=[f"{i+1}분위" for i in range(q)])
+        except ValueError:
+            continue
+        for tag, part in blk.groupby(lab, observed=True):
+            rows.append({"zone": z, "지표": col, "칸": str(tag),
+                         "시군구": int(len(part)),
+                         f"{col} 중앙": round(float(part[col].median()), 2),
+                         "배율 중앙": round(float(part["배율"].median()), 3),
+                         "내린 곳": int((part["배율"] < 1).sum())})
+    return pd.DataFrame(rows)
