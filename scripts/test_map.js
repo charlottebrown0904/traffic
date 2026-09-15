@@ -3649,6 +3649,38 @@ async function stubCommon(pg) {
           (vcalc.match(/개별요인 비교[^<]*<\/th><td><b>[^<]*/) || ['없음'])[0]);
     check('그 밖의 요인은 시·도 값 (경기 관리 전·답 2.32)',
           /2\.32/.test(vcalc) && /같은 시·도/.test(vcalc));
+    // ── 두 갈래 섞는 저울 (2026-09-15 지시) ──────────────────────────
+    //
+    // 화면 캡처의 그 칸: 평가선례 2.36 (n=4, 시·도) · 거래사례 1.31 (n=278,
+    // 시군구) → 1.33. 4건이 278건을 이길 길이 없던 까닭이 저울이었다.
+    // **파이썬 쪽(valuation.OTHER_WEIGHTS)과 수가 같아야 한다** — 두 곳에
+    // 같은 규칙이 적혀 있으면 반드시 한쪽만 고쳐지는 날이 온다.
+    const wts = await page.evaluate(() => {
+      const L = { source: '평가선례', n: 4, level: '같은 시·도 · 용도지역군 · 지목군' };
+      const T = { source: '거래사례', n: 278, level: '시군구' };
+      const out = {};
+      for (const name of ['현행', '선례2배', '선례3배', '선례3배√']) {
+        out[name] = [window.__otherWeightOf(L, name), window.__otherWeightOf(T, name)];
+      }
+      return out;
+    });
+    check('저울 — 현행은 선례 2 대 거래 100 (4건이 278건을 못 이긴다)',
+          Math.abs(wts['현행'][0] - 2) < 1e-9 && Math.abs(wts['현행'][1] - 100) < 1e-9,
+          JSON.stringify(wts['현행']));
+    check('저울 — 선례3배는 선례 6 대 거래 30',
+          Math.abs(wts['선례3배'][0] - 6) < 1e-9 && Math.abs(wts['선례3배'][1] - 30) < 1e-9,
+          JSON.stringify(wts['선례3배']));
+    check('저울 — √ 는 건수를 제곱근으로 (거래 √30)',
+          Math.abs(wts['선례3배√'][1] - Math.sqrt(30)) < 1e-9,
+          JSON.stringify(wts['선례3배√']));
+    // 지금 쓰는 저울 이름이 파이썬 쪽과 같은가 — 글자를 직접 본다.
+    {
+      const py = fs.readFileSync(path.join(ROOT, 'src', 'redt', 'valuation.py'), 'utf8');
+      const js = fs.readFileSync(path.join(ROOT, 'public', 'app', 'app.js'), 'utf8');
+      const a = (py.match(/^OTHER_WEIGHT = "([^"]+)"/m) || [])[1];
+      const b = (js.match(/^const OTHER_WEIGHT = '([^']+)';/m) || [])[1];
+      check('화면과 서버가 같은 저울을 쓴다', !!a && a === b, `py=${a} js=${b}`);
+    }
     check('시점수정은 추세로 대신했다고 적고 상한 1.03 안이다',
           /추세로 대신함/.test(vcalc) && /1\.030/.test(vcalc),
           (vcalc.match(/시점수정[\s\S]{0,120}/) || ['없음'])[0]);

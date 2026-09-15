@@ -6059,6 +6059,43 @@ function timeFactorOf(stdYear, trend, T, ctx) {
 }
 window.__timeFactorOf = (stdYear, trend, T, ctx) => timeFactorOf(stdYear, trend, T, ctx);
 
+/* 두 갈래를 섞는 저울 — src/redt/valuation.py 의 OTHER_WEIGHTS 와 **같아야 한다**.
+   저 쪽을 바꾸면 이 쪽도 같이 바꾼다 (검사가 캡처의 칸으로 견준다).
+
+     무게 = f(min(건수, 상한)) × 갈래 계수 × 층 계수      f = n 또는 √n
+     층 계수: 시군구 1 · 시·도 0.5 · 전국 0.25
+
+   2026-09-15 지시로 갈래 계수를 두었다. 그전에는 상한만 있어서(거래사례
+   100 · 평가선례 30) 평가선례 4건이 거래사례 278건을 이길 길이 없었다. */
+const OTHER_WEIGHTS = {
+  '현행': { cap: { 거래사례: 100, 평가선례: 30 }, src: { 거래사례: 1, 평가선례: 1 }, root: false },
+  '선례2배': { cap: { 거래사례: 30, 평가선례: 30 }, src: { 거래사례: 1, 평가선례: 2 }, root: false },
+  '선례3배': { cap: { 거래사례: 30, 평가선례: 30 }, src: { 거래사례: 1, 평가선례: 3 }, root: false },
+  '선례3배√': { cap: { 거래사례: 30, 평가선례: 30 }, src: { 거래사례: 1, 평가선례: 3 }, root: true },
+};
+// 지금 쓰는 저울. **valuation.OTHER_WEIGHT 와 같은 이름이어야 한다.**
+// 2026-09-15 전국 1,302건 실측에서 이겼다 (중앙 1.23 · ±30% 368 — 현행은 1.24 · 352).
+const OTHER_WEIGHT = '선례3배√';
+
+function otherWeightOf(o, prof) {
+  const w = OTHER_WEIGHTS[prof || OTHER_WEIGHT] || OTHER_WEIGHTS['현행'];
+  const src = String(o.source || '');
+  let n = Math.min(Number(o.n) || 0, w.cap[src] == null ? 30 : w.cap[src]);
+  if (w.root) n = Math.sqrt(n);
+  const lv = String(o.level || '');
+  const mult = lv.includes('시군구') ? 1 : (lv.includes('시·도') ? 0.5 : (lv.includes('전국') ? 0.25 : 1));
+  return Math.max(n * mult * (w.src[src] == null ? 1 : w.src[src]), 0.5);
+}
+
+/* 섞는 법을 글로. '건수 가중' 이라고만 적으면 4건이 278건을 어떻게 이겼는지
+   읽는 사람이 알 길이 없다 (valuation._other_basis 와 같은 말). */
+function otherBasisWord(prof) {
+  const w = OTHER_WEIGHTS[prof || OTHER_WEIGHT] || OTHER_WEIGHTS['현행'];
+  const led = w.src['평가선례'] || 1, trd = w.src['거래사례'] || 1;
+  return led > trd ? `평가선례 ${Math.round(led / trd)}배 가중 기하평균` : '건수 가중 기하평균';
+}
+window.__otherWeightOf = otherWeightOf;      // 검사가 파이썬 쪽과 견준다
+
 /* 그 밖의 요인 — 두 갈래를 합친다 (src/redt/valuation.py decide_other 와 같은 규칙).
  *
  *   평가선례  T.other['용도지역군|지목군'][시도 코드 | '*']   (비공개 원장의 집계)
@@ -6119,22 +6156,15 @@ function otherFactorOf(subject, std, T) {
     return { factor: o.median, q1: o.q1, q3: o.q3, n: o.n, sources: have,
              basis: `${o.source} 기준 (n=${o.n}, ${o.level})` };
   }
-  // 무게 = min(건수, 상한) × 층 계수 (valuation._other_weight 와 같은 규칙).
-  // 거래사례 100 · 평가선례 30 / 시군구 1 · 시·도 0.5 · 전국 0.25.
-  const weightOf = (o) => {
-    const cap = o.source === '거래사례' ? 100 : 30;
-    const lv = String(o.level || '');
-    const mult = lv.includes('시군구') ? 1 : (lv.includes('시·도') ? 0.5 : (lv.includes('전국') ? 0.25 : 1));
-    return Math.max(Math.min(Number(o.n) || 0, cap) * mult, 0.5);
-  };
-  const w = have.map(weightOf);
+  const w = have.map(otherWeightOf);
   const lg = have.reduce((acc, o, i) => acc + w[i] * Math.log(o.median), 0) / w.reduce((a, b) => a + b, 0);
   const f = Math.round(Math.exp(lg) * 100) / 100;
   const q1 = Math.min(...have.map((o) => o.q1 || f));
   const q3 = Math.max(...have.map((o) => o.q3 || f));
   return { factor: f, q1: Math.round(q1 * 100) / 100, q3: Math.round(q3 * 100) / 100,
            n: have.reduce((a, o) => a + Number(o.n), 0), sources: have,
-           basis: have.map((o) => `${o.source} ${Number(o.median).toFixed(2)} (n=${o.n})`).join(' · ') + ' → 건수 가중 기하평균' };
+           basis: have.map((o) => `${o.source} ${Number(o.median).toFixed(2)} (n=${o.n})`).join(' · ')
+                  + ` → ${otherBasisWord()}` };
 }
 window.__otherFactorOf = otherFactorOf;      // 검사(test_map.js)가 부른다
 

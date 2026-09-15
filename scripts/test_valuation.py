@@ -117,11 +117,13 @@ check(_b["parts"]["지역요인"] == 1.0 and V.REGION_ENABLED is False,
 print("1-5. 두 갈래 섞는 무게 — 가까운 칸이 먼 칸을 이긴다")
 _led = {"median": 4.0, "n": 24, "source": "평가선례", "level": "전국 · 용도지역군 · 지목군", "q1": 3, "q3": 5}
 _trd = {"median": 2.0, "n": 300, "source": "거래사례", "level": "시군구", "q1": 1.5, "q3": 2.5}
-_d = V.decide_other(_led, _trd)
-check(abs(V._other_weight(_trd) - 100.0) < 1e-9 and abs(V._other_weight(_led) - 6.0) < 1e-9,
+_d = V.decide_other(_led, _trd, weights="현행")
+check(abs(V._other_weight(_trd, "현행") - 100.0) < 1e-9
+      and abs(V._other_weight(_led, "현행") - 6.0) < 1e-9,
       "거래사례 시군구 300건 → 100 · 평가선례 전국 24건 → 6")
-check(2.0 < _d["factor"] < 2.3, f"결정이 거래사례 쪽에 붙는다 ({_d['factor']})")
-_d2 = V.decide_other({**_led, "level": "같은 시군구 · 용도지역군 · 지목군", "n": 30}, {**_trd, "n": 30})
+check(2.0 < _d["factor"] < 2.3, f"현행 저울은 거래사례 쪽에 붙는다 ({_d['factor']})")
+_d2 = V.decide_other({**_led, "level": "같은 시군구 · 용도지역군 · 지목군", "n": 30},
+                     {**_trd, "n": 30}, weights="현행")
 check(abs(_d2["factor"] - math.sqrt(8.0)) < 0.02, "같은 층·같은 건수면 기하평균 그대로")
 
 print("1-5-2. 저울을 이름으로 고른다 (2026-09-15 지시 — 선례 비중을 올린다)")
@@ -142,6 +144,9 @@ check("평가선례 3배 가중" in V.decide_other(_L, _T, weights="선례3배")
 check(V.OTHER_WEIGHT in V.OTHER_WEIGHTS
       and V.decide_other(_L, _T)["factor"] == V.decide_other(_L, _T, weights=V.OTHER_WEIGHT)["factor"],
       f"기본 저울은 OTHER_WEIGHT 하나 ({V.OTHER_WEIGHT})")
+# 2026-09-15 전국 1,302건에서 이긴 저울. 되돌리려면 **재 보고** 되돌린다.
+check(V.OTHER_WEIGHT == "선례3배√" and V.decide_other(_led, _trd)["factor"] > _d["factor"],
+      f"기본이 평가선례 쪽으로 옮겨져 있다 ({V.decide_other(_led, _trd)['factor']} > 현행 {_d['factor']})")
 # √ 는 건수의 힘을 줄인다 — 278건이 4건보다 70배 더 아는 것은 아니다.
 check(abs(V._other_weight(_T, "선례3배") - 30.0) < 1e-9
       and abs(V._other_weight(_T, "선례3배√") - math.sqrt(30.0)) < 1e-9,
@@ -296,9 +301,12 @@ if HAVE_LEDGER:
 else:
     o = V.ledger_other_factor("경기", "화성시", "계획관리지역", "전")
     check(o["median"] is None and o["n"] == 0, "원장이 없으면 '자료 없음' (1.00 으로 메우지 않는다)")
-d = V.decide_other({"median": 2.0, "n": 3, "q1": 1.8, "q3": 2.4, "source": "평가선례"},
-                   {"median": 3.0, "n": 30, "q1": 2.5, "q3": 3.5, "source": "거래사례"})
-check(2.7 < d["factor"] < 3.0, f"두 갈래는 건수 가중 기하평균 ({d['factor']})")
+_L3 = {"median": 2.0, "n": 3, "q1": 1.8, "q3": 2.4, "source": "평가선례"}
+_T30 = {"median": 3.0, "n": 30, "q1": 2.5, "q3": 3.5, "source": "거래사례"}
+d = V.decide_other(_L3, _T30)
+check(2.3 < d["factor"] < 2.6, f"두 갈래를 섞되 선례 쪽에 무게가 간다 ({d['factor']})")
+check(2.7 < V.decide_other(_L3, _T30, weights="현행")["factor"] < 3.0,
+      "현행 저울이었으면 거래사례 쪽에 붙었다 (3건이 30건을 못 이긴다)")
 check(V.decide_other(None, None)["factor"] is None, "둘 다 없으면 None")
 
 print()
