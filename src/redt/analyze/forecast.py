@@ -121,20 +121,53 @@ def targets(price: pd.DataFrame, horizon: int = HORIZON) -> pd.DataFrame:
     return m[["sigungu_cd", "year", "y"]].sort_values(["sigungu_cd", "year"])
 
 
+MACRO_PREFIX = "macro:"   # 전국 지표 — 시군구마다 같은 값이 들어간다
+
+
 def deltas(long: pd.DataFrame) -> pd.DataFrame:
-    """지표마다 Δln. 여기서도 **연도를 더해서** 바로 앞 해와만 뺀다."""
+    """지표마다 한 해 변화. 여기서도 **연도를 더해서** 바로 앞 해와만 뺀다.
+
+    **금리·성장률은 로그를 안 씌운다.** 이미 퍼센트이고 음수가 될 수 있어
+    ln 을 씌우면 그 해가 통째로 사라진다 (성장률 −0.7% 인 해가 조용히
+    빠지면 그것이 곧 가짜 그림이다). `macro:` 로 시작하는 지표는 값 자체를
+    빼고, 나머지는 Δln 한다.
+    """
     if long is None or len(long) == 0:
         return pd.DataFrame(columns=["sigungu_cd", "year", "metric", "d_x"])
     b = pd.DataFrame(long)[["sigungu_cd", "year", "metric", "value"]].copy()
-    b = b[pd.to_numeric(b["value"], errors="coerce") > 0]
+    b["value"] = pd.to_numeric(b["value"], errors="coerce")
+    b = b.dropna(subset=["value"])
     if b.empty:
         return pd.DataFrame(columns=["sigungu_cd", "year", "metric", "d_x"])
-    b["ln_x"] = pd.to_numeric(b["value"]).map(math.log)
+    is_macro = b["metric"].astype(str).str.startswith(MACRO_PREFIX)
+    b = b[is_macro | (b["value"] > 0)].copy()
+    if b.empty:
+        return pd.DataFrame(columns=["sigungu_cd", "year", "metric", "d_x"])
+    is_macro = b["metric"].astype(str).str.startswith(MACRO_PREFIX)
+    b["ln_x"] = np.where(is_macro, b["value"],
+                         np.log(b["value"].where(b["value"] > 0, np.nan)))
+    b = b.dropna(subset=["ln_x"])
     prev = b[["sigungu_cd", "year", "metric", "ln_x"]].rename(columns={"ln_x": "ln_prev"})
     prev["year"] = prev["year"] + 1
     m = b.merge(prev, on=["sigungu_cd", "year", "metric"], how="inner")
     m["d_x"] = m["ln_x"] - m["ln_prev"]
     return m[["sigungu_cd", "year", "metric", "d_x"]]
+
+
+def broadcast(macro: pd.DataFrame, sigungu: list[str]) -> pd.DataFrame:
+    """전국 계열을 시군구마다 한 벌씩 깔아 둔다 (metric 앞에 macro:).
+
+    시군구마다 같은 값이므로 **동네끼리의 차이는 못 가른다.** 대신
+    **해마다 다르다** — 그래서 '올해는 전국이 오르나 내리나' 를 맞히는
+    데에 쓰인다. 지금 우리를 이기고 있는 기준선이 바로 그 '늘 오른다'
+    이므로, 그것을 깰 수 있는 것은 이쪽뿐이다.
+    """
+    if macro is None or len(macro) == 0 or not sigungu:
+        return pd.DataFrame(columns=["sigungu_cd", "year", "metric", "value"])
+    m = pd.DataFrame(macro)[["series", "year", "value"]].copy()
+    m["metric"] = MACRO_PREFIX + m["series"].astype(str)
+    out = m.merge(pd.DataFrame({"sigungu_cd": list(sigungu)}), how="cross")
+    return out[["sigungu_cd", "year", "metric", "value"]]
 
 
 def _pick(train: pd.DataFrame, wide: pd.DataFrame, min_r: float) -> dict[str, float]:
@@ -241,6 +274,10 @@ def _origin(tgt: pd.DataFrame, dx_wide: pd.DataFrame, t0: int, window: int,
         "띠 아래": round(float(np.mean(np.exp(lo))), 4),
         "띠 위": round(float(np.mean(np.exp(hi))), 4),
         "실제 평균": round(float(actual.mean()), 4),
+        # 점수가 **무엇으로** 만들어졌는지 남긴다. 안 남기면 합친 뒤에는
+        # 무엇이 일했는지 영영 알 수 없다.
+        "큰 지표": [(k, round(v, 3)) for k, v in
+                   sorted(keep.items(), key=lambda kv: -abs(kv[1]))[:10]],
     }
 
 

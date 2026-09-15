@@ -2962,6 +2962,48 @@ check(not bool(_sm2["방향 이겼나"].any()),
 check("보류" in _FC.verdict(_sm2),
       f"그러면 문을 닫는다 ({_FC.verdict(_sm2)})")
 
+# **시장 층(전국 지표)** — 금리·성장률은 퍼센트라 음수가 된다.
+# ln 을 씌우면 그 해가 통째로 빠지고, 빠진 자리는 아무 말도 안 한다.
+_mac = _pd.DataFrame([
+    {"series": "policy_rate", "year": 2018, "value": 1.5},
+    {"series": "policy_rate", "year": 2019, "value": 1.25},
+    {"series": "gdp_growth", "year": 2018, "value": 2.9},
+    {"series": "gdp_growth", "year": 2019, "value": -0.7},   # 음수인 해
+])
+_bc = _FC.broadcast(_mac, ["A001", "A002", "A003"])
+check(len(_bc) == 12 and set(_bc["metric"]) == {"macro:policy_rate", "macro:gdp_growth"},
+      f"전국 계열을 시군구마다 한 벌씩 깐다 ({len(_bc)}행)")
+check(_bc["metric"].str.startswith(_FC.MACRO_PREFIX).all(),
+      "이름 앞에 macro: 를 붙여 지역 지표와 갈라 둔다")
+_dm = _FC.deltas(_bc)
+_neg = _dm[(_dm["metric"] == "macro:gdp_growth") & (_dm["year"] == 2019)]
+check(len(_neg) == 3, f"성장률이 음수인 해도 안 사라진다 ({len(_neg)}행)")
+check(abs(float(_neg["d_x"].iloc[0]) - (-0.7 - 2.9)) < 1e-9,
+      f"금리·성장률은 로그를 안 씌우고 값 자체를 뺀다 ({_neg['d_x'].iloc[0]:+.2f})")
+_pos = _dm[(_dm["metric"] == "macro:policy_rate") & (_dm["year"] == 2019)]
+check(abs(float(_pos["d_x"].iloc[0]) - (1.25 - 1.5)) < 1e-9,
+      "금리 인하도 그대로 −0.25 로 들어간다")
+# 지역 지표는 여전히 Δln 이다 — 둘이 섞이지 않는다.
+_mix = _pd.concat([_bc, _pd.DataFrame([
+    {"sigungu_cd": "A001", "year": 2018, "metric": "pop", "value": 100.0},
+    {"sigungu_cd": "A001", "year": 2019, "metric": "pop", "value": 110.0}])],
+    ignore_index=True)
+_dx = _FC.deltas(_mix)
+_p = _dx[(_dx["metric"] == "pop") & (_dx["year"] == 2019)]
+check(abs(float(_p["d_x"].iloc[0]) - _math.log(110 / 100)) < 1e-9,
+      f"지역 지표는 그대로 Δln 이다 ({_p['d_x'].iloc[0]:+.4f})")
+# 0 이나 음수인 **지역** 지표는 여전히 버린다 (ln 이 없다).
+_bad = _pd.DataFrame([
+    {"sigungu_cd": "A001", "year": 2018, "metric": "z", "value": 0.0},
+    {"sigungu_cd": "A001", "year": 2019, "metric": "z", "value": 5.0}])
+check(len(_FC.deltas(_bad)) == 0, "0 인 지역 지표는 차분 짝이 안 된다")
+# 무게가 큰 지표를 남겨 둔다 — 합친 뒤에 무엇이 일했는지 알 수 있게.
+check(all(isinstance(r, list) for r in _bt["큰 지표"]),
+      "기준점마다 무게가 큰 지표를 남긴다")
+check(any(len(r) > 0 for r in _bt["큰 지표"]),
+      f"적어도 한 기준점에는 지표가 담긴다")
+
+
 print("42. 지역 지표 원천 탐침 — 포털 검색 화면에서 데이터셋 번호를 뽑는다")
 from redt.collect import indicators as _IND               # noqa: E402
 

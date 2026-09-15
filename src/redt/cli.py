@@ -1703,10 +1703,29 @@ def cmd_forecast(args):
             WHERE sigungu_cd IS NOT NULL AND length(pms_day) >= 4 AND tot_area > 0
             GROUP BY 1, 2
         """).fetchdf()
+        # **시장 층(금리·물가·성장률)을 예측에 넣는다.** 지금 우리를 이기고
+        # 있는 기준선이 '늘 오른다' 인데, 그것을 깰 수 있는 것은 해마다
+        # 다른 전국 지표뿐이다 — 지역 지표는 동네끼리의 차이만 가른다.
+        mac = con.execute("""
+            SELECT series, CAST(substr(period, 1, 4) AS INTEGER) AS year,
+                   avg(value) AS value
+            FROM market_series
+            WHERE length(period) >= 4 AND value IS NOT NULL
+            GROUP BY 1, 2
+        """).fetchdf()
 
     from .analyze import crossfactors as CF
     price = FC.price_panel(trades, min_n=int(args.min_n))
-    long = pd.concat([CF.to_year(ser), ryr, tg, pm], ignore_index=True)
+    parts = [CF.to_year(ser), ryr, tg, pm]
+    if args.macro and len(price) and len(mac):
+        bc = FC.broadcast(mac, sorted(price["sigungu_cd"].unique().tolist()))
+        parts.append(bc)
+        print(f"시장 층 {mac['series'].nunique()}종을 시군구마다 깔았습니다"
+              f" ({int(mac['year'].min())}~{int(mac['year'].max())}"
+              f" · {', '.join(sorted(mac['series'].unique())[:8])})")
+    elif not args.macro:
+        print("시장 층은 뺐습니다 (--no-macro)")
+    long = pd.concat(parts, ignore_index=True)
     long = long.dropna(subset=["sigungu_cd", "year", "metric", "value"])
     long["year"] = pd.to_numeric(long["year"], errors="coerce")
     long = long.dropna(subset=["year"])
@@ -1748,6 +1767,13 @@ def cmd_forecast(args):
               f" {r['방향인자']:>7.1%} {r['방향늘오름']:>7.1%} {r['방향 이득%p']:>+7.2f}"
               f" {r['띠아래']:>6.2f}~{r['띠위']:<7.2f} {r['띠덮개']:>6.0%}"
               f" {r['이득%']:>+9.2f}")
+
+    last = bt.sort_values(["창", "기준점"]).iloc[-1]
+    if last.get("큰 지표"):
+        print(f"\n── 마지막 기준점({int(last['기준점'])} · 창 {int(last['창'])}년)에서"
+              f" 무게가 컸던 지표 ──")
+        for nm, r in last["큰 지표"]:
+            print(f"    {str(nm)[:44]:<45s} r={float(r):+.3f}")
 
     print(f"\n  ▶ {FC.verdict(sm)}")
     print("\n  읽는 법. **방향**이 으뜸이다 — 땅을 살지 말지는 오르나 내리나로")
@@ -4646,7 +4672,9 @@ def main(argv=None):
     p.add_argument("--min-r", dest="min_r", default="0.01",
                    help="지시의 1%% 문턱. 학습 창 상관이 이만큼이면 쓴다")
     p.add_argument("--windows", default="5,10,15,20", help="창 길이들 (쉼표)")
-    p.set_defaults(func=cmd_forecast)
+    p.add_argument("--no-macro", dest="macro", action="store_false",
+                   help="시장 층(금리 등 전국 지표)을 빼고 지역 지표만으로 잰다")
+    p.set_defaults(func=cmd_forecast, macro=True)
 
     p = sub.add_parser("road-step",
                        help="필지 층 — 도로가 붙으면 얼마나 오르는가 (맹지 기준 사다리)")
