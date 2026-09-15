@@ -3921,6 +3921,21 @@ function popGroupName(r, levelKey) {
  *
  * 시·군 단계도 같습니다. 광역시의 구는 시·도로 묶이니 무사한데, 도
  * 아래의 고성군 둘은 여기서도 겹칩니다. */
+/* **구 단위에서는 건너뛰는 줄**이 있다 (2026-09-15 지시: "화성시 인구가
+ * 안붙어 있습니다").
+ *
+ * 화성시는 2025 에 네 구로 쪼개졌는데 KOSIS 가 아직 그 구 코드로 인구를
+ * 안 준다. 그래서 네 구가 다 빈 pop 이고, 시·군으로 묶어도 합이 0 이라
+ * 인구가 안 붙었다. 내보내기가 **옛 시 코드의 시 전체 인구**를 한 줄로
+ * 실어 주는데(pop_level='si'), 그 줄은 구별로 나눌 수 없으므로 **구 단위
+ * 화면에서는 안 그린다.** 구별 인구를 모르는 채로 그리면 그것이 거짓이다.
+ *
+ * 시·군, 시·도 단위에서는 그 한 줄이 그 시를 대신한다 — 네 구가 0 이라
+ * 이중으로 세지 않는다. */
+function popSkip(r, levelKey) {
+  return r && r.pop_level === 'si' && levelKey === 'gu';
+}
+
 function popGroupKey(r, levelKey) {
   const name = popGroupName(r, levelKey);
   if (levelKey === 'sido') return name;          // 시·도 이름은 안 겹친다
@@ -4334,6 +4349,7 @@ function lpItemsRegion(levelKey) {
     const cells = groups.map((g) => ({ group: g, cell: (src[g] || {})[cd] }))
       .filter((x) => x.cell);
     const got = lpMix(cells);
+    if (popSkip(r, levelKey)) return;   // 구 단위에서는 시 합계 줄을 안 쓴다
     const key = popGroupKey(r, levelKey);
     if (!bag.has(key)) {
       // **열쇠와 이름은 다르다.** 열쇠에는 시·도가 붙어 있다.
@@ -4383,6 +4399,7 @@ function lpItemsRegion(levelKey) {
   // 시군구를 전부** 더한다.
   const popByKey = new Map();
   (state.regions || []).forEach((r) => {
+    if (popSkip(r, levelKey)) return;   // 구별 인구를 모르는 시 합계 줄
     const v = (r.pop || {})[year];
     if (!(typeof v === 'number' && v > 0)) return;
     const k = popGroupKey(r, levelKey);

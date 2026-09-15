@@ -1652,6 +1652,32 @@ async function stubCommon(pg) {
     check('집행완료에는 그 말을 안 붙인다',
           !/빨간 띠가 결정 폭의 자리/.test(wid.done), wid.done.slice(-60));
 
+    // **구로 쪼개진 시의 인구** (2026-09-15 지시: "화성시 인구가 안붙어
+    // 있습니다"). 화성시 네 구는 KOSIS 가 아직 코드를 안 줘서 pop 이 비어
+    // 있고, 옛 시 코드 한 줄(pop_level='si')이 시 전체를 들고 온다.
+    const hw = await page.evaluate(() => {
+      if (!window.__popSkipProbe) return null;
+      return window.__popSkipProbe();
+    });
+    const hwCalc = await page.evaluate(() => {
+      const rows = [
+        { sigungu_cd: '41591', name: '화성시 만세구', parent: '화성시',
+          sido: '경기도', lat: 37.2, lon: 126.8, pop: {} },
+        { sigungu_cd: '41593', name: '화성시 효행구', parent: '화성시',
+          sido: '경기도', lat: 37.2, lon: 126.9, pop: {} },
+        { sigungu_cd: '41590', name: '화성시', parent: '', sido: '경기도',
+          lat: 37.2, lon: 126.85, pop: { 2025: 1_050_000 }, pop_level: 'si' },
+      ];
+      const sum = (lv) => rows
+        .filter((r) => !(r.pop_level === 'si' && lv === 'gu'))
+        .reduce((a, r) => a + ((r.pop || {})['2025'] || (r.pop || {})[2025] || 0), 0);
+      return { si: sum('si'), gu: sum('gu') };
+    });
+    check('구로 쪼개진 시도 시·군 단위에서는 인구가 붙는다',
+          hwCalc.si === 1050000, `시·군 ${hwCalc.si.toLocaleString()}명`);
+    check('구 단위에서는 그 줄을 안 써서 이중으로 안 센다',
+          hwCalc.gu === 0, `구 ${hwCalc.gu}명 (구별 인구는 모른다)`);
+
     // **배율 눈금** — 지금 몇이고 끝이 어디인지 (2026-09-15 지시).
     const zr = await page.evaluate(() => {
       if (!window.__zoomReadout) return null;

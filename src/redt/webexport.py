@@ -13,6 +13,8 @@ import duckdb
 import numpy as np
 import pandas as pd
 
+import statistics
+
 from . import db
 from .analyze import scoring
 from .config import PROCESSED, ROOT, primary_band, settings
@@ -1492,6 +1494,60 @@ def _regions() -> list[dict]:
         print(f"    ⚠ 이름이 없어 코드가 그대로 나가는 시군구 {len(stray)}곳"
               f" — {', '.join(stray[:12])}")
         print("      (config/region_names.yaml 에 한 줄 더하면 채워집니다)")
+    # ── 구로 쪼개진 시의 **시 전체 인구**를 되살린다 (2026-09-15 지시:
+    #    "화성시 인구가 안붙어 있습니다") ──
+    #
+    # 화성시는 2025 에 네 구(41591 만세·41593 효행·41595 병점·41597 동탄)로
+    # 쪼개졌는데 KOSIS 가 아직 그 코드로 인구를 안 준다. 그래서 네 구가 다
+    # 빈 pop 이고, 시·군 단위로 묶어도 합이 0 이라 화면에 인구가 안 붙었다.
+    #
+    # **인구를 지어내지는 않는다.** 대신 지어내지 않고도 쓸 수 있는 값이
+    # 있다 — **옛 시 코드(41590)의 시 전체 인구**다. 그것은 실제로 받은
+    # 값이고, 다만 좌표가 없어(거래가 새 구 코드로 오므로) 지금까지
+    # 버려지고 있었다.
+    #
+    # 구별로 쪼개서 나눠 주지는 않는다 — 그건 지어내는 것이다. **시 한 줄**
+    # 로만 싣고, 구 단위 화면에서는 안 그린다 (pop_level='si').
+    emitted = {r["sigungu_cd"] for r in out}
+    by_prefix: dict[str, list[dict]] = {}
+    for r in out:
+        by_prefix.setdefault(str(r["sigungu_cd"])[:3], []).append(r)
+    si_rows = []
+    for code in sorted(set(pop_by_code) - emitted):
+        kids = [r for r in by_prefix.get(str(code)[:3], [])
+                if str(r["sigungu_cd"]) != str(code) and r.get("parent")]
+        if not kids:
+            continue
+        names = {r["parent"] for r in kids if r.get("parent")}
+        if len(names) != 1:
+            continue                      # 어느 시의 합계인지 확실할 때만
+        si_name = next(iter(names))
+        lats = [r["lat"] for r in kids if r.get("lat") is not None]
+        lons = [r["lon"] for r in kids if r.get("lon") is not None]
+        if not lats or not lons:
+            continue
+        g = pop_by_code[str(code)]
+        si_rows.append({
+            "sigungu_cd": str(code), "name": si_name,
+            "lat": round(float(statistics.median(lats)), 6),
+            "lon": round(float(statistics.median(lons)), 6),
+            "n_umd": sum(int(r.get("n_umd") or 0) for r in kids),
+            "sido": kids[0].get("sido", ""),
+            "parent": "",
+            # **구 단위에서는 안 그린다.** 구별 인구를 모르기 때문이다.
+            # 시·군, 시·도 단위에서만 이 한 줄이 그 시를 대신한다.
+            "pop_level": "si",
+            "pop": {str(int(r.year)): int(r.value)
+                    for r in g.itertuples(index=False)},
+        })
+    if si_rows:
+        out.extend(si_rows)
+        print(f"    구로 쪼개진 시의 **시 전체 인구**를 되살렸습니다"
+              f" {len(si_rows)}곳 — "
+              + ", ".join(f"{r['sigungu_cd']} {r['name']}" for r in si_rows))
+        print("      (구별로 나누지는 않습니다 — 그건 지어내는 것입니다."
+              " 구 단위 화면에서는 안 그립니다)")
+
     n_office = sum(1 for r in out if "office_lat" in r)
     n_sido = sum(1 for r in out if r["sido"])
     no_pop = [r for r in out if not r["pop"]]
