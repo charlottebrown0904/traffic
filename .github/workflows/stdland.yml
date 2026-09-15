@@ -9,6 +9,7 @@
 #   vworld  시군구별 속성 조회로 적재 (ldCode 5자리 · 연도)
 #   value-test  현재 가치 2판을 최근 실거래 필지에 대입해 실거래단가와 견준다
 #   factor-cells 미래 가치 인자 — 조합 칸 세기 (+ query=estimate 면 추정까지)
+#   events      개통 전후 지가 (필지 단위 이중차분 + 이벤트 스터디) — 읽기만 한다
 #   momentum    모멘텀 검증 — 시군구×용도지역군 연 중앙단가의 추세 지속·거래량 선행 (limit=칸 최소 건수)
 #   ecos        한국은행 ECOS 금리·물가·성장률
 #               query: (비움)=전부 적재 · probe=받아만 봄 · browse:CODE=표 목록
@@ -38,7 +39,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
+        description: "probe / drive / odcloud / vworld / value-test / xy-probe / cadastral / factor-cells / events / momentum / ecos / indicators-probe / indicators / power / localtax / landprice / market-fit / portal-file / industrial / permits / rail / tax-kosis / dart-probe / law-probe / law"
         default: "probe"
       drive_file_id:
         description: "drive 모드 — 드라이브 파일 ID"
@@ -184,6 +185,17 @@ jobs:
           python -m redt.cli factor-cells \
             --since "${{ inputs.years || '2010' }}" --until "${{ inputs.n || '2025' }}" \
             ${{ inputs.query == 'estimate' && '--estimate' || '' }} 2>&1 | tee /tmp/stdland.log
+
+      # 개통 전후 지가 — **필지 단위**다 (factor-cells 는 읍·면·동 단위).
+      # 읍면동 중앙단가로는 IC 효과가 묽어진다: 한 동네에 IC 에서 먼 필지가
+      # 훨씬 많고, 오르는 것은 개발 가능한 용도지역뿐이다. 이쪽은 거리
+      # 밴드(0-1·1-3km)로 처치군을 잡고 같은 시군구를 대조군으로 쓴다.
+      # 읽기만 하므로 캐시를 안 남긴다.
+      - name: 개통 전후 지가 (필지 단위 이중차분)
+        if: inputs.mode == 'events'
+        run: |
+          set -o pipefail
+          python -m redt.cli events --kind "${{ inputs.query || 'land' }}" 2>&1 | tee /tmp/stdland.log
 
       # 모멘텀 검증 — 읽기만 하므로 캐시는 안 남기고 결과 JSON 을 첨부한다.
       # limit=칸 최소 건수(비우면 30).
