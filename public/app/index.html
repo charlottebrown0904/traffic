@@ -298,6 +298,34 @@
         <button type="button" class="lp-swap" id="lp-swap" hidden></button>
       </section>
 
+      <!-- ── 개발 (2026-09-15 지시: "개발을 클릭하면 좌측 패널에
+           (산업단지/사업지구/도로/철도역/완공보기)를 표시해 주세요")
+
+           갈래 칸은 지도 위 도구막대에 **줄줄이 붙어 있었다.** 다섯이
+           늘어서면서 막대가 지도 폭을 넘고, 배율을 줄이면 둘째 줄로
+           내려앉아 지도를 덮었다. 다른 칸(실거래 표시·IC·실거래 가격)은
+           이미 이 왼쪽 칸에 있으니 같은 자리로 온다 — 켜고 끄는 스위치는
+           지도 위에, 무엇을 켤지 고르는 것은 왼쪽 칸에.
+
+           칸 자체는 app.js 가 DEV_PARTS 로 만든다. 이름을 여기 적어 두면
+           둘이 갈린다. -->
+      <section class="sheet-pane" data-cat="develop" hidden>
+        <h3>보일 갈래
+          <button type="button" class="info-dot" aria-expanded="false"
+                  aria-label="설명 보기">?</button></h3>
+        <div class="info-pop" hidden>
+          <p>산업단지는 브이월드 공식 색을 그대로 받고, 택지·사업지구와
+            계획도로는 <strong>사업 단계</strong>에 따라 우리가 다시
+            칠합니다 — 이른 단계일수록 진하게.</p>
+          <p>철도역은 브이월드에 없어 우리 자료(역 405곳)로 그립니다.</p>
+          <p><strong>완공된 것은 기본으로 감춥니다.</strong> 땅을 보는
+            사람에게 중요한 것은 아직 안 된 것입니다.</p>
+        </div>
+        <div class="dev-parts" id="dev-parts" role="group"
+             aria-label="개발 갈래"></div>
+        <div class="dev-legend" id="dev-legend" hidden></div>
+      </section>
+
       </div>
     </div>
   </aside>
@@ -361,18 +389,12 @@
 
            철도는 브이월드에 없어 우리 자료로 그린다 (역 405곳). 나머지
            셋은 브이월드 공식 색을 그대로 받는다. -->
+      <!-- 갈래 칸과 색 설명은 **왼쪽 칸**으로 옮겼다 (2026-09-15 지시).
+           여기 남는 것은 스위치 하나뿐이다 — 켜면 왼쪽 칸이 열린다. -->
       <label class="map-switch">
         <input type="checkbox" id="develop-bg">
         <span>개발</span>
       </label>
-      <div class="dev-parts" id="dev-parts" role="group"
-           aria-label="개발 갈래" hidden></div>
-      <!-- 색이 무엇을 뜻하는지 화면이 스스로 말한다 (2026-09-14 지시:
-           "산업단지 택지사업지구의 색상은 의미가 있나요?"). 브이월드
-           색은 사업·집행 단계를 뜻하는데 어느 쪽이 이른 단계인지는
-           말해 주지 않으므로, 우리가 이른 단계일수록 진하게 다시 칠하고
-           여기 적는다. -->
-      <div class="dev-legend" id="dev-legend" hidden></div>
 
       <!-- 배경 지도 (요구사항 2026-09-09).
 

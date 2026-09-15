@@ -319,7 +319,7 @@ function wireWhy() {
  * 그만큼 좁아지는데, 실제로 만지는 것은 한 번에 한 묶음뿐이다. 칩을
  * 누르면 그 묶음만 아래에서 올라온다 (호갱노노가 하는 것이 이것이다). */
 const SHEET_TITLE = {
-  trade: '실거래 표시', ic: 'IC', price: '실거래 가격',
+  trade: '실거래 표시', ic: 'IC', price: '실거래 가격', develop: '개발',
 };
 
 function openSheet(cat) {
@@ -331,9 +331,7 @@ function openSheet(cat) {
   });
   const side = document.getElementById('side');
   if (same) {
-    sheet.hidden = true; sheet.dataset.cat = '';
-    if (side) side.classList.remove('is-open');
-    if (map) setTimeout(() => map.invalidateSize(), 200);
+    closeSheet();
     return;
   }
   if (side) side.classList.add('is-open');
@@ -349,21 +347,29 @@ function openSheet(cat) {
   if (map) setTimeout(() => map.invalidateSize(), 220);
 }
 
+/* 왼쪽 칸 닫기. openSheet 안과 닫기 단추에 같은 코드가 두 벌 있었다 —
+   개발 스위치까지 세 벌이 되기 전에 한 곳으로 모은다. */
+function closeSheet() {
+  const sheet = document.getElementById('sheet');
+  if (sheet) { sheet.hidden = true; sheet.dataset.cat = ''; }
+  const side = document.getElementById('side');
+  if (side) side.classList.remove('is-open');
+  document.querySelectorAll('.cat').forEach((b) => b.classList.remove('is-on'));
+  if (map) setTimeout(() => map.invalidateSize(), 220);
+}
+
+/** 지금 왼쪽 칸에 펼쳐진 갈래. 안 열렸으면 빈 글자. */
+function openSheetCat() {
+  const sheet = document.getElementById('sheet');
+  return sheet && !sheet.hidden ? (sheet.dataset.cat || '') : '';
+}
+
 function wireSheet() {
   document.querySelectorAll('.cat').forEach((b) => {
     b.addEventListener('click', () => openSheet(b.dataset.cat));
   });
   const close = document.getElementById('sheet-close');
-  if (close) {
-    close.addEventListener('click', () => {
-      const sheet = document.getElementById('sheet');
-      if (sheet) { sheet.hidden = true; sheet.dataset.cat = ''; }
-      const side = document.getElementById('side');
-      if (side) side.classList.remove('is-open');
-      document.querySelectorAll('.cat').forEach((b) => b.classList.remove('is-on'));
-      if (map) setTimeout(() => map.invalidateSize(), 220);
-    });
-  }
+  if (close) close.addEventListener('click', closeSheet);
 }
 
 function wireTabs() {
@@ -7355,7 +7361,12 @@ function wireFind() {
     pbox.addEventListener('change', () => togglePlaceTags(pbox.checked));
   }
 
-  // 개발 층 (요구사항 2026-09-14). 기본 꺼짐. 켜면 갈래 칸이 펼쳐진다.
+  /* 개발 층 (요구사항 2026-09-14). 기본 꺼짐.
+   *
+   * 2026-09-15 지시: "개발을 클릭하면 좌측 패널에 (산업단지/사업지구/
+   * 도로/철도역/완공보기)를 표시해 주세요". 갈래 칸이 지도 위 도구막대에
+   * 줄줄이 붙어 있어 막대가 지도 폭을 넘었다. 이제 왼쪽 칸(실거래 표시·
+   * IC·실거래 가격과 같은 자리)에 펼친다. */
   const dbox = document.getElementById('develop-bg');
   const dparts = document.getElementById('dev-parts');
   if (dparts) {
@@ -7398,10 +7409,16 @@ function wireFind() {
   }
   if (dbox) {
     dbox.checked = state.develop;
-    if (dparts) dparts.hidden = !state.develop;
+    if (state.develop) openSheet('develop');
     dbox.addEventListener('change', () => {
       toggleDevelop(dbox.checked);
-      if (dparts) dparts.hidden = !dbox.checked;
+      // 켜면 펼치고, 끄면 **개발 칸이 열려 있을 때만** 닫는다. 다른
+      // 갈래를 보고 있는데 개발을 끄자 그 칸이 같이 닫히면 놀란다.
+      if (dbox.checked) {
+        if (openSheetCat() !== 'develop') openSheet('develop');
+      } else if (openSheetCat() === 'develop') {
+        closeSheet();
+      }
     });
   }
 

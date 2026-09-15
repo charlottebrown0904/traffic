@@ -1912,6 +1912,21 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 }
 .dev-part input { margin: 0; }
 
+/* 왼쪽 칸에서는 **세로로 세운다** (2026-09-15). 지도 위 막대에서는 옆으로
+   흘려야 자리를 덜 먹었지만, 왼쪽 칸은 폭이 좁고 높이가 남는다 — 다섯이
+   옆으로 흐르면 '완공 보기' 만 둘째 줄에 혼자 남는다. 같은 칸의 다른
+   목록(.checks)과 같은 모양이 되게 한다. */
+.sheet-pane .dev-parts {
+  display: grid;
+  gap: .4rem;
+  padding: 0;
+  margin: 0 0 .5rem;
+  background: none;
+  font-size: .84rem;
+}
+.sheet-pane .dev-part { white-space: normal; }
+.sheet-pane .dev-legend { margin: 0 0 .4rem; }
+
 /* 고른 행정구역의 전체 이름 (2026-09-14) — 브이월드의 full_nm.
    면 가운데에 상주하므로 값 태그를 가리지 않게 옅고 작게 둔다. */
 .leaflet-tooltip.admin-name {

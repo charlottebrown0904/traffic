@@ -61,10 +61,14 @@ const FAKE_LEAFLET = () => {
   const sync = () => {
     rec.circles.length = 0;
     rec.tradeOpts.length = 0;
-    groups.forEach((g) => g._items.forEach((x) => {
-      if (x.__circle) rec.circles.push(x.__opts);
-      else if (x.__marker) rec.tradeOpts.push(x.__opts);
-    }));
+    groups.forEach((g) => {
+      // 지도에서 뺀 무리는 안 센다 — 진짜 Leaflet 도 그렇게 보인다.
+      if (g.__off) return;
+      g._items.forEach((x) => {
+        if (x.__circle) rec.circles.push(x.__opts);
+        else if (x.__marker) rec.tradeOpts.push(x.__opts);
+      });
+    });
   };
   const grp = () => {
     const g = { _n: 0, _items: [],
@@ -74,7 +78,21 @@ const FAKE_LEAFLET = () => {
       // 코드가 조용히 undefined 로 빠지고, 검사는 '건너뜀' 으로 초록이
       // 된다 — 건너뛴 검사는 통과가 아니라 **안 본 것**이다.
       getLayers() { return g._items; },
-      addTo() { return g; } };
+      /* **remove 가 없었다.** 바로 위 주석이 경고한 그 함정에 이 함수가
+         빠져 있었다 (2026-09-15): 층을 끄는 코드가
+         developLayer.remove() 를 부르는데 가짜에 그 함수가 없어
+         change 처리기가 거기서 죽었다. 그러면 state 는 바뀌는데
+         drawDevelop 이 안 돌아 window.__develop 이 옛 값으로 남고,
+         '끄면 꺼지는가' 를 보는 검사가 통과할 수 없다.
+         담은 것은 그대로 들고 있는다 — 다시 addTo 하면 돌아온다. */
+      remove() { g.__off = true; sync(); return g; },
+      removeLayer(x) {
+        const i = g._items.indexOf(x);
+        if (i >= 0) { g._items.splice(i, 1); g._n = Math.max(0, g._n - 1); }
+        sync();
+        return g;
+      },
+      addTo() { g.__off = false; sync(); return g; } };
     groups.push(g);
     return g;
   };
@@ -1495,8 +1513,13 @@ async function stubCommon(pg) {
       parts: document.getElementById('dev-parts')
         ? document.getElementById('dev-parts').children.length : 0,
       done: window.state.devDone,
-      hidden: document.getElementById('dev-parts')
-        ? document.getElementById('dev-parts').hidden : null,
+      // 2026-09-15 지시로 갈래 칸이 **왼쪽 칸**으로 옮겼다. 접힘은
+      // 이제 칸 자체가 아니라 그것이 든 갈피(.sheet-pane)가 정한다.
+      inSide: !!document.querySelector('#side #dev-parts'),
+      inTools: !!document.querySelector('.map-tools #dev-parts'),
+      names: [...document.querySelectorAll('#dev-parts .dev-part span')]
+        .map((e) => e.textContent.trim()),
+      hidden: (document.querySelector('.sheet-pane[data-cat="develop"]') || {}).hidden,
     }));
     check('개발은 꺼진 채로 시작한다', devBefore.on === false,
           `on=${devBefore.on}`);
@@ -1504,6 +1527,17 @@ async function stubCommon(pg) {
     check('개발 갈래 칸이 다섯이고 처음엔 접혀 있다',
           devBefore.parts === 5 && devBefore.hidden === true,
           `${devBefore.parts}개 · hidden=${devBefore.hidden}`);
+    /* 갈래 칸은 **왼쪽 칸**에 있다 (2026-09-15 지시: "개발을 클릭하면
+       좌측 패널에 (산업단지/사업지구/도로/철도역/완공보기)를 표시해
+       주세요"). 지도 위 막대에 다섯이 늘어서면 막대가 지도 폭을 넘었다. */
+    check('갈래 칸이 왼쪽 칸에 있다 (지도 위 막대가 아니다)',
+          devBefore.inSide && !devBefore.inTools,
+          `side=${devBefore.inSide} tools=${devBefore.inTools}`);
+    check('다섯 이름이 지시한 그대로다',
+          JSON.stringify(devBefore.names)
+            === JSON.stringify(['산업단지', '택지·사업지구', '계획도로',
+                                '철도역', '완공 보기']),
+          JSON.stringify(devBefore.names));
     check('완공 보기는 꺼진 채로 시작한다', devBefore.done === false,
           `done=${devBefore.done}`);
     check('철도역이 실려 있다 (rail.json)', devBefore.rail >= 300,
@@ -1518,12 +1552,20 @@ async function stubCommon(pg) {
       document.querySelectorAll('img.leaflet-tile').forEach((im) => {
         if ((im.src || '').includes('layer=develop')) tiles += 1;
       });
+      const sh = document.getElementById('sheet');
       return { on: d.on, key: d.key, tiles,
-               hidden: document.getElementById('dev-parts').hidden };
+               hidden: document.querySelector('.sheet-pane[data-cat="develop"]').hidden,
+               cat: sh.dataset.cat, sheetHidden: sh.hidden,
+               title: (document.getElementById('sheet-title').textContent || '').trim(),
+               sideOpen: document.getElementById('side').classList.contains('is-open') };
     });
     check('개발을 켜면 켜진다', devAfter.on === true, `on=${devAfter.on}`);
     check('켜면 갈래 칸이 펼쳐진다', devAfter.hidden === false,
           `hidden=${devAfter.hidden}`);
+    check('켜면 왼쪽 칸이 개발로 열린다',
+          devAfter.cat === 'develop' && devAfter.sheetHidden === false
+          && devAfter.sideOpen && devAfter.title === '개발',
+          `cat=${devAfter.cat} 제목=${devAfter.title} 열림=${devAfter.sideOpen}`);
 
     /* 계획도로·택지지구는 **그림이 아니라 도형**이다 (2026-09-14 지시).
        브이월드가 이미 칠해서 주는 그림으로는 완공된 것을 못 거른다.
@@ -1565,8 +1607,65 @@ async function stubCommon(pg) {
     const devNarrow = await page.evaluate(() => (window.__develop || {}).key);
     check('산업단지를 끄면 부를 타일이 없다', devNarrow === null,
           `key=${devNarrow}`);
-    await page.click('#develop-bg');      // 원래대로 끄고 다음 절로
-    await page.waitForTimeout(200);
+    /* 다른 갈래를 보고 있을 때 개발을 끄면 **그 칸은 안 닫힌다.**
+       보고 있던 것이 같이 사라지면 고장으로 읽힌다. */
+    await page.click('.cat[data-cat="trade"]');
+    // 왼쪽 칸이 벌어지면 지도 폭이 바뀌고 도구막대가 다시 앉는다
+    // (openSheet 가 220ms 뒤 invalidateSize). 그 사이에 누르면 커서가
+    // 옮겨진 자리를 누른다 — 처음에 250ms 만 기다렸다가 첫 클릭이
+    // 헛나갔다. 자리가 앉을 때까지 기다리고, 스위치는 change 로 켠다.
+    await page.waitForTimeout(700);
+    const devSwitch = (on) => page.evaluate((v) => {
+      const b = document.getElementById('develop-bg');
+      b.checked = v;
+      b.dispatchEvent(new Event('change'));
+    }, on);
+    await devSwitch(false);               // 개발만 끈다
+    await page.waitForTimeout(250);
+    const other = await page.evaluate(() => {
+      const sh = document.getElementById('sheet');
+      return { on: (window.__develop || {}).on, cat: sh.dataset.cat,
+               hidden: sh.hidden, checked: document.getElementById('develop-bg').checked,
+               sdev: window.state.develop };
+    });
+    check('실거래 표시를 보는 중에 개발을 끄면 그 칸은 그대로 있다',
+          other.on === false && other.cat === 'trade' && other.hidden === false,
+          `on=${other.on} cat=${other.cat} checked=${other.checked} state=${other.sdev}`);
+
+    // 개발을 다시 켜면 개발 칸으로 바뀌고, 끄면 닫힌다.
+    await devSwitch(true);
+    await page.waitForTimeout(250);
+    const devBack = await page.evaluate(() =>
+      document.getElementById('sheet').dataset.cat);
+    check('다시 켜면 왼쪽 칸이 개발로 바뀐다', devBack === 'develop', `cat=${devBack}`);
+    await devSwitch(false);
+    await page.waitForTimeout(250);
+    const devShut = await page.evaluate(() => {
+      const sh = document.getElementById('sheet');
+      return { hidden: sh.hidden, cat: sh.dataset.cat,
+               sideOpen: document.getElementById('side').classList.contains('is-open') };
+    });
+    check('개발을 끄면 왼쪽 칸이 닫힌다',
+          devShut.hidden === true && !devShut.cat && !devShut.sideOpen,
+          `hidden=${devShut.hidden} cat=${devShut.cat}`);
+
+    /* 끈 갈래와 열려 있던 갈피를 되돌려 놓는다 — 뒤 검사가 같은 화면을
+       보게. 앞(1303줄)에서 '실거래 표시' 를 열어 둔 채로 이 절에 들어왔고,
+       개발을 켜는 순간 그 갈피가 개발로 바뀌었다. 되돌리지 않으면 뒤에서
+       #kind-filters 를 누르려 할 때 '보이지 않는다' 로 멈춘다. */
+    await page.evaluate(() => {
+      const box = document.querySelector('#dev-parts input[data-part="industry"]');
+      box.checked = true;
+      box.dispatchEvent(new Event('change'));
+      const d = document.getElementById('dev-done');
+      d.checked = false;
+      d.dispatchEvent(new Event('change'));
+      const sh = document.getElementById('sheet');
+      if (sh.hidden || sh.dataset.cat !== 'trade') {
+        document.querySelector('.cat[data-cat="trade"]').click();
+      }
+    });
+    await page.waitForTimeout(300);
 
     console.log();
     console.log('7. 거래 점이 배경에서 보인다 · 도로 위계가 살아 있다');
