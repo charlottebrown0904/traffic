@@ -3558,9 +3558,21 @@ async function stubCommon(pg) {
       await new Promise((ok) => setTimeout(ok, 150));
       return document.getElementById('pc-val-box').innerHTML;
     });
-    check('미래 가치도 이름과 곧 공개뿐이다',
-          /미래 가치/.test(vfut) && /곧 공개합니다/.test(vfut)
-          && !/산업단지/.test(vfut));
+    // 미래 가치도 **왜 아직 안 내는지**를 적는다 (2026-09-15 지시). 현재
+    // 가치는 못 낼 때 '산출 보류 — …' 로 까닭을 적는데 여기만 '곧 공개
+    // 합니다' 한 줄이었다 — 읽는 사람은 그것이 한계인지 만들다 만 것인지
+    // 알 수 없다.
+    check('미래 가치도 산출 보류와 까닭을 적는다',
+          /미래 가치/.test(vfut) && /산출 보류/.test(vfut)
+          && /세 층이 다 서야/.test(vfut),
+          vfut.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 120));
+    check('세 층이 무엇인지 적는다 (방법은 밝히고 숫자는 안 낸다)',
+          /시장 층/.test(vfut) && /지역 사건 층/.test(vfut) && /필지 층/.test(vfut));
+    // **숫자는 절대 안 낸다.** 층 이름만 보이고 값·배율은 없어야 한다.
+    check('값은 한 자도 안 낸다',
+          !/원\/㎡/.test(vfut) && !/[0-9]배/.test(vfut) && !/상위 [0-9]/.test(vfut),
+          (vfut.match(/[0-9][0-9,.]*\s*(원|배|%)/) || ['없음'])[0]);
+    check('면책이 값보다 먼저 서 있다', /예측이 아니라 참고 지표/.test(vfut));
 
     // ── 현재 가치 2판 — 표준지 조각과 격차율 표가 있으면 산출표를 낸다
     //    (2026-09-11). 숫자는 valuation.json(원본 src/redt/valuation.py)

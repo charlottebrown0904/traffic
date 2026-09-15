@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "reach = 두 길 재기 · probe = 표 확인 · pull = 받아 아티팩트로 · load = 받아 DB(캐시)에 — 시점수정용"
+        description: "reach = 두 길 재기 · probe = 표 확인 · pull = 아티팩트로 · load = DB 에(시점수정) · market = 시장 층(미래 가치)"
         type: choice
-        options: ["reach", "probe", "pull", "load"]
+        options: ["reach", "probe", "pull", "load", "market"]
         default: "reach"
       table:
         description: "pull 일 때 받을 표 이름 (scripts/reb_stats.py 의 이름)"
@@ -88,8 +88,44 @@ jobs:
             --start "${{ inputs.from }}" --end "${{ inputs.to }}" \
             --max-pages "${{ inputs.max_pages }}"
           PYTHONPATH=src python scripts/reb_time_check.py
+      # ── market: 미래 가치의 **시장 층** (docs/future-value.md §3-1) ──────
+      # 시점수정(load)은 올해 몇 달이면 되지만, 시장 층은 금리·물가·성장률이
+      # 지가변동률을 **몇 달 뒤에 얼마나** 옮기는지를 재는 회귀라 긴 계열이
+      # 있어야 한다. 대신 전국 행만 있으면 되므로(필지를 가르지 않는 층이다)
+      # 전 기간을 받아도 몇 장이다 — 전국 × 용도지역 10 × 240개월.
+      - name: 이전 수집분 복원 (시장 층)
+        if: inputs.mode == 'market'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/processed
+            data/interim
+          key: redt-data-${{ github.run_id }}
+          restore-keys: redt-data-
+      - name: 거시 계열 (ECOS) → market_series
+        if: inputs.mode == 'market'
+        run: |
+          test -f data/processed/redt.duckdb || { echo "::error::복원된 DB 가 없습니다 — collect 를 먼저"; exit 1; }
+          PYTHONPATH=src python -m redt.cli ecos
+      - name: 지가변동률 전국 전 기간 → landprice_index
+        if: inputs.mode == 'market'
+        run: |
+          PYTHONPATH=src python -m redt.cli load-landprice \
+            --tables "지가변동률_용도지역_월" --region "전국" \
+            --start "200601" --end "${{ inputs.to }}" --max-pages "40"
+      - name: 시장 층 적합 + 시나리오
+        if: inputs.mode == 'market'
+        run: PYTHONPATH=src python -m redt.cli market-fit --years 12
+      - name: 적합 결과 올리기
+        if: always() && inputs.mode == 'market'
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-fit
+          path: data/processed/market_fit.json
+          if-no-files-found: warn
+
       - name: 수집분 보관
-        if: always() && inputs.mode == 'load'
+        if: always() && (inputs.mode == 'load' || inputs.mode == 'market')
         uses: actions/cache/save@v4
         with:
           path: |

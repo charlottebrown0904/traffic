@@ -1940,3 +1940,9 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .dev-leg { display: inline-flex; align-items: center; gap: .22rem; white-space: nowrap; }
 .dev-leg > i { width: .7rem; height: .7rem; border-radius: .18rem; display: inline-block; }
 .dev-leg.is-off { opacity: .5; }
+
+/* 미래 가치 — 세 층 목록 (2026-09-15). 산출표의 다른 설명 줄과 같은 무게로
+   둔다; 여기만 카드로 띄우면 '값이 나온 것' 처럼 읽힌다. */
+.pcv-layers { margin: .5rem 0 .6rem; display: grid; gap: .35rem .6rem; }
+.pcv-layers dt { font-weight: 600; font-size: .82rem; }
+.pcv-layers dd { margin: 0 0 .1rem; font-size: .78rem; color: var(--muted); line-height: 1.45; }

@@ -5700,12 +5700,34 @@ const FUTURE_DISCLAIMER =
   + '것이고, 저희는 그 결과에 책임지지 않습니다. 감정평가·투자자문이 '
   + '아닙니다.</p>';
 
+/* 미래 가치의 세 층 (docs/future-value.md §3). **여기 적는 것은 방법이지
+   진척이 아니다** — 진척을 코드에 박으면 반드시 낡는다. 층이 서면 그때
+   숫자를 내는 코드가 이 자리를 대신한다. */
+const FUTURE_LAYERS = [
+  ['시장 층', '전국이 어느 쪽으로 가는가 — 금리·물가·성장률이 지가변동률을 옮기는 폭'],
+  ['지역 사건 층', '이 동네에 예정된 것 — IC·산업단지·철도·택지의 전후 상승폭'],
+  ['필지 층', '이 땅 자체가 바뀌는 것 — 시가화예정용지·토지거래허가구역'],
+];
+
 function valuePanel(key) {
   const s = VALUE_SERVICES[key];
   if (!s) return '';
+  /* '곧 공개합니다' 한 줄이었다. 현재 가치는 못 낼 때 **왜** 못 내는지를
+     적는데(산출 보류 — …) 미래 가치만 그 말이 없었다 (2026-09-15 지시).
+     같은 기준으로 맞춘다: 무엇을 낼 것이고 왜 아직 안 내는지 적는다. */
+  if (key === 'future') {
+    return `<h4>${s.label}</h4>`
+      + '<p class="pcv-hold">산출 보류 — 미래 가치는 세 층이 다 서야 냅니다.</p>'
+      + '<dl class="pcv-layers">'
+      + FUTURE_LAYERS.map(([name, what]) =>
+        `<dt>${escapeHtml(name)}</dt><dd>${escapeHtml(what)}</dd>`).join('')
+      + '</dl>'
+      + '<p class="pcv-desc">세 층이 서고 <b>뒤로 돌려 검산</b>까지 통과하면 그때 '
+      + '숫자를 냅니다. 그 전에는 만들어 내지 않습니다.</p>'
+      + FUTURE_DISCLAIMER;
+  }
   return `<h4>${s.label}</h4>`
-    + '<p class="pcv-soon">곧 공개합니다.</p>'
-    + (key === 'future' ? FUTURE_DISCLAIMER : '');
+    + '<p class="pcv-soon">곧 공개합니다.</p>';
 }
 
 /* ─────────── 현재 가치 — 공시지가기준법 2판 (표준지 방식) ───────────
