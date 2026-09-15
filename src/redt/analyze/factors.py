@@ -88,19 +88,25 @@ def near(events: pd.DataFrame, lat: float, lon: float, radius_km: float) -> pd.D
     return box[d <= radius_km]
 
 
-def panel(trades: pd.DataFrame, min_n: int = 3) -> pd.DataFrame:
+def panel(trades: pd.DataFrame, min_n: int = 3, by: str | None = None) -> pd.DataFrame:
     """거래 → 읍·면·동 × 연도 패널. 값은 중앙 ln 단가.
 
     중앙값을 쓰는 까닭: 한 동네에 큰 거래 한 건이 섞이면 평균이 통째로
     끌려간다. 그리고 셀에 min_n 건이 안 되면 버린다 — 한두 건짜리 중앙값은
     중앙값이 아니다.
+
+    `by` 를 주면 그 칸까지 갈라 센다 (용도지역군). 설계 메모 §3-2 ③ 이
+    "같은 IC 옆이라도 계획관리는 오르고 농림·보전산지는 거의 안 움직인다
+    — 인자는 (사건 × 용도지역군) 표여야 한다" 고 적어 둔 그 갈래다.
+    전체를 한 덩이로 보면 안 오르는 땅이 오르는 땅을 희석한다.
     """
     need = {"umd_cd", "deal_year", "price_per_m2", "lat", "lon"}
     if trades.empty or not need.issubset(trades.columns):
         return pd.DataFrame()
     t = trades[trades["price_per_m2"] > 0].copy()
     t["ln_price"] = t["price_per_m2"].map(math.log)
-    g = t.groupby(["umd_cd", "deal_year"])
+    keys = ["umd_cd", "deal_year"] + ([by] if by and by in t.columns else [])
+    g = t.groupby(keys)
     out = g.agg(ln_price=("ln_price", "median"), n=("price_per_m2", "size"),
                 lat=("lat", "median"), lon=("lon", "median"),
                 sigungu_cd=("sigungu_cd", "first")).reset_index()
@@ -124,23 +130,24 @@ def mark(pan: pd.DataFrame, events: dict, pop: pd.DataFrame | None = None) -> pd
             df[f"d_{key}"] = 0
             continue
         ev = pd.DataFrame(ev).dropna(subset=["lat", "lon", "year"])
-        flags, rels = [], []
-        for row in df.itertuples(index=False):
-            hit = near(ev, row.lat, row.lon, radius[key])
-            on, rel = 0, None
-            if not hit.empty:
-                # **가장 이른 사건이 시계를 건다.** 여럿이 몰린 동네에서는
-                # 첫 사건이 값을 움직이기 시작한 때다.
-                first = float(hit["year"].min())
-                rel = row.year - first
-                # 이미 있었거나 곧 온다 — 한 번 켜지면 계속 켜져 있다.
-                on = int(first <= row.year + LEAD_YEARS)
-            flags.append(on)
-            rels.append(rel)
-        df[f"d_{key}"] = flags
+        # **동네마다 한 번만 재고 해마다 쓴다.** 예전에는 셀마다(동네×연도,
+        # 갈래를 가르면 그 곱) 반경을 다시 쟀다. 동네는 움직이지 않으므로
+        # 같은 답을 수만 번 다시 구한 셈이고, 용도지역군으로 가르면 그
+        # 값이 그대로 곱절이 된다. 좌표도 이제 동네 하나에 하나다 —
+        # 해마다 거래 중앙점이 흔들려 판정이 바뀌던 것도 같이 없앤다.
+        first_by_umd = {}
+        for umd, blk in df.groupby("umd_cd"):
+            hit = near(ev, float(blk["lat"].median()), float(blk["lon"].median()),
+                       radius[key])
+            # **가장 이른 사건이 시계를 건다.** 여럿이 몰린 동네에서는
+            # 첫 사건이 값을 움직이기 시작한 때다.
+            first_by_umd[umd] = None if hit.empty else float(hit["year"].min())
+        first = df["umd_cd"].map(first_by_umd)
+        # 이미 있었거나 곧 온다 — 한 번 켜지면 계속 켜져 있다.
+        df[f"d_{key}"] = (first.notna() & (first <= df["year"] + LEAD_YEARS)).astype(int)
         # 상대연도 — 사건에서 몇 해째인가. 음수면 아직 안 왔다는 뜻이다.
         # '아직 반영 안 된 몫' 은 이것 없이는 못 잰다 (event_study).
-        df[f"r_{key}"] = rels
+        df[f"r_{key}"] = df["year"] - first
     # 인구는 거리가 아니라 그 시군구의 증가율이다.
     if pop is not None and not pop.empty:
         df = df.merge(pop[["sigungu_cd", "year", "d_pop"]],

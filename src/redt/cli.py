@@ -1364,7 +1364,7 @@ def cmd_factor_cells(args):
         # 법정동 중심점(±1~2km)은 반경 3~5km 판정을 통째로 흔든다.
         tr = con.execute("""
             SELECT sigungu_cd || '|' || coalesce(umd, '') AS umd_cd,
-                   deal_year, price_per_m2, lat, lon, sigungu_cd
+                   deal_year, price_per_m2, lat, lon, sigungu_cd, land_use
             FROM trade
             WHERE kind = 'land' AND NOT coalesce(is_cancelled, FALSE)
               AND NOT coalesce(is_share_deal, FALSE)
@@ -1510,6 +1510,49 @@ def cmd_factor_cells(args):
             print(f"    ▶ 남은 몫 산출 보류 — {why}")
         out["event_study"][key] = {"name": name, "radius_km": rad, "ok": bool(ok),
                                    "why": why, "rows": prof.to_dict("records")}
+
+    # ── 용도지역군별로 갈라 본다 (2026-09-15 지시) ────────────────────
+    #
+    # 설계 메모 §3-2 ③: "같은 IC 옆이라도 계획관리는 오르고 농림·보전산지는
+    # 거의 안 움직인다 — 개발할 수 없는 땅에 접근성은 값이 아니다. 인자는
+    # (사건 × 용도지역군) 표여야 한다."
+    #
+    # 전국 한 덩이로 보면 **안 오르는 땅이 오르는 땅을 희석한다.** run 108
+    # 에서 IC 곡선이 평평했던 것의 한 갈래일 수 있다 — 자료가 없어서가
+    # 아니라 섞어서 없앤 것이라면, 갈랐을 때 계획관리에서 곡선이 선다.
+    if getattr(args, "by_zone", False):
+        tr2 = tr.copy()
+        tr2["zg"] = tr2["land_use"].map(V.zone_group)
+        tr2 = tr2[tr2["zg"].notna()]
+        print("\n── 용도지역군별 IC 곡선 (같은 IC 옆이라도 땅마다 다르다) ──")
+        counts = tr2["zg"].value_counts()
+        for zg in counts.index:
+            block = tr2[tr2["zg"] == zg]
+            pan_z = FA.panel(block, min_n=int(args.min_n))
+            if pan_z.empty or pan_z["umd_cd"].nunique() < FA.MIN_CELL_UMD:
+                print(f"\n  [{zg}] 동네 {0 if pan_z.empty else pan_z['umd_cd'].nunique()}곳"
+                      f" — {FA.MIN_CELL_UMD}곳에 못 미쳐 안 세웁니다")
+                continue
+            pan_z = FA.mark(pan_z, {"ic": ev.get("ic")})
+            if "r_ic" not in pan_z.columns or pan_z["r_ic"].notna().sum() == 0:
+                print(f"\n  [{zg}] IC 가 걸린 동네가 없습니다")
+                continue
+            fz, cz = FA.event_study(pan_z, "ic")
+            pz = FA.profile(fz, cz, pan_z, "ic")
+            okz, whyz = FA.verdict(fz, cz, pz)
+            pz = FA.remaining(pz) if okz else pz.assign(**{"남은 몫": None})
+            print(f"\n  [{zg}] 칸 {len(pan_z):,} · 동네 {pan_z['umd_cd'].nunique():,}"
+                  f" · 거래 {int(pan_z['n'].sum()):,}")
+            line = " ".join(f"{int(r['상대연도']):+d}:{float(r['배율']):.2f}"
+                            for _i, r in pz.iterrows() if not r["얇음"])
+            print(f"    {line or '(두꺼운 칸이 없습니다)'}")
+            print(f"    {'▶ ' + whyz if okz else '▶ 산출 보류 — ' + whyz}")
+            out.setdefault("by_zone", {})[zg] = {
+                "cells": int(len(pan_z)), "umd": int(pan_z["umd_cd"].nunique()),
+                "ok": bool(okz), "why": whyz, "rows": pz.to_dict("records")}
+        print("\n  섞어서 평평한 것과 갈라도 평평한 것은 다른 말이다 —")
+        print("  갈라서 한 칸이라도 서면 그 칸이 인자가 된다.")
+
     _save()
 
 
@@ -4283,6 +4326,8 @@ def main(argv=None):
     p.add_argument("--min-n", dest="min_n", default="3",
                    help="읍면동×연도 셀에 최소 몇 건 (기본 3)")
     p.add_argument("--estimate", action="store_true", help="이원고정효과까지 돌린다")
+    p.add_argument("--by-zone", dest="by_zone", action="store_true",
+                   help="용도지역군별로 갈라 IC 상대연도 곡선을 따로 낸다")
     p.set_defaults(func=cmd_factor_cells)
 
     p = sub.add_parser("road-step",
