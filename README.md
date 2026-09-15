@@ -22,6 +22,7 @@
 | [legal-notes.md](docs/legal-notes.md) | 법적 체크리스트 |
 | [results-run13.md](docs/results-run13.md) | **최근 실측 결과** — 무엇이 나왔고 무엇이 아직 안 되는가 |
 | [ROADMAP.md](ROADMAP.md) | 전체 계획 |
+| [story/](docs/story/) | **좌충우돌 지도 서비스 제작기** — 가설이 부서지고 축이 바뀐 20일의 기록 |
 
 ## 지금 어디까지 왔나 (2026-09-02)
 
