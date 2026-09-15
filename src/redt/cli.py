@@ -2206,6 +2206,46 @@ def cmd_zone_trend(args):
                       f" {int(r['시군구']):>5,} {r[f'{col} 중앙']:>12,.2f}"
                       f" {r['배율 중앙']:>9.3f} {int(r['내린 곳']):>7,}")
 
+    # ── 금리와 세 땅 (2026-09-15 지시) ──
+    with db.connect(read_only=True) as con:
+        mk = con.execute(
+            "SELECT series, period, value FROM market_series").fetchdf()
+    ye = ZT.year_effect(pan)
+    ry = ZT.rate_year(mk, args.rate_series)
+    print(f"\n── 해마다 얼마나 올랐나 (시군구 안 Δln 의 중앙) × 금리 ──")
+    if ye.empty or ry.empty:
+        print("    금리나 칸이 없습니다 (ecos 를 먼저 돌리세요)")
+    else:
+        j = ye.merge(ry, on="year", how="left")
+        print(f"    {'용도지역':<10s} {'해':>5s} {'시군구':>5s} {'오름':>8s}"
+              f" {'금리':>6s} {'금리변화':>8s}")
+        for _i, r in j.iterrows():
+            rt = r.get("금리"); dv = r.get("금리변화")
+            print(f"    {str(r['zone']):<10s} {int(r['year']):>5,}"
+                  f" {int(r['시군구']):>5,} {r['오름']:>+8.4f}"
+                  f" {('%6.2f' % rt) if pd.notna(rt) else '     —'}"
+                  f" {('%+8.2f' % dv) if pd.notna(dv) else '       —'}")
+
+        rs = ZT.rate_sensitivity(ye, ry)
+        print(f"\n── **금리 1%p 오르면 그 해 땅값이 몇 %** (n = 해 수) ──")
+        if rs.empty:
+            print("    해가 모자라 기울기를 못 냅니다")
+        else:
+            print(f"    {'용도지역':<10s} {'시차':>4s} {'해':>4s}"
+                  f" {'1%p당 %':>9s} {'t':>7s} {'r':>7s}")
+            for _i, r in rs.iterrows():
+                t = r.get("t")
+                print(f"    {str(r['zone']):<10s} {int(r['시차']):>4,}"
+                      f" {int(r['해']):>4,} {r['1%p당 %']:>+9.2f}"
+                      f" {('%7.2f' % t) if pd.notna(t) else '      —'}"
+                      f" {r['r']:>+7.3f}")
+            print(f"\n  ▶ {ZT.rate_verdict(rs)}")
+        print("\n  ※ **표본은 해(年)이지 시군구×해가 아니다.** 금리는 전국 하나라")
+        print("    같은 해면 255곳이 같은 값을 받는다. 시군구×해로 세면 컴퓨터가")
+        print("    표본을 4,000개로 알고 t 를 √255 배 부풀린다 — 그 p 값은 착시다.")
+        print("    그래서 해마다 한 줄로 접고 나서 잰다. n 이 작아 웬만해선")
+        print("    유의가 안 나오는데, 스무 해로 알 수 있는 것에는 한계가 있다.")
+
     pr = ZT.persistence(pan, look=int(args.look), horizon=int(args.horizon))
     print(f"\n── **지난 {args.look}년 오른 곳이 뒤 {args.horizon}년에도 오르는가** ──")
     if pr.empty:
@@ -2232,6 +2272,8 @@ def cmd_zone_trend(args):
          "persistence": pr.to_dict("records"),
          "industry": (ZT.against_industry(gr, ind).to_dict("records")
                       if not ind.empty else []),
+         "rate": (ZT.rate_sensitivity(ye, ry).to_dict("records")
+                  if not (ye.empty or ry.empty) else []),
          "verdict": ZT.persistence_verdict(pr)},
         ensure_ascii=False, indent=1, default=str), encoding="utf-8")
     print(f"\n→ {path}")
@@ -5235,6 +5277,8 @@ def main(argv=None):
     p.add_argument("--horizon", default="2", help="지속성: 뒤 몇 해를 묻나")
     p.add_argument("--every", default="2", help="흩어짐 표를 몇 해마다 찍나")
     p.add_argument("--top", default="8", help="위·아래 몇 곳씩")
+    p.add_argument("--rate-series", dest="rate_series", default="policy_rate",
+                   help="금리 계열 이름 (policy_rate · cd91 · bond3)")
     p.add_argument("--ind-year", dest="ind_year", default="2025",
                    help="공장·산단 스냅샷 연도")
     p.set_defaults(func=cmd_zone_trend)

@@ -3170,6 +3170,69 @@ if _nat.exists():
         check(_v["맞나"], f"국가산단 {_k} 가 공표와 맞는다"
               f" (우리 {_v['우리']:,.0f} · 공표 {_v['공표']:,.0f})")
 
+# ── 금리와 세 땅 (2026-09-15 지시) ──
+# **표본은 해(年)이지 시군구×해가 아니다.** 금리는 전국 하나라 같은 해면
+# 모든 시군구가 같은 값을 받는다. 시군구×해로 세면 t 가 √시군구 배 부푼다.
+_rngr = _np.random.default_rng(2026)
+_YRS = list(range(2006, 2026))
+_RATE = {}
+_lvl = 4.0
+for _y in _YRS:
+    _RATE[_y] = _lvl
+    _lvl += (-0.5 if _y < 2016 else 0.6) + _rngr.normal(0, .1)
+_mk = _pd.DataFrame([{"series": "policy_rate", "period": f"{y}{m:02d}",
+                      "value": _RATE[y]} for y in _YRS for m in range(1, 13)])
+_ry = _ZT.rate_year(_mk)
+check(len(_ry) == len(_YRS) and abs(float(_ry["금리"].iloc[0]) - 4.0) < 1e-9,
+      f"월값을 해마다 평균한다 ({len(_ry)}해)")
+check(_pd.isna(_ry["금리변화"].iloc[0]), "첫 해는 변화를 모른다 (0 이 아니다)")
+
+# 금리가 1%p 오르면 땅값이 4% 내리는 세상. 시군구 200곳.
+_rows = []
+for _i in range(200):
+    _sg = f"R{_i:03d}"
+    for _z, _l0 in (("계획관리", 11.0), ("생산관리", 10.6), ("자연녹지", 11.3)):
+        _lv = _l0 + _rngr.normal(0, .3)
+        for _y in _YRS:
+            for _ in range(8):
+                _rows.append({"sigungu_cd": _sg, "deal_year": _y,
+                              "land_use": f"{_z}지역",
+                              "price_per_m2": _math.exp(_lv + _rngr.normal(0, .02))})
+            _d = _RATE.get(_y + 1, _RATE[_y]) - _RATE[_y]
+            _lv += 0.05 - 0.04 * _d + _rngr.normal(0, .005)
+_panr = _ZT.panel(_pd.DataFrame(_rows), min_n=5)
+_ye = _ZT.year_effect(_panr)
+check(len(_ye) == 3 * (len(_YRS) - 1),
+      f"용도지역×해마다 한 줄로 접는다 ({len(_ye)}줄)")
+check(int(_ye["시군구"].max()) == 200, "접기 전 시군구 수를 남긴다")
+_rs = _ZT.rate_sensitivity(_ye, _ry)
+check(len(_rs) == 3 * len(_ZT.RATE_LAGS), f"용도지역×시차 표가 선다 ({len(_rs)})")
+_now = _rs[_rs["시차"] == 0]
+check(int(_now["해"].max()) <= len(_YRS),
+      f"**n 은 해 수다** — 시군구×해가 아니다 ({int(_now['해'].max())}해)")
+check(float(_now["1%p당 %"].mean()) < -2.0,
+      f"금리가 오르면 내리는 세상을 되찾는다 ({_now['1%p당 %'].mean():+.2f}%/1%p)")
+check(all(_now["t"] < -2.0), f"그 기울기가 해 수로도 선다 (t {list(_now['t'])})")
+check("섭니다" in _ZT.rate_verdict(_rs), f"문이 열린다 ({_ZT.rate_verdict(_rs)[:70]})")
+
+# 금리와 무관한 세상 — 서면 안 된다.
+_rows2 = []
+for _i in range(200):
+    _sg = f"N{_i:03d}"
+    _lv = 11.0 + _rngr.normal(0, .3)
+    for _y in _YRS:
+        for _ in range(8):
+            _rows2.append({"sigungu_cd": _sg, "deal_year": _y,
+                           "land_use": "계획관리지역",
+                           "price_per_m2": _math.exp(_lv + _rngr.normal(0, .02))})
+        _lv += 0.05 + _rngr.normal(0, .02)
+_rs2 = _ZT.rate_sensitivity(_ZT.year_effect(_ZT.panel(_pd.DataFrame(_rows2), min_n=5)), _ry)
+check(all(_rs2["t"].abs() < 2.0),
+      f"금리와 무관하면 안 선다 (t {list(_rs2['t'])})")
+check("안 섭니다" in _ZT.rate_verdict(_rs2),
+      f"그러면 문을 닫는다 ({_ZT.rate_verdict(_rs2)[:70]})")
+check(len(_ZT.rate_sensitivity(_pd.DataFrame(), _ry)) == 0, "빈 표를 줘도 안 터진다")
+
 # **넣으려는 칸이 실제로 있는가.** run 127 이 zone_event.address 로 죽었다 —
 # 다른 표(rail_station)의 칸을 보고 적었다. 스키마는 물어 보면 되는 것이라
 # 러너 한 판을 버릴 일이 아니다.

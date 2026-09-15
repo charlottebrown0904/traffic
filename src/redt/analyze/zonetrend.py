@@ -307,3 +307,113 @@ def quintiles(gr: pd.DataFrame, ind: pd.DataFrame, col: str,
                          "배율 중앙": round(float(part["배율"].median()), 3),
                          "내린 곳": int((part["배율"] < 1).sum())})
     return pd.DataFrame(rows)
+
+
+# ── 금리와 세 땅 (2026-09-15 지시) ──────────────────────────────────
+#
+# "2019년이 정점이고 2022년부터 내림으로 돌아섰다 … 금리와 관계있는 것
+#  같습니다. (생산, 관리 지역은 금리에 영향을 받는다 = 추이가 있음)"
+#
+# ## 여기서 반드시 조심할 것 — **표본은 해(年)이지 시군구×해가 아니다**
+#
+# 금리는 전국 하나다. 같은 해면 255개 시군구가 모두 같은 값을 받는다.
+# 그런데 시군구×해를 그대로 회귀에 넣으면 컴퓨터는 표본이 4,000개인 줄
+# 알고 t 값을 √255 배 부풀린다 — 실제로 우리가 본 것은 **스무 해 남짓**이다.
+# 그렇게 나온 p<0.001 은 숫자가 아니라 착시다.
+#
+# 그래서 **두 걸음으로 나눈다.**
+#
+#   ① 해마다 '그 해 전국이 얼마나 올랐나' 를 먼저 구한다
+#      (시군구 안의 전년 대비 Δln 을 그 해 중앙값으로 접는다 —
+#       중앙값이라 몇 곳의 튐이 전체를 끌지 않는다)
+#   ② 그 **해별 한 줄**을 금리 변화에 회귀한다. n = 해 수.
+#
+# 이러면 t 값이 정직해진다. 대신 n 이 작아 웬만해선 유의가 안 나오는데,
+# 그게 사실이다 — 스무 해로 알 수 있는 것에는 한계가 있다.
+
+RATE_LAGS = (0, 1, 2)
+MIN_YEARS_FIT = 8       # 해가 이만큼은 있어야 기울기를 적는다
+
+
+def year_effect(pan: pd.DataFrame) -> pd.DataFrame:
+    """용도지역 × 해마다 '그 해 얼마나 올랐나' 한 줄 (시군구 안 Δln 의 중앙)."""
+    if pan is None or pan.empty:
+        return pd.DataFrame()
+    p = pan.sort_values(["zone", "sigungu_cd", "year"]).copy()
+    prev = p[["sigungu_cd", "zone", "year", "ln_price"]].rename(
+        columns={"ln_price": "ln_prev"})
+    prev["year"] = prev["year"] + 1          # **연도를 더해서** 바로 앞 해와만
+    m = p.merge(prev, on=["sigungu_cd", "zone", "year"], how="inner")
+    m["d"] = m["ln_price"] - m["ln_prev"]
+    g = (m.groupby(["zone", "year"])
+         .agg(오름=("d", "median"), 시군구=("d", "size")).reset_index())
+    return g[g["시군구"] >= MIN_SGG_YEAR].sort_values(["zone", "year"])
+
+
+def rate_year(market: pd.DataFrame, series: str = "policy_rate") -> pd.DataFrame:
+    """전국 금리를 해마다 한 줄로. **퍼센트라 로그를 안 씌운다** (음수 가능)."""
+    if market is None or len(market) == 0:
+        return pd.DataFrame()
+    m = pd.DataFrame(market)
+    m = m[m["series"].astype(str) == series]
+    if m.empty:
+        return pd.DataFrame()
+    m["year"] = pd.to_numeric(m["period"].astype(str).str[:4], errors="coerce")
+    m = m.dropna(subset=["year"])
+    g = m.groupby(m["year"].astype(int))["value"].mean().reset_index()
+    g.columns = ["year", "금리"]
+    g = g.sort_values("year")
+    g["금리변화"] = g["금리"].diff()
+    return g
+
+
+def rate_sensitivity(ye: pd.DataFrame, ry: pd.DataFrame,
+                     lags=RATE_LAGS) -> pd.DataFrame:
+    """용도지역마다 '금리가 1%p 오르면 그 해 땅값이 몇 % 움직였나'.
+
+    n 은 **해 수**다 (시군구×해가 아니다 — 위 머리말 참조).
+    시차 k 는 k해 전의 금리 변화를 그 해에 붙인 것이다.
+    """
+    if ye is None or ye.empty or ry is None or ry.empty:
+        return pd.DataFrame()
+    rows = []
+    for z, blk in ye.groupby("zone"):
+        for k in lags:
+            r = ry[["year", "금리변화"]].copy()
+            r["year"] = r["year"] + k
+            m = blk.merge(r, on="year", how="inner").dropna(
+                subset=["오름", "금리변화"])
+            n = int(len(m))
+            if n < MIN_YEARS_FIT or m["금리변화"].std() == 0:
+                continue
+            x = m["금리변화"].to_numpy()
+            y = m["오름"].to_numpy()
+            b = float(np.cov(x, y, ddof=1)[0, 1] / np.var(x, ddof=1))
+            a = float(y.mean() - b * x.mean())
+            res = y - (a + b * x)
+            # t 값도 **해 수**로 낸다. 자유도 n−2.
+            sx = float(np.sum((x - x.mean()) ** 2))
+            se = float(np.sqrt(np.sum(res ** 2) / (n - 2) / sx)) if sx > 0 and n > 2 else None
+            rr = float(np.corrcoef(x, y)[0, 1])
+            rows.append({"zone": z, "시차": k, "해": n,
+                         "기울기": round(b, 4),
+                         "1%p당 %": round((math.exp(b) - 1) * 100, 2),
+                         "t": None if not se else round(b / se, 2),
+                         "r": round(rr, 3)})
+    return pd.DataFrame(rows).sort_values(["zone", "시차"])
+
+
+def rate_verdict(rs: pd.DataFrame) -> str:
+    """문. **부호가 맞고, 해 수로 낸 t 가 서야** 금리 탓이라 말한다."""
+    if rs is None or rs.empty:
+        return "산출 보류 — 해가 모자라 금리 기울기를 못 냅니다"
+    out = []
+    for z, blk in rs.groupby("zone"):
+        best = blk.loc[blk["t"].abs().idxmax()] if blk["t"].notna().any() \
+            else blk.iloc[0]
+        t = best.get("t")
+        mark = ("섭니다" if t is not None and abs(t) >= 2.0
+                else "안 섭니다" if t is not None else "t 를 못 냅니다")
+        out.append(f"{z} 시차{int(best['시차'])} {best['1%p당 %']:+.1f}%/1%p"
+                   f" (t={t}, 해 {int(best['해'])}) {mark}")
+    return " · ".join(out)
