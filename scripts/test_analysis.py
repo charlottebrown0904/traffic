@@ -2523,6 +2523,33 @@ check("산업단지" in _out and "한 건도 못 골랐습니다" in _out,
       "빈 갈래는 까닭과 함께 소리를 낸다")
 check("zones_housing.csv" in _out, "무엇을 읽었는지 원천 파일 이름을 밝힌다")
 
+# 위 실행은 --estimate 를 안 줘서 추정 구간을 통째로 건너뛴다. 그래서
+# 그 뒤에 붙인 용도지역군 갈래에서 이름 하나를 빠뜨린 것(valuation 을
+# 안 임포트한 NameError)이 검사를 다 통과하고 러너에서 터졌다 (run 112).
+# 조각만 시험하면 안 된다는 것을 같은 파일 안에서 두 번째로 겪는다.
+_real_connect2, _db2.connect = _db2.connect, _fake_connect
+_real_load2, _EV2.load_events = _EV2.load_events, lambda: _pd.DataFrame(
+    [{"tollgate_id": "T1", "open_year": 2014}])
+_ROWS["FROM trade"] = _ROWS["FROM trade"].assign(
+    land_use=["계획관리지역" if i % 2 else "자연녹지지역"
+              for i in range(len(_ROWS["FROM trade"]))])
+_buf2 = io.StringIO()
+_err2 = None
+try:
+    with contextlib.redirect_stdout(_buf2):
+        _cli2.cmd_factor_cells(_types.SimpleNamespace(
+            since="2010", until="2025", min_n=1, estimate=True, by_zone=True))
+except Exception as _e:                                 # noqa: BLE001
+    _err2 = f"{type(_e).__name__}: {_e}"
+finally:
+    _db2.connect = _real_connect2
+    _EV2.load_events = _real_load2
+_out2 = _buf2.getvalue()
+check(_err2 is None, f"--estimate --by-zone 이 끝까지 돈다 ({_err2})")
+check("용도지역군별 IC 곡선" in _out2, "용도지역군 갈래가 표에 선다")
+check("50곳에 못 미쳐 안 세웁니다" in _out2 or "[계획관리]" in _out2,
+      "얇은 군은 안 세우고 그렇게 적는다")
+
 print("41-2. 아직 반영 안 된 몫 — 상대연도별 계수 (2026-09-15)")
 #
 # β 를 미래 가치에 그대로 곱하면 두 번 센다. 2015년에 뚫린 IC 옆 필지의

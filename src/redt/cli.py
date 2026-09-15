@@ -1358,6 +1358,7 @@ def cmd_factor_cells(args):
 
     --estimate 를 주면 그 자리에서 이원고정효과까지 돌린다.
     """
+    from . import valuation as V
     from .analyze import factors as FA
     with db.connect(read_only=True) as con:
         # 읍·면·동은 법정동 이름으로 묶는다. 좌표가 지번 단위인 것만 쓴다 —
