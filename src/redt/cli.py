@@ -1612,8 +1612,10 @@ def cmd_cross_factors(args):
           f"{int(price['year'].max()) if len(price) else 0})")
     cov = CF.coverage(long)
     usable = cov[cov["쓸만"]] if len(cov) else cov
+    movable = cov[cov["변화잴만"]] if len(cov) else cov
     print(f"지표 {len(cov)}종 · 그중 쓸 만한 것 {len(usable)}종"
-          f" (시군구 {CF.MIN_SGG}곳 · 관측 {CF.MIN_OBS}개 이상)")
+          f" (시군구 {CF.MIN_SGG}곳 · 관측 {CF.MIN_OBS}개 이상)"
+          f" · **변화까지 잴 만한 것 {len(movable)}종** (해 {CF.MIN_YEARS}개 이상)")
     print("\n── 덮개 (재기 전에 이 표다) ──")
     print(f"    {'지표':<34s} {'시군구':>5s} {'관측':>7s} {'기간':>12s}")
     for _i, r in cov.iterrows():
@@ -1626,7 +1628,7 @@ def cmd_cross_factors(args):
 
     tab = CF.against_price(long, price)
     print("\n── 땅값과의 상관 (수준은 참고 · **변화가 본론** · 시차가 값어치) ──")
-    print(f"    {'지표':<30s} {'시군구':>5s} {'관측':>7s} {'수준':>6s} {'동네안':>6s}"
+    print(f"    {'지표':<30s} {'시군구':>5s} {'관측':>7s} {'해':>3s} {'수준':>6s} {'동네안':>6s}"
           f" {'변화':>6s} {'시차1':>6s} {'시차2':>6s}")
     f = lambda v: "—" if v is None or (isinstance(v, float) and v != v) else f"{float(v):+.3f}"
     for _i, r in tab.iterrows():
@@ -1634,11 +1636,14 @@ def cmd_cross_factors(args):
             print(f"  × {str(r['metric'])[:29]:<30s} {int(r.get('시군구') or 0):>5,}"
                   f" {int(r.get('n') or 0):>7,}   (얇아서 안 잽니다)")
             continue
+        tail = ("   (해 %d개 — 변화는 안 잽니다)" % int(r.get("해") or 0)
+                if r.get("해모자람") else
+                f" {f(r.get('변화')):>6s} {f(r.get('시차1')):>6s} {f(r.get('시차2')):>6s}")
         print(f"    {str(r['metric'])[:29]:<30s} {int(r['시군구']):>5,} {int(r['n']):>7,}"
-              f" {f(r.get('수준')):>6s} {f(r.get('수준(동네 안)')):>6s}"
-              f" {f(r.get('변화')):>6s} {f(r.get('시차1')):>6s} {f(r.get('시차2')):>6s}")
+              f" {int(r.get('해') or 0):>3,}"
+              f" {f(r.get('수준')):>6s} {f(r.get('수준(동네 안)')):>6s}{tail}")
 
-    keep = [m for m in (usable["metric"].tolist() if len(usable) else [])]
+    keep = [m for m in (movable["metric"].tolist() if len(movable) else [])]
     dup = CF.among_factors(long, keep)
     print(f"\n── 같은 것을 재는 쌍 (변화끼리 |r| ≥ {CF.DUP_R}) ──")
     if dup.empty:

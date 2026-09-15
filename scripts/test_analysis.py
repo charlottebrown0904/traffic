@@ -2809,6 +2809,39 @@ check(bool(_cov.loc[_cov["metric"] == "thin", "쓸만"].iloc[0]) is False,
 check(bool(_cov.loc[_cov["metric"] == "same", "쓸만"].iloc[0]) is True,
       "두꺼운 지표는 쓸만이다")
 
+# **해가 두 개뿐인 지표는 변화를 안 잰다** (run 116 의 덫).
+# power_kwh_use:* 가 시군구 211곳 × 2해 = 422 관측으로 관측 문턱(200)을
+# 넘어, 시군구당 차분 딱 1개로 변화 −0.176 · 시차2 +0.199 를 찍었다.
+# 그것은 '같이 움직인다' 가 아니라 '어느 한 해 사이에 벌어진 일' 이다.
+_two = []
+for _i in range(120):                              # 시군구 120곳 × 2해
+    _sg = f"T{_i:03d}"
+    for _y, _v in ((2018, 1.0 + 0.01 * _i), (2019, 1.4 + 0.01 * _i)):
+        _two.append({"sigungu_cd": _sg, "year": _y, "metric": "twoyear", "value": _v})
+        _two.append({"sigungu_cd": _sg, "year": _y, "metric": "twoyear2",
+                     "value": _v * 1.02})
+_pr2 = _pd.DataFrame([{"sigungu_cd": r["sigungu_cd"], "year": r["year"],
+                       "ln_price": __import__("math").log(r["value"]), "n": 9}
+                      for r in _two if r["metric"] == "twoyear"])
+_t2 = _CF.against_price(_pd.DataFrame(_two), _pr2)
+_r2 = _t2[_t2["metric"] == "twoyear"].iloc[0]
+check(bool(_r2.get("얇음")) is False and int(_r2["해"]) == 2,
+      f"해 수를 세어 표에 적는다 (해 {_r2.get('해')})")
+check(bool(_r2.get("해모자람")) is True,
+      "해가 4개 미만이면 '해모자람' 으로 표시한다")
+check(_r2.get("변화") is None and _r2.get("시차1") is None,
+      f"해 2개짜리는 변화·시차를 아예 안 찍는다 (변화 {_r2.get('변화')})")
+check(_r2.get("수준") is not None,
+      "그래도 수준은 적는다 — 그건 해가 하나여도 뜻이 있다")
+_cov2 = _CF.coverage(_pd.DataFrame(_two))
+check(bool(_cov2.loc[_cov2["metric"] == "twoyear", "쓸만"].iloc[0]) is True
+      and bool(_cov2.loc[_cov2["metric"] == "twoyear", "변화잴만"].iloc[0]) is False,
+      "덮개에서 '쓸만' 과 '변화잴만' 을 갈라 적는다")
+# 겹치는 쌍에서도 같은 문턱 — 해 2개짜리 쌍은 r=1.00 이라도 안 적는다.
+_dup2 = _CF.among_factors(_pd.DataFrame(_two))
+check(len(_dup2) == 0,
+      f"해가 모자란 쌍은 '같은 것을 재는 쌍' 에도 안 올린다 ({len(_dup2)}쌍)")
+
 # 같은 것을 재는 쌍 — 겹치는 지표를 회귀에 같이 넣지 않게 미리 본다.
 _X2 = _X + [{"sigungu_cd": r["sigungu_cd"], "year": r["year"], "metric": "same2",
              "value": r["value"] * 1.01}

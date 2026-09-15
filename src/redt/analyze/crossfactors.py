@@ -38,6 +38,12 @@ import pandas as pd
 MIN_SGG = 30            # 시군구가 이만큼은 있어야 적는다
 MIN_OBS = 200           # 관측(시군구×연)이 이만큼은 있어야 적는다
 MAX_LAG = 2             # 몇 해 앞서는지까지 본다
+MIN_YEARS = 4           # **변화·시차는 해가 이만큼은 있어야 잰다.**
+                        # run 116 에서 power_kwh_use:* 가 연도 2개뿐인데도
+                        # 변화 −0.176 · 시차2 +0.199 를 찍었다. 관측 수는
+                        # 시군구가 많아 통과했지만 시군구당 차분이 딱 1개 —
+                        # 그것은 '한 해 사이에 벌어진 일' 이지 '같이 움직인다'
+                        # 가 아니다. 관측 문턱만으로는 못 거른다.
 DUP_R = 0.80            # 이보다 크면 '같은 것을 재는 쌍' 으로 적는다
 
 
@@ -77,7 +83,9 @@ def coverage(long: pd.DataFrame) -> pd.DataFrame:
          .agg(시군구=("sigungu_cd", "nunique"), 관측=("value", "size"),
               처음=("year", "min"), 끝=("year", "max")).reset_index())
     g["해"] = g["끝"] - g["처음"] + 1
+    g["해수"] = long.groupby("metric")["year"].nunique().reindex(g["metric"]).values
     g["쓸만"] = (g["시군구"] >= MIN_SGG) & (g["관측"] >= MIN_OBS)
+    g["변화잴만"] = g["쓸만"] & (g["해수"] >= MIN_YEARS)
     return g.sort_values(["쓸만", "관측"], ascending=[False, False])
 
 
@@ -120,14 +128,21 @@ def against_price(long: pd.DataFrame, price: pd.DataFrame,
             continue
         row["시군구"] = int(m["sigungu_cd"].nunique())
         row["얇음"] = False
+        row["해"] = int(m["year"].nunique())
         row["수준"], row["n"] = _corr(m["ln_x"], m["ln_price"])
         row["수준(동네 안)"], _ = _corr(_within(m, "ln_x"), _within(m, "ln_price"))
-        row["변화"], _ = _corr(m["d_x"], m["d_price"])
-        for k in range(1, max_lag + 1):
-            bk = b.copy()
-            bk["year"] = bk["year"] + k          # k해 전 지표를 올해에 붙인다
-            mk = p.merge(bk[["sigungu_cd", "year", "d_x"]], on=["sigungu_cd", "year"])
-            row[f"시차{k}"], _ = _corr(mk["d_x"], mk["d_price"])
+        # 해가 모자라면 수준만 적고 변화·시차는 비운다. 차분이 시군구당
+        # 한두 개뿐이면 그 상관은 한 시점의 횡단면이지 '같이 움직인다' 가
+        # 아니다 — 숫자를 찍어 두면 반드시 읽히므로 아예 안 찍는다.
+        if row["해"] >= MIN_YEARS:
+            row["변화"], _ = _corr(m["d_x"], m["d_price"])
+            for k in range(1, max_lag + 1):
+                bk = b.copy()
+                bk["year"] = bk["year"] + k      # k해 전 지표를 올해에 붙인다
+                mk = p.merge(bk[["sigungu_cd", "year", "d_x"]], on=["sigungu_cd", "year"])
+                row[f"시차{k}"], _ = _corr(mk["d_x"], mk["d_price"])
+        else:
+            row["해모자람"] = True
         rows.append(row)
     out = pd.DataFrame(rows)
     if out.empty:
@@ -149,8 +164,10 @@ def among_factors(long: pd.DataFrame, keep: list[str] | None = None) -> pd.DataF
     b["ln_x"] = pd.to_numeric(b["value"]).map(math.log)
     b = b.sort_values(["sigungu_cd", "year"])
     b["d_x"] = b.groupby(["sigungu_cd", "metric"])["ln_x"].diff()
+    years = b.groupby("metric")["year"].nunique()
     wide = b.pivot_table(index=["sigungu_cd", "year"], columns="metric", values="d_x")
-    cols = [c for c in wide.columns if wide[c].notna().sum() >= MIN_OBS]
+    cols = [c for c in wide.columns
+            if wide[c].notna().sum() >= MIN_OBS and int(years.get(c, 0)) >= MIN_YEARS]
     rows = []
     for i, a in enumerate(cols):
         for c in cols[i + 1:]:
