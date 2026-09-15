@@ -297,32 +297,22 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 .map-wrap{flex:1; position:relative; min-width:0}
 #map{position:absolute; inset:0; background:var(--surface-2)}
 .leaflet-container{font:inherit; background:var(--surface-2)}
-/* 배경 지도의 채도를 낮춰 자료가 앞에 오게 한다. 무채색 타일 서비스는
-   API 키를 요구하므로 키 없이 같은 결과를 낸다. 타일 판에만 걸어야
-   한다 — .leaflet-container 에 걸면 그 위의 마커·밴드까지 같이
-   흐려져서 고치려던 것을 정확히 반대로 만든다. */
-/* 배경 지도 — 도로 위계를 살립니다.
+/* 배경 지도 — **색을 손대지 않는다** (2026-09-15 지시로 되돌림).
  *
- * 예전에는 saturate(.10) 으로 거의 흑백을 만들었습니다. 거래 점을
- * 돋보이게 하려던 것인데, 그 바람에 **OSM 이 원래 갖고 있던 도로
- * 위계 색을 우리가 지웠습니다.** 고속도로는 분홍빛 빨강, 국도는
- * 주황빛 노랑, 지방도는 연노랑으로 칠해져 오는데 전부 회색이 됐고,
- * 그래서 지도에서 고속도로가 어디인지 알 수 없었습니다. IC 주변
- * 땅값을 보는 제품에서 고속도로가 안 보이는 것은 앞뒤가 안 맞습니다.
+ * 길게 돌아온 자리다. 처음에 거래 점을 돋보이게 하려고 타일 판에
+ * saturate(.10) 을 걸어 배경을 거의 흑백으로 만들었다. 그 바람에 OSM 이
+ * 원래 갖고 있던 도로 위계 색(고속도로 분홍·국도 주황·지방도 연노랑)을
+ * 우리가 지웠고, IC 주변 땅값을 보는 제품에서 고속도로가 어디인지 알
+ * 수 없었다. 그래서 .62 로 올렸는데, 그것도 **원본이 아니다** — 지도를
+ * 부르는 사람은 지도가 제 색으로 오기를 기대한다.
  *
- * 이제 채도를 절반 넘게 살립니다. 그래도 거래 점이 묻히지 않는 이유는
- * 색이 아니라 **흰 테두리** 로 배경과 끊기 때문입니다 (app.js 의
- * drawTrades). 색으로 이기려 들면 배경을 계속 죽여야 하고, 그러면
- * 지도가 지도 노릇을 못 합니다. */
-.leaflet-tile-pane{filter:saturate(.62) brightness(1.03) contrast(.97)}
-/* **위성에는 이 손질을 걸지 않는다.** OSM 은 색이 요란해 채도를 낮춰야
-   그 위의 점이 사는데, 위성 사진은 원래 그런 색이 아니다. 똑같이 죽이면
-   흙과 논밭이 한 덩이가 되어 위성을 켠 뜻이 사라진다. 오히려 조금
-   또렷하게 한다 (요구사항 2026-09-09, 배경 지도 고르기). */
-body[data-basemap="satellite"] .leaflet-tile-pane,
-body[data-basemap="hybrid"] .leaflet-tile-pane{
-  filter:saturate(1) brightness(1) contrast(1.04)
-}
+ * 이제 filter 를 아예 걸지 않는다. 거래 점이 묻히지 않는 까닭은 색이
+ * 아니라 **흰 테두리**로 배경과 끊기 때문이다 (app.js drawTrades).
+ * 색으로 이기려 들면 배경을 계속 죽여야 하고, 그러면 지도가 지도
+ * 노릇을 못 한다.
+ *
+ * 위성·야간에 걸어 뒀던 예외도 같이 없앤다 — 기본 손질이 사라지면
+ * 그 예외는 되돌릴 것이 없어 할 일이 없다. */
 /* ── 필지 경계선의 색 (요구사항 2026-09-10) ─────────────────────────
  *
  * **래스터 타일이라 아무 색으로나 칠할 수는 없다.** 브이월드가 이미
@@ -359,8 +349,6 @@ body[data-basemap="midnight"] .cad-line {
   stroke-opacity: .7;
 }
 
-/* 야간 배경은 이미 어둡다. 밝기를 올리면 그 어두움이 사라진다. */
-body[data-basemap="midnight"] .leaflet-tile-pane{filter:none}
 .map-tools{
   position:absolute; top:.6rem; right:.6rem; z-index:500;
   display:flex; gap:.4rem; flex-wrap:wrap; justify-content:flex-end;
@@ -1953,6 +1941,9 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .dev-leg-row + .dev-leg-row { margin-top: .2rem; }
 .dev-leg-row > b { margin-right: .2rem; }
 .dev-leg { display: inline-flex; align-items: center; gap: .22rem; white-space: nowrap; }
+/* 계획도로 말풍선의 '왜 미집행인가' 한 줄. 등급·기능보다 옅게 둔다 —
+   사실이 아니라 그 사실을 읽는 법이다. */
+.dev-why { display: block; margin-top: .15rem; font-size: .72rem; opacity: .85; }
 .dev-leg > i { width: .7rem; height: .7rem; border-radius: .18rem; display: inline-block; }
 .dev-leg.is-off { opacity: .5; }
 

@@ -1427,9 +1427,25 @@ async function stubCommon(pg) {
       // 그 판단을 CSS 가 하도록 몸통에 표를 남긴다.
       check('무엇을 깔았는지 몸통에 적는다 (색 손질을 가르려고)',
             sat.body === 'satellite', sat.body);
+      /* **위성+지명은 두 장이다** (2026-09-15 지시로 확인).
+         브이월드 Hybrid 층은 위성이 든 배경이 아니라 경계·지명만 그린
+         투명 그림이다. 그것만 깔면 흰 바탕에 옅은 글자만 남는다 — 실제로
+         그 화면이 나갔다. 위성을 깔고 그 위에 글자를 얹어야 한다. */
+      const hyb = await page.evaluate(() => {
+        document.querySelector('#basemap-pick button[data-key="hybrid"]').click();
+        return { now: window.__basemap, overlay: window.__baseOverlay,
+                 srcs: (window.__map.tiles || []).slice(-6) };
+      });
+      check('위성+지명은 위성 위에 지명을 얹는다 (글자만 깔지 않는다)',
+            hyb.now === 'hybrid'
+            && /layer=satellite/.test(hyb.srcs.join(' '))
+            && /layer=hybrid/.test(String(hyb.overlay || '')),
+            `밑 ${hyb.srcs.slice(-2).join(' ')} · 위 ${hyb.overlay}`);
       await page.evaluate(() => {
         document.querySelector('#basemap-pick button[data-key="osm"]').click();
       });
+      const plain = await page.evaluate(() => window.__baseOverlay);
+      check('다른 배경으로 바꾸면 지명 층은 걷힌다', plain === null, String(plain));
     }
 
     console.log('4-B. 지도 위 범례를 걷어냈다');
@@ -1577,6 +1593,14 @@ async function stubCommon(pg) {
       const box = document.getElementById('dev-legend');
       return { hidden: box.hidden, text: (box.textContent || '').trim() };
     });
+    // '미집행' 이 무슨 뜻인지 화면이 말해야 한다 (2026-09-15 물음:
+    // "이미 도로가 확인되는데 이것이 미집행인 이유가 있나요?").
+    const roadTip = await page.evaluate(() =>
+      window.__devVecTip ? window.__devVecTip('planroad',
+        { atr_nam: '중로1류', pmi_nam: '집산도로' }, '미집행') : '');
+    check('미집행이 무슨 뜻인지 말풍선이 적는다',
+          /결정된 폭으로는 아직 안 났습니다/.test(roadTip) && /중로1류/.test(roadTip),
+          roadTip || '(devVecTip 을 안 내보냄)');
     check('색이 뜻하는 단계를 범례가 적는다',
           !devLeg.hidden && devLeg.text.includes('지구지정')
           && devLeg.text.includes('미집행'),
@@ -1810,9 +1834,15 @@ async function stubCommon(pg) {
     // saturate(.10) 은 OSM 이 갖고 있는 도로 위계 색(고속도로 분홍·
     // 국도 노랑)을 통째로 지운다. IC 주변 땅값을 보는 제품에서
     // 고속도로가 안 보이는 것은 앞뒤가 안 맞는다.
+    //
+    // 2026-09-15 지시로 **아예 안 건다.** .62 도 원본이 아니다 — 지도를
+    // 부르는 사람은 지도가 제 색으로 오기를 기대한다. 그래서 규칙이
+    // 없는 것이 통과이고, 있다면 채도를 반 이상 남긴 것만 통과다.
     const satHit = /saturate\(([\d.]+)\)/.exec(sat);
     check('배경 지도가 도로 색을 지우지 않는다',
-          satHit && Number(satHit[1]) >= .5, sat || '(필터 없음)');
+          !satHit || Number(satHit[1]) >= .5, sat || '(필터 없음 — 원본 그대로)');
+    check('배경 타일에 색 손질을 아예 걸지 않는다 (원본 그대로)',
+          !/filter/.test(sat), sat || '(규칙 없음)');
 
     console.log();
     // ── 거래 핀 (요구사항 2026-09-09) ─────────────────────────

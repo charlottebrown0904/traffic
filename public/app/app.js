@@ -2307,9 +2307,15 @@ const BASEMAPS = [
   { key: 'satellite', label: '위성',
     url: vworldTileUrl('satellite'),
     attribution: '위성영상 © 국토교통부 브이월드' },
+  /* **위성+지명은 한 장이 아니다** (2026-09-15 지시로 확인).
+     브이월드의 Hybrid 층은 위성 사진이 든 배경이 아니라 **경계·지명만
+     그린 투명 그림**이다. 위성 위에 얹으라고 만든 것인데 그것만 깔아
+     두었으니, 화면에는 흰 바탕에 옅은 글자만 남았다 — 위성을 켠 뜻이
+     통째로 사라진 상태였다. 위성을 깔고 그 위에 글자를 얹는다. */
   { key: 'hybrid', label: '위성+지명',
-    url: vworldTileUrl('hybrid'),
-    attribution: '배경지도 © 국토교통부 브이월드' },
+    url: vworldTileUrl('satellite'),
+    overlay: vworldTileUrl('hybrid'),
+    attribution: '위성영상·지명 © 국토교통부 브이월드' },
   { key: 'midnight', label: '야간',
     url: vworldTileUrl('midnight'),
     attribution: '배경지도 © 국토교통부 브이월드' },
@@ -2327,12 +2333,14 @@ const BASEMAPS = [
 const TILE_OPTS = { updateWhenZooming: false, updateWhenIdle: true, keepBuffer: 4 };
 
 let baseLayer = null;
+let baseOverlay = null;         // 위성 위에 얹는 지명·경계 (hybrid)
 
 function setBaseMap(key, first) {
   const spec = BASEMAPS.find((b) => b.key === key) || BASEMAPS[0];
   state.baseMap = spec.key;
   if (map) {
     if (baseLayer) map.removeLayer(baseLayer);
+    if (baseOverlay) { map.removeLayer(baseOverlay); baseOverlay = null; }
     baseLayer = L.tileLayer(spec.url, {
       maxZoom: 19, attribution: spec.attribution,
       // OSM 은 남의 서버라 그대로 두고, 브이월드는 우리 함수를 아낀다.
@@ -2341,6 +2349,15 @@ function setBaseMap(key, first) {
     // **맨 아래로 내린다.** 갈아 끼운 층은 나중에 붙은 것이라 위에
     // 얹히는데, 그러면 용도지역 색면과 거래 점을 덮는다.
     if (baseLayer.bringToBack) baseLayer.bringToBack();
+    // 지명 층은 위성 **바로 위**에 둔다. 배경 다음이므로 뒤로 한 번 내리면
+    // 위성 위·우리 도형 아래에 앉는다.
+    if (spec.overlay) {
+      baseOverlay = L.tileLayer(spec.overlay, {
+        maxZoom: 19, ...TILE_OPTS,
+      }).addTo(map);
+      if (baseOverlay.bringToBack) baseOverlay.bringToBack();
+      if (baseLayer.bringToBack) baseLayer.bringToBack();
+    }
   }
   // 위성 위에서는 흰 글자가, 일반 지도 위에서는 검은 글자가 읽힌다.
   // 그 판단을 CSS 에 맡기려고 몸통에 표를 남긴다.
@@ -2353,6 +2370,7 @@ function setBaseMap(key, first) {
   // 하면 매번 같은 수고를 시킨다. 못 써도(사생활 보호 창 등) 그만이다.
   if (!first) { try { localStorage.setItem('toji.basemap', spec.key); } catch (e) { /* 무시 */ } }
   window.__basemap = spec.key;
+  window.__baseOverlay = spec.overlay || null;
 }
 
 /* 지도 위 작은 단추 둘 (요구사항 2026-09-10).
@@ -2903,15 +2921,32 @@ function paintDevVec(kind, items) {
   return n;
 }
 
+/* '미집행' 이 무슨 뜻인지 한 줄로 적는다 (2026-09-15 물음: "이미 도로가
+   확인되는데 이것이 미집행인 이유가 있나요?").
+
+   이 층은 도시·군계획시설(도로)의 **계획선**이고, exc_nam 은 그 결정대로
+   집행됐는가다. 결정에는 폭 등급(atr_nam: 광로·대로·중로·소로)이 붙어
+   있으므로, **6m 농로 위에 중로(12~20m)가 결정돼 있으면 길이 이미 있어도
+   미집행**이다 — 결정된 폭으로 넓히는 일이 아직 안 됐다는 뜻이다.
+   장기미집행 도시계획시설이 흔한 것도 이 까닭이다. */
+const PLANROAD_STAGE_WHY = {
+  '미집행': '결정된 폭으로는 아직 안 났습니다 (길이 있어도 넓히는 일이 안 됨)',
+  '부분집행': '일부 구간만 결정된 폭으로 났습니다',
+  '집행완료': '결정된 폭으로 다 났습니다',
+};
+
 function devVecTip(kind, p, stage) {
   if (kind === 'planroad') {
+    const why = PLANROAD_STAGE_WHY[stage];
     return `<b>${escapeHtml(p.atr_nam || '계획도로')}</b>`
       + (p.pmi_nam ? `<br>${escapeHtml(p.pmi_nam)}` : '')
-      + (stage ? `<br><b>${escapeHtml(stage)}</b>` : '');
+      + (stage ? `<br><b>${escapeHtml(stage)}</b>` : '')
+      + (why ? `<br><span class="dev-why">${escapeHtml(why)}</span>` : '');
   }
   return `<b>${escapeHtml(p.zonename || '사업지구')}</b>`
     + (stage ? `<br><b>${escapeHtml(stage)}</b>` : '');
 }
+window.__devVecTip = devVecTip;   // 검사(test_map.js)가 부른다
 
 /* 범례 — 색이 무엇을 뜻하는지 화면이 스스로 말해야 한다. */
 function updateDevLegend() {
