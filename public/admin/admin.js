@@ -36,6 +36,26 @@
     return isNaN(d) ? E(s) : d.toLocaleString('ko-KR');
   };
 
+  /* GA 상태 한 칸. **켜졌다고 말하려면 실제로 켜져 있어야 한다** —
+     측정 ID 가 비어 있으면 track.js 가 스크립트를 아예 안 붙인다.
+     '붙였는데 안 쌓인다' 는 가장 찾기 어려운 고장이라 여기서 갈라 적는다. */
+  function gaBlock(ga, on) {
+    return '<h4>방문 통계 (GA4)</h4>'
+      + (on
+        ? '<div class="adm-ok">측정 ID <code>' + E(ga) + '</code> 로 켜져 있습니다. '
+          + '구글 애널리틱스 <b>보고서 → 실시간</b> 에서 바로 확인됩니다.</div>'
+        : '<div class="adm-block"><b>아직 안 켜져 있습니다.</b>'
+          + '<p>구글 애널리틱스에서 속성을 만들고 받은 <code>G-</code> 로 시작하는 '
+          + '측정 ID 를 <code>public/app/supabase.js</code> 의 '
+          + '<code>window.ANALYTICS.ga4</code> 에 넣으면 그 순간 켜집니다. '
+          + '측정 ID 는 공개 값이라 코드에 둬도 됩니다 — 브라우저가 그것으로 '
+          + '구글에 보내는 것이 본래 하는 일입니다.</p>'
+          + '<p>ID 를 알려 주시면 제가 넣고 배포까지 하겠습니다.</p></div>')
+      + '<div class="adm-note">GA 를 붙이면 <b>개인정보 처리방침에 행태정보 '
+      + '수집·위탁을 적어야 합니다</b>(개인정보 보호법). 지금 방침에는 그 문구가 '
+      + '없으므로, 켜기 전에 같이 손보는 편이 안전합니다.</div>';
+  }
+
   function table(head, rows, opt) {
     var o = opt || {};
     var th = head.map(function (h, i) {
@@ -145,6 +165,17 @@
     }).catch(function (e) { return { error: String(e && e.message || e) }; });
   }
 
+  /* 유입 경로 집계 (0012). profile 에는 전화번호와 권한이 같이 들어 있어
+     열지 않는다 — 셈한 결과만 온다. 함수 안에서 is_admin() 을 다시 본다. */
+  function getUtm() {
+    var sb = window.SB;
+    if (!sb) return Promise.resolve({ error: '로그인 연결이 없습니다' });
+    return sb.rpc('admin_utm_stats').then(function (res) {
+      if (res.error) return { error: res.error.message || '집계를 못 받았습니다' };
+      return res.data || {};
+    }).catch(function (e) { return { error: String(e && e.message || e) }; });
+  }
+
   /* ── 탭 ──────────────────────────────────────────────────────
      2026-09-16 지시: "산출식 · 데이터베이스 · 판단 근거 · 논문 숫자 ·
      실거래 숫자 · 필지 분석 · 감정평가서 현황 각각 탭으로 구성
@@ -236,6 +267,83 @@
           + '지금은 다른 탭이 이미 부르는 숫자에서 머리만 뽑아 세웠습니다 — '
           + '새로 만든 숫자는 하나도 없으므로, 포맷이 정해지면 배치만 바꾸면 됩니다. '
           + '무엇을 맨 위에 둘지 정해 주시면 그대로 맞춥니다.</div>';
+      }],
+
+    /* ══ 0-b. 유입 경로(UTM) · 방문 통계(GA) ══
+       2026-09-16 지시: "admin 탭 대쉬보드에 UTM, GA 준비합시다".
+
+       **두 가지는 하는 일이 다르다.** 한 칸에 몰아 넣으면 둘 다 흐려진다.
+
+         UTM  '어디서 온 사람이 **회원이 됐나**' — 우리 자료에만 있다.
+              GA 로는 방문 수가 보이지만 가입까지는 안 이어진다.
+         GA   쪽수·머문 시간·기기처럼 **우리가 안 쌓는 것**.
+
+       첫 접점을 쓴다. 광고로 들어왔다가 며칠 뒤 검색으로 돌아와 가입하는
+       일이 흔한데, 마지막 접점만 보면 그 가입이 '자연 검색' 이 되고
+       광고비를 쓴 쪽이 공을 못 받는다. */
+    ['board', '어디서 온 사람이 회원이 되나 — 유입 경로와 방문 통계',
+      '광고 꼬리표(UTM)는 우리가 직접 쌓습니다. GA 는 측정 ID 를 넣으면 켜집니다.',
+      function (c) {
+        var u = c.utm || {};
+        var ga = (window.ANALYTICS || {}).ga4 || '';
+        var on = /^G-[A-Z0-9]+$/i.test(ga);
+
+        // 아직 표가 없는 첫 실행에서는 RPC 가 오류로 온다. 그것을
+        // 0 으로 적으면 '아무도 안 왔다' 로 읽힌다 — 갈라서 말한다.
+        if (u.error) {
+          return '<div class="adm-block"><b>아직 집계를 못 받습니다</b>'
+            + '<p>' + E(u.error) + '</p>'
+            + '<p><code>supabase/migrations/0012_utm.sql</code> 을 Supabase '
+            + 'SQL Editor 에서 한 번 실행하면 열립니다. 화면 쪽(첫 접점 저장)은 '
+            + '이미 돌고 있으므로, 실행한 뒤 가입하는 분부터 경로가 붙습니다.</p></div>'
+            + gaBlock(ga, on);
+        }
+
+        var src = u.by_source || [];
+        var camp = u.by_campaign || [];
+        var ref = u.by_ref || [];
+        var day = u.by_day || [];
+        var tagged = Number(u.tagged || 0);
+        var members = Number(u.members || 0);
+
+        return '<p class="adm-stamp">집계 <b>' + when(u.generated_at) + '</b></p>'
+          + '<h4>유입 경로 (UTM · 첫 접점)</h4>'
+          + kpi([
+            ['회원', N(members)],
+            ['경로가 붙은 회원', N(tagged)],
+            ['붙은 비율', pct(tagged, members)],
+            ['캠페인 수', N(camp.length)],
+          ])
+          + table(['유입원', '매체', '가입', '최근'],
+              src.map(function (r) {
+                return [E(r.source), E(r.medium), N(r.n), when(r.last)];
+              }), { num: [2] })
+          + (camp.length
+              ? '<h4>캠페인별</h4>'
+                + table(['캠페인', '유입원', '가입'],
+                    camp.map(function (r) {
+                      return [E(r.campaign), E(r.source), N(r.n)];
+                    }), { num: [2] })
+              : '')
+          + (ref.length
+              ? '<h4>눌러 온 곳 (도메인만)</h4>'
+                + table(['도메인', '가입'],
+                    ref.map(function (r) { return [E(r.ref), N(r.n)]; }), { num: [1] })
+              : '')
+          + (day.length
+              ? '<h4>최근 14일 가입</h4>'
+                + table(['날짜', '가입', '경로 붙은 것'],
+                    day.map(function (r) {
+                      return [E(r.day), N(r.n), N(r.tagged)];
+                    }), { num: [1, 2] })
+              : '')
+          + '<div class="adm-note"><b>꼬리표 붙이는 법.</b> 광고·글에 링크를 걸 때 '
+          + '<code>?utm_source=naver&amp;utm_medium=cpc&amp;utm_campaign=0916</code> 처럼 '
+          + '붙이면 그대로 쌓입니다. 꼬리표 없이 들어온 분은 '
+          + '<b>(직접 들어옴)</b> 으로 셉니다 — 0 이 아니라 <b>모름</b>입니다. '
+          + '담는 것은 꼬리표와 눌러 온 <b>도메인</b>뿐이고, 주소의 경로·검색어는 '
+          + '버립니다.</div>'
+          + gaBlock(ga, on);
       }],
 
     // ══ 1. 산출식 ══
@@ -855,8 +963,9 @@
       getPremium('valuation.json'),
       getStats(),
       getCoverage(),
+      getUtm(),
     ]);
     render({ meta: got[0], verdicts: got[1], zoning: got[2], val: got[3], stats: got[4],
-             cover: got[5], acc: acc });
+             cover: got[5], utm: got[6], acc: acc });
   })();
 })();

@@ -248,7 +248,29 @@
     memberTable(box);
   }
 
+  /* 유입 경로를 **한 번만** 붙인다 (2026-09-16 지시 "UTM, GA 준비").
+   *
+   * 소셜 로그인은 구글·카카오를 거쳐 돌아오므로, 가입하는 그 순간에
+   * 값을 실어 보낼 자리가 없다. 대신 돌아온 뒤 이 화면에서 채운다 —
+   * 프로필 행은 가입 트리거(0001)가 이미 만들어 두었다.
+   *
+   * **비어 있을 때만 쓴다.** 두 번째 방문에 덮어쓰면 첫 접점이 사라지고,
+   * 광고로 와서 나중에 검색으로 돌아온 사람이 전부 '자연 검색' 이 된다.
+   * 실패해도 조용히 넘어간다 — 유입 경로 때문에 계정 화면이 안 뜨면
+   * 그게 더 나쁘다. */
+  async function stampUtm(me) {
+    try {
+      var p = me.profile || {};
+      if (p.utm_source || p.landing_ref) return;      // 이미 붙어 있다
+      if (!window.TRACK || !window.SB) return;
+      var v = window.TRACK.forProfile();
+      if (!v) return;                                  // 꼬리표 없이 들어왔다
+      await window.SB.from("profile").update(v).eq("id", me.user.id);
+    } catch (e) { /* 계정 화면을 막지 않는다 */ }
+  }
+
   function accountView(me) {
+    stampUtm(me);
     var u = me.user;
     var p = me.profile || {};
     var name = p.nickname || u.email || "이용자";
