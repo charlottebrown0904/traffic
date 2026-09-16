@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       probe:
-        description: "render / geocode-mask / roads / roadbuild / roadwork / roadgeom / roadlink / roadkras / parcelshift / parcelpix / roadparcel"
+        description: "render / geocode-mask / roads / roadbuild / roadwork / roadgeom / roadlink / roadkras / parcelshift / parcelpix / roadparcel / roadzone"
         default: "render"
 
 jobs:
@@ -101,6 +101,13 @@ jobs:
       - name: 고속도로 밑 필지 세어 보기
         if: inputs.probe == 'roadparcel'
         run: python scripts/road_parcel_probe.py 2>&1 | tee /tmp/probe.log
+
+      # 받은 캡처가 '도로구역이 있다' 고 말한다 — 내가 없다고 적은 것이
+      # 틀렸거나 다른 문에 있는 것이다. 층 목록을 통째로 다시 보고,
+      # PNU 로 지역지구를 묻는 길도 함께 두드린다.
+      - name: 도로구역을 어디서 받나
+        if: inputs.probe == 'roadzone'
+        run: python scripts/road_zone_probe.py 2>&1 | tee /tmp/probe.log
 
       # 가려진 지번('1**')으로 얻은 'parcel' 좌표가 진짜인가.
       # 이 컨테이너는 중계기를 못 부르므로 러너에서 돈다.
