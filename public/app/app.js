@@ -36,9 +36,22 @@ const state = {
      산업단지 색면·지구 폴리곤·계획도로 선·역 점으로 통째로 덮인다.
      무엇을 보려고 켰는지는 누르는 사람이 안다 — 고르게 둔다. */
   devParts: { industry: false, housing: false, planroad: false, rail: false },
-  // "완공된 것은 표기 안하는 것이 좋을 것 같습니다" (2026-09-14).
-  // 기본으로 감춘다 — 이미 난 길과 끝난 지구는 앞으로의 값과 상관이 없다.
-  devDone: false,
+  /* 층마다 **세부 갈래**. 2026-09-16 지시: "택지, 사업지구 선택 시 바로
+   * 아래에 세부 선택 가능하도록 색상으로 표기하고 용도지역처럼 선택하면
+   * 볼 수 있도록 함 (기본 off) … 완공 보기는 삭제".
+   *
+   * 예전에는 '완공 보기' 한 칸이 모든 층의 끝난 것을 한꺼번에 여닫았다.
+   * 그러면 계획도로의 집행완료만 보고 싶어도 사업지구의 준공까지 같이
+   * 켜졌다. 층마다 나눈다. **끝난 것(준공·집행완료)은 꺼진 채로 시작**
+   * 한다 — 땅을 보는 사람에게 중요한 것은 아직 안 된 것이다. */
+  devPick: {
+    industry: { 국가: true, 일반: true, 첨단: true, 농공: true },
+    housing: { 지구지정: true, 개발계획: true, 실시계획: true,
+               부분준공: true, 준공: false },
+    planroad: { 미집행: true, 부분집행: true, 집행완료: false },
+    rail: { 많이: true, 적게: true, 모름: true },
+  },
+  // (2026-09-16) '완공 보기' 한 칸은 없앴다 — devPick 이 층마다 따로 한다.
   // 필지 경계선 (요구사항 2026-09-10). **기본은 켬** — 땅을 보는
   // 사람에게 경계는 배경이 아니라 본문이다. 껐다 켠 것은 기억한다.
   cadastral: (() => {
@@ -2744,14 +2757,57 @@ function toggleZoning(on) {
  */
 const DEV_PARTS = [
   { key: 'industry', label: '산업단지', tile: 'industry', vec: null,
-    note: '국가·일반·첨단·농공 — 층이 곧 색이다' },
+    note: '국가·일반·첨단·농공 — 갈래가 곧 층이다' },
   { key: 'housing', label: '택지·사업지구', tile: null, vec: 'zone',
     note: '색은 사업 단계: 지구지정→개발계획→실시계획→부분준공→준공' },
   { key: 'planroad', label: '계획도로', tile: null, vec: 'planroad',
     note: '색은 집행 단계: 미집행·부분집행·집행완료' },
   { key: 'rail', label: '철도역', tile: null, vec: null,
-    note: '우리 자료 405곳' },
+    note: '우리 자료. 종류 칸이 반만 차 있어 정차 규모로 가른다' },
 ];
+
+/* 층마다 고를 수 있는 **세부 갈래**와 그 색.
+ *
+ * 산업단지의 색은 비워 둔다 — 브이월드가 이미 칠해서 주는 **그림**이라
+ * 우리가 정하는 색이 아니다. 지어낸 색을 범례에 적으면 지도와 범례가
+ * 서로 다른 색을 말하게 되고, 그것은 범례가 없는 것보다 나쁘다.
+ * (색을 실제로 재는 일은 scripts/vworld_render_probe.py 가 한다.)
+ */
+const DEV_PICKS = {
+  /* 개수는 브이월드 WFS 를 직접 세어 적은 것이다 (vworld-render run 8,
+     2026-09-16). 적어 두는 까닭: **도시첨단은 전국에 아홉 곳뿐**이라
+     켜 놓고 아무것도 안 보이는 것이 정상이다. 그 사실을 화면이 말하지
+     않으면 '층이 고장났나' 로 읽는다. */
+  industry: [
+    { id: '국가', label: '국가 68곳', tile: 'industry_gug' },
+    { id: '일반', label: '일반 257곳', tile: 'industry_ilban' },
+    { id: '첨단', label: '도시첨단 9곳', tile: 'industry_dosi' },
+    { id: '농공', label: '농공 147곳', tile: 'industry_nong' },
+  ],
+  housing: [
+    { id: '지구지정', label: '지구지정' }, { id: '개발계획', label: '개발계획' },
+    { id: '실시계획', label: '실시계획' }, { id: '부분준공', label: '부분준공' },
+    { id: '준공', label: '준공', done: true },
+  ],
+  planroad: [
+    { id: '미집행', label: '미집행' }, { id: '부분집행', label: '부분집행' },
+    { id: '집행완료', label: '집행완료', done: true },
+  ],
+  rail: [
+    { id: '많이', label: '많이 서는 역', color: '#0369A1' },
+    { id: '적게', label: '적게 서는 역', color: '#38BDF8' },
+    { id: '모름', label: '정차횟수 모름', color: '#94A3B8' },
+  ],
+};
+
+/** 그 층의 이 갈래를 켜 두었나. 모르는 갈래는 켠 것으로 본다 —
+ *  자료에 새 단계가 생겼을 때 조용히 사라지는 것보다 보이는 쪽이 낫다. */
+function devPicked(part, id) {
+  const m = (state.devPick || {})[part];
+  if (!m || !(id in m)) return true;
+  return !!m[id];
+}
+window.__devPicked = devPicked;
 
 /* 단계별 색 (2026-09-14 지시: "산업단지 택지사업지구의 색상은 의미가
  * 있나요?").
@@ -2774,15 +2830,39 @@ const DEV_STAGE = {
   '실시계획': { color: '#0891B2', rank: 3 },
   '부분준공': { color: '#65A30D', rank: 4 },
   '준공': { color: '#9CA3AF', rank: 5, done: true },
+  // 2026-09-16 지시: "미집행과 부분집행 색상 구분이 어려움 (비슷)".
+  // #DC2626(빨강)과 #EA580C(주황)는 색상각이 25도밖에 안 떨어져 있었다.
+  // 호박색(38도)으로 벌리고, **점선까지 달아 둘째 단서를 준다** — 색만으로
+  // 가르면 색약인 사람에게는 여전히 한 색이다.
   '미집행': { color: '#DC2626', rank: 1 },
-  '부분집행': { color: '#EA580C', rank: 2 },
-  '집행완료': { color: '#9CA3AF', rank: 3, done: true },
+  '부분집행': { color: '#F59E0B', rank: 2, dash: '7 4' },
+  '집행완료': { color: '#6B7280', rank: 3, done: true, dash: '2 5' },
 };
+
+/* **얼마나 채울까.** 2026-09-16 지시 두 가지:
+ *   "색상이 너무 진하게 채워져 있음 (z14~z16까지는 선으로만 표현)"
+ *   "확대시 미집행 부는 투명 0%임 수정필요 (z17부터 아주 연하게 채움)"
+ *
+ * 멀리서는 면이 서로 덮여 바탕 지도가 안 보이므로 **선만** 긋고, 가까이
+ * 가면 어디가 안쪽인지 알아야 하므로 **아주 연하게** 채운다. */
+const DEV_FILL_ZOOM = 17;
+function devFillOpacity(z) {
+  return z >= DEV_FILL_ZOOM ? 0.12 : 0;
+}
+window.__devFillOpacity = devFillOpacity;
 
 function devStage(p) {
   return String(p.cat_nam || p.exc_nam || '').trim();
 }
 const DEVELOP_MIN_ZOOM = 10;
+
+/* 2026-09-16 지시: "z 12부터 계획도로 보여서 너무 느려진다 —
+ * 계획도로는 14부터 보이도록".
+ *
+ * z12 화면 하나는 스무 칸이 넘고 칸마다 도형이 수백이라, 원주 언저리를
+ * 한 번 펼치면 선 수천 개를 그린다. 배율을 둘 올리면 한 칸이 덮는 넓이가
+ * 16분의 1이 된다. */
+const DEVVEC_MIN_ZOOM = 14;
 
 /** 지금 켜진 타일 갈래를 하나의 layer 열쇠로 접는다.
  *
@@ -2792,7 +2872,18 @@ const DEVELOP_MIN_ZOOM = 10;
 function devTileKey() {
   const on = DEV_PARTS.filter((p) => p.tile && state.devParts[p.key]);
   if (!on.length) return null;
-  return on.length === 1 ? on[0].tile : on.map((p) => p.tile).join('+');
+  // 산업단지는 **갈래가 곧 층**이다. 골라 켰으면 그 층만 부른다 — 그림을
+  // 받아 놓고 거를 수는 없으니 거르기는 부를 때 해야 한다. 넷을 다 켰으면
+  // 합친 층 하나로 부른다 (타일 한 칸에 함수 호출 한 번).
+  const keys = on.flatMap((p) => {
+    if (p.key !== 'industry') return [p.tile];
+    const picks = DEV_PICKS.industry.filter((k) => devPicked('industry', k.id));
+    if (!picks.length) return [];
+    return picks.length === DEV_PICKS.industry.length
+      ? [p.tile] : picks.map((k) => k.tile);
+  });
+  if (!keys.length) return null;
+  return keys.length === 1 ? keys[0] : keys.join('+');
 }
 
 function addDevelopLayer() {
@@ -2821,7 +2912,8 @@ function drawDevelop() {
   drawDevVec();
   updateDevLegend();
   window.__develop = { on: state.develop, key, parts: { ...state.devParts },
-                       done: state.devDone };
+                       pick: JSON.parse(JSON.stringify(state.devPick)),
+                       fill: devFillOpacity(map.getZoom()) };
 }
 
 /* ── 계획도로·택지지구를 도형으로 (2026-09-14 지시) ───────────────────
@@ -2838,7 +2930,7 @@ function drawDevelop() {
  * 보이지" 가 된다. */
 const ZOOM_GATES = [
   [DEVELOP_MIN_ZOOM, '개발'],
-  [12, '계획도로·사업지구'],
+  [DEVVEC_MIN_ZOOM, '계획도로·사업지구'],
   [ZONING_MIN_ZOOM, '용도지역'],
   [CADASTRAL_MIN_ZOOM, '필지경계'],
 ];
@@ -2886,7 +2978,6 @@ function addZoomReadout() {
   setTimeout(() => { try { paint(); } catch (e) { /* 눈금뿐이다 */ } }, 0);
 }
 
-const DEVVEC_MIN_ZOOM = 12;
 /* **한 번에 새로 물어 오는 칸 수**다. 이미 받아 둔 칸은 이 한도와 무관하게
  * 다 그린다 — 2026-09-15 지시: "확대/축소 또는 좌/우 이동 시 계획도로가
  * 사라졌다. 생겼다 자기 마음대로입니다."
@@ -2943,6 +3034,8 @@ function devVecTiles() {
   return out;
 }
 
+window.__devVecTiles = () => devVecTiles();   // 배율 문턱을 검사가 본다
+
 function devVecKinds() {
   return DEV_PARTS.filter((p) => p.vec && state.devParts[p.key])
     .map((p) => p.vec);
@@ -2988,11 +3081,14 @@ function drawDevVec() {
 
 function paintDevVec(kind, items) {
   let n = 0;
+  const part = kind === 'planroad' ? 'planroad' : 'housing';
+  const fill = devFillOpacity(map.getZoom());
   items.forEach((it) => {
     const stage = devStage(it.p || {});
     const spec = DEV_STAGE[stage];
-    // 완공된 것은 기본으로 감춘다 (지시). 켜면 회색으로 보인다.
-    if (spec && spec.done && !state.devDone) return;
+    // 세부 갈래로 걸러 낸다 (2026-09-16). 예전 '완공 보기' 한 칸이 하던
+    // 일을 층마다 나눠 가졌다.
+    if (stage && !devPicked(part, stage)) return;
     const color = (spec && spec.color) || '#6B7280';
     const road = kind === 'planroad';
     L.geoJSON(it.g, {
@@ -3000,8 +3096,11 @@ function paintDevVec(kind, items) {
         color,
         weight: road ? 3 : 2,
         opacity: .9,
+        dashArray: (spec && spec.dash) || null,
         fillColor: color,
-        fillOpacity: road ? .25 : .18,
+        // z17 아래에서는 **선만** 긋는다. 면끼리 겹쳐 바탕 지도를 덮으면
+        // 어디가 어디인지 못 읽는다.
+        fillOpacity: fill,
       },
     }).bindTooltip(devVecTip(kind, it.p || {}, stage),
                    { direction: 'top', sticky: true })
@@ -3063,31 +3162,62 @@ function devVecTip(kind, p, stage) {
 }
 window.__devVecTip = devVecTip;   // 검사(test_map.js)가 부른다
 
-/* 범례 — 색이 무엇을 뜻하는지 화면이 스스로 말해야 한다. */
+/* 세부 갈래 칸 — **층 바로 아래**에 편다 (2026-09-16 지시).
+ *
+ * 예전에는 색 범례가 칸 목록 **아래 따로** 있었고 끄고 켤 수가 없었다.
+ * 색이 무엇을 뜻하는지는 알려 주지만 '준공만 빼고 보기' 는 못 했다.
+ * 이제 용도지역 칸과 같은 모양이다 — 색칩이 붙은 누름 칸이고, 누르면
+ * 그 갈래만 사라진다. 층을 끄면 그 아래 칸도 같이 접힌다.
+ *
+ * 산업단지 색칩은 **비어 있다** — 브이월드가 칠해서 주는 그림이라 우리가
+ * 정하는 색이 아니다. 지어낸 색을 적으면 지도와 범례가 서로 다른 색을
+ * 말하게 된다. */
+function devPickColor(part, k) {
+  if (k.color) return k.color;
+  const spec = DEV_STAGE[k.id];
+  return spec ? spec.color : '';
+}
+
+function updateDevSubs() {
+  document.querySelectorAll('#dev-parts .dev-subs').forEach((box) => {
+    const part = box.dataset.part;
+    box.hidden = !state.develop || !state.devParts[part];
+    box.querySelectorAll('.dev-opt').forEach((btn) => {
+      btn.setAttribute('aria-pressed', String(devPicked(part, btn.dataset.pick)));
+    });
+  });
+}
+
 function updateDevLegend() {
+  updateDevSubs();
+  // 계획도로의 '미집행' 이 무슨 뜻인지는 색칩만으로 안 된다. 켜 두었을
+  // 때만 한 줄 적는다.
   const box = document.getElementById('dev-legend');
   if (!box) return;
-  const kinds = devVecKinds();
-  box.hidden = !state.develop || !kinds.length;
-  if (box.hidden) { box.innerHTML = ''; return; }
-  const rows = [];
-  if (kinds.includes('zone')) {
-    rows.push(['택지·사업지구',
-      ['지구지정', '개발계획', '실시계획', '부분준공', '준공']]);
-  }
-  if (kinds.includes('planroad')) {
-    rows.push(['계획도로', ['미집행', '부분집행', '집행완료']]);
-  }
-  box.innerHTML = rows.map(([title, stages]) =>
-    `<div class="dev-leg-row"><b>${escapeHtml(title)}</b>`
-    + stages.map((s) => {
-      const spec = DEV_STAGE[s] || {};
-      const off = spec.done && !state.devDone;
-      return `<span class="dev-leg${off ? ' is-off' : ''}">`
-        + `<i style="background:${spec.color}"></i>${escapeHtml(s)}`
-        + (off ? ' (감춤)' : '') + '</span>';
-    }).join('') + '</div>').join('');
+  const on = state.develop && state.devParts.planroad
+    && devPicked('planroad', '미집행');
+  box.hidden = !on;
+  box.innerHTML = on
+    ? `<div class="dev-leg-row"><b>미집행</b>`
+      + `<span class="dev-why">${escapeHtml(PLANROAD_STAGE_WHY['미집행'])}</span>`
+      + '</div>'
+    : '';
 }
+
+/** 역을 **정차 규모**로 가른다.
+ *
+ * 2026-09-16 물음: "철도역도 종류가 나눌 수 있는 지 확인". 자료를 열어
+ * 봤더니 종류를 가를 칸(역등급·관련노선)이 **416줄 중 215줄만** 차 있다.
+ * 반이 빈 칸으로 갈래를 만들면 '모름' 이 절반이 되어 갈래 구실을 못 한다.
+ * 게다가 화면이 받는 rail.json 에는 그 칸이 실려 있지도 않다.
+ *
+ * 대신 **정차횟수**로 가른다 — 이미 싣고 있고, 역의 크기를 말해 준다.
+ * 없는 것은 '모름' 으로 따로 둔다 (0회로 치면 거짓이 된다). */
+function railSize(s) {
+  if (!(typeof s.trains === 'number' && s.trains > 0)) return '모름';
+  return s.trains >= 100 ? '많이' : '적게';
+}
+window.__railSize = railSize;
 
 /* 철도 — 우리 자료. 역은 점, 개통 예정은 테두리를 달리한다. */
 function drawRail() {
@@ -3099,10 +3229,13 @@ function drawRail() {
   rows.forEach((s) => {
     if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) return;
     const soon = s.opened_on && s.opened_on > today;
+    const size = railSize(s);
+    if (!devPicked('rail', size)) return;
+    const spec = DEV_PICKS.rail.find((k) => k.id === size) || {};
     L.circleMarker([s.lat, s.lon], {
       pane: 'markerPane',
-      radius: s.trains >= 100 ? 7 : 5,
-      color: soon ? '#7C3AED' : '#0369A1',
+      radius: size === '많이' ? 7 : 5,
+      color: soon ? '#7C3AED' : spec.color,
       weight: 2,
       dashArray: soon ? '3 2' : null,
       fillColor: soon ? '#EDE9FE' : '#BAE6FD',
@@ -7578,6 +7711,10 @@ function wireFind() {
   const dparts = document.getElementById('dev-parts');
   if (dparts) {
     DEV_PARTS.forEach((pt) => {
+      const group = document.createElement('div');
+      group.className = 'dev-group';
+      group.dataset.part = pt.key;
+
       const lab = document.createElement('label');
       lab.className = 'dev-part';
       lab.title = pt.note;
@@ -7593,26 +7730,39 @@ function wireFind() {
       span.textContent = pt.label;
       lab.appendChild(box);
       lab.appendChild(span);
-      dparts.appendChild(lab);
+      group.appendChild(lab);
+
+      /* 세부 갈래 — **바로 아래**에 (2026-09-16 지시). 용도지역 칸과 같은
+         모양이다: 체크상자가 아니라 눌림을 aria-pressed 로 알리는 칸이고,
+         색칩이 앞에 붙는다. 색만으로는 화면낭독기가 못 읽는다. */
+      const subs = document.createElement('div');
+      subs.className = 'dev-subs';
+      subs.dataset.part = pt.key;
+      subs.hidden = true;
+      (DEV_PICKS[pt.key] || []).forEach((k) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'dev-opt';
+        btn.dataset.part = pt.key;
+        btn.dataset.pick = k.id;
+        btn.setAttribute('aria-pressed', String(devPicked(pt.key, k.id)));
+        if (k.done) btn.title = '끝난 것 — 기본으로 감춥니다';
+        const c = devPickColor(pt.key, k);
+        btn.innerHTML = `<i class="dev-sw${c ? '' : ' is-none'}"`
+          + `${c ? ` style="background:${c}"` : ''}></i>`
+          + `<span>${escapeHtml(k.label)}</span>`;
+        btn.addEventListener('click', () => {
+          const now = !(btn.getAttribute('aria-pressed') === 'true');
+          btn.setAttribute('aria-pressed', String(now));
+          state.devPick[pt.key][k.id] = now;
+          drawDevelop();
+        });
+        subs.appendChild(btn);
+      });
+      if (subs.children.length) group.appendChild(subs);
+      dparts.appendChild(group);
     });
-    // 완공된 것 보기 (기본 끔 — 지시: "완공된 것은 표기 안하는 것이
-    // 좋을 것 같습니다"). 끄고 감추는 것이 기본이고, 궁금하면 켠다.
-    const dlab = document.createElement('label');
-    dlab.className = 'dev-part';
-    dlab.title = '준공·집행완료까지 회색으로 보인다';
-    const dbox2 = document.createElement('input');
-    dbox2.type = 'checkbox';
-    dbox2.id = 'dev-done';
-    dbox2.checked = !!state.devDone;
-    dbox2.addEventListener('change', () => {
-      state.devDone = dbox2.checked;
-      drawDevelop();
-    });
-    const dspan = document.createElement('span');
-    dspan.textContent = '완공 보기';
-    dlab.appendChild(dbox2);
-    dlab.appendChild(dspan);
-    dparts.appendChild(dlab);
+    updateDevSubs();
   }
   if (dbox) {
     dbox.checked = state.develop;

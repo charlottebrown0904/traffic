@@ -1594,7 +1594,9 @@ async function stubCommon(pg) {
       rail: ((window.state.rail || {}).stations || []).length,
       parts: document.getElementById('dev-parts')
         ? document.getElementById('dev-parts').children.length : 0,
-      done: window.state.devDone,
+      pick: JSON.parse(JSON.stringify(window.state.devPick || {})),
+      subs: document.querySelectorAll('#dev-parts .dev-subs').length,
+      opts: document.querySelectorAll('#dev-parts .dev-opt').length,
       // 2026-09-15 지시로 갈래 칸이 **왼쪽 칸**으로 옮겼다. 접힘은
       // 이제 칸 자체가 아니라 그것이 든 갈피(.sheet-pane)가 정한다.
       inSide: !!document.querySelector('#side #dev-parts'),
@@ -1605,9 +1607,10 @@ async function stubCommon(pg) {
     }));
     check('개발은 꺼진 채로 시작한다', devBefore.on === false,
           `on=${devBefore.on}`);
-    // 갈래 넷 + '완공 보기' 한 칸 = 다섯 (2026-09-14 지시로 늘었다).
-    check('개발 갈래 칸이 다섯이고 처음엔 접혀 있다',
-          devBefore.parts === 5 && devBefore.hidden === true,
+    /* 갈래 넷 (2026-09-16 지시로 '완공 보기' 를 없앴다 — 층마다 세부
+       칸이 대신한다). */
+    check('개발 갈래 칸이 넷이고 처음엔 접혀 있다',
+          devBefore.parts === 4 && devBefore.hidden === true,
           `${devBefore.parts}개 · hidden=${devBefore.hidden}`);
     /* 갈래 칸은 **왼쪽 칸**에 있다 (2026-09-15 지시: "개발을 클릭하면
        좌측 패널에 (산업단지/사업지구/도로/철도역/완공보기)를 표시해
@@ -1615,13 +1618,23 @@ async function stubCommon(pg) {
     check('갈래 칸이 왼쪽 칸에 있다 (지도 위 막대가 아니다)',
           devBefore.inSide && !devBefore.inTools,
           `side=${devBefore.inSide} tools=${devBefore.inTools}`);
-    check('다섯 이름이 지시한 그대로다',
+    check('넷 이름이 지시한 그대로다',
           JSON.stringify(devBefore.names)
             === JSON.stringify(['산업단지', '택지·사업지구', '계획도로',
-                                '철도역', '완공 보기']),
+                                '철도역']),
           JSON.stringify(devBefore.names));
-    check('완공 보기는 꺼진 채로 시작한다', devBefore.done === false,
-          `done=${devBefore.done}`);
+    /* 세부 갈래 칸 — **층 바로 아래** (2026-09-16 지시). 넷 모두에 있고,
+       끝난 것(준공·집행완료)만 꺼진 채로 시작한다. */
+    check('층마다 세부 갈래 칸이 붙는다',
+          devBefore.subs === 4 && devBefore.opts >= 14,
+          `칸 ${devBefore.subs}묶음 · 항목 ${devBefore.opts}개`);
+    check('끝난 것만 꺼진 채로 시작한다 (완공 보기 한 칸을 대신한다)',
+          devBefore.pick.housing['준공'] === false
+          && devBefore.pick.planroad['집행완료'] === false
+          && devBefore.pick.housing['지구지정'] === true
+          && devBefore.pick.planroad['미집행'] === true
+          && devBefore.pick.industry['국가'] === true,
+          JSON.stringify(devBefore.pick.planroad));
     check('철도역이 실려 있다 (rail.json)', devBefore.rail >= 300,
           `${devBefore.rail}곳`);
 
@@ -1641,6 +1654,8 @@ async function stubCommon(pg) {
                title: (document.getElementById('sheet-title').textContent || '').trim(),
                sideOpen: document.getElementById('side').classList.contains('is-open'),
                boxes: [...document.querySelectorAll('#dev-parts input')].map((b) => b.checked),
+               subsShown: [...document.querySelectorAll('#dev-parts .dev-subs')]
+                 .filter((e) => !e.hidden).length,
                legend: document.getElementById('dev-legend').hidden };
     });
     check('개발을 켜면 켜진다', devAfter.on === true, `on=${devAfter.on}`);
@@ -1655,8 +1670,12 @@ async function stubCommon(pg) {
        기본은 전부 Off 입니다"). 넷이 한꺼번에 켜지면 개발을 켠 순간
        지도가 색면·폴리곤·선·점으로 통째로 덮인다. */
     check('켜도 갈래는 전부 꺼져 있다 (무엇을 볼지는 누르는 사람이 고른다)',
-          devAfter.boxes.length === 5 && devAfter.boxes.every((b) => !b),
+          devAfter.boxes.length === 4 && devAfter.boxes.every((b) => !b),
           devAfter.boxes.join(','));
+    // 층이 꺼져 있으면 그 아래 세부 칸도 접힌다 — 켤 수 없는 것을 보이면
+    // 눌러 보고 아무 일도 안 일어난다.
+    check('층이 꺼져 있으면 세부 칸도 접힌다', devAfter.subsShown === 0,
+          `펼쳐진 묶음 ${devAfter.subsShown}`);
     check('아무 갈래도 안 켜졌으면 부를 타일이 없다', devAfter.key === null,
           `key=${devAfter.key}`);
     check('아무 갈래도 안 켜졌으면 범례도 감춘다', devAfter.legend === true,
@@ -1758,27 +1777,113 @@ async function stubCommon(pg) {
           zr && /필지경계/.test(zr[14].hint) && zr[19].hint === '',
           zr ? `z14 "${zr[14].hint}" · z19 "${zr[19].hint}"` : '');
 
-    check('색이 뜻하는 단계를 범례가 적는다',
-          !devLeg.hidden && devLeg.text.includes('지구지정')
-          && devLeg.text.includes('미집행'),
-          devLeg.text.slice(0, 80));
-    check('완공은 기본으로 감춘다고 범례가 말한다',
-          devLeg.text.includes('준공 (감춤)')
-          && devLeg.text.includes('집행완료 (감춤)'),
-          devLeg.text.slice(-60));
+    /* 층을 켰으니 세부 칸이 펼쳐지고, 색칩이 붙어 있어야 한다
+       (2026-09-16 지시: "색상으로 표기하고 용도지역처럼 선택"). */
+    const subs = await page.evaluate(() => {
+      const road = document.querySelector('.dev-subs[data-part="planroad"]');
+      const ind = document.querySelector('.dev-subs[data-part="industry"]');
+      const chip = (el) => (el.querySelector('.dev-sw') || {}).getAttribute
+        ? el.querySelector('.dev-sw').getAttribute('style') || '' : '';
+      const pick = (p, id) =>
+        document.querySelector(`.dev-opt[data-part="${p}"][data-pick="${id}"]`);
+      return {
+        roadShown: !road.hidden, indShown: !ind.hidden,
+        미집행색: chip(pick('planroad', '미집행')),
+        부분집행색: chip(pick('planroad', '부분집행')),
+        미집행눌림: pick('planroad', '미집행').getAttribute('aria-pressed'),
+        집행완료눌림: pick('planroad', '집행완료').getAttribute('aria-pressed'),
+        준공눌림: pick('housing', '준공').getAttribute('aria-pressed'),
+        // 산업단지 색은 브이월드 그림이라 **우리가 안 정한다** — 빈 칩이다.
+        산업칩빔: pick('industry', '국가').querySelector('.dev-sw')
+          .classList.contains('is-none'),
+        산업이름: pick('industry', '첨단').textContent.trim(),
+      };
+    });
+    check('층을 켜면 세부 칸이 펼쳐진다', subs.roadShown && subs.indShown,
+          `도로 ${subs.roadShown} · 산단 ${subs.indShown}`);
+    check('끝난 것은 꺼진 채, 나머지는 켜진 채로 펼쳐진다',
+          subs.미집행눌림 === 'true' && subs.집행완료눌림 === 'false'
+          && subs.준공눌림 === 'false',
+          `미집행 ${subs.미집행눌림} · 집행완료 ${subs.집행완료눌림}`);
+    /* **미집행과 부분집행이 닮았다** (2026-09-16 지시). 색상각이 25도면
+       나란히 놓고도 못 가른다. 벌어졌는지 숫자로 본다. */
+    check('미집행·부분집행 색이 실제로 벌어졌다',
+          subs.미집행색.includes('#DC2626') && subs.부분집행색.includes('#F59E0B'),
+          `${subs.미집행색} / ${subs.부분집행색}`);
+    check('산업단지 색칩은 비워 둔다 (브이월드 그림이라 우리 색이 아니다)',
+          subs.산업칩빔 === true, `is-none=${subs.산업칩빔}`);
+    // 도시첨단은 전국 아홉 곳뿐이다 — 안 보이는 것이 정상임을 화면이 말한다.
+    check('산업단지 갈래에 전국 개수를 적는다', /9곳/.test(subs.산업이름),
+          subs.산업이름);
 
-    // '완공 보기' 를 켜면 감춤 표시가 사라진다.
+    /* 세부 갈래를 끄면 그 갈래가 실제로 안 그려진다 — 산업단지는
+       **부르는 층**이 줄어야 한다 (그림이라 받아 놓고 못 거른다). */
     await page.evaluate(() => {
-      const b = document.getElementById('dev-done');
-      b.checked = true;
-      b.dispatchEvent(new Event('change'));
+      ['일반', '첨단', '농공'].forEach((id) => document
+        .querySelector(`.dev-opt[data-part="industry"][data-pick="${id}"]`).click());
     });
     await page.waitForTimeout(300);
-    const legOn = await page.evaluate(() =>
-      (document.getElementById('dev-legend').textContent || '').includes('(감춤)'));
-    check('완공 보기를 켜면 감춤 표시가 사라진다', legOn === false);
+    const indOne = await page.evaluate(() => (window.__develop || {}).key);
+    check('산업단지 갈래를 하나만 남기면 그 층만 부른다',
+          indOne === 'industry_gug', `key=${indOne}`);
+    await page.evaluate(() => {
+      ['일반', '첨단', '농공'].forEach((id) => document
+        .querySelector(`.dev-opt[data-part="industry"][data-pick="${id}"]`).click());
+    });
+    await page.waitForTimeout(300);
+    const indAll = await page.evaluate(() => (window.__develop || {}).key);
+    check('넷을 다 켜면 합친 층 하나로 부른다 (함수 호출을 아낀다)',
+          indAll === 'industry', `key=${indAll}`);
 
-    // 갈래 하나를 끄면 열쇠가 좁아진다 — 산업단지를 뺀다.
+    /* **면을 얼마나 채우나** (2026-09-16 지시: z14~16 은 선으로만,
+       z17 부터 아주 연하게). */
+    const devFills = await page.evaluate(() =>
+      window.__devFillOpacity
+        ? { z14: window.__devFillOpacity(14), z16: window.__devFillOpacity(16),
+            z17: window.__devFillOpacity(17), z19: window.__devFillOpacity(19) }
+        : null);
+    check('z16 까지는 선으로만 (면을 안 채운다)',
+          devFills && devFills.z14 === 0 && devFills.z16 === 0,
+          devFills ? `z14 ${devFills.z14} · z16 ${devFills.z16}` : '(안 내보냄)');
+    check('z17 부터 아주 연하게 채운다 (투명 0% 가 아니다)',
+          devFills && devFills.z17 > 0 && devFills.z17 <= 0.2 && devFills.z19 > 0,
+          devFills ? `z17 ${devFills.z17}` : '');
+
+    /* 계획도로는 z14 부터 (2026-09-16 지시: "z 12부터 계획도로 보여서
+       너무 느려진다"). */
+    const gate = await page.evaluate(() => {
+      const keep = window.__zoom;
+      const keepB = window.__bbox;
+      // 좁은 화면을 준다 — devVecTiles 는 화면이 너무 넓으면 한 칸도
+      // 안 부른다(안전장치). 그 안전장치가 아니라 **배율 문턱**을 본다.
+      window.__bbox = [37.30, 127.90, 37.36, 127.98];
+      window.__zoom = 13;
+      const a = window.__devVecTiles ? window.__devVecTiles().length : -1;
+      window.__zoom = 14;
+      const b = window.__devVecTiles ? window.__devVecTiles().length : -1;
+      window.__zoom = keep;
+      window.__bbox = keepB;
+      return { z13: a, z14: b };
+    });
+    check('계획도로·사업지구는 z13 에서 한 칸도 안 부른다',
+          gate.z13 === 0, `z13 ${gate.z13}칸`);
+    check('z14 부터 부른다', gate.z14 > 0, `z14 ${gate.z14}칸`);
+
+    /* 철도역 — 종류로 가를 칸이 자료에 반만 차 있어 **정차 규모**로
+       가른다 (2026-09-16 물음: "철도역도 종류가 나눌 수 있는 지 확인"). */
+    const rs = await page.evaluate(() => window.__railSize ? {
+      많이: window.__railSize({ trains: 120 }),
+      적게: window.__railSize({ trains: 8 }),
+      모름: window.__railSize({}),
+      영: window.__railSize({ trains: 0 }),
+    } : null);
+    check('역을 정차 규모로 가른다',
+          rs && rs.많이 === '많이' && rs.적게 === '적게' && rs.모름 === '모름',
+          JSON.stringify(rs));
+    check('정차횟수가 없으면 0회로 치지 않고 모름으로 둔다',
+          rs && rs.영 === '모름', `0회 → ${rs && rs.영}`);
+
+    // 층 하나를 끄면 열쇠가 좁아진다 — 산업단지를 뺀다.
     await page.evaluate(() => {
       const box = document.querySelector('#dev-parts input[data-part="industry"]');
       box.checked = false;
@@ -1840,9 +1945,8 @@ async function stubCommon(pg) {
         b.checked = false;
         b.dispatchEvent(new Event('change'));
       });
-      const d = document.getElementById('dev-done');
-      d.checked = false;
-      d.dispatchEvent(new Event('change'));
+      // ('완공 보기' 한 칸은 2026-09-16 에 없앴다 — 층마다 세부 칸이
+      //  대신하고, 그 칸은 층을 끄면 같이 접힌다.)
       const sh = document.getElementById('sheet');
       if (sh.hidden || sh.dataset.cat !== 'trade') {
         document.querySelector('.cat[data-cat="trade"]').click();

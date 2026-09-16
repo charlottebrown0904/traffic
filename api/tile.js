@@ -213,6 +213,19 @@ const LAYERS = {
   // 네 갈래를 따로 둔 까닭은 **끌 수 있어야** 하기 때문이고, 다 켜면
   // develop 한 장으로 부른다 — 타일 한 칸에 함수 호출 한 번이다.
   industry: "lt_c_wgisiegug,lt_c_wgisieilban,lt_c_wgisiedosi,lt_c_wgisienong",
+  // 갈래마다 따로도 부를 수 있어야 한다 (2026-09-16 지시: "산업단지도 …
+  // 세부 선택 가능하도록").
+  //
+  // 산업단지는 **갈래가 곧 층**이라 층을 골라 부르면 그대로 걸러진다.
+  // 그림으로 받아 놓고 나중에 거르는 길은 없다 — 브이월드가 이미 칠해서
+  // 주기 때문이다. 그래서 거르기는 여기서, 부를 때 해야 한다.
+  //
+  // 넷을 다 켰을 때는 화면이 위의 industry 한 장으로 부른다. 타일 한 칸에
+  // 함수 호출 한 번이 되도록 (api/tile 호출 수가 곧 요금이다).
+  industry_gug: "lt_c_wgisiegug",
+  industry_ilban: "lt_c_wgisieilban",
+  industry_dosi: "lt_c_wgisiedosi",
+  industry_nong: "lt_c_wgisienong",
   housing: "lt_c_lhzone,lt_c_damdan",
   planroad: "lt_c_upisuq151",
   develop: "lt_c_wgisiegug,lt_c_wgisieilban,lt_c_wgisiedosi,lt_c_wgisienong,"

@@ -1900,6 +1900,47 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 }
 .dev-part input { margin: 0; }
 
+/* 층 하나 = 이름 칸 + **그 아래** 세부 갈래 (2026-09-16 지시). */
+.dev-group { display: block; }
+.dev-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .22rem .3rem;
+  margin: .25rem 0 .1rem 1.15rem;   /* 체크상자 폭만큼 들여 쓴다 */
+}
+/* 용도지역 칸(.zone-opt)과 같은 모양 — 두 번 배우지 않게. */
+.dev-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: .22rem;
+  padding: .12rem .34rem;
+  border: 1px solid var(--line, rgba(0, 0, 0, .16));
+  border-radius: .35rem;
+  background: var(--surface, #fff);
+  color: inherit;
+  font: inherit;
+  font-size: .74rem;
+  line-height: 1.5;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* **끈 것이 기본 모습이 아니다.** 눌린 것이 진하고, 끈 것이 흐리다 —
+   반대로 두면 무엇이 보이는 중인지 한눈에 안 읽힌다. */
+.dev-opt[aria-pressed="false"] { opacity: .45; }
+.dev-opt[aria-pressed="false"] .dev-sw { filter: grayscale(1); }
+.dev-opt:hover { border-color: var(--accent, #2563EB); }
+.dev-sw {
+  width: .68rem; height: .68rem; border-radius: .16rem;
+  display: inline-block; flex: none;
+}
+/* 산업단지처럼 **우리가 색을 정하지 않는** 갈래. 빈 칸으로 두고 빗금을
+   쳐서 '색은 지도 그대로' 임을 말한다 — 아무 색이나 칠하면 거짓이 된다. */
+.dev-sw.is-none {
+  background: repeating-linear-gradient(45deg,
+    rgba(120, 120, 120, .45) 0 2px, transparent 2px 4px);
+  border: 1px solid rgba(120, 120, 120, .5);
+}
+
 /* 왼쪽 칸에서는 **세로로 세운다** (2026-09-15). 지도 위 막대에서는 옆으로
    흘려야 자리를 덜 먹었지만, 왼쪽 칸은 폭이 좁고 높이가 남는다 — 다섯이
    옆으로 흐르면 '완공 보기' 만 둘째 줄에 혼자 남는다. 같은 칸의 다른
@@ -1913,6 +1954,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   font-size: .84rem;
 }
 .sheet-pane .dev-part { white-space: normal; }
+.sheet-pane .dev-subs { margin-left: 1.3rem; }
 .sheet-pane .dev-legend { margin: 0 0 .4rem; }
 
 /* 고른 행정구역의 전체 이름 (2026-09-14) — 브이월드의 full_nm.
