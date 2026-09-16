@@ -28,7 +28,7 @@ import json
 import os
 import sys
 import urllib.parse
-from collections import Counter
+from collections import Counter, defaultdict
 
 import requests
 
@@ -64,8 +64,12 @@ def osm() -> None:
   way["highway"="trunk"]({s},{w},{n},{e});
 );
 out geom;"""
+    # **406 을 먼저 맞았다.** Overpass 는 python-requests 의 기본
+    # User-Agent 를 막는다. 자기를 밝히면 통과한다.
+    head = {"User-Agent": "toji.fyi road-geometry probe (contact via github)",
+            "Accept": "application/json"}
     try:
-        r = requests.post(OVERPASS, data={"data": q}, timeout=120)
+        r = requests.post(OVERPASS, data={"data": q}, headers=head, timeout=120)
     except requests.RequestException as exc:
         print(f"  ✗ 못 불렀다: {type(exc).__name__} {exc}")
         return
@@ -117,7 +121,7 @@ def vworld() -> None:
     q = {
         "SERVICE": "WFS", "VERSION": "1.1.0", "REQUEST": "GetFeature",
         "TYPENAME": "lt_l_n3a0020000", "OUTPUT": "application/json",
-        "SRSNAME": "EPSG:4326", "MAXFEATURES": "200",
+        "SRSNAME": "EPSG:4326", "MAXFEATURES": "1000",
         "BBOX": f"{s},{w},{n},{e}",
         "key": "__via_relay__", "DOMAIN": "https://toji.fyi",
     }
@@ -133,17 +137,34 @@ def vworld() -> None:
         print(f"  응답 머리: {json.dumps(body, ensure_ascii=False)[:300]}")
         return
     print(f"  칸 이름: {sorted((feats[0].get('properties') or {}))}")
-    named = [f for f in feats
-             if "고속" in str((f.get("properties") or {}).get("name") or "")]
-    print(f"\n  이름에 '고속' 이 든 길 {len(named)}개:")
-    for f in named[:12]:
-        p = f.get("properties") or {}
+
+    def coords(f):
         g = f.get("geometry") or {}
         co = g.get("coordinates") or []
         if g.get("type") == "MultiLineString":
             co = co[0] if co else []
-        print(f"    {str(p.get('name'))[:34]:36s} 꼭짓점 {len(co)}개"
-              f" · 종류 {p.get('rdcode') or p.get('dvyn') or ''}")
+        return co
+
+    # **어느 칸에 '고속' 이 들어 있나.** 앞선 탐침은 name 만 보고 '0개' 라고
+    # 적었는데, 그건 자료가 아니라 내가 고른 칸이 틀린 것이었다.
+    hit = defaultdict(int)
+    for f in feats:
+        for k, v in (f.get("properties") or {}).items():
+            if "고속" in str(v):
+                hit[k] += 1
+    print(f"\n  '고속' 이 들어 있는 칸: {dict(hit) or '없음'}")
+
+    # 칸마다 실제로 어떤 값이 오는지 — 추측 대신 눈으로 본다.
+    for k in ("name", "rdnm", "rddv", "rdln", "rdnu", "scls", "rest"):
+        vals = Counter(str((f.get("properties") or {}).get(k))
+                       for f in feats)
+        top = " · ".join(f"{v!r}×{n}" for v, n in vals.most_common(5))
+        print(f"    {k:6s} {top[:110]}")
+
+    pts = sorted(len(coords(f)) for f in feats if coords(f))
+    if pts:
+        print(f"\n  꼭짓점: 가운데값 {pts[len(pts) // 2]}개 · 가장 많은 것 {pts[-1]}개"
+              f" · 2개짜리 {sum(1 for x in pts if x <= 2)}개")
 
 
 def main() -> None:
