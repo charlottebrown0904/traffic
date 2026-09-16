@@ -1027,6 +1027,10 @@ function renderRank() {
     rows.push({
       ...r,
       value,
+      // 정렬 열쇠. **화면에 보이는 맨 끝 막대의 숫자와 같은 값이다** —
+      // 위에서 value <= 0 인 행을 이미 뺐으므로 rankYoy 의 마지막 칸
+      // (cur > 0 을 더 보는 것뿐)과 늘 일치한다. 그래서 '증가율 높은 순'
+      // 이 맞는지 화면의 숫자로 확인할 수 있다 (test_rank.js).
       growth: prev && prev > 0 ? value / prev - 1 : null,
       share: all && all > 0 ? value / all : null,
       yoy: rankYoy(r, yearIdx, codes, typeIdx, data.years),

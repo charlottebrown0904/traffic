@@ -71,18 +71,44 @@ async function openApp(browser) {
   return page;
 }
 
-const rows = (page) => page.evaluate(() =>
+/* **칸을 번호로 세지 않는다.** 예전에는 td[4]=증가율 · td[5]=비중 으로
+   박아 두었다. 그 뒤 '지가 추이' 단추 칸이 4번 자리에 끼어들어 뒤가 한
+   칸씩 밀렸는데, 검사는 그대로 4·5 를 읽었다. 그래서
+
+     증가율 자리  ← '지가 추이' (단추 글자) → parseFloat 이 NaN
+     비중 자리    ← 최근 5년 YoY (+147.4% 같은 값이 정상인 칸)
+
+   이 되어 두 검사가 조용히 빨개졌다. **화면은 멀쩡했고 검사가 틀렸다.**
+   그래서 머리글 글자로 자리를 찾는다 — 칸이 또 끼어들어도 따라간다.
+   머리글 이름이 바뀌면 아래 '표의 칸 이름이 그대로다' 가 먼저 터진다. */
+const COLS = {
+  rank: '순위', name: '영업소', region: '지역',
+  value: '일평균 통행량', growth: '최근 5년 YoY', share: '차종 비중',
+};
+const colIdx = (page) => page.evaluate((want) => {
+  const th = Array.from(document.querySelectorAll('#rank-table thead th'))
+    .map((x) => x.textContent.trim());
+  const out = {};
+  Object.keys(want).forEach((k) => { out[k] = th.indexOf(want[k]); });
+  out.__head = th;
+  return out;
+}, COLS);
+
+const rows = (page, at) => page.evaluate((ix) =>
   Array.from(document.querySelectorAll('#rank-table tbody tr')).map((tr) => {
     const td = tr.querySelectorAll('td');
+    const txt = (i) => (i >= 0 && td[i] ? td[i].textContent.trim() : '');
     return {
-      rank: Number(td[0].textContent),
-      name: td[1].textContent,
-      region: td[2].textContent,
-      value: Number(td[3].textContent.replace(/[^0-9.-]/g, '')),
-      growth: td[4].textContent.trim(),
-      share: td[5].textContent.trim(),
+      rank: Number(txt(ix.rank)),
+      name: txt(ix.name),
+      region: txt(ix.region),
+      value: Number(txt(ix.value).replace(/[^0-9.-]/g, '')),
+      // 막대그림 칸이다 — 글자로 남는 것은 **맨 끝 해의 증감률**이고,
+      // 그것이 '증가율 높은 순' 의 정렬 열쇠와 같은 값이다.
+      growth: txt(ix.growth),
+      share: txt(ix.share),
     };
-  }));
+  }), at);
 
 (async () => {
   const srv = spawn('python3', ['-m', 'http.server', String(PORT),
@@ -92,9 +118,16 @@ const rows = (page) => page.evaluate(() =>
   const browser = await chromium.launch({ executablePath: chromiumPath() });
   try {
     const page = await openApp(browser);
+    const IX = await colIdx(page);
+    /* 자리를 못 찾으면 그 뒤 검사는 전부 뜻이 없다 — 여기서 먼저 말한다. */
+    check('표의 칸 이름이 그대로다 (자리를 글자로 찾는다)',
+          Object.keys(COLS).every((k) => IX[k] >= 0),
+          `머리글 [${IX.__head.join(' | ')}] · 못 찾은 칸 `
+          + Object.keys(COLS).filter((k) => IX[k] < 0).map((k) => COLS[k]).join(',')
+          || '');
 
     // 1) 기본 렌더링
-    let list = await rows(page);
+    let list = await rows(page, IX);
     check('순위표에 행이 그려진다', list.length > 0, `${list.length}행`);
     check('교통량 내림차순이다',
           list.every((r, i) => i === 0 || list[i - 1].value >= r.value));
@@ -105,26 +138,31 @@ const rows = (page) => page.evaluate(() =>
     const years = await page.$$eval('#rank-year option', (o) => o.map((x) => x.value));
     check('연도 선택지가 두 개 이상', years.length > 1, years.join(','));
     if (years.length > 1) {
-      const before = (await rows(page))[0].value;
+      const before = (await rows(page, IX))[0].value;
       await page.selectOption('#rank-year', years[0]);
       await page.waitForTimeout(200);
-      const after = (await rows(page))[0].value;
+      const after = (await rows(page, IX))[0].value;
       check('연도를 바꾸면 값이 달라진다', before !== after, `${before} → ${after}`);
       await page.selectOption('#rank-year', years[years.length - 1]);
       await page.waitForTimeout(200);
     }
 
     // 3) 차종 필터 — 화물은 전체보다 작아야 한다
-    const total = (await rows(page)).find((r) => r.rank === 1);
+    const total = (await rows(page, IX)).find((r) => r.rank === 1);
     await page.selectOption('#rank-vehicle', 'g:freight');
     await page.waitForTimeout(200);
-    list = await rows(page);
+    list = await rows(page, IX);
     const freightForSame = list.find((r) => r.name === total.name);
     check('화물 교통량은 전체보다 작다',
           !freightForSame || freightForSame.value < total.value,
           freightForSame ? `${freightForSame.value} vs ${total.value}` : '동일 영업소 없음');
+    /* 비중은 '고른 차종 ÷ 전체 차종' 이므로 100% 를 넘을 수 없다. 넘으면
+       분모를 잘못 잡았다는 뜻이다 — 예전에 이 검사가 읽던 칸은 비중이
+       아니라 YoY 였고, 거기서는 +147.4% 도 정상값이다. */
     check('차종을 고르면 비중이 100% 미만으로 표시된다',
-          list.every((r) => r.share === '—' || parseFloat(r.share) <= 100));
+          list.every((r) => r.share === '—' || parseFloat(r.share) <= 100),
+          list.filter((r) => r.share !== '—' && parseFloat(r.share) > 100)
+              .map((r) => `${r.name} ${r.share}`).join(', '));
 
     // 4) 개별 차종도 고를 수 있다
     const opts = await page.$$eval('#rank-vehicle option', (o) => o.map((x) => x.value));
@@ -135,20 +173,23 @@ const rows = (page) => page.evaluate(() =>
     // 5) 정렬 바꾸기
     await page.selectOption('#rank-sort', 'growth');
     await page.waitForTimeout(200);
-    const growths = (await rows(page))
+    const growths = (await rows(page, IX))
       .map((r) => (r.growth === '—' ? null : parseFloat(r.growth)))
       .filter((v) => v !== null);
     check('증가율 정렬이 내림차순이다',
-          growths.every((v, i) => i === 0 || growths[i - 1] >= v));
+          growths.length > 1
+          && growths.every((v) => Number.isFinite(v))
+          && growths.every((v, i) => i === 0 || growths[i - 1] >= v),
+          growths.slice(0, 8).join(' '));
     await page.selectOption('#rank-sort', 'volume');
     await page.waitForTimeout(200);
 
     // 6) 검색
-    const before = (await rows(page)).length;
-    const target = (await rows(page))[0].name;
+    const before = (await rows(page, IX)).length;
+    const target = (await rows(page, IX))[0].name;
     await page.fill('#rank-search', target);
     await page.waitForTimeout(250);
-    list = await rows(page);
+    list = await rows(page, IX);
     // 검색은 이름과 지역을 함께 봅니다 (placeholder 가 '영업소·시군구 검색').
     // 이름만으로 걸러진다고 가정하면, 지역으로 걸린 행을 오탐으로 셉니다 —
     // '서울' 로 검색하면 서울특별시 영업소들이 이름과 무관하게 걸립니다.
