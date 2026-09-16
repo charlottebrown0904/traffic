@@ -47,6 +47,12 @@ SPOTS = [
     # 첨단산업단지가 세 자리 모두 빈 그림이었다 (1차). 층이 죽은 것과
     # '그 자리에 없는 것' 을 가르려면 **있는 자리**를 하나 넣어야 한다.
     ("성남 판교", 37.402, 127.108),
+    # 판교도 빈 그림이었다 (2차). 그래서 **찍지 말고 이름을 보고 고른다** —
+    # 아래 WFS 훑기가 도시첨단 아홉 곳의 이름을 찍어 준다. 그중 자리를
+    # 아는 셋을 넣는다. 색칩 하나를 지어내지 않으려고 자리를 넓힌다.
+    ("화성 동탄", 37.201, 127.075),        # 동탄도시첨단산업단지
+    ("부산 모라", 35.188, 128.992),        # 모라도시첨단산업단지
+    ("창원 덴소", 35.226, 128.681),        # 창원덴소도시첨단산업단지
 ]
 
 
@@ -99,12 +105,24 @@ def painted(raw: bytes) -> int | str:
     return sum(1 for p in im.getdata() if p[3] > 8)
 
 
-def dominant(raw: bytes) -> str:
-    """**가장 많이 쓰인 불투명 색.** 범례 색칩을 지어내지 않으려고 잰다.
+def fill_color(raw: bytes) -> str:
+    """**칠한 면의 색.** 범례 색칩을 지어내지 않으려고 잰다.
 
-    산업단지 네 층은 브이월드가 이미 칠해서 주는 그림이라, 화면이 '이 색이
-    국가산업단지다' 라고 말하려면 그 색을 실제로 봐야 한다. 짐작으로 적으면
-    범례와 지도가 다른 색이 되고, 그것은 범례가 없는 것보다 나쁘다."""
+    1차(2026-09-16 아침)에는 '가장 많이 쓰인 **불투명** 화소'를 셌는데
+    그것이 틀렸다. 브이월드가 칠하는 면은 **반투명**이고, 불투명한 화소는
+    글자와 테두리뿐이다. 그래서 국가산단이 #000000 9화소로 나왔다 —
+    지도의 면 색이 아니라 라벨의 먹색이었다.
+
+    거꾸로 잰다. 알파가 **0도 255도 아닌** 화소가 면이다.
+
+      alpha 0        아무것도 없는 자리
+      0 < a < 250    **칠한 면** ← 이것
+      a >= 250       테두리 · 글자 · 경계선
+
+    가장자리의 계단 화소도 반투명이라 섞이지만, 면은 수만 화소이고
+    가장자리는 수백이라 최빈값이 흔들리지 않는다. 확인용으로 최빈값의
+    비중을 같이 찍는다 — 비중이 낮으면 믿지 않는다.
+    """
     try:
         from PIL import Image                          # noqa: PLC0415
     except ImportError:
@@ -114,11 +132,14 @@ def dominant(raw: bytes) -> str:
     except Exception:                                  # noqa: BLE001
         return "-"
     from collections import Counter                    # noqa: PLC0415
-    c = Counter(p[:3] for p in im.getdata() if p[3] > 200)
-    if not c:
+    px = [p for p in im.getdata() if 8 < p[3] < 250]
+    if not px:
         return "-"
-    (r, g, b), n = c.most_common(1)[0]
-    return f"#{r:02X}{g:02X}{b:02X} ({n}화소)"
+    c = Counter(p for p in px)
+    (r, g, b, a), n = c.most_common(1)[0]
+    share = 100 * n / len(px)
+    return (f"#{r:02X}{g:02X}{b:02X} a={a / 255:.2f} "
+            f"({n}화소 · 반투명 중 {share:.0f}%)")
 
 
 def main() -> None:
@@ -146,7 +167,7 @@ def main() -> None:
                 continue
             print(f"   {spot:10s} {resp.status_code} · {len(raw):,}B"
                   f" · 칠해진 화소 {painted(raw)}"
-                  f" · 주된 색 {dominant(raw)}")
+                  f" · 면 색 {fill_color(raw)}")
 
     # ── 산업단지 층에 **몇 건이나 있는가** ──────────────────────────
     #
