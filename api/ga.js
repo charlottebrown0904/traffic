@@ -76,11 +76,14 @@ async function post(url, body, headers) {
   return JSON.parse(text);
 }
 
-async function accessToken(subjectToken) {
-  const num = process.env.GCP_PROJECT_NUMBER;
-  const audience = '//iam.googleapis.com/projects/' + num
+function audienceOf() {
+  return '//iam.googleapis.com/projects/' + process.env.GCP_PROJECT_NUMBER
     + '/locations/global/workloadIdentityPools/' + process.env.GCP_WIF_POOL_ID
     + '/providers/' + process.env.GCP_WIF_PROVIDER_ID;
+}
+
+async function accessToken(subjectToken) {
+  const audience = audienceOf();
 
   const sts = await post('https://sts.googleapis.com/v1/token', {
     audience,
@@ -166,9 +169,17 @@ module.exports = async function handler(req, res) {
     cache = { at: Date.now(), body };
     res.status(200).json(body);
   } catch (e) {
+    const msg = String((e && e.message) || e);
     res.status(200).json({
       connected: false,
-      reason: String((e && e.message) || e).slice(0, 600),
+      reason: msg.slice(0, 600),
+      // 구글이 "그런 풀·공급자가 없다" 고 할 때, **우리가 무엇을 불렀는지**
+      // 같이 보여 준다. 이 값과 콘솔 화면을 나란히 놓아야 어느 칸이
+      // 어긋났는지 보인다. 식별자뿐이라 실어도 된다.
+      audience: /invalid_target|invalid_grant|unauthorized_client/.test(msg)
+        ? audienceOf() : undefined,
+      sa: /iamcredentials|invalid_target/.test(msg)
+        ? process.env.GCP_SERVICE_ACCOUNT_EMAIL : undefined,
       how: 'docs/ga-oidc.md 의 "막혔을 때" 절을 봅니다.',
     });
   }
