@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       probe:
-        description: "render / geocode-mask / roads / roadbuild / roadwork / roadgeom / roadlink / roadkras / parcelshift / parcelpix / roadparcel / roadzone / roadzone2"
+        description: "render / geocode-mask / roads / roadbuild / roadwork / roadgeom / roadlink / roadkras / parcelshift / parcelpix / roadparcel / roadzone / roadzone2 / landusezone"
         default: "render"
 
 jobs:
@@ -114,6 +114,13 @@ jobs:
       - name: 도로구역 2차 — 오류 본문과 칸 이름
         if: inputs.probe == 'roadzone2'
         run: python scripts/road_zone2_probe.py 2>&1 | tee /tmp/probe.log
+
+      # 토지이용계획에 어떤 구분자가 실제로 오나. 농업진흥구역·보전산지가
+      # 있을 만한 자리를 골라 코드와 함께 센다 — 없는 자리에서 재고
+      # '없다' 고 하면 그건 측정이 아니다.
+      - name: 토지이용계획 구분자 세기
+        if: inputs.probe == 'landusezone'
+        run: python scripts/landuse_zone_probe.py 2>&1 | tee /tmp/probe.log
 
       # 가려진 지번('1**')으로 얻은 'parcel' 좌표가 진짜인가.
       # 이 컨테이너는 중계기를 못 부르므로 러너에서 돈다.
