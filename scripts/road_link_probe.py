@@ -193,8 +193,68 @@ def try_filters(layer: str, props: list) -> None:
         ask(flt, KR, f"전국 · {flt}")
 
 
+def rdd001() -> None:
+    """**RDD001 이 정말 고속국도인가, 그리고 전국을 훑을 수 있나.**
+
+    전국에 대고 name:like:고속 으로 물었더니 rddv 가 RDD001 인 줄이 왔다.
+    안성 상자에는 없던 코드다. 그러나 '코드 하나가 한 번 보였다' 와
+    '그 코드가 고속국도다' 는 다른 말이다 — 이름을 직접 읽어 확인한다.
+
+    그리고 쪽 넘기기(page)가 먹어야 전국을 훑는다. 안 먹으면 상자를
+    잘게 쪼개는 수밖에 없고, 그러면 비용이 통째로 달라진다.
+    """
+    print("\n" + "=" * 72)
+    print("RDD001 이 고속국도인가 · 전국을 훑을 수 있나")
+    print("=" * 72)
+    KR = "BOX(124.5,33.0,131.2,38.7)"
+
+    def ask(flt, size="10", page="1"):
+        q = {"service": "data", "request": "GetFeature", "format": "json",
+             "data": "LT_L_N3A0020000", "geometry": "true", "size": size,
+             "page": page, "crs": "EPSG:4326", "geomFilter": KR,
+             "key": "__via_relay__", "domain": "https://toji.fyi"}
+        if flt:
+            q["attrFilter"] = flt
+        try:
+            body = relay("https://api.vworld.kr/req/data?"
+                         + urllib.parse.urlencode(q)).json()
+        except Exception as exc:                        # noqa: BLE001
+            print(f"  ✗ {type(exc).__name__}")
+            return []
+        resp = (body or {}).get("response") or {}
+        res = resp.get("result") or {}
+        feats = (res.get("featureCollection") or {}).get("features") or []
+        pg = resp.get("page") or {}
+        print(f"  {str(flt or '(안 거름)'):26s} status={resp.get('status')}"
+              f" · {len(feats)}개 · 전체 {pg.get('total')} · 쪽 {pg.get('current')}/{pg.get('size')}")
+        return feats
+
+    # 1. RDD001 의 이름을 직접 읽는다 — 코드가 아니라 이름이 판정한다.
+    print("\n  rddv=RDD001 인 길의 이름:")
+    for f in ask("rddv:=:RDD001"):
+        p_ = f.get("properties") or {}
+        print(f"    {str(p_.get('name'))[:34]:36s} rdnu={p_.get('rdnu')}"
+              f" · rdln={p_.get('rdln')}")
+
+    # 2. 다른 코드와 견준다 — RDD001 만 고속이면 그 코드가 맞다.
+    print("\n  견줌 — 다른 코드의 이름:")
+    for code in ("RDD000", "RDD002", "RDD003"):
+        names = {str((f.get("properties") or {}).get("name"))
+                 for f in ask(f"rddv:=:{code}", size="5")}
+        print(f"    {code} → {sorted(names)[:3]}")
+
+    # 3. 쪽 넘기기 — 전국을 훑을 수 있나
+    print("\n  쪽 넘기기 (전국 · 고속만):")
+    a = ask("rddv:=:RDD001", size="5", page="1")
+    b = ask("rddv:=:RDD001", size="5", page="2")
+    ida = [str((f.get("properties") or {}).get("ufid")) for f in a]
+    idb = [str((f.get("properties") or {}).get("ufid")) for f in b]
+    print(f"    1쪽 vs 2쪽: {'같다 — 안 먹는다' if ida and ida == idb else '다르다 — 된다'}")
+
+
 def main() -> None:
     print(f"상자: {BOX} (경부고속도로 언저리)\n")
+    rdd001()
     for layer in ("lt_l_moctlink", "lt_l_n3a0020000"):
         feats = look(layer)
         if feats:
