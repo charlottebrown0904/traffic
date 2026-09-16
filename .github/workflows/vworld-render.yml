@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       probe:
-        description: "render / geocode-mask / roads / roadbuild / roadwork / roadgeom / roadlink"
+        description: "render / geocode-mask / roads / roadbuild / roadwork / roadgeom / roadlink / roadkras"
         default: "render"
 
 jobs:
@@ -66,6 +66,14 @@ jobs:
       - name: 관 자료 선형 탐침 (교통링크·도로중심선)
         if: inputs.probe == 'roadlink'
         run: python scripts/road_link_probe.py 2>&1 | tee /tmp/probe.log
+
+      # 선형을 선으로 그리는 것 자체가 틀렸다 — 그 구간은 도시계획시설에
+      # **면**으로 들어 있다(토지이음이 '대로2류' 로 보여 주는 그 띠).
+      # 면이면 필지를 따라가고 누를 수도 있다. 그 면에서 고속도로를
+      # 가려낼 칸이 있는지 본다.
+      - name: 도시계획시설에서 고속도로 가려내기
+        if: inputs.probe == 'roadkras'
+        run: python scripts/road_kras_probe.py 2>&1 | tee /tmp/probe.log
 
       # 가려진 지번('1**')으로 얻은 'parcel' 좌표가 진짜인가.
       # 이 컨테이너는 중계기를 못 부르므로 러너에서 돈다.
