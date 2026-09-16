@@ -84,10 +84,33 @@ IAM → Workload Identity 제휴 → 풀 만들기.
 
 서비스 계정을 하나 만든다(예: `ga-reader`). **키를 만들지 않는다.**
 
-그 서비스 계정 → 권한 → 액세스 권한 부여 →
-**주 구성원**에 아래를 넣고 역할은 **Workload Identity 사용자**:
+권한은 **서비스 계정의 「권한」 탭이 아니라 4번의 풀 화면에서** 준다.
+그 탭의 「액세스 관리」는 반대 방향이다 — *서비스 계정에게* 다른 자원의
+역할을 주는 칸이고, 우리가 할 일은 *그 서비스 계정을 가장할 주 구성원을
+추가*하는 것이다. 2026-09 콘솔에는 그 탭에 부여 단추가 아예 없다.
 
-**주 구성원** 문자열은 `<프로젝트번호>` 만 채우면 된다. 뒤쪽은 1번 화면의
+풀(`vercel`) 을 열고 → **액세스 권한 부여** → *서비스 계정 가장을 사용하여* →
+서비스 계정 `ga-reader` → **필터와 일치하는 ID만**:
+
+| 칸 | 값 |
+|---|---|
+| 속성 이름 | `subject` |
+| 속성 값 | `owner:brown21:project:toji-gogo:environment:production` |
+
+「풀의 모든 ID」를 고르지 않는다 — 그러면 미리보기 배포와 다른 프로젝트까지
+GA 를 읽는다. 저장 뒤 구성 파일을 받으라는 창이 뜨면 닫는다. 쓰지 않는다.
+
+이 길이 권하는 길인 이유는 **긴 주 구성원 문자열을 콘솔이 대신 조립**하기
+때문이다. 화면이 다르면 Cloud Shell 에서 같은 일을 한 줄로 할 수 있다:
+
+```
+gcloud iam service-accounts add-iam-policy-binding \
+  ga-reader@<프로젝트ID>.iam.gserviceaccount.com \
+  --role=roles/iam.workloadIdentityUser \
+  --member="<아래 문자열>"
+```
+
+그 **주 구성원** 문자열은 `<프로젝트번호>` 만 채우면 된다. 뒤쪽은 1번 화면의
 `sub` 를 그대로 붙인 것이다:
 
 ```
@@ -128,7 +151,7 @@ Google Analytics → 관리 → 속성 액세스 관리 → 서비스 계정 이
 | `환경변수가 아직 없습니다: …` | 7번을 안 했거나 재배포 안 함 | 이름을 그대로 맞추고 재배포 |
 | `VERCEL_OIDC_TOKEN` 이 빠졌다고 나옴 | 1번이 안 켜짐 | Vercel 설정에서 켠다 |
 | `sts.googleapis.com 400 … invalid_grant` | 발급기관·대상·주체 문자열이 안 맞음 | 4번의 `iss`·`aud`, 5번의 주 구성원을 1번 화면의 클레임과 글자까지 대조 |
-| `iamcredentials… 403` | 서비스 계정에 Workload Identity 사용자 역할이 없음 | 5번 다시 |
+| `iamcredentials… 403` | 서비스 계정을 가장할 주 구성원이 없음 | 5번을 풀 화면에서 다시 |
 | `analyticsdata… 403` | GA 속성에 뷰어로 안 넣음 | 6번 다시 |
 | `… has not been used` | API 를 안 켰거나 전파 중 | 3번, 몇 분 뒤 재시도 |
 
