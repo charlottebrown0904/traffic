@@ -150,20 +150,27 @@ def try_filters(layer: str, props: list) -> None:
     # 3) **아직 안 해 본 길: 브이월드 데이터 API.**
     #    /req/wfs 와 /req/data 는 다른 문이다. attrFilter 는 원래 이쪽
     #    것이라, WFS 에서 무시된 것을 여기서는 받아 줄 수 있다.
+    # **NOT_FOUND 는 두 가지로 읽힌다** — 이 층이 데이터 API 에 아예 없거나,
+    # 거르기가 먹었는데 그 상자에 고속국도가 없거나. 둘은 정반대 결론이다.
+    # 그래서 **반드시 걸릴 조건**과 **안 거는 것**을 같이 넣어 가른다.
+    #   · 안 걸었는데도 NOT_FOUND → 층이 없다 (길이 막혔다)
+    #   · 안 걸면 오는데 고속만 0 → 거르기가 먹는다 (길이 열렸다)
     print("\n    데이터 API (/req/data) — attrFilter 가 원래 사는 곳")
     s_, w_, n_, e_ = BOX
-    for flt in (f"{col}:like:고속", f"{col}:=:101"):
+    for flt in (None, f"{col}:like:도", f"{col}:like:고속", f"{col}:=:101"):
         q = {"service": "data", "request": "GetFeature", "format": "json",
              "data": layer.upper(), "geometry": "true", "size": "5",
-             "attrFilter": flt, "crs": "EPSG:4326",
+             "crs": "EPSG:4326",
              "geomFilter": f"BOX({w_},{s_},{e_},{n_})",
              "key": "__via_relay__", "domain": "https://toji.fyi"}
+        if flt:
+            q["attrFilter"] = flt
         try:
             r = relay("https://api.vworld.kr/req/data?"
                       + urllib.parse.urlencode(q))
             body = r.json()
         except Exception as exc:                        # noqa: BLE001
-            print(f"      {flt:24s} ✗ {type(exc).__name__}")
+            print(f"      {str(flt or '(안 거름)'):24s} ✗ {type(exc).__name__}")
             continue
         resp = (body or {}).get("response") or {}
         status = resp.get("status")
@@ -171,7 +178,7 @@ def try_filters(layer: str, props: list) -> None:
                  .get("features") or [])
         vals = {str(((f.get("properties") or {}).get(col))) for f in feats}
         err = (resp.get("error") or {}).get("text")
-        print(f"      {flt:24s} status={status} · {len(feats)}개"
+        print(f"      {str(flt or '(안 거름)'):24s} status={status} · {len(feats)}개"
               f" · 값 {sorted(vals)[:3]}" + (f" · {err}" if err else ""))
 
 
