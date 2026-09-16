@@ -993,6 +993,42 @@ const ROAD_CHUNK_M = 200;
 // 한 칸이 브이월드를 두드릴 수 있는 횟수. 고속도로가 지나는 칸만 낸다.
 const ROAD_CHUNK_MAX = 6;
 const ROAD_PARCEL_MAX = 300;
+/* **토지이음이 보는 그 층을 그대로 본다** (2026-09-16 지시 3).
+ *
+ *   "고속도로에 포함되는 필지의 정보는 토지이음에 **획지가 분리되어
+ *    도로구역**으로 들어가 있습니다. 즉 … 도로구역에 해당되는 것으로
+ *    골라야 합니다. (터널의 임야는 도로에 포함되지 않습니다.)"
+ *
+ * 맞는 말씀이었다. '선에서 30m 안' 은 근사고 도로구역은 관이 정한 경계다.
+ * 근사를 다듬어도 정답이 되지 않는다 — 옆 필지가 딸려 오는 것도 터널 위
+ * 임야가 딸려 오는 것도 근사의 성질이지 띠 너비 탓이 아니다.
+ *
+ * 그 층이 브이월드 NED 에 있다. **이름은 서버가 알려 줬다** — 내가 F251
+ * 이라고 지어내 보냈더니 오류 본문이 "유효한 파라미터 타입 : dt_d154"
+ * 라고 적어 줬다. 그것을 190자에서 잘라 읽는 바람에 한 번 헛돌았다.
+ *
+ * 상자 하나에 이것이 다 온다 (scripts/road_zone2_probe.py):
+ *
+ *   geometry                    MultiPolygon — **필지 모양**
+ *   pnu / lnm_lndcgr_smbol      '159-4 도'
+ *   prpos_area_dstrc_code_list  'UIA100,UIA200,UMZ100,UQB100'
+ *   prpos_area_dstrc_nm_list    '도로구역(57호선),접도구역,…'
+ *   cnflc_at_list               '2,2,1,1'   (1 포함 · 2 저촉 · 3 접함)
+ *
+ * 연속지적도를 따로 부를 필요도, PNU 마다 물을 필요도 없다.
+ */
+const LANDUSE_WFS = "https://api.vworld.kr/ned/wfs/getLandUseWFS";
+const LANDUSE_TYPE = "dt_d154";
+// 도로구역. 이름('도로구역(57호선)')은 노선마다 달라지므로 **코드로** 본다.
+const ROAD_ZONE_CODE = "UIA100";
+/* 저촉 구분 — 실측이 이 셋을 그대로 갈라 줬다 (천안 북면 양곡리).
+ *
+ *   361-7 포함 · 468-5 포함 · 산13-3 포함   ← 도로가 깔릴 땅
+ *   361-4 접함 · 359 접함                  ← **옆 필지**
+ *
+ * 그래서 1(포함)·2(저촉)만 남기고 3(접함)은 뺀다. 지시 1(옆 필지가
+ * 회색 처리된다)이 이 한 칸으로 풀린다. */
+const ROAD_ZONE_HIT = new Set(["1", "2"]);
 // 화면이 받는 그 주소를 우리도 쓴다 (app.js DATA_BUCKET).
 const DATA_BUCKET = process.env.DATA_BUCKET
   || "https://caykbxvnebpifcduqjre.supabase.co/storage/v1/object/public/appdata";
@@ -1019,20 +1055,6 @@ async function roadItems() {
 function metresBetween(aLat, aLon, bLat, bLon) {
   const k = Math.cos(((aLat + bLat) / 2) * Math.PI / 180);
   return Math.hypot((bLat - aLat) * 111320, (bLon - aLon) * 111320 * k);
-}
-
-/** 점에서 선분까지(m). 꼭짓점 거리만 재면 긴 선분 가운데가 멀게 나온다. */
-function metresToSeg(lat, lon, a, b) {
-  const k = Math.cos((lat * Math.PI) / 180);
-  const px = lon * k; const py = lat;
-  const ax = a[1] * k; const ay = a[0];
-  const bx = b[1] * k; const by = b[0];
-  const dx = bx - ax; const dy = by - ay;
-  if (dx === 0 && dy === 0) return metresBetween(lat, lon, a[0], a[1]);
-  let t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot((px - (ax + t * dx)) * 111320,
-                    (py - (ay + t * dy)) * 111320);
 }
 
 /** 지번표기('448도' · '산54-1 도')의 **끝 글자가 지목**이다. */
@@ -1113,13 +1135,15 @@ async function roadParcels(req, res) {
   const host = (req.headers || {}).host;
   const got = await Promise.all(use.map(async (c) => {
     const out = await callVworld({
-      SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
-      TYPENAME: PARCEL_VEC_TYPENAME,
-      BBOX: padBox(c.segs, ROAD_BAND_M).join(","),
-      SRSNAME: "EPSG:4326", OUTPUT: "application/json",
-      MAXFEATURES: String(ROAD_PARCEL_MAX), RESULTTYPE: "results",
-      DOMAIN: process.env.VWORLD_REFERER || `https://${host || "toji.fyi"}/`,
-    }, VWORLD_WFS, host);
+      // **format=json 을 빼면 500 이 온다.** 그것 하나 때문에 이 길이
+      // 막힌 줄 알았다 — 자료가 아니라 부르는 법이 틀렸던 것이다.
+      typename: LANDUSE_TYPE,
+      bbox: padBox(c.segs, ROAD_BAND_M).join(","),
+      srsname: "EPSG:4326", format: "json",
+      output: "application/json",
+      maxFeatures: String(ROAD_PARCEL_MAX),
+      domain: process.env.VWORLD_REFERER || `https://${host || "toji.fyi"}/`,
+    }, LANDUSE_WFS, host);
     if (out.keyMissing) return { err: "key" };
     if (!out.upstream) return { err: out.timedOut ? "timeout" : "call" };
     try {
@@ -1147,21 +1171,10 @@ async function roadParcels(req, res) {
     for (const f of g.feats) {
       const geom = round6((f || {}).geometry);
       if (!geom) continue;
-      const ring = outerRing(geom);
-      if (!ring.length) continue;
-      // 띠 밖이면 버린다. 필지의 **가장 가까운 꼭짓점**으로 잰다 —
-      // 가운데로 재면 길쭉한 도로 필지가 멀게 나온다.
-      let near = Infinity;
-      for (const c of ring) {
-        for (const [a, b] of g.c.segs) {
-          const d = metresToSeg(Number(c[1]), Number(c[0]), a, b);
-          if (d < near) near = d;
-          if (near <= ROAD_BAND_M) break;
-        }
-        if (near <= ROAD_BAND_M) break;
-      }
-      if (near > ROAD_BAND_M) continue;
       const src = (f || {}).properties || {};
+      // **거리가 아니라 도로구역이 판정한다.** 띠는 어디를 물을지만 정한다.
+      const zone = roadZoneOf(src);
+      if (!zone) continue;
       const label = src.lnm_lndcgr_smbol || src.jibun || "";
       const key = src.pnu || JSON.stringify(firstPoint(geom));
       if (seen.has(key)) continue;
@@ -1173,6 +1186,9 @@ async function roadParcels(req, res) {
         j: jimok,
         // 지목이 '도' 면 이미 도로가 된 땅, 아니면 **아직 편입 전**이다.
         r: jimok === "도" ? 1 : 0,
+        // 도로구역 이름에 노선이 붙어 온다 ('도로구역(57호선)').
+        z: zone.name,
+        c: zone.how,                       // 포함 · 저촉
         s: String(g.c.it.name || ""),
         t: String(g.c.it.stage || ""),
       });
@@ -1181,13 +1197,32 @@ async function roadParcels(req, res) {
   return sendRoadParcels(res, out, chunks.length <= ROAD_CHUNK_MAX);
 }
 
-/** 다각형의 바깥 고리. 구멍은 거리 재기에 안 쓴다. */
-function outerRing(geom) {
-  const t = (geom || {}).type;
-  const cs = (geom || {}).coordinates || [];
-  if (t === "Polygon") return cs[0] || [];
-  if (t === "MultiPolygon") return (cs[0] || [])[0] || [];
-  return [];
+/** 이 필지가 **도로구역에 드는가.** 들면 그 이름과 저촉 구분을 준다.
+ *
+ * 세 칸이 쉼표로 나란히 온다 — 코드·이름·저촉이 같은 자리에 짝지어 있다.
+ *
+ *   prpos_area_dstrc_code_list  'UIA100,UIA200,UMZ100,UQB100'
+ *   prpos_area_dstrc_nm_list    '도로구역(57호선),접도구역,…'
+ *   cnflc_at_list               '2,2,1,1'
+ *
+ * 이름으로 찾지 않는다 — 노선마다 '(57호선)' 이 달라붙어 값이 제각각이다.
+ * 코드(UIA100)로 자리를 찾고, 그 자리의 이름과 저촉을 꺼낸다.
+ */
+function roadZoneOf(src) {
+  const codes = String(src.prpos_area_dstrc_code_list || "").split(",");
+  const names = String(src.prpos_area_dstrc_nm_list || "").split(",");
+  const hows = String(src.cnflc_at_list || "").split(",");
+  const howNames = String(src.cnflc_at_nm_list || "").split(",");
+  for (let i = 0; i < codes.length; i += 1) {
+    if (codes[i].trim() !== ROAD_ZONE_CODE) continue;
+    // 3(접함)은 **옆 필지**다. 남기면 지시 1 이 그대로 남는다.
+    if (!ROAD_ZONE_HIT.has((hows[i] || "").trim())) return null;
+    return {
+      name: (names[i] || "도로구역").trim(),
+      how: (howNames[i] || "").trim(),
+    };
+  }
+  return null;
 }
 
 function sendRoadParcels(res, items, whole_) {

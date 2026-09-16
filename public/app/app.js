@@ -3503,14 +3503,18 @@ function rpTileList() {
 
 function rpTip(p) {
   const road = p.r === 1;
+  /* **이제 '30m 안' 이 아니라 도로구역이다.** 토지이음이 그 필지에 붙여
+     놓은 것을 그대로 옮긴다 — 근사가 아니라 관이 정한 경계다. */
   return `<b>${escapeHtml(p.b || '')}</b>`
     + (p.s ? `<br>${escapeHtml(p.s)}` : '')
     + (p.t ? ` · ${escapeHtml(p.t)}` : '')
+    + `<br><b>${escapeHtml(p.z || '도로구역')}</b>`
+    + (p.c ? ` · ${escapeHtml(p.c)}` : '')
     + (road
       ? '<br><span class="dev-why">이미 도로인 땅입니다 (지목 도로)</span>'
       : `<br><b>아직 도로가 아닙니다</b>${p.j ? ` · 지목 ${escapeHtml(p.j)}` : ''}`
-        + '<br><span class="dev-why">노선 30m 안이라 편입될 수 있습니다 —'
-        + ' 편입 여부는 사업시행자 고시로 확인하셔야 합니다</span>');
+        + '<br><span class="dev-why">도로구역에 들어 있어 편입 대상입니다 —'
+        + ' 보상 시기·범위는 사업시행자 고시로 확인하셔야 합니다</span>');
 }
 
 function drawRoadParcels() {

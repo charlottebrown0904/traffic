@@ -884,14 +884,15 @@ const call = async (query, method = 'GET', headers = {}) => {
   check('19자리 숫자가 아니면 상류를 부르지 않는다', badPnu.code === 400 && calls.length === 0);
 
   console.log();
-  console.log('19. 고속도로를 선이 아니라 필지로 (mode=roadparcels)');
-  // 지시: "계획은 살려 놓고 실제로 표시는 계획 도로처럼 **필지 기준으로
-  // 선택**될 수 있도록 방법을 전환바랍니다."
+  console.log('19. 고속도로를 **도로구역**으로 고른다 (mode=roadparcels)');
+  // 지시(2026-09-16, 천안 북면 양곡리 캡처):
+  //   1. 포함되지 않아야 할 옆 필지까지 회색 처리된다
+  //   2. 포함되는 필지는 토지이음에 **획지가 분리되어 도로구역**으로 있다
+  //   3. 도로구역에 해당되는 것으로 골라야 한다 (터널의 임야는 제외)
   //
-  // 두 문이 닫힌 것을 먼저 쟀다 — 도시계획시설에 '고속' 칸이 없고
-  // (road_kras_probe), 브이월드 177개 층에 도로구역도가 없다
-  // (vworld-layers run 15). 그래서 우리 선 둘레 30m 의 필지를 고른다.
-  // 30m 는 잰 값이다 (road_parcel_probe: 30m 7~14개 · 50m 12~48개).
+  // 맞는 말씀이었다. '선에서 30m 안' 은 근사고 도로구역은 관이 정한
+  // 경계다. 그 층이 브이월드 NED 에 있고(dt_d154), 이름은 서버가 오류
+  // 본문에 적어 줬다. 상자 하나에 필지 모양 + 지역지구 + 저촉이 다 온다.
   const tileOf = (lat, lon, z) => {
     const n = 2 ** z;
     const r = (lat * Math.PI) / 180;
@@ -905,19 +906,35 @@ const call = async (query, method = 'GET', headers = {}) => {
       a: [RLAT, RLON], b: [RLAT, RLON + 0.004],
       path: [[RLAT, RLON], [RLAT, RLON + 0.002], [RLAT, RLON + 0.004]] },
   ] };
-  // 세 필지 — 선 위(지목 도) · 선 30m 안이지만 아직 임야 · 멀리(200m 밖).
   const sq = (lat, lon, d = 0.00008) => ({ type: 'Polygon', coordinates: [[
     [lon - d, lat - d], [lon + d, lat - d],
     [lon + d, lat + d], [lon - d, lat + d], [lon - d, lat - d]]] });
-  const ROAD_PARCELS = { type: 'FeatureCollection', features: [
-    { properties: { pnu: '1', lnm_lndcgr_smbol: '448도' },
-      geometry: sq(RLAT, RLON + 0.002) },
-    { properties: { pnu: '2', lnm_lndcgr_smbol: '산138-22임' },
-      geometry: sq(RLAT + 0.0002, RLON + 0.002) },
-    { properties: { pnu: '3', lnm_lndcgr_smbol: '12-3답' },
-      geometry: sq(RLAT + 0.0020, RLON + 0.002) },
+  // 실제 응답 모양 그대로 — 세 칸이 쉼표로 나란히 짝지어 온다.
+  const luFeat = (pnu, label, lat, lon, codes, names, hows, howNames) => ({
+    properties: {
+      pnu, lnm_lndcgr_smbol: label,
+      prpos_area_dstrc_code_list: codes,
+      prpos_area_dstrc_nm_list: names,
+      cnflc_at_list: hows,
+      cnflc_at_nm_list: howNames,
+    },
+    geometry: sq(lat, lon),
+  });
+  const LANDUSE = { type: 'FeatureCollection', features: [
+    // 도로가 깔릴 땅 — 도로구역 '포함'.
+    luFeat('1', '448도', RLAT, RLON + 0.002,
+           'UIA100,UQB100', '도로구역(57호선),계획관리지역', '1,1', '포함,포함'),
+    // 아직 임야인데 도로구역 '저촉' — 편입 대상이다. 남겨야 한다.
+    luFeat('2', '산138-22임', RLAT + 0.0002, RLON + 0.002,
+           'UFM200,UIA100', '준보전산지,도로구역(57호선)', '3,2', '접함,저촉'),
+    // **옆 필지** — 도로구역이 '접함' 이다. 지시 1 이 이것이다.
+    luFeat('3', '361-4전', RLAT + 0.0003, RLON + 0.002,
+           'UIA100,UIA200', '도로구역(57호선),접도구역', '3,2', '접함,저촉'),
+    // **터널 위 임야** — 도로구역이 아예 없다. 지시 3 이 이것이다.
+    luFeat('4', '산99임', RLAT + 0.0004, RLON + 0.002,
+           'UFM200,UQB100', '준보전산지,계획관리지역', '1,1', '포함,포함'),
   ] };
-  const stubRoad = (parcels = ROAD_PARCELS, road = ROAD_JSON) => {
+  const stubRoad = (lu = LANDUSE, road = ROAD_JSON) => {
     calls = [];
     global.fetch = async (url, opts) => {
       const u = String(url);
@@ -927,53 +944,70 @@ const call = async (query, method = 'GET', headers = {}) => {
                  headers: { get: () => 'application/json' },
                  json: async () => road, text: async () => JSON.stringify(road) };
       }
-      return parcelReply(parcels);
+      return parcelReply(lu);
     };
   };
-  const wfsCalls = () => calls.filter((c) => /\/req\/wfs\?/.test(c.url));
+  const wfsCalls = () => calls.filter((c) => /getLandUseWFS/.test(c.url));
 
   handler.__resetRoad();
   stubRoad();
   const rp = await call({ mode: 'roadparcels', z: '16', x: String(RX), y: String(RY) });
-  check('선 30m 안의 필지만 준다 (200m 밖은 뺀다)',
-        (rp.json_ || {}).n === 2,
-        `${(rp.json_ || {}).n} · ${((rp.json_ || {}).items || []).map((i) => i.b).join(',')}`);
+  const rpUrl = (wfsCalls()[0] || {}).url || '';
+  // **이름은 서버가 알려 줬다.** F251 은 내가 지어낸 값이었고, 오류 본문이
+  // "유효한 파라미터 타입 : dt_d154" 라고 적어 줬다.
+  check('토지이용계획 층(dt_d154)을 부른다',
+        /typename=dt_d154/.test(rpUrl), rpUrl.replace(KEY, '<KEY>').slice(0, 80));
+  // format=json 을 빼면 500 이 온다. 그것 하나 때문에 이 길이 막힌 줄 알았다.
+  check('format=json 을 붙인다 (빼면 500 이 온다)',
+        /format=json/.test(rpUrl), rpUrl.slice(0, 80));
+  check('연속지적도를 따로 부르지 않는다 (한 번에 다 온다)',
+        !calls.some((c) => /lp_pa_cbnd_bubun/.test(c.url)),
+        `호출 ${calls.length}회`);
+
   const byLabel = Object.fromEntries(
     ((rp.json_ || {}).items || []).map((i) => [i.b, i]));
-  check("지목이 '도' 면 이미 도로인 땅으로 표시한다",
-        (byLabel['448도'] || {}).r === 1 && (byLabel['448도'] || {}).j === '도',
-        JSON.stringify(byLabel['448도'] || null));
-  // **이것이 요점이다.** 신설 구간은 아직 임야·전·답이고, 그 땅이
-  // 편입될지 여부가 땅 주인에게 가장 중요하다 (안성 서운면 실측).
-  check('아직 도로가 아닌 땅은 따로 표시한다 (편입 전)',
-        (byLabel['산138-22임'] || {}).r === 0
-        && (byLabel['산138-22임'] || {}).j === '임',
+  check('도로구역 포함·저촉만 남긴다 (둘)',
+        (rp.json_ || {}).n === 2,
+        `${(rp.json_ || {}).n} · ${Object.keys(byLabel).join(',')}`);
+  // 지시 1 — 옆 필지가 회색 처리되던 것.
+  check("지시1: 도로구역 '접함' 인 옆 필지를 뺀다",
+        !byLabel['361-4전'], Object.keys(byLabel).join(','));
+  // 지시 3 — 터널 위 임야.
+  check('지시3: 도로구역이 없는 터널 위 임야를 뺀다',
+        !byLabel['산99임'], Object.keys(byLabel).join(','));
+  // 지시 2 — 분리된 획지는 아직 임야여도 남는다.
+  check('지시2: 아직 임야여도 도로구역이면 남긴다 (편입 대상)',
+        !!byLabel['산138-22임'] && byLabel['산138-22임'].r === 0,
         JSON.stringify(byLabel['산138-22임'] || null));
-  check('어느 구간인지·어느 단계인지 함께 싣는다',
-        (byLabel['448도'] || {}).s === '서평택JCT-안산JCT'
-        && (byLabel['448도'] || {}).t === '계획',
+  check("이미 도로인 땅은 따로 표시한다 (지목 '도')",
+        (byLabel['448도'] || {}).r === 1, JSON.stringify(byLabel['448도'] || null));
+  // 이름에 노선이 붙어 오므로 **코드로** 자리를 찾아야 한다.
+  check('노선이 붙은 도로구역 이름을 그대로 싣는다',
+        (byLabel['448도'] || {}).z === '도로구역(57호선)'
+        && (byLabel['448도'] || {}).c === '포함',
         JSON.stringify(byLabel['448도'] || null));
-  // 네모는 선 둘레만 감싸야 한다. 칸 전체로 물으면 도심에서 수백 개가
-  // 와서 값이 통째로 달라진다.
-  const rpBox = decodeURIComponent(
-    ((wfsCalls()[0] || {}).url || '').match(/BBOX=([^&]*)/)?.[1] || '')
+  check('저촉 구분도 싣는다 (포함/저촉)',
+        (byLabel['산138-22임'] || {}).c === '저촉',
+        String((byLabel['산138-22임'] || {}).c));
+
+  // 띠는 이제 **어디를 물을지**만 정한다. 네모가 좁아야 값이 안 는다.
+  const rpBox = decodeURIComponent((rpUrl.match(/bbox=([^&]*)/) || ['', ''])[1])
     .split(',').map(Number);
   check('선을 감싼 좁은 네모로 묻는다 (칸 전체가 아니다)',
         rpBox.length === 4 && (rpBox[3] - rpBox[1]) * 111320 < 200,
         `세로 ${((rpBox[3] - rpBox[1]) * 111320).toFixed(0)}m`);
 
   // 고속도로가 안 지나는 칸은 **브이월드를 아예 안 부른다.** 화면은 칸마다
-  // 부르므로 이 갈래가 대부분이다 — 여기서 값이 갈린다.
+  // 부르므로 이 갈래가 대부분이고, 여기서 값이 갈린다.
   handler.__resetRoad();
   stubRoad();
   const rpFar = await call({ mode: 'roadparcels', z: '16',
-                           x: String(RX + 30), y: String(RY + 30) });
+                             x: String(RX + 30), y: String(RY + 30) });
   check('고속도로가 안 지나는 칸은 브이월드를 안 부른다',
         rpFar.code === 200 && (rpFar.json_ || {}).n === 0
         && wfsCalls().length === 0,
         `${rpFar.code} · WFS ${wfsCalls().length}회`);
 
-  // 얕은 배율은 거절한다 — 한 칸이 너무 넓어 브이월드를 열 번씩 부른다.
   handler.__resetRoad();
   stubRoad();
   const rpShallow = await call({ mode: 'roadparcels', z: '13',
@@ -982,8 +1016,7 @@ const call = async (query, method = 'GET', headers = {}) => {
         rpShallow.code === 400 && wfsCalls().length === 0,
         String(rpShallow.code));
 
-  // 지번표기에서 지목을 떼는 것이 이 기능의 뼈대다. 연속지적도에는
-  // 지목 칸이 따로 없고 '448도' 처럼 붙어서 온다 (road_parcel_probe).
+  // 지번표기에서 지목을 뗀다. 연속지적도와 같은 모양으로 온다.
   check("지목 떼기: '448도' → 도", handler.jimokOf('448도') === '도');
   check("지목 떼기: '산54-1 도' → 도", handler.jimokOf('산54-1 도') === '도');
   check("지목 떼기: '산138-22임' → 임", handler.jimokOf('산138-22임') === '임');
