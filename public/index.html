@@ -10,6 +10,20 @@
 <meta name="theme-color" content="#FAF7F3" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#12100D" media="(prefers-color-scheme: dark)">
 <title>토지랩 — IC 교통량과 토지 실거래가를 한 지도에서</title>
+<!-- GA4 — **초기화는 반드시 여기, head 인라인.** gtag 를 나중에(defer 스크립트에서)
+     세우면, 페이지가 뜨자마자 쏘는 첫 이벤트가 gtag 없는 상태로 dataLayer 에
+     plain object 로 들어가 구글에 끝내 도착하지 않는다. 증상이 '아무것도 안 뜬다'
+     가 아니라 '초기 이벤트만 안 뜬다' 라 찾기 어렵다.
+     측정 ID 는 공개 값이다 — 브라우저가 그것으로 구글에 보내는 것이 본래 하는 일. -->
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){ dataLayer.push(arguments); }
+gtag('js', new Date());
+/* anonymize_ip — 구글이 IP 마지막 자리를 지우고 받는다. GA4 는 기본으로
+   그렇게 하지만 명시해 둔다. 나중에 이 줄이 지워지면 눈에 띈다. */
+gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
+</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-RW6MCG84SF"></script>
 <meta name="description" content="전국 고속도로 영업소의 연도별 교통량과 그 주변 토지·공장 실거래가를 지도 한 장에서 봅니다. 공공데이터로 만든 스크리닝 도구입니다.">
 <meta property="og:title" content="토지랩 — IC 교통량과 토지 실거래가를 한 지도에서">
 <meta property="og:site_name" content="토지랩">
@@ -449,6 +463,7 @@ section a{color:var(--accent);text-underline-offset:2px}
   토지랩 · 공공데이터 기반 토지 스크리닝 도구<br>
   자료: 국토교통부 실거래가 공개시스템 · 표준지공시지가 · 브이월드 ·
   한국도로공사 영업소 간 통행량(TCS) · 통계청 KOSIS · 법제처 국가법령정보센터<br>
+  <a href="/legal">개인정보 처리방침</a><br>
   과거 실거래 신고 자료와 교통량 통계를 요약한 지표입니다.
   미래 가격을 예측하거나 보장하지 않습니다.
   <div class="foot-theme" data-theme-switch></div>
@@ -457,8 +472,8 @@ section a{color:var(--accent);text-underline-offset:2px}
 <!-- 로그인 단추용 (2026-09-13). 첫 화면은 이것 없이도 완성돼 있다 — 단추가
      못 뜨면 위 링크가 그대로 /account 로 간다. -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" defer></script>
-<script src="/app/supabase.js?v=20260916k" defer></script>
-<script src="/lib/track.js?v=20260916k" defer></script>
+<script src="/app/supabase.js?v=20260916m" defer></script>
+<script src="/lib/track.js?v=20260916m" defer></script>
 <script src="/lib/supabase-init.js?v=20260905a" defer></script>
 <script src="/lib/landing-auth.js?v=20260913a" defer></script>
 </body>

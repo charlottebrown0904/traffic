@@ -12,6 +12,15 @@
   "trailingSlash": false,
   "headers": [
     {
+      "source": "/l/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, max-age=0"
+        }
+      ]
+    },
+    {
       "source": "/(.*)\\.(css|js)",
       "headers": [
         {
@@ -52,5 +61,11 @@
       "main": true,
       "claude/real-estate-traffic-correlation-liujkh": false
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/l/:code",
+      "destination": "/api/l?code=:code"
+    }
+  ]
 }

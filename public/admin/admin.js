@@ -39,21 +39,53 @@
   /* GA 상태 한 칸. **켜졌다고 말하려면 실제로 켜져 있어야 한다** —
      측정 ID 가 비어 있으면 track.js 가 스크립트를 아예 안 붙인다.
      '붙였는데 안 쌓인다' 는 가장 찾기 어려운 고장이라 여기서 갈라 적는다. */
-  function gaBlock(ga, on) {
-    return '<h4>방문 통계 (GA4)</h4>'
+  function gaBlock(ga, on, g) {
+    g = g || {};
+    var head = '<h4>방문 통계 (GA4)</h4>'
       + (on
         ? '<div class="adm-ok">측정 ID <code>' + E(ga) + '</code> 로 켜져 있습니다. '
-          + '구글 애널리틱스 <b>보고서 → 실시간</b> 에서 바로 확인됩니다.</div>'
+          + '초기화는 각 쪽의 <b>&lt;head&gt; 인라인</b>이 맡습니다 — 늦게 붙이면 '
+          + '페이지가 뜨자마자 쏘는 첫 이벤트가 통째로 사라집니다.</div>'
         : '<div class="adm-block"><b>아직 안 켜져 있습니다.</b>'
-          + '<p>구글 애널리틱스에서 속성을 만들고 받은 <code>G-</code> 로 시작하는 '
-          + '측정 ID 를 <code>public/app/supabase.js</code> 의 '
-          + '<code>window.ANALYTICS.ga4</code> 에 넣으면 그 순간 켜집니다. '
-          + '측정 ID 는 공개 값이라 코드에 둬도 됩니다 — 브라우저가 그것으로 '
-          + '구글에 보내는 것이 본래 하는 일입니다.</p>'
-          + '<p>ID 를 알려 주시면 제가 넣고 배포까지 하겠습니다.</p></div>')
-      + '<div class="adm-note">GA 를 붙이면 <b>개인정보 처리방침에 행태정보 '
-      + '수집·위탁을 적어야 합니다</b>(개인정보 보호법). 지금 방침에는 그 문구가 '
-      + '없으므로, 켜기 전에 같이 손보는 편이 안전합니다.</div>';
+          + '<p><code>public/app/supabase.js</code> 의 <code>window.ANALYTICS.ga4</code> 가 '
+          + '비어 있습니다.</p></div>');
+
+    // 어드민 연동 — 되면 숫자, 안 되면 **왜 안 되는지**. '연결 실패' 네 글자만
+    // 보여 주면 무엇을 고쳐야 하는지 아무도 모른다.
+    if (!g.connected) {
+      return head
+        + '<div class="adm-block"><b>어드민 연동은 아직입니다.</b>'
+        + '<p>' + E(g.reason || '아직 부르지 못했습니다') + '</p>'
+        + (g.how ? '<p>' + E(g.how) + '</p>' : '')
+        + '<p>연동되면 구글 화면에 들어가지 않고 <b>여기서</b> 세션·사용자·'
+        + '참여율·이벤트를 봅니다. <b>키 파일을 쓰지 않습니다</b> — Vercel OIDC 로 '
+        + '짧은 수명 토큰만 받습니다. 절차는 <code>docs/ga-oidc.md</code>.</p></div>';
+    }
+
+    var t = g.total || [0, 0, 0];
+    var src = (g.by_source || []).slice(0, 10);
+    var ev = (g.by_event || []).slice(0, 10);
+    return head
+      + '<div class="adm-ok">어드민 연동됨 · 속성 <code>' + E(g.property) + '</code> · '
+      + '최근 28일 · 5분 캐시 (' + when(g.at) + ')</div>'
+      + '<div class="adm-kpi"><b>' + N(t[0]) + '</b><span>세션</span>'
+      + '<b>' + N(t[1]) + '</b><span>사용자</span>'
+      + '<b>' + (t[2] == null ? '—' : (100 * t[2]).toFixed(1) + '%') + '</b><span>참여율</span></div>'
+      + (src.length
+        ? '<h5>소스·매체별 세션 (GA 기준)</h5>'
+          + table(['소스', '매체', '세션'], src.map(function (r) {
+              return [E(r.key[0]), E(r.key[1]), N(r.v[0])];
+            }), { num: [2] })
+        : '')
+      + (ev.length
+        ? '<h5>이벤트</h5>'
+          + table(['이벤트', '횟수'], ev.map(function (r) {
+              return [E(r.key[0]), N(r.v[0])];
+            }), { num: [1] })
+        : '')
+      + '<div class="adm-note">GA 의 소스·매체와 우리 장부의 유입 경로는 <b>다른 것을 셉니다</b> — '
+      + 'GA 는 방문을, 우리 장부는 <b>가입</b>을 셉니다. 둘이 어긋나면 그 차이가 '
+      + '곧 "왔지만 가입하지 않은 사람" 입니다.</div>';
   }
 
   function table(head, rows, opt) {
@@ -167,6 +199,29 @@
 
   /* 유입 경로 집계 (0012). profile 에는 전화번호와 권한이 같이 들어 있어
      열지 않는다 — 셈한 결과만 온다. 함수 안에서 is_admin() 을 다시 본다. */
+  function getLinks() {
+    var sb = window.SB;
+    if (!sb) return Promise.resolve({ error: '연결 없음' });
+    return sb.rpc('admin_link_stats').then(function (res) {
+      return res.error ? { error: res.error.message } : (res.data || {});
+    }).catch(function (e) { return { error: String(e && e.message || e) }; });
+  }
+
+  function getAudit() {
+    var sb = window.SB;
+    if (!sb) return Promise.resolve({ error: '연결 없음' });
+    return sb.rpc('admin_audit_recent', { p_limit: 100 }).then(function (res) {
+      return res.error ? { error: res.error.message } : { rows: res.data || [] };
+    }).catch(function (e) { return { error: String(e && e.message || e) }; });
+  }
+
+  /* GA 숫자는 서버(api/ga.js)가 구글에서 받아 온다. 브라우저에서 직접
+     부르면 자격증명이 브라우저로 나가야 한다 — 그러면 안 된다. */
+  function getGa() {
+    return fetch('/api/ga').then(function (r) { return r.json(); })
+      .catch(function (e) { return { connected: false, reason: String(e && e.message || e) }; });
+  }
+
   function getUtm() {
     var sb = window.SB;
     if (!sb) return Promise.resolve({ error: '로그인 연결이 없습니다' });
@@ -296,7 +351,7 @@
             + '<p><code>supabase/migrations/0012_utm.sql</code> 을 Supabase '
             + 'SQL Editor 에서 한 번 실행하면 열립니다. 화면 쪽(첫 접점 저장)은 '
             + '이미 돌고 있으므로, 실행한 뒤 가입하는 분부터 경로가 붙습니다.</p></div>'
-            + gaBlock(ga, on);
+            + gaBlock(ga, on, c.ga);
         }
 
         var src = u.by_source || [];
@@ -343,7 +398,126 @@
           + '<b>(직접 들어옴)</b> 으로 셉니다 — 0 이 아니라 <b>모름</b>입니다. '
           + '담는 것은 꼬리표와 눌러 온 <b>도메인</b>뿐이고, 주소의 경로·검색어는 '
           + '버립니다.</div>'
-          + gaBlock(ga, on);
+          + gaBlock(ga, on, c.ga);
+      }],
+
+    /* 링크를 만들고 클릭을 센다.
+
+       0012 로 '어디서 온 사람이 회원이 됐나'(분자)는 세게 됐지만
+       **'몇 명이 눌렀나'(분모)를 못 셌다.** 분모가 없으면 전환율이
+       안 나오고, 전환율이 없으면 광고 둘 중 어느 쪽이 나은지 끝내 모른다. */
+    ['board', '링크를 만들고 클릭을 센다 — 단축 링크와 전환율',
+      '손으로 물음표를 붙이지 않습니다. 오타 하나면 그 캠페인이 딴 줄로 샙니다.',
+      function (c) {
+        var L = c.links || {};
+        if (L.error) {
+          return '<div class="adm-block"><b>아직 장부를 못 받습니다</b>'
+            + '<p>' + E(L.error) + '</p>'
+            + '<p><code>supabase/migrations/0013_links_audit.sql</code> 을 '
+            + 'Supabase SQL Editor 에서 한 번 실행하면 열립니다.</p></div>';
+        }
+        var chans = (L.channels || []).filter(function (x) { return x.active; });
+        var links = L.links || [];
+        var live = links.filter(function (x) { return !x.archived; });
+        var clicks = live.reduce(function (a, x) { return a + (x.clicks || 0); }, 0);
+        var signs = live.reduce(function (a, x) { return a + (x.signups || 0); }, 0);
+
+        var opts = chans.map(function (ch) {
+          return '<option value="' + E(ch.code) + '">' + E(ch.name)
+            + ' (' + E(ch.source) + ' / ' + E(ch.medium) + ')</option>';
+        }).join('');
+
+        return '<div class="adm-kpi"><b>' + N(live.length) + '</b><span>살아 있는 링크</span>'
+          + '<b>' + N(clicks) + '</b><span>클릭</span>'
+          + '<b>' + N(signs) + '</b><span>가입</span>'
+          + '<b>' + (clicks ? (Math.round(signs / clicks * 1000) / 10) + '%' : '—') + '</b><span>전환율</span></div>'
+
+          + '<h4>새 링크 만들기</h4>'
+          + (chans.length
+            ? '<form class="lnk-form" id="lnk-form">'
+              + '<label>채널<select id="lnk-ch">' + opts + '</select></label>'
+              + '<label>캠페인<input id="lnk-camp" value="launch" maxlength="60" placeholder="launch"></label>'
+              + '<label>소재<input id="lnk-content" maxlength="60" placeholder="자동 제안"></label>'
+              + '<label>키워드(검색광고)<input id="lnk-term" maxlength="60" placeholder="비워도 됩니다"></label>'
+              + '<label>도착할 쪽<select id="lnk-dest">'
+                + '<option value="/">첫 화면</option>'
+                + '<option value="/app">지도</option>'
+                + '<option value="/guide">가이드</option>'
+                + '<option value="/account">가입</option></select></label>'
+              + '<label>메모<input id="lnk-label" maxlength="80" placeholder="나중에 알아보려고"></label>'
+              + '<button type="submit" class="btn">만들기</button>'
+              + '<p class="lnk-msg" id="lnk-msg"></p>'
+              + '</form>'
+            : '<div class="adm-block">채널이 없습니다. <code>utm_channel</code> 에 한 줄 넣으면 '
+              + '여기 뜹니다.</div>')
+
+          + '<h4>만든 링크</h4>'
+          + (live.length
+            ? table(['짧은 주소', '메모', '소스·매체', '캠페인·소재', '클릭', '가입', '전환율'],
+                live.map(function (x) {
+                  return [
+                    x.short_code
+                      ? '<code>toji.fyi/l/' + E(x.short_code) + '</code>'
+                        + ' <button class="lnk-copy" data-code="' + E(x.short_code) + '">복사</button>'
+                      : '<em class="adm-miss">없음</em>',
+                    E(x.label || ''),
+                    E(x.source) + ' / ' + E(x.medium),
+                    E(x.campaign) + (x.content ? ' · ' + E(x.content) : ''),
+                    N(x.clicks),
+                    N(x.signups),
+                    x.clicks ? (Math.round((x.signups || 0) / x.clicks * 1000) / 10) + '%' : '—',
+                  ];
+                }), { num: [4, 5, 6] })
+            : '<p><em class="adm-miss">아직 만든 링크가 없습니다.</em></p>')
+
+          + ((L.clicks_by_day || []).length
+            ? '<h4>최근 14일 클릭</h4>'
+              + table(['날짜', '클릭', '모바일'], L.clicks_by_day.map(function (r) {
+                  return [E(r.day), N(r.n), N(r.mobile)];
+                }), { num: [1, 2] })
+            : '')
+
+          + ((L.by_referer || []).length
+            ? '<h4>어느 사이트에서 눌렀나</h4>'
+              + table(['도메인', '클릭'], L.by_referer.map(function (r) {
+                  return [E(r.host), N(r.n)];
+                }), { num: [1] })
+            : '')
+
+          + '<div class="adm-note"><b>세는 규칙.</b> 302 로 보내고 캐시를 막습니다 — '
+          + '301 이면 브라우저가 기억해 <b>두 번째 클릭부터 서버에 안 옵니다</b>. '
+          + '카카오톡·페북·슬랙의 <b>링크 미리보기 봇은 빼고</b> 셉니다 (안 빼면 '
+          + '아무도 안 눌러도 숫자가 오릅니다). 목적지는 장부의 주소 칸만 씁니다 — '
+          + '주소에 담아 보낸 곳으로는 절대 안 보냅니다(오픈 리다이렉트).</div>';
+      }],
+
+    /* 감사 로그. 승인·등급 변경은 사람의 권한을 바꾸는 일이다. */
+    ['board', '누가 무엇을 바꿨나 — 감사 로그',
+      '회원의 권한·등급을 바꾼 기록입니다. 트리거가 남기므로 화면을 안 거친 변경도 걸립니다.',
+      function (c) {
+        var A = c.audit || {};
+        if (A.error) {
+          return '<div class="adm-block"><b>아직 기록을 못 받습니다</b>'
+            + '<p>' + E(A.error) + '</p>'
+            + '<p><code>0013_links_audit.sql</code> 을 실행하면 열립니다.</p></div>';
+        }
+        var rows = A.rows || [];
+        if (!rows.length) {
+          return '<p>아직 바뀐 것이 없습니다. <b>0 이 맞습니다</b> — '
+            + '기록이 안 남는 것이 아니라 바뀐 일이 없는 것입니다.</p>'
+            + '<div class="adm-note">지금부터 승인·등급·권한을 바꾸면 여기 쌓입니다.</div>';
+        }
+        return table(['언제', '무엇', '대상', '바뀐 값'],
+          rows.map(function (r) {
+            var d = r.detail || {};
+            var txt = Object.keys(d).map(function (k) {
+              return k + ': ' + (d[k][0] == null ? '없음' : d[k][0]) + ' → ' + d[k][1];
+            }).join(' · ');
+            return [when(r.at), E(r.action), '<code>' + E(String(r.target_id || '').slice(0, 8)) + '…</code>', E(txt)];
+          }))
+          + '<div class="adm-note">누가 바꿨는지는 <code>actor</code> 로 남지만 '
+          + '<b>이름·이메일은 적지 않습니다</b> — 이 화면도 결국 파일이라, 적는 순간 '
+          + '거기 남습니다. 필요하면 id 로 조회합니다.</div>';
       }],
 
     // ══ 1. 산출식 ══
@@ -920,6 +1094,107 @@
       + bar
       + (body || '<p class="note">이 탭에는 아직 칸이 없습니다.</p>');
     if (window.tojiThemeMount) window.tojiThemeMount();
+    wireLinks(ctx);
+  }
+
+  /* 링크 만들기·복사. render 가 HTML 을 통째로 갈아 끼우므로 매번 다시 건다. */
+  function wireLinks(ctx) {
+    var form = document.getElementById('lnk-form');
+    var msg = document.getElementById('lnk-msg');
+    var L = (ctx && ctx.links) || {};
+    var chans = L.channels || [];
+    var links = L.links || [];
+    var U = window.UTM;
+
+    function say(t, bad) {
+      if (!msg) return;
+      msg.textContent = t;
+      msg.className = 'lnk-msg' + (bad ? ' bad' : ' ok');
+    }
+    function chanOf(code) {
+      for (var i = 0; i < chans.length; i++) if (chans[i].code === code) return chans[i];
+      return null;
+    }
+
+    // 소재 코드를 미리 채워 준다. 사람이 고치면 제안을 멈춘다.
+    var sel = document.getElementById('lnk-ch');
+    var ct = document.getElementById('lnk-content');
+    var touched = false;
+    if (ct) ct.addEventListener('input', function () { touched = true; });
+    function propose() {
+      if (!sel || !ct || touched || !U) return;
+      var ch = chanOf(sel.value);
+      if (!ch) return;
+      var mine = links.filter(function (x) { return x.source === ch.source && x.medium === ch.medium; });
+      ct.value = U.suggestContent(ch, mine);
+    }
+    if (sel) sel.addEventListener('change', propose);
+    propose();
+
+    // 복사. **저장과 복사를 갈라 말한다** — 복사만 막혔는데 '저장 실패'
+    // 라고 하면 같은 링크를 또 만들게 된다.
+    Array.prototype.forEach.call(document.querySelectorAll('.lnk-copy'), function (b) {
+      b.addEventListener('click', function () {
+        var url = 'https://toji.fyi/l/' + b.getAttribute('data-code');
+        var done = function () { b.textContent = '복사됨'; setTimeout(function () { b.textContent = '복사'; }, 1500); };
+        try {
+          navigator.clipboard.writeText(url).then(done, function () {
+            window.prompt('복사가 막혔습니다. 직접 복사하세요:', url);
+          });
+        } catch (e) { window.prompt('복사가 막혔습니다. 직접 복사하세요:', url); }
+      });
+    });
+
+    if (!form || !U || !window.SB) return;
+    form.addEventListener('submit', async function (ev) {
+      ev.preventDefault();
+      var ch = chanOf(sel.value);
+      if (!ch) { say('채널을 고르세요', true); return; }
+      var camp = document.getElementById('lnk-camp').value;
+      var content = ct.value;
+      var term = document.getElementById('lnk-term').value;
+      var dest = document.getElementById('lnk-dest').value;
+      var label = document.getElementById('lnk-label').value;
+
+      // 한글은 주소에서 %EC… 로 부풀어 카카오톡·문자에서 잘린다.
+      var bad = [camp, content, term].filter(function (v) { return U.hasHangul(v); });
+      if (bad.length) { say('한글은 링크에 못 넣습니다 — 영문·숫자로 적어 주세요', true); return; }
+
+      var parts = {
+        source: U.normValue(ch.source), medium: U.normValue(ch.medium),
+        campaign: U.normValue(camp), content: U.normValue(content) || null,
+        term: U.normValue(term) || null,
+      };
+      if (!parts.campaign) { say('캠페인 이름이 필요합니다', true); return; }
+
+      var url = U.buildUrl('https://toji.fyi' + (dest === '/' ? '' : dest), parts);
+      var code = U.suggestCode(ch.code, content);
+
+      say('만드는 중…');
+      var row = Object.assign({}, parts, {
+        channel_id: ch.id, url: url, short_code: code,
+        label: label || null,
+      });
+      var res = await window.SB.from('utm_link').insert(row).select().maybeSingle();
+      if (res.error && /duplicate|unique/i.test(res.error.message || '')) {
+        // 코드가 겹치면 뒤에 네 글자를 붙여 한 번 더. 사람이 다시 치게 하지 않는다.
+        row.short_code = (code + '-' + U.randomSuffix()).slice(0, 40);
+        res = await window.SB.from('utm_link').insert(row).select().maybeSingle();
+      }
+      if (res.error) { say('저장 실패 — ' + res.error.message, true); return; }
+
+      var made = 'https://toji.fyi/l/' + row.short_code;
+      say('만들었습니다: ' + made);
+      try {
+        await navigator.clipboard.writeText(made);
+        say('만들었고 복사까지 됐습니다: ' + made);
+      } catch (e) {
+        say('만들었습니다(복사는 막혔습니다): ' + made);
+      }
+      var fresh = await getLinks();
+      lastCtx.links = fresh;
+      render(null);
+    });
   }
 
   // 탭을 누르면 주소가 바뀌고 그때 다시 그린다. 자료는 다시 안 부른다
@@ -964,8 +1239,12 @@
       getStats(),
       getCoverage(),
       getUtm(),
+      getLinks(),
+      getAudit(),
+      getGa(),
     ]);
     render({ meta: got[0], verdicts: got[1], zoning: got[2], val: got[3], stats: got[4],
-             cover: got[5], utm: got[6], acc: acc });
+             cover: got[5], utm: got[6], links: got[7], audit: got[8], ga: got[9],
+             acc: acc });
   })();
 })();

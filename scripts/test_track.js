@@ -98,22 +98,21 @@ check('아무 경로도 없으면 null (빈 값을 쓰지 않는다)',
       inner.win.TRACK.forProfile() === null);
 
 console.log();
-console.log('4. GA 는 측정 ID 가 있을 때만 붙는다');
+console.log('4. GA 초기화는 track.js 가 아니라 <head> 인라인이 한다');
+/* 2026-09-16 에 자리를 옮겼다. track.js 는 defer 로 늦게 붙으므로, 여기서
+   gtag 를 세우면 페이지가 뜨자마자 쏘는 **첫 이벤트가 통째로 사라진다.**
+   증상이 '아무것도 안 뜬다' 가 아니라 '초기 이벤트만 안 뜬다' 라 찾기 어렵다.
+   그래서 이 파일이 스크립트를 붙이지 않는다는 것을 여기서 못 박고,
+   head 인라인이 실제로 있는지는 scripts/test_links.js 8절이 본다. */
+const anyGa = run('https://toji.fyi/', '', { ga4: 'G-ABC12345' }, {});
+check('track.js 는 GA 스크립트를 붙이지 않는다', anyGa.head.length === 0,
+      `붙인 것 ${anyGa.head.length}개`);
+const src = fs.readFileSync(path.join(__dirname, '..', 'public/lib/track.js'), 'utf8');
+check('googletagmanager 를 여기서 부르지 않는다', !/googletagmanager/.test(src));
+check('왜 옮겼는지 파일에 적혀 있다', /head/.test(src) && /첫 이벤트/.test(src));
+check('꼬리표를 봤을 때 GA 에도 한 번 알린다 (두 쪽 보고가 같은 캠페인을 가리키게)',
+      /utm_seen/.test(src));
 const noGa = run('https://toji.fyi/', '', { ga4: '' }, {});
-check('ID 가 비면 스크립트를 아예 안 붙인다', noGa.head.length === 0,
-      `붙인 것 ${noGa.head.length}개`);
-check('그때 gtag 도 안 만든다 (있으면 안 쌓이는데 쌓이는 척한다)',
-      typeof noGa.win.gtag !== 'function');
-const badGa = run('https://toji.fyi/', '', { ga4: 'UA-12345-1' }, {});
-check('G- 로 시작하지 않는 값도 거절한다 (UA 는 끝난 규격)',
-      badGa.head.length === 0, `붙인 것 ${badGa.head.length}개`);
-const onGa = run('https://toji.fyi/', '', { ga4: 'G-ABC12345' }, {});
-check('ID 가 있으면 붙인다', onGa.head.length === 1
-      && /googletagmanager\.com\/gtag\/js\?id=G-ABC12345/.test(onGa.head[0].src),
-      onGa.head.length ? onGa.head[0].src : '없음');
-check('IP 를 줄여 보내라고 적는다',
-      JSON.stringify(onGa.win.dataLayer).includes('anonymize_ip'),
-      JSON.stringify(onGa.win.dataLayer).slice(0, 90));
 check('GA 가 없어도 TRACK.event 가 터지지 않는다',
       (function () { try { noGa.win.TRACK.event('x'); return true; } catch (e) { return false; } })());
 

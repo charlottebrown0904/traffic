@@ -76,6 +76,7 @@ test: test-server
 	node scripts/test_tile.js
 	node scripts/test_track.js
 	node scripts/test_brand.js
+	node scripts/test_links.js
 	node scripts/test_cloudflare.js
 
 ## 매물 API 인증·권한 검증

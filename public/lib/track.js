@@ -46,13 +46,25 @@
     } catch (e) { return null; }
   }
 
+  /** 값을 눕히고 다듬는다. 규칙은 window.UTM(public/lib/utm.js) 한 곳에
+      있다 — 링크를 만드는 쪽과 받는 쪽이 같은 규칙을 써야 장부가 맞는다.
+      utm.js 를 못 불렀을 때를 대비해 같은 규칙의 간이판을 둔다. */
+  function norm(v) {
+    if (window.UTM && window.UTM.normValue) return window.UTM.normValue(v);
+    return String(v == null ? '' : v).trim().toLowerCase()
+      .replace(/\s+/g, '-').replace(/[^a-z0-9._-]/g, '')
+      .replace(/-{2,}/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+  }
+
   /** 이번 방문의 꼬리표. 하나도 없으면 null. */
   function pick() {
     var q = new URLSearchParams(location.search);
     var out = {};
     var any = false;
     FIELDS.forEach(function (f) {
-      var v = (q.get(f) || '').trim().slice(0, 80);
+      // **소문자로 눕힌다.** 'Naver' 와 'naver' 를 따로 세면 같은 캠페인이
+      // 집계에서 두 줄로 쪼개진다 — 광고를 켜기 전이라 지금 고치면 공짜다.
+      var v = norm(q.get(f));
       if (v) { out[f] = v; any = true; }
     });
     // 광고 클릭 식별자. 꼬리표를 안 붙였어도 이것만 오는 경우가 있다.
@@ -99,25 +111,19 @@
     },
   };
 
-  /* ── GA4 ────────────────────────────────────────────────────────
-     측정 ID 는 window.ANALYTICS.ga4 에서 온다 (app/supabase.js). **비어
-     있으면 스크립트를 아예 안 붙인다** — 붙여 놓고 ID 만 비우면 구글로
-     요청은 나가면서 아무 데도 안 쌓인다. 없는 것과 고장난 것이 같은
-     얼굴이 되는 자리다.
+  /* GA4 초기화는 여기서 하지 않는다 — **각 쪽의 <head> 인라인**이 맡는다
+     (public/lib/ga-head.html 과 같은 모양). 이 파일은 defer 로 늦게 붙으므로,
+     여기서 gtag 를 세우면 페이지가 뜨자마자 쏘는 첫 이벤트가 gtag 없는
+     상태로 버려진다. 그 증상은 '아무것도 안 뜬다' 가 아니라 '초기 이벤트만
+     안 뜬다' 여서 찾는 데 오래 걸린다.
 
-     측정 ID(G-...)는 공개 값이다. 브라우저가 그것으로 구글에 보내는 것이
-     본래 하는 일이므로 숨길 수 없고 숨길 이유도 없다. */
-  var ga = (window.ANALYTICS || {}).ga4 || '';
-  if (/^G-[A-Z0-9]+$/i.test(ga)) {
-    var s = document.createElement('script');
-    s.async = true;
-    s.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(ga);
-    document.head.appendChild(s);
-    window.dataLayer = window.dataLayer || [];
-    window.gtag = function () { window.dataLayer.push(arguments); };
-    window.gtag('js', new Date());
-    /* anonymize_ip — 구글이 IP 마지막 자리를 지우고 받는다. GA4 는 기본으로
-       그렇게 하지만 명시해 둔다. 나중에 이 줄이 지워지면 눈에 띈다. */
-    window.gtag('config', ga, { anonymize_ip: true });
+     여기서는 첫 접점이 잡혔을 때 그것을 GA 에도 한 번 알린다 — 그래야
+     구글 쪽 보고서와 우리 장부가 같은 캠페인을 가리킨다. */
+  if (now && typeof window.gtag === 'function') {
+    window.gtag('event', 'utm_seen', {
+      utm_source: now.utm_source || (now.referrer ? 'referral' : '(none)'),
+      utm_medium: now.utm_medium || (now.referrer ? 'referral' : '(none)'),
+      utm_campaign: now.utm_campaign || '(none)',
+    });
   }
 })();
