@@ -71,8 +71,31 @@ def km(a, b) -> float:
     return 6371.0 * 2 * math.asin(math.sqrt(h))
 
 
+def bucket_base() -> str:
+    """화면 자료가 사는 공개 버킷 주소. 열쇠가 필요 없다."""
+    sys.path.insert(0, str(ROOT / "src"))
+    from redt import web_store as WS                    # noqa: PLC0415
+    return WS.public_base()
+
+
 def load_json(name):
-    return json.loads((WEB / name).read_text(encoding="utf-8"))
+    """이름 사전의 재료를 읽는다 — 없으면 **버킷에서 받는다.**
+
+    public/app/data 는 .gitignore 다 (64MB 라 배포에서 빼고 버킷으로
+    옮겼다 — web_store 머리글). 그래서 새 체크아웃에는 tollgates.json 도
+    places.json 도 없다. 처음 이 스크립트를 러너에서 돌렸을 때 바로 그
+    자리에서 FileNotFoundError 가 났다. 브라우저가 받는 그 주소로
+    우리도 받으면 된다.
+    """
+    local = WEB / name
+    if local.exists():
+        return json.loads(local.read_text(encoding="utf-8"))
+    import requests                                     # noqa: PLC0415
+    url = f"{bucket_base()}/{name}"
+    print(f"  {name} 이 없어 버킷에서 받는다")
+    r = requests.get(url, timeout=120)
+    r.raise_for_status()
+    return r.json()
 
 
 def build_index():
@@ -231,6 +254,8 @@ def one_work(idx, it: dict, stage: str):
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", action="store_true", help="공사현황까지 받는다")
+    ap.add_argument("--upload", action="store_true",
+                    help="만든 뒤 공개 버킷에 올린다 (저장소에 커밋하지 않는다)")
     args = ap.parse_args()
 
     idx = build_index()
@@ -259,9 +284,15 @@ def main() -> None:
         "plan_total": 37,
         "items": plan + work,
     }
-    if not args.work and OUT.exists():
+    if not args.work:
         # 공사 없이 돌렸으면 **이미 받아 둔 공사 줄을 지우지 않는다.**
-        old = json.loads(OUT.read_text(encoding="utf-8"))
+        # 러너에는 예전 파일이 없으므로 버킷에 있는 것을 본다 — 그러지
+        # 않으면 계획만 다시 만드는 실행이 공사 줄을 통째로 지운다.
+        try:
+            old = load_json("road.json")
+        except Exception as exc:                       # noqa: BLE001
+            print(f"\n(예전 road.json 을 못 읽었다: {type(exc).__name__})")
+            old = {}
         keep = [x for x in old.get("items", []) if x.get("kind") == "공사"]
         if keep:
             payload["items"] = plan + keep
@@ -270,6 +301,20 @@ def main() -> None:
                    encoding="utf-8")
     print(f"\n{OUT.relative_to(ROOT)} · {len(payload['items'])}줄 · "
           f"{OUT.stat().st_size / 1024:.1f}KB")
+
+    if args.upload:
+        # **커밋이 아니라 버킷이다.** public/app/data 는 .gitignore 라
+        # git add 가 통째로 막힌다 (첫 실행이 exit 128 로 끝난 자리).
+        sys.path.insert(0, str(ROOT / "src"))
+        from redt import web_store as WS                # noqa: PLC0415
+        if not WS.configured():
+            raise SystemExit("Supabase 설정이 없어 못 올립니다")
+        if not WS.upload(OUT):
+            raise SystemExit("버킷에 못 올렸습니다")
+        # 올리기가 200 을 줬다는 것과 브라우저가 받는다는 것은 다른 말이다.
+        if not WS.verify(("road.json",)):
+            raise SystemExit("올라갔는데 공개 주소로 못 받습니다")
+        print(f"버킷 {WS.BUCKET} 에 올렸습니다 · {WS.public_base()}/road.json")
 
 
 if __name__ == "__main__":

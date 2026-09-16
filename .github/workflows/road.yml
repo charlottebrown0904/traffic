@@ -18,32 +18,37 @@ jobs:
   road:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # 저장소에 쓰지 않는다 — 결과는 버킷으로 간다.
     permissions:
-      contents: write
+      contents: read
     env:
       REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
       REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
       EX_API_KEY: relay-replaces-this
+      # 이름 사전의 재료(tollgates·regions·places)를 버킷에서 받고,
+      # 다 만든 road.json 을 같은 버킷에 올린다. 받기는 공개라 URL 만
+      # 있으면 되고, 올리기는 service_role 열쇠가 있어야 한다.
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - name: 만들기
-        run: |
-          python scripts/build_road.py ${{ inputs.work && '--work' || '' }} \
-            2>&1 | tee /tmp/road.log
+      # **검산을 먼저 한다.** 이 검산은 plan2.tsv 만 읽으므로 만들기가
+      # 필요 없고, 순서를 뒤에 두면 고시와 어긋난 표가 이미 버킷에 올라간
+      # 뒤에야 빨간불이 켜진다.
       - name: 검산 (고시와 대조)
         run: python scripts/test_roadplan.py
-      - name: 올리기
+      # pipefail 이 없으면 **tee 의 성적표가 그 단계의 성적표가 된다.**
+      # 첫 실행에서 build_road.py 가 FileNotFoundError 로 죽었는데도 이
+      # 단계는 초록이었고, 두 단계 뒤 git 에서야 실행이 멈췄다.
+      - name: 만들기 · 버킷에 올리기
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/app/data/road.json
-          git diff --cached --quiet && { echo "달라진 것 없음"; exit 0; }
-          git commit -m "고속도로 자료 갱신 (계획 + 공사현황)"
-          git push
+          set -o pipefail
+          python scripts/build_road.py ${{ inputs.work && '--work' || '' }} \
+            --upload 2>&1 | tee /tmp/road.log
       - name: 요약
         if: always()
         run: |
