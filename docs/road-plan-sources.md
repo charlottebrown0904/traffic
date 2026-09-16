@@ -237,3 +237,32 @@ run 14). 그중 계획·공사가 있을 만한 넷을 실제로 불러 속성�
     vworld-render  run 12   roads     — 네 층 모두 계획 칸 없음
     vworld-render  run 13   roadbuild — 공사현황 API 항목 확인
     vworld-render  run 14   roadwork  — **시공 233건 · 검산 비 0.95~1.07**
+
+## 7. 자료가 화면까지 가는 길 (2026-09-16 실측)
+
+`public/app/data/` 는 **.gitignore 다** (74줄). 64MB 라 Vercel 배포
+하나의 98% 였고, 배포가 안 지워져 저장 한도를 넘겼기 때문이다
+(`docs/vercel-limits.md` · `src/redt/web_store.py` 머리글). 그래서
+`road.json` 은 **커밋할 수 없다.** 첫 실행이 그 자리에서 exit 128 로
+끝났다.
+
+길은 `analyze.yml` 이 이미 낸 것과 같다 — 공개 버킷 `appdata`.
+
+    만들 때   재료(tollgates·regions·places)가 러너에 없으면
+              같은 버킷의 공개 주소에서 받는다 (열쇠 없이)
+    올릴 때   build_road.py --upload → 버킷 → **열쇠 없이 다시 받아 확인**
+    읽을 때   app.js 의 fetchData 가 버킷 먼저, 배포는 뒷길
+
+두 가지를 배웠다.
+
+**`| tee` 는 실패를 가린다.** 파이프의 성적표는 마지막 명령(tee)의
+것이라, 파이썬이 첫 줄에서 죽어도 그 단계는 초록이다. 첫 실행에서
+`FileNotFoundError` 가 났는데 빨간불은 두 단계 뒤 git 에서 켜졌고,
+그래서 원인이 git 에 있는 줄 알았다. `set -o pipefail` 을 넣는다.
+
+**검산은 올리기 앞에 둔다.** `test_roadplan.py` 는 `plan2.tsv` 만 읽으므로
+만들기가 필요 없다. 뒤에 두면 고시와 어긋난 표가 이미 버킷에 올라간
+뒤에야 빨간불이 켜진다.
+
+    road           run 1   커밋 시도 → exit 128 (.gitignore) · tee 가 가림
+    road           run 2   검산 → 만들기 → 버킷
