@@ -15,6 +15,12 @@ on:
 jobs:
   render:
     runs-on: ubuntu-latest
+    # **tee 가 실패를 가린다.** 파이프의 끝값이 tee 의 것이라 탐침이 죽어도
+    # 단계는 초록으로 끝난다 — 오늘 두 번 그랬다(road.yml 의 exit 128,
+    # roadparcel 의 AttributeError 가 '성공 2초' 로 보였다). 한 자리에 건다.
+    defaults:
+      run:
+        shell: bash -eo pipefail {0}
     timeout-minutes: 15
     env:
       RELAY_URL: ${{ secrets.REDT_RELAY_URL }}

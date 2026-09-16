@@ -62,16 +62,24 @@ def relay(url: str, params: dict, timeout: int = 90):
 
 
 def load_road():
+    """road.json 은 줄의 목록이 아니라 **items 를 담은 꾸러미**다.
+
+    처음에 목록인 줄 알고 r.get 을 불렀다가 'str' object has no attribute
+    'get' 로 죽었다 — 꾸러미의 열쇠들을 훑고 있었던 것이다. 파일을 안
+    열어 보고 모양을 짐작했다.
+    """
     local = WEB / "road.json"
     if local.exists():
-        return json.loads(local.read_text(encoding="utf-8"))
-    sys.path.insert(0, str(ROOT / "src"))
-    from redt import web_store as WS                    # noqa: PLC0415
-    url = f"{WS.public_base()}/road.json"
-    print(f"  road.json 이 없어 버킷에서 받는다 — {url}")
-    r = requests.get(url, timeout=120)
-    r.raise_for_status()
-    return r.json()
+        body = json.loads(local.read_text(encoding="utf-8"))
+    else:
+        sys.path.insert(0, str(ROOT / "src"))
+        from redt import web_store as WS                # noqa: PLC0415
+        url = f"{WS.public_base()}/road.json"
+        print(f"  road.json 이 없어 버킷에서 받는다 — {url}")
+        r = requests.get(url, timeout=120)
+        r.raise_for_status()
+        body = r.json()
+    return body.get("items", []) if isinstance(body, dict) else body
 
 
 def deg_bbox(z: int, x: int, y: int):
@@ -156,7 +164,9 @@ def main() -> None:
 
     # 공사중을 먼저 본다 — 땅 주인에게 중요한 것은 '앞으로 편입되는가' 다.
     def key(r):
-        return (0 if (r.get("stage") or r.get("state") or "") != "준공" else 1,
+        # stage 는 '계획' 이거나 공사 단계('시공'·'준공')다. 준공은 뒤로
+        # 미룬다 — 땅 주인에게 중요한 것은 '앞으로 편입되는가' 다.
+        return (1 if (r.get("stage") or "") == "준공" else 0,
                 -len(r.get("path") or []))
 
     picked = sorted(with_path, key=key)[:3]
@@ -166,7 +176,7 @@ def main() -> None:
         name = r.get("name") or r.get("sect") or "(이름 없음)"
         print()
         print(f"  ── {name} · 꼭짓점 {len(path)}개 · "
-              f"{r.get('stage') or r.get('state') or '?'}")
+              f"{r.get('kind') or '?'} · {r.get('stage') or '?'}")
         # 선 위에서 두 자리를 고른다 — 가운데와 4분의 1 지점.
         for frac in (0.25, 0.5):
             lat, lon = path[int(len(path) * frac)]
