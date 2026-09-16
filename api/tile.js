@@ -1021,14 +1021,21 @@ const LANDUSE_WFS = "https://api.vworld.kr/ned/wfs/getLandUseWFS";
 const LANDUSE_TYPE = "dt_d154";
 // 도로구역. 이름('도로구역(57호선)')은 노선마다 달라지므로 **코드로** 본다.
 const ROAD_ZONE_CODE = "UIA100";
-/* 저촉 구분 — 실측이 이 셋을 그대로 갈라 줬다 (천안 북면 양곡리).
+/* 저촉 구분 — **포함(1)만 넣는다.**
+ *
+ *   "항상 포함만 넣습니다. 저촉은 도로가 아닙니다." (2026-09-16 지시)
+ *
+ * 처음에는 저촉(2)도 넣었다. 법으로는 그 필지의 일부가 도로구역에 걸린
+ * 것이 맞지만, **걸렸다는 것과 도로가 된다는 것은 다른 말이다.** 실제로
+ * 라이브에서 산 하나가 통째로 칠해졌다(산134 임 · 산10-2 임).
+ *
+ * 실측이 셋을 그대로 갈라 줬다 (천안 북면 양곡리):
  *
  *   361-7 포함 · 468-5 포함 · 산13-3 포함   ← 도로가 깔릴 땅
- *   361-4 접함 · 359 접함                  ← **옆 필지**
+ *   361-4 접함 · 359 접함                  ← 옆 필지
  *
- * 그래서 1(포함)·2(저촉)만 남기고 3(접함)은 뺀다. 지시 1(옆 필지가
- * 회색 처리된다)이 이 한 칸으로 풀린다. */
-const ROAD_ZONE_HIT = new Set(["1", "2"]);
+ * 1(포함)만 남기고 2(저촉)·3(접함)은 뺀다. */
+const ROAD_ZONE_HIT = new Set(["1"]);
 // 화면이 받는 그 주소를 우리도 쓴다 (app.js DATA_BUCKET).
 const DATA_BUCKET = process.env.DATA_BUCKET
   || "https://caykbxvnebpifcduqjre.supabase.co/storage/v1/object/public/appdata";
@@ -1188,7 +1195,7 @@ async function roadParcels(req, res) {
         r: jimok === "도" ? 1 : 0,
         // 도로구역 이름에 노선이 붙어 온다 ('도로구역(57호선)').
         z: zone.name,
-        c: zone.how,                       // 포함 · 저촉
+        c: zone.how,                       // 포함 (그것만 남긴다)
         s: String(g.c.it.name || ""),
         t: String(g.c.it.stage || ""),
       });
@@ -1214,7 +1221,7 @@ function roadZoneOf(src) {
   const howNames = String(src.cnflc_at_nm_list || "").split(",");
   const i = codes.findIndex((c) => c.trim() === ROAD_ZONE_CODE);
   if (i < 0) return null;
-  // 3(접함)은 **옆 필지**다. 남기면 지시 1 이 그대로 남는다.
+  // 포함이 아니면 뺀다 — 저촉은 걸쳤을 뿐이고 접함은 옆 필지다.
   if (!ROAD_ZONE_HIT.has((hows[i] || "").trim())) return null;
   return { name: roadZoneName(src), how: (howNames[i] || "").trim() };
 }
