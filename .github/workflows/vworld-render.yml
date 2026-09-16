@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       probe:
-        description: "render / geocode-mask / roads / roadbuild / roadwork / roadgeom / roadlink / roadkras / parcelshift / parcelpix"
+        description: "render / geocode-mask / roads / roadbuild / roadwork / roadgeom / roadlink / roadkras / parcelshift / parcelpix / roadparcel"
         default: "render"
 
 jobs:
@@ -88,6 +88,13 @@ jobs:
       - name: 필지 선 화소 맞춰 보기
         if: inputs.probe == 'parcelpix'
         run: python scripts/parcel_pix_probe.py 2>&1 | tee /tmp/probe.log
+
+      # 도시계획시설에도 도로구역도에도 고속도로가 없다는 것이 확인됐다.
+      # 남은 길은 우리가 가진 선 둘레의 필지를 지적에서 골라내는 것이다.
+      # 만들기 전에 지목·거리·개수를 먼저 잰다.
+      - name: 고속도로 밑 필지 세어 보기
+        if: inputs.probe == 'roadparcel'
+        run: python scripts/road_parcel_probe.py 2>&1 | tee /tmp/probe.log
 
       # 가려진 지번('1**')으로 얻은 'parcel' 좌표가 진짜인가.
       # 이 컨테이너는 중계기를 못 부르므로 러너에서 돈다.
