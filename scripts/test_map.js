@@ -193,6 +193,18 @@ const FAKE_LEAFLET = () => {
     },
     // 필지 윤곽은 geoJSON 층으로 그린다. 진짜 Leaflet 에 있는 것이다.
     geoJSON: (geom, opts) => chain({ __geojson: geom, __opts: opts || {} }),
+    /* 고속도로는 두 끝을 잇는 선이다 (2026-09-16). 스텁에 polyline 이
+       없어서 drawDevelop 이 통째로 예외로 끊겼는데, **끊긴 자리가
+       window.__develop 을 갱신하기 전**이라 검사는 옛 값을 보고 엉뚱한
+       칸에서 실패했다. 가짜 지도에 없는 함수는 이렇게 멀리서 터진다. */
+    polyline: (lls, opts) => {
+      const m = chain({ __polyline: true });
+      m.__opts = Object.assign({}, opts);
+      m.options = m.__opts;
+      m.__latlngs = lls;
+      (window.__lines = window.__lines || []).push(m);
+      return m;
+    },
     // +/- 는 오른쪽 아래로 옮겼다 (왼쪽 위는 검색칸 자리다).
     // 어디에 붙였는지 검사가 볼 수 있게 기록해 둔다.
     control: {
@@ -1607,10 +1619,11 @@ async function stubCommon(pg) {
     }));
     check('개발은 꺼진 채로 시작한다', devBefore.on === false,
           `on=${devBefore.on}`);
-    /* 갈래 넷 (2026-09-16 지시로 '완공 보기' 를 없앴다 — 층마다 세부
-       칸이 대신한다). */
-    check('개발 갈래 칸이 넷이고 처음엔 접혀 있다',
-          devBefore.parts === 4 && devBefore.hidden === true,
+    /* 갈래 다섯. '완공 보기' 를 없앤 자리에 층마다 세부 칸이 들어갔고
+       (2026-09-16 1차), 고속도로가 더해졌다 (2026-09-16 3차 지시:
+       "개발에 고속도로 항목이 신설되는 것이 목표입니다"). */
+    check('개발 갈래 칸이 다섯이고 처음엔 접혀 있다',
+          devBefore.parts === 5 && devBefore.hidden === true,
           `${devBefore.parts}개 · hidden=${devBefore.hidden}`);
     /* 갈래 칸은 **왼쪽 칸**에 있다 (2026-09-15 지시: "개발을 클릭하면
        좌측 패널에 (산업단지/사업지구/도로/철도역/완공보기)를 표시해
@@ -1618,23 +1631,25 @@ async function stubCommon(pg) {
     check('갈래 칸이 왼쪽 칸에 있다 (지도 위 막대가 아니다)',
           devBefore.inSide && !devBefore.inTools,
           `side=${devBefore.inSide} tools=${devBefore.inTools}`);
-    check('넷 이름이 지시한 그대로다',
+    check('다섯 이름이 지시한 그대로다',
           JSON.stringify(devBefore.names)
             === JSON.stringify(['산업단지', '택지·사업지구', '계획도로',
-                                '철도역']),
+                                '철도역', '고속도로']),
           JSON.stringify(devBefore.names));
-    /* 세부 갈래 칸 — **층 바로 아래** (2026-09-16 지시). 넷 모두에 있고,
-       끝난 것(준공·집행완료)만 꺼진 채로 시작한다. */
+    /* 세부 갈래 칸 — **층 바로 아래** (2026-09-16 지시). 다섯 모두에
+       있고, 끝난 것(준공·집행완료)만 꺼진 채로 시작한다. */
     check('층마다 세부 갈래 칸이 붙는다',
-          devBefore.subs === 4 && devBefore.opts >= 14,
+          devBefore.subs === 5 && devBefore.opts >= 17,
           `칸 ${devBefore.subs}묶음 · 항목 ${devBefore.opts}개`);
     check('끝난 것만 꺼진 채로 시작한다 (완공 보기 한 칸을 대신한다)',
           devBefore.pick.housing['준공'] === false
           && devBefore.pick.planroad['집행완료'] === false
+          && devBefore.pick.highway['준공'] === false
           && devBefore.pick.housing['지구지정'] === true
           && devBefore.pick.planroad['미집행'] === true
+          && devBefore.pick.highway['계획'] === true
           && devBefore.pick.industry['국가'] === true,
-          JSON.stringify(devBefore.pick.planroad));
+          JSON.stringify(devBefore.pick.highway));
     check('철도역이 실려 있다 (rail.json)', devBefore.rail >= 300,
           `${devBefore.rail}곳`);
 
@@ -1667,10 +1682,10 @@ async function stubCommon(pg) {
           `cat=${devAfter.cat} 제목=${devAfter.title} 열림=${devAfter.sideOpen}`);
 
     /* **갈래는 전부 꺼진 채로 펼쳐진다** (2026-09-15 지시: "개발 클릭 시
-       기본은 전부 Off 입니다"). 넷이 한꺼번에 켜지면 개발을 켠 순간
+       기본은 전부 Off 입니다"). 다섯이 한꺼번에 켜지면 개발을 켠 순간
        지도가 색면·폴리곤·선·점으로 통째로 덮인다. */
     check('켜도 갈래는 전부 꺼져 있다 (무엇을 볼지는 누르는 사람이 고른다)',
-          devAfter.boxes.length === 4 && devAfter.boxes.every((b) => !b),
+          devAfter.boxes.length === 5 && devAfter.boxes.every((b) => !b),
           devAfter.boxes.join(','));
     // 층이 꺼져 있으면 그 아래 세부 칸도 접힌다 — 켤 수 없는 것을 보이면
     // 눌러 보고 아무 일도 안 일어난다.
@@ -1952,6 +1967,50 @@ async function stubCommon(pg) {
           `칸 ${dedup.tiles} · 층 ${(dedup.kinds || []).length} · `
           + `그린 것 ${dedup.drawn} (고치기 전이면 ${dedup.tiles})`);
     await page.unroute('**/api/tile?mode=devvec*');
+
+    /* **고속도로 층** (2026-09-16 지시: "개발에 고속도로 항목이 신설되는
+       것이 목표입니다"). 계획(고시 37건) · 공사중 · 준공.
+
+       자료가 주는 것은 구간의 두 끝뿐이라 선은 **근사치**다. 그래서
+       ① 정말로 선을 긋는가 ② 끝난 것(준공)은 꺼진 채인가 ③ 화면이
+       근사치라고 말하는가 — 셋을 본다. */
+    const road = await page.evaluate(async () => {
+      const box = document.querySelector('#dev-parts input[data-part="highway"]');
+      if (!box) return { none: true };
+      box.checked = true;
+      box.dispatchEvent(new Event('change'));
+      await new Promise((ok) => setTimeout(ok, 200));
+      const data = window.__road || {};
+      const items = ((window.state || {}).road || {}).items || [];
+      return {
+        drawn: data.drawn, total: data.total,
+        lines: (window.__lines || []).length,
+        stages: [...new Set(items.map((x) => x.stage))],
+        // 누르는 칸이 세 갈래로 서 있는가
+        opts: [...document.querySelectorAll('.dev-opt[data-part="highway"]')]
+          .map((b) => [b.dataset.pick, b.getAttribute('aria-pressed')]),
+        tip: window.__roadTip || '',
+      };
+    });
+    check('고속도로 칸이 생겼다', !road.none, JSON.stringify(road).slice(0, 80));
+    check('갈래가 계획·공사중·준공 셋이다',
+          JSON.stringify((road.opts || []).map((o) => o[0]))
+            === JSON.stringify(['계획', '공사중', '준공']),
+          JSON.stringify(road.opts));
+    check('준공만 꺼진 채로 시작한다',
+          JSON.stringify(road.opts) ===
+            JSON.stringify([['계획', 'true'], ['공사중', 'true'], ['준공', 'false']]),
+          JSON.stringify(road.opts));
+    check('구간이 실제로 그려진다 (road.json 을 읽는다)',
+          road.drawn > 0 && road.lines > 0,
+          `그린 구간 ${road.drawn}/${road.total} · 선 ${road.lines}개`);
+    /* **근사치라고 말해야 한다.** 두 끝만 아는 선을 노선처럼 그려 놓고
+       가만히 있으면 사용자가 그 길로 지나간다고 읽는다 — 실거래의
+       trade-coarse 와 같은 원칙이다. */
+    const roadNote = await page.evaluate(() =>
+      window.__roadTipSample || (window.__devRoadTip || ''));
+    check('말풍선이 실제 노선이 아니라고 적는다',
+          /실제 노선 모양이 아닙니다/.test(roadNote), roadNote.slice(0, 70));
 
     /* 철도역 — 종류로 가를 칸이 자료에 반만 차 있어 **정차 규모**로
        가른다 (2026-09-16 물음: "철도역도 종류가 나눌 수 있는 지 확인"). */

@@ -1,0 +1,52 @@
+# 고속도로 층 자료를 다시 만든다 (2026-09-16 지시: "개발에 고속도로
+# 항목이 신설되는 것이 목표입니다").
+#
+# 계획 37건은 저장소의 TSV(고시 판독)라 네트워크가 필요 없다. 공사현황
+# 595건은 한국도로공사 API 라 **중계기를 거쳐야** 한다 — 해외 러너에서
+# data.ex.co.kr 이 막힌다.
+name: 고속도로 자료
+
+on:
+  workflow_dispatch:
+    inputs:
+      work:
+        description: "공사현황까지 받는다 (끄면 계획만 다시 만든다)"
+        type: boolean
+        default: true
+
+jobs:
+  road:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+      EX_API_KEY: relay-replaces-this
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: 만들기
+        run: |
+          python scripts/build_road.py ${{ inputs.work && '--work' || '' }} \
+            2>&1 | tee /tmp/road.log
+      - name: 검산 (고시와 대조)
+        run: python scripts/test_roadplan.py
+      - name: 올리기
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/app/data/road.json
+          git diff --cached --quiet && { echo "달라진 것 없음"; exit 0; }
+          git commit -m "고속도로 자료 갱신 (계획 + 공사현황)"
+          git push
+      - name: 요약
+        if: always()
+        run: |
+          { echo '## 고속도로 자료'; echo; echo '```'
+            cat /tmp/road.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"

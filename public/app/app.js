@@ -35,7 +35,8 @@ const state = {
      기본은 전부 Off 입니다"). 넷이 한꺼번에 켜지면 개발을 켠 순간 지도가
      산업단지 색면·지구 폴리곤·계획도로 선·역 점으로 통째로 덮인다.
      무엇을 보려고 켰는지는 누르는 사람이 안다 — 고르게 둔다. */
-  devParts: { industry: false, housing: false, planroad: false, rail: false },
+  devParts: { industry: false, housing: false, planroad: false, rail: false,
+              highway: false },
   /* 층마다 **세부 갈래**. 2026-09-16 지시: "택지, 사업지구 선택 시 바로
    * 아래에 세부 선택 가능하도록 색상으로 표기하고 용도지역처럼 선택하면
    * 볼 수 있도록 함 (기본 off) … 완공 보기는 삭제".
@@ -50,6 +51,7 @@ const state = {
                부분준공: true, 준공: false },
     planroad: { 미집행: true, 부분집행: true, 집행완료: false },
     rail: { 많이: true, 적게: true, 모름: true },
+    highway: { 계획: true, 공사중: true, 준공: false },
   },
   // (2026-09-16) '완공 보기' 한 칸은 없앴다 — devPick 이 층마다 따로 한다.
   // 필지 경계선 (요구사항 2026-09-10). **기본은 켬** — 땅을 보는
@@ -94,7 +96,7 @@ const state = {
 };
 
 let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, lpLayer;
-let developLayer, railLayer, adminLayer;
+let developLayer, railLayer, roadLayer, adminLayer;
 /* 고른 필지의 윤곽. 한 번에 하나만 그린다. */
 let parcelLayer = null;
 /* 필지 경계선 타일. **용도지역과 따로 논다** (요구사항 2026-09-10).
@@ -247,6 +249,14 @@ async function boot() {
     if (r.ok) state.rail = await r.json();
   } catch (err) {
     state.rail = null;
+  }
+  // 고속도로 — '개발' 층의 한 갈래 (2026-09-16 지시). 계획(고시) ·
+  // 공사중 · 준공. 없으면 그 칸만 아무것도 안 그린다.
+  try {
+    const r = await fetchData('road.json');
+    if (r.ok) state.road = await r.json();
+  } catch (err) {
+    state.road = null;
   }
   // 판정은 분석이 한 번이라도 돈 뒤에야 생긴다. 없으면 그 탭만 비운다.
   // 토지와 공장을 따로 낸다 — 한 파일에 덮어쓰면 나중에 돈 쪽만 남아,
@@ -2780,6 +2790,11 @@ const DEV_PARTS = [
     note: '색은 집행 단계: 미집행·부분집행·집행완료' },
   { key: 'rail', label: '철도역', tile: null, vec: null,
     note: '우리 자료. 종류 칸이 반만 차 있어 정차 규모로 가른다' },
+  /* 2026-09-16 지시: "개발에 고속도로 항목이 신설되는 것이 목표입니다."
+     계획(고시) · 공사중 · 준공. 우리 자료(road.json)라 타일도 도형도
+     안 부른다. */
+  { key: 'highway', label: '고속도로', tile: null, vec: null,
+    note: '계획·공사중·준공 — 구간의 시작과 끝을 이은 선이다' },
 ];
 
 /* 층마다 고를 수 있는 **세부 갈래**와 그 색.
@@ -2830,6 +2845,27 @@ const DEV_PICKS = {
   planroad: [
     { id: '미집행', label: '미집행' }, { id: '부분집행', label: '부분집행' },
     { id: '집행완료', label: '집행완료', done: true },
+  ],
+  /* **고속도로는 색이 아니라 밝기로 가른다.**
+   *
+   * 화면에 이미 일곱 색이 같이 뜬다(택지 넷 + 계획도로 둘 + 철도 셋).
+   * 여덟째 색을 짜내려고 후보 일곱을 재 봤는데 **하나도 통과하지
+   * 못했다** — 색상환이 이미 찼다. 억지로 넣으면 어느 짝이든 서로
+   * 못 가르게 된다.
+   *
+   * 그래서 색을 더하지 않는다. 고속도로는 **굵은 선**(casing 8px)이라
+   * 마크 자체가 다른 층과 이미 갈리고, 단계는 심의 밝기로 나눈다:
+   *
+   *   계획    흰 심 + 점선   아직 삽을 안 떴다
+   *   공사중  검은 심 + 실선 지금 파고 있다
+   *   준공    회색 심        끝났다 (기본 꺼짐)
+   *
+   * 밝기 순서가 곧 진행 순서라 범례를 안 봐도 읽힌다. 그리고 채도가
+   * 없으니 어떤 색과도 부딪히지 않는다. */
+  highway: [
+    { id: '계획', label: '계획', color: '#FFFFFF' },
+    { id: '공사중', label: '공사중', color: '#1F2937' },
+    { id: '준공', label: '준공', color: '#9CA3AF', done: true },
   ],
   rail: [
     { id: '많이', label: '많이 서는 역', color: '#0369A1' },
@@ -2965,7 +3001,10 @@ function devTileKey() {
 function addDevelopLayer() {
   developLayer = L.layerGroup();
   railLayer = L.layerGroup();
-  if (state.develop) { developLayer.addTo(map); railLayer.addTo(map); }
+  roadLayer = L.layerGroup();
+  if (state.develop) {
+    developLayer.addTo(map); railLayer.addTo(map); roadLayer.addTo(map);
+  }
   drawDevelop();
 }
 
@@ -2985,6 +3024,7 @@ function drawDevelop() {
     }).addTo(developLayer);
   });
   drawRail();
+  drawRoad();
   drawDevVec();
   updateDevLegend();
   window.__develop = { on: state.develop, key, parts: { ...state.devParts },
@@ -3363,6 +3403,74 @@ function drawRail() {
   });
 }
 
+/* 고속도로 — 계획·공사중·준공 (2026-09-16 지시).
+ *
+ * **이것은 노선이 아니다.** 자료가 주는 것은 구간의 시작과 끝, 이름 둘
+ * 뿐이다(고시는 '안성JCT-동탄JCT', 공사현황은 시점·종점 주소). 그 사이를
+ * 어떻게 지나가는지는 어디에도 없다. 직선으로 이으면 산을 뚫는 그림이
+ * 되므로, **두 끝에 점을 찍고 그 사이를 흐리게 잇고 화면이 그렇다고
+ * 말한다.** 실거래의 trade-coarse 와 같은 원칙이다.
+ *
+ * 굵은 선에 흰 테(casing)를 두른다 — 지도에서 고속도로를 그리는 방식이고,
+ * 무엇보다 **다른 층과 마크가 달라야** 색을 안 늘리고도 갈린다.
+ */
+function roadStageColor(stage) {
+  const k = (DEV_PICKS.highway || []).find((x) => x.id === stage);
+  return (k && k.color) || '#6B7280';
+}
+
+function roadTip(it) {
+  const won = (n) => (n >= 10000 ? `${(n / 10000).toFixed(1)}조` : `${n.toLocaleString()}억`);
+  return `<b>${escapeHtml(it.name || '')}</b>`
+    + `<br><b>${escapeHtml(it.stage)}</b>`
+    + (it.kind === '신설' || it.kind === '확장' ? ` · ${escapeHtml(it.kind)}` : '')
+    + (it.km ? ` · ${it.km}km` : '')
+    + (it.lanes ? `<br>왕복 ${escapeHtml(it.lanes)}차로` : '')
+    + (it.cost_eok ? `<br>총사업비 ${won(it.cost_eok)}` : '')
+    + (it.term ? `<br>공사기간 ${escapeHtml(it.term)}` : '')
+    + (it.axis ? `<br>${escapeHtml(it.axis)}${it.line ? ' · ' + escapeHtml(it.line) : ''}` : '')
+    + '<br><span class="dev-why">구간의 시작과 끝을 이은 선입니다 —'
+    + ' 실제 노선 모양이 아닙니다</span>';
+}
+
+function drawRoad() {
+  if (!roadLayer) return;
+  roadLayer.clearLayers();
+  if (!state.develop || !state.devParts.highway) return;
+  const items = (state.road || {}).items || [];
+  let n = 0;
+  items.forEach((it) => {
+    if (!devPicked('highway', it.stage)) return;
+    const a = it.a;
+    const b = it.b;
+    if (!Array.isArray(a) || !Array.isArray(b)) return;
+    const core = roadStageColor(it.stage);
+    const plan = it.stage === '계획';
+    // 테를 먼저 깔고 그 위에 심을 얹는다 — 두 겹이라야 어느 바탕에서도
+    // 선이 보인다. 흰 심(계획)은 테가 없으면 밝은 지도에서 사라진다.
+    L.polyline([a, b], {
+      pane: 'overlayPane', color: '#1F2937', weight: 8, opacity: .55,
+      lineCap: 'round',
+    }).addTo(roadLayer);
+    L.polyline([a, b], {
+      pane: 'overlayPane', color: core, weight: 4, opacity: .95,
+      dashArray: plan ? '10 7' : null, lineCap: 'round',
+    }).bindTooltip(roadTip(it), { direction: 'top', sticky: true })
+      .addTo(roadLayer);
+    if (!n) window.__roadTipSample = roadTip(it);   // 검사가 본다
+    // 두 끝을 점으로 — '여기까지가 자료가 말해 주는 자리' 라는 표시.
+    [a, b].forEach((pt) => {
+      L.circleMarker(pt, {
+        pane: 'markerPane', radius: 4, color: '#1F2937', weight: 2,
+        fillColor: core, fillOpacity: 1,
+      }).addTo(roadLayer);
+    });
+    n += 1;
+  });
+  window.__road = { on: state.devParts.highway, drawn: n,
+                    total: items.length };
+}
+
 function togglePlaceTags(on) {
   state.placeTags = on;
   drawLandPrice();
@@ -3371,10 +3479,13 @@ function togglePlaceTags(on) {
 function toggleDevelop(on) {
   state.develop = on;
   if (!map || !developLayer) return;
-  if (on) { developLayer.addTo(map); railLayer.addTo(map); }
-  else {
+  if (on) {
+    developLayer.addTo(map); railLayer.addTo(map);
+    if (roadLayer) roadLayer.addTo(map);
+  } else {
     developLayer.remove();
     railLayer.remove();
+    if (roadLayer) roadLayer.remove();
     if (devVecLayer) devVecLayer.clearLayers();
   }
   drawDevelop();
