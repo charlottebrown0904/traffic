@@ -314,6 +314,17 @@ def snap(routes: dict, name: str, a, b, ext_km: float):
     **틀린 선형은 직선보다 나쁘다.** 그물을 통과 못 하면 좌표를 안 내고,
     부르는 쪽이 직선으로 되돌린다.
     """
+    # **여러 원천을 순서대로 본다.** 관 자료를 먼저 보고, 거기서 못 찾거나
+    # 경로가 안 나오면 OSM 으로 되돌아간다. 이래야 원천을 바꿔도 **전보다
+    # 나빠질 수 없다** — 갈아끼운 첫 실행이 171에서 60으로 떨어졌는데,
+    # 관 자료만 보게 해 둔 탓에 OSM 이 풀던 것까지 같이 잃었다.
+    if isinstance(routes, (list, tuple)):
+        for one in routes:
+            got = snap(one, name, a, b, ext_km)
+            if got[0]:
+                return got
+        return got if routes else (None, "노선 못 찾음", None)
+
     cands = [routes[k] for k in route_keys(name) if k in routes]
     if not cands:
         # **OSM 에는 이름 없이 번호만 붙은 조각이 있다** (열쇠가 '30',

@@ -353,14 +353,19 @@ def snap_all(rows) -> None:
     except Exception as exc:                           # noqa: BLE001
         print(f"  ✗ 못 받았다: {type(exc).__name__} {exc}")
 
-    # **공사중은 관 자료에 없다** — 아직 안 만든 길이라서. 그 한 갈래만
-    # OSM 에서 가져온다. 준공 선형까지 OSM 으로 덮지 않는다.
-    print("\nOSM 에서 공사중만 (관 자료에 없는 길)…")
+    # **OSM 은 둘을 맡는다.**
+    #   · 공사중 — 아직 안 만든 길이라 관 자료에 아예 없다
+    #   · 되돌아갈 자리 — 관 자료가 못 푸는 노선을 OSM 이 풀기도 한다
+    #
+    # 처음에는 공사중만 남겼는데, 그 실행이 171 → 60 으로 떨어졌다.
+    # 관 자료 쪽이 덜 받아진 탓이 컸지만, **OSM 을 빼 둔 탓에 전에
+    # 풀리던 것까지 같이 잃은 것**도 사실이다. 원천을 바꿀 때는 전보다
+    # 나빠지지 않게 되돌아갈 자리를 남겨 둔다.
+    print("\nOSM 선형 (공사중 + 관 자료가 못 풀 때 되돌아갈 자리)…")
     try:
         with requests.Session() as ses:
             osm = OG.fetch(ses)
-        osm = [w for w in osm if w["building"]]
-        print(f"  공사중 조각 {len(osm):,}개")
+        print(f"  조각 {len(osm):,}개 (공사중 {sum(1 for w in osm if w['building']):,})")
         ways += osm
     except Exception as exc:                           # noqa: BLE001
         print(f"  ✗ 못 받았다: {type(exc).__name__} {exc}")
@@ -368,10 +373,14 @@ def snap_all(rows) -> None:
     if not ways:
         print("  선형을 하나도 못 받았다 — 직선 그대로 둔다")
         return
-    routes = OG.build_routes(ways)
+    # **원천마다 따로 세워 순서대로 본다.** 한 통에 섞으면 관 자료가
+    # 못 푸는 노선에서 OSM 조각까지 같이 못 쓰게 된다.
+    moct = OG.build_routes([w for w in ways if w.get("src") == "관"])
+    osmr = OG.build_routes([w for w in ways if w.get("src") != "관"])
+    routes = [moct, osmr]
     built = sum(1 for w in ways if w["building"])
-    print(f"\n조각 {len(ways):,}개 (공사중 {built:,}) · 노선 {len(routes)}개")
-    print(f"  노선 이름: {', '.join(sorted(routes)[:12])}…")
+    print(f"\n조각 {len(ways):,}개 (공사중 {built:,})"
+          f" · 노선 관 자료 {len(moct)} · OSM {len(osmr)}")
 
     ok = 0
     why = defaultdict(int)
@@ -416,8 +425,8 @@ def snap_all(rows) -> None:
         print("\n   못 찾은 노선 이름 (우리 것 → 열쇠):")
         for (nm, key), n in top:
             print(f"     {nm} → {key} · {n}건")
-        print(f"   OSM 이 아는 열쇠 {len(routes)}개: "
-              f"{', '.join(sorted(routes)[:20])}")
+        known = sorted(set(moct) | set(osmr))
+        print(f"   아는 열쇠 {len(known)}개: {', '.join(known[:20])}")
 
 
 def main() -> None:

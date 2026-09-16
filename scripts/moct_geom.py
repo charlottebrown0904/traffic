@@ -74,14 +74,19 @@ def fetch(log=print) -> list[dict]:
             break
         if total is None:
             total = _int((resp.get("page") or {}).get("total"))
-            log(f"  자료가 말하는 고속국도 링크 {total:,}개" if total
-                else "  전체 수를 안 알려 준다 — 빌 때까지 넘긴다")
+            # **total 을 건수로 믿지 않는다.** 첫 실행에서 total=32 가 왔고
+            # 받은 것은 1,000개였다 — 32는 건수가 아니라 **쪽 수**다. 그걸
+            # 건수로 읽는 바람에 1쪽에서 멈췄고, 전국의 3%로 스냅을 시도해
+            # 성적이 171 → 60 으로 떨어졌다.
+            #
+            # 그래서 끝나는 조건은 **받은 것이 한 쪽보다 적으면 끝** 하나만
+            # 쓴다. 이건 뜻이 하나뿐이라 헷갈릴 자리가 없다. total 은 쪽
+            # 수로 보이므로 참고로만 찍는다.
+            log(f"  page.total={total} (쪽 수로 보인다 — 건수로 쓰지 않는다)")
         for f in feats:
             row = _one(f)
             if row:
                 out.append(row)
-        if total and len(out) >= total:
-            break
         if len(feats) < PER:
             break
         page += 1

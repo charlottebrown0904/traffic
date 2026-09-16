@@ -94,6 +94,21 @@ def main() -> None:
                             full)
     check("모르는 노선이면 비켜선다", none is None, f"→ {why2}")
 
+    # 5-2. **원천을 순서대로 본다.** 관 자료가 못 풀면 OSM 으로 되돌아
+    #      가야 한다 — 안 그러면 원천을 바꿀 때 전보다 나빠진다(171→60).
+    only_osm = OG.build_routes(ways)                    # '시험' 만 안다
+    empty = OG.build_routes([])                         # 아무것도 모른다
+    got, res2, src2 = OG.snap([empty, only_osm], "시험선",
+                              (36.00, 127.00), (36.03, 127.00), full)
+    check("앞 원천이 못 풀면 뒤 원천으로 되돌아간다",
+          bool(got) and src2 == "osm", f"출처 {src2}")
+
+    # 앞 원천이 풀면 뒤는 안 본다 (관 자료 우선)
+    first, _r, src3 = OG.snap([OG.build_routes(moct), only_osm], "시험선",
+                              (36.00, 127.00), (36.03, 127.00), full)
+    check("앞 원천이 풀면 그것을 쓴다", bool(first) and src3 == "관",
+          f"출처 {src3}")
+
     # 6. 긴 경로에서 스택이 안 넘친다 — 되돌이로 짜면 여기서 터진다
     try:
         n = len(OG.simplify([(i * 1e-5, 0.0) for i in range(20000)]))
