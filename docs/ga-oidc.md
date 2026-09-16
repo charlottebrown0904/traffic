@@ -71,7 +71,7 @@ IAM → Workload Identity 제휴 → 풀 만들기.
 
 | 칸 | 값 |
 |---|---|
-| 풀 ID | `vercel` |
+| 풀 ID | `vercel` 로 입력 — 다만 **만든 뒤 목록의 ID 칸을 확인한다** |
 | 공급자 ID | `vercel-oidc` |
 | 공급자 종류 | OpenID Connect (OIDC) |
 | 발급기관(Issuer) | `https://oidc.vercel.com/brown21` |
@@ -79,6 +79,13 @@ IAM → Workload Identity 제휴 → 풀 만들기.
 | 속성 매핑 | `google.subject` = `assertion.sub` |
 
 발급기관·대상은 1번 화면의 `iss`·`aud` 와 **글자까지 같아야 한다.**
+
+**표시 이름과 ID 는 다른 값이다.** 주소(audience)에 들어가는 것은 ID 쪽이다.
+이 프로젝트는 표시 이름이 `vercel` 인데 **ID 가 `-vercel` 로 잡혔다**(앞에
+하이픈). 그것을 모르고 환경변수에 `vercel` 을 넣었다가 아래 `invalid_target`
+으로 한참 돌았다. 만든 직후 목록의 **ID 칸**을 보고 그 값을 쓴다. 이름이
+지저분해도 그냥 둔다 — 지우면 30일간 같은 이름을 못 쓰고, 이름은 어디에도
+표시되지 않는다.
 
 ### 5. GCP — 서비스 계정
 
@@ -89,7 +96,7 @@ IAM → Workload Identity 제휴 → 풀 만들기.
 역할을 주는 칸이고, 우리가 할 일은 *그 서비스 계정을 가장할 주 구성원을
 추가*하는 것이다. 2026-09 콘솔에는 그 탭에 부여 단추가 아예 없다.
 
-풀(`vercel`) 을 열고 → **액세스 권한 부여** → *서비스 계정 가장을 사용하여* →
+풀(표시 이름 `vercel`) 을 열고 → **액세스 권한 부여** → *서비스 계정 가장을 사용하여* →
 서비스 계정 `ga-reader` → **필터와 일치하는 ID만**:
 
 | 칸 | 값 |
@@ -138,7 +145,7 @@ Google Analytics → 관리 → 속성 액세스 관리 → 서비스 계정 이
 |---|---|
 | `GA_PROPERTY_ID` | `554631159` |
 | `GCP_PROJECT_NUMBER` | GCP 프로젝트 번호 (`sado-toji` 의 숫자) |
-| `GCP_WIF_POOL_ID` | `vercel` |
+| `GCP_WIF_POOL_ID` | `-vercel` (표시 이름이 아니라 **ID**) |
 | `GCP_WIF_PROVIDER_ID` | `vercel-oidc` |
 | `GCP_SERVICE_ACCOUNT_EMAIL` | `ga-reader@sado-toji.iam.gserviceaccount.com` |
 
@@ -157,6 +164,7 @@ Google Analytics → 관리 → 속성 액세스 관리 → 서비스 계정 이
 |---|---|---|
 | `환경변수가 아직 없습니다: …` | 7번을 안 했거나 재배포 안 함 | 이름을 그대로 맞추고 재배포 |
 | `VERCEL_OIDC_TOKEN` 이 빠졌다고 나옴 | 1번이 안 켜짐 | Vercel 설정에서 켠다 |
+| `sts.googleapis.com 400 … invalid_target` | 풀·공급자가 없거나 **ID 가 다름** | 응답의 `audience` 와 콘솔 목록의 **ID 칸**을 대조. 표시 이름이 아니다 |
 | `sts.googleapis.com 400 … invalid_grant` | 발급기관·대상·주체 문자열이 안 맞음 | 4번의 `iss`·`aud`, 5번의 주 구성원을 1번 화면의 클레임과 글자까지 대조 |
 | `iamcredentials… 403` | 서비스 계정을 가장할 주 구성원이 없음 | 5번을 풀 화면에서 다시 |
 | `analyticsdata… 403` | GA 속성에 뷰어로 안 넣음 | 6번 다시 |
