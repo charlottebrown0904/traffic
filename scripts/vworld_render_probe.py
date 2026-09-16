@@ -99,6 +99,28 @@ def painted(raw: bytes) -> int | str:
     return sum(1 for p in im.getdata() if p[3] > 8)
 
 
+def dominant(raw: bytes) -> str:
+    """**가장 많이 쓰인 불투명 색.** 범례 색칩을 지어내지 않으려고 잰다.
+
+    산업단지 네 층은 브이월드가 이미 칠해서 주는 그림이라, 화면이 '이 색이
+    국가산업단지다' 라고 말하려면 그 색을 실제로 봐야 한다. 짐작으로 적으면
+    범례와 지도가 다른 색이 되고, 그것은 범례가 없는 것보다 나쁘다."""
+    try:
+        from PIL import Image                          # noqa: PLC0415
+    except ImportError:
+        return "?"
+    try:
+        im = Image.open(io.BytesIO(png_bytes(raw))).convert("RGBA")
+    except Exception:                                  # noqa: BLE001
+        return "-"
+    from collections import Counter                    # noqa: PLC0415
+    c = Counter(p[:3] for p in im.getdata() if p[3] > 200)
+    if not c:
+        return "-"
+    (r, g, b), n = c.most_common(1)[0]
+    return f"#{r:02X}{g:02X}{b:02X} ({n}화소)"
+
+
 def main() -> None:
     print("=" * 72)
     print("브이월드 '개발' 층 — 그림이 실제로 오는가")
@@ -123,7 +145,8 @@ def main() -> None:
                 print(f"   {spot:10s} ✗ XML 이 왔다: {raw[:120]!r}")
                 continue
             print(f"   {spot:10s} {resp.status_code} · {len(raw):,}B"
-                  f" · 칠해진 화소 {painted(raw)}")
+                  f" · 칠해진 화소 {painted(raw)}"
+                  f" · 주된 색 {dominant(raw)}")
 
     # ── 산업단지 층에 **몇 건이나 있는가** ──────────────────────────
     #
