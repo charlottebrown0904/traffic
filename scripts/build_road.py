@@ -355,6 +355,7 @@ def snap_all(rows) -> None:
 
     ok = 0
     why = defaultdict(int)
+    miss_name = defaultdict(int)
     for it in rows:
         # **확장 18건은 이미 있는 길을 넓히는 것이다** — 그 선형은 OSM 에
         # 있다. 그래서 단계로 자르지 않고 **노선 이름이 있느냐**로 가른다.
@@ -370,9 +371,25 @@ def snap_all(rows) -> None:
             ok += 1
         else:
             why[res] += 1
+            if res == "노선 못 찾음":
+                miss_name[(name, OG.route_key(name))] += 1
     print(f"\n선형 붙임 {ok}/{len(rows)}")
-    for w, n in sorted(why.items(), key=lambda kv: -kv[1])[:8]:
+    # 경로비는 값마다 한 줄이 되어 표를 뒤덮는다 — 한 줄로 묶는다.
+    tidy = defaultdict(int)
+    for w, n in why.items():
+        tidy["경로비가 안 맞음" if str(w).startswith("경로비") else w] += n
+    for w, n in sorted(tidy.items(), key=lambda kv: -kv[1]):
         print(f"   못 붙임 {w}: {n}건")
+
+    # **어느 이름이 안 붙었는지 적는다.** '노선 못 찾음 116건' 만 보고는
+    # 이름 규칙이 어긋난 것인지 그 노선이 OSM 에 없는 것인지 알 수 없다.
+    if miss_name:
+        top = sorted(miss_name.items(), key=lambda kv: -kv[1])[:12]
+        print("\n   못 찾은 노선 이름 (우리 것 → 열쇠):")
+        for (nm, key), n in top:
+            print(f"     {nm} → {key} · {n}건")
+        print(f"   OSM 이 아는 열쇠 {len(routes)}개: "
+              f"{', '.join(sorted(routes)[:20])}")
 
 
 def main() -> None:

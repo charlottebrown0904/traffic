@@ -224,6 +224,45 @@ def simplify(pts, tol_m: float = 25.0):
     return [pts[i] for i in sorted(keep)]
 
 
+def corridor(route, a, b):
+    """**그래프가 끊겼을 때의 대안.**
+
+    고속도로는 상·하행이 **따로 그려진** 길이라, 두 끝이 서로 다른 쪽에
+    걸리면 최단경로가 아예 안 나온다(첫 실행에서 '경로 없음' 113건).
+    그럴 때는 잇는 대신 **훑는다** — a→b 선분에 그림자를 드리워, 그
+    그림자 안에 드는 노선의 점만 모아 순서대로 꿴다.
+
+    한 자리에 상·하행 두 점이 다 들어오면 선이 갈지자가 되므로, 진행
+    방향을 200칸으로 나눠 **칸마다 가장 가까운 점 하나만** 남긴다.
+    """
+    ab = km(a, b)
+    if ab < 0.2:
+        return None
+    # 선분 위 그림자 위치 t(0~1)와 옆으로 벗어난 거리를 잰다.
+    dla, dlo = b[0] - a[0], b[1] - a[1]
+    den = dla * dla + dlo * dlo
+    if den <= 0:
+        return None
+    # 굽은 길도 품도록 폭을 넉넉히 — 다만 구간이 길수록만 넓어진다.
+    wide = max(2.0, min(12.0, ab * 0.35))
+    bins = {}
+    for w in route.ways:
+        for pt in w["pts"]:
+            t = ((pt[0] - a[0]) * dla + (pt[1] - a[1]) * dlo) / den
+            if not (0.0 <= t <= 1.0):
+                continue
+            foot = (a[0] + t * dla, a[1] + t * dlo)
+            d = km(pt, foot)
+            if d > wide:
+                continue
+            k = int(t * 200)
+            if k not in bins or d < bins[k][0]:
+                bins[k] = (d, pt)
+    if len(bins) < 3:
+        return None
+    return [bins[k][1] for k in sorted(bins)]
+
+
 def snap(routes: dict, name: str, a, b, ext_km: float):
     """(좌표들, 비) 또는 (None, 까닭).
 
@@ -235,6 +274,9 @@ def snap(routes: dict, name: str, a, b, ext_km: float):
     if r is None:
         return None, "노선 못 찾음"
     pts = r.path(tuple(a), tuple(b))
+    if not pts:
+        # 이어 붙이기가 안 되면 훑어서 모은다 (상·하행이 갈린 자리).
+        pts = corridor(r, tuple(a), tuple(b))
     if not pts:
         return None, "경로 없음"
     if not ext_km:
