@@ -3432,8 +3432,11 @@ function roadTip(it) {
     // 화면에 있었던 탓에 이 칸이 한 번도 안 그려졌다.
     + (it.done_on ? `<br>준공 ${escapeHtml(String(it.done_on))}` : '')
     + (it.axis ? `<br>${escapeHtml(it.axis)}${it.line ? ' · ' + escapeHtml(it.line) : ''}` : '')
-    + '<br><span class="dev-why">구간의 시작과 끝을 이은 선입니다 —'
-    + ' 실제 노선 모양이 아닙니다</span>';
+    + (it.path
+      ? '<br><span class="dev-why">실제 노선 선형입니다 ·'
+        + ' 선형 © OpenStreetMap 기여자 (ODbL)</span>'
+      : '<br><span class="dev-why">구간의 시작과 끝을 이은 선입니다 —'
+        + ' 실제 노선 모양이 아닙니다</span>');
 }
 
 function drawRoad() {
@@ -3449,20 +3452,27 @@ function drawRoad() {
     if (!Array.isArray(a) || !Array.isArray(b)) return;
     const core = roadStageColor(it.stage);
     const plan = it.stage === '계획';
+    /* **선형이 있으면 그것을 그린다** (2026-09-16 지시: "저희가 넣은 것은
+       직선이라 맞지 않아요"). path 는 OSM 의 실제 노선에 스냅한 결과고,
+       없으면 두 끝을 잇는 직선으로 되돌아간다 — 신설 계획은 OSM 에도
+       없으므로(proposed 0건) 끝까지 직선이다. */
+    const line = (Array.isArray(it.path) && it.path.length >= 2)
+      ? it.path : [a, b];
     // 테를 먼저 깔고 그 위에 심을 얹는다 — 두 겹이라야 어느 바탕에서도
     // 선이 보인다. 흰 심(계획)은 테가 없으면 밝은 지도에서 사라진다.
-    L.polyline([a, b], {
+    L.polyline(line, {
       pane: 'overlayPane', color: '#1F2937', weight: 8, opacity: .55,
-      lineCap: 'round',
+      lineCap: 'round', lineJoin: 'round',
     }).addTo(roadLayer);
-    L.polyline([a, b], {
+    L.polyline(line, {
       pane: 'overlayPane', color: core, weight: 4, opacity: .95,
-      dashArray: plan ? '10 7' : null, lineCap: 'round',
+      dashArray: plan ? '10 7' : null, lineCap: 'round', lineJoin: 'round',
     }).bindTooltip(roadTip(it), { direction: 'top', sticky: true })
       .addTo(roadLayer);
     if (!n) window.__roadTipSample = roadTip(it);   // 검사가 본다
-    // 두 끝을 점으로 — '여기까지가 자료가 말해 주는 자리' 라는 표시.
-    [a, b].forEach((pt) => {
+    /* 두 끝의 점은 **직선일 때만** 찍는다. 그 점의 뜻이 '자료가 여기까지만
+       말해 준다' 라서, 선형을 따라 그린 구간에 찍으면 거짓말이 된다. */
+    (it.path ? [] : [a, b]).forEach((pt) => {
       L.circleMarker(pt, {
         pane: 'markerPane', radius: 4, color: '#1F2937', weight: 2,
         fillColor: core, fillOpacity: 1,

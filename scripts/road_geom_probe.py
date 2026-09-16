@@ -37,7 +37,7 @@ TOKEN = os.environ.get("RELAY_TOKEN", "")
 OVERPASS = "https://overpass-api.de/api/interpreter"
 VW_WFS = "https://api.vworld.kr/req/wfs"
 
-# 사장님이 보내 준 화면 그대로 — 안성 입장면·서운면. 세종포천고속도로
+# 받은 화면 그대로 — 안성 입장면·서운면. 세종포천고속도로
 # 공사 구간이 이 안을 지난다.
 BOX = (36.90, 127.15, 37.10, 127.45)          # S, W, N, E
 

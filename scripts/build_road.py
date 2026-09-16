@@ -329,11 +329,59 @@ def one_work(idx, it: dict, stage: str, cache: dict | None = None):
     }, ""
 
 
+def snap_all(rows) -> None:
+    """직선(a,b)을 **실제 노선 모양**(path)으로 바꾼다 — 되는 것만.
+
+    2026-09-16 지시: "1번으로 우선 표시하고." 계획은 OSM 에 없다
+    (탐침 run 17: proposed 0건). 그래서 여기서 바뀌는 것은 공사중·준공
+    뿐이고, 계획 26건은 직선 그대로 남는다 — 두 끝밖에 모르는 구간에는
+    그것이 정직한 그림이다.
+    """
+    import requests                                    # noqa: PLC0415
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import osm_geom as OG                              # noqa: PLC0415
+
+    print("\nOSM 선형 받는 중 (남한 전체 motorway + construction)…")
+    try:
+        with requests.Session() as ses:
+            ways = OG.fetch(ses)
+    except Exception as exc:                           # noqa: BLE001
+        print(f"  ✗ 못 받았다: {type(exc).__name__} {exc} — 직선 그대로 둔다")
+        return
+    routes = OG.build_routes(ways)
+    built = sum(1 for w in ways if w["building"])
+    print(f"  조각 {len(ways):,}개 (공사중 {built:,}) · 노선 {len(routes)}개")
+    print(f"  노선 이름: {', '.join(sorted(routes)[:12])}…")
+
+    ok = 0
+    why = defaultdict(int)
+    for it in rows:
+        # **확장 18건은 이미 있는 길을 넓히는 것이다** — 그 선형은 OSM 에
+        # 있다. 그래서 단계로 자르지 않고 **노선 이름이 있느냐**로 가른다.
+        # 신설 계획은 여기서 '노선 못 찾음' 으로 떨어지는 것이 맞다.
+        name = it.get("route") or it.get("line") or ""
+        if not name:
+            why["노선명 없음"] += 1
+            continue
+        path, res = OG.snap(routes, name, it["a"], it["b"], it.get("km") or 0)
+        if path:
+            it["path"] = path
+            it["path_ratio"] = round(res, 2)
+            ok += 1
+        else:
+            why[res] += 1
+    print(f"\n선형 붙임 {ok}/{len(rows)}")
+    for w, n in sorted(why.items(), key=lambda kv: -kv[1])[:8]:
+        print(f"   못 붙임 {w}: {n}건")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--work", action="store_true", help="공사현황까지 받는다")
     ap.add_argument("--upload", action="store_true",
                     help="만든 뒤 공개 버킷에 올린다 (저장소에 커밋하지 않는다)")
+    ap.add_argument("--osm", action="store_true",
+                    help="OSM 선형에 스냅한다 (직선 대신 실제 노선 모양)")
     args = ap.parse_args()
 
     idx = build_index()
@@ -367,6 +415,9 @@ def main() -> None:
         "plan_total": 37,
         "items": plan + work,
     }
+    if args.osm:
+        snap_all(plan + work)
+
     if not args.work:
         # 공사 없이 돌렸으면 **이미 받아 둔 공사 줄을 지우지 않는다.**
         # 러너에는 예전 파일이 없으므로 버킷에 있는 것을 본다 — 그러지

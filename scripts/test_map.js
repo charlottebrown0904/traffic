@@ -2047,6 +2047,42 @@ async function stubCommon(pg) {
     check('준공 줄 말풍선에 준공 날짜가 있다',
           /준공 20240401/.test(stages.tip), stages.tip.slice(0, 90));
 
+    /* **선형(path)이 있으면 직선 대신 그것을 그린다** (2026-09-16 지시:
+       "저희가 넣은 것은 직선이라 맞지 않아요"). 두 끝 점은 직선일 때만
+       찍는다 — 그 점의 뜻이 '자료가 여기까지만 말해 준다' 라서, 선형을
+       따라 그린 구간에 찍으면 거짓말이 된다. */
+    const geom = await page.evaluate(() => {
+      const keep = window.state.road;
+      const path = [[36.5, 127.4], [36.55, 127.44], [36.6, 127.5]];
+      window.state.road = { items: [
+        { stage: '공사중', kind: '공사', name: '굽은 것', km: 9,
+          a: [36.5, 127.4], b: [36.6, 127.5], path },
+        { stage: '공사중', kind: '공사', name: '곧은 것', km: 9,
+          a: [36.7, 127.6], b: [36.8, 127.7] },
+      ] };
+      window.__lines = [];
+      window.drawRoad();
+      // 가짜 지도의 polyline 은 __latlngs 에 넣어 둔다 (스텁 참고).
+      const lines = (window.__lines || []).map((l) => (l.__latlngs || []).length);
+      const tipPath = window.roadTip(window.state.road.items[0]);
+      const tipPlain = window.roadTip(window.state.road.items[1]);
+      window.state.road = keep;
+      window.drawRoad();
+      return { lines, tipPath, tipPlain };
+    });
+    // 굽은 것은 3점짜리 선 두 겹, 곧은 것은 2점짜리 선 두 겹.
+    check('선형이 있으면 꼭짓점을 그대로 그린다',
+          geom.lines.filter((n) => n === 3).length === 2,
+          `선 길이들 ${JSON.stringify(geom.lines)}`);
+    check('선형을 따라 그리면 실제 노선이라고 적고 출처를 밝힌다',
+          /실제 노선 선형/.test(geom.tipPath)
+            && /OpenStreetMap/.test(geom.tipPath),
+          geom.tipPath.slice(-95));
+    check('선형이 없으면 실제 노선이 아니라고 그대로 적는다',
+          /실제 노선 모양이 아닙니다/.test(geom.tipPlain)
+            && !/OpenStreetMap/.test(geom.tipPlain),
+          geom.tipPlain.slice(-70));
+
     /* 철도역 — 종류로 가를 칸이 자료에 반만 차 있어 **정차 규모**로
        가른다 (2026-09-16 물음: "철도역도 종류가 나눌 수 있는 지 확인"). */
     const rs = await page.evaluate(() => window.__railSize ? {

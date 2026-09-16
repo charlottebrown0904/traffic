@@ -316,7 +316,7 @@ run 2 는 198건 중 15건만 붙였다. 자료가 아니라 붙이는 방식이
       motorway 34 · motorway_link 19 · primary 8
       primary_link 2 · secondary 3 · tertiary 2
       → construction=motorway 의 이름이 '세종포천고속도로'
-        **사장님 화면의 그 점선이 이것이다**
+        **받은 화면의 그 점선이 이것이다**
 
     proposed=*        없음
 
