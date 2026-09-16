@@ -55,21 +55,15 @@ def osm() -> None:
     print("1. OSM Overpass — 배경 지도에 보이는 그 선을 그대로 받아 본다")
     print("=" * 72)
     s, w, n, e = BOX
-    q = f"""[out:json][timeout:90];
+    q = f"""[out:json][timeout:120];
 (
-  way["highway"="motorway"]({s},{w},{n},{e});
-  way["highway"="motorway_link"]({s},{w},{n},{e});
-  way["highway"="construction"]({s},{w},{n},{e});
-  way["highway"="proposed"]({s},{w},{n},{e});
-  way["highway"="trunk"]({s},{w},{n},{e});
+  way["highway"~"^(motorway|motorway_link|construction|proposed)$"]({s},{w},{n},{e});
 );
 out geom;"""
-    # **406 을 먼저 맞았다.** Overpass 는 python-requests 의 기본
-    # User-Agent 를 막는다. 자기를 밝히면 통과한다.
     head = {"User-Agent": "toji.fyi road-geometry probe (contact via github)",
             "Accept": "application/json"}
     try:
-        r = requests.post(OVERPASS, data={"data": q}, headers=head, timeout=120)
+        r = requests.post(OVERPASS, data={"data": q}, headers=head, timeout=180)
     except requests.RequestException as exc:
         print(f"  ✗ 못 불렀다: {type(exc).__name__} {exc}")
         return
@@ -78,38 +72,33 @@ out geom;"""
         return
     els = r.json().get("elements", [])
     print(f"  길 {len(els)}개")
-    kinds = Counter(e_["tags"].get("highway") for e_ in els)
-    for k, v in kinds.most_common():
-        print(f"    highway={k:14s} {v}개")
+    for k, v in Counter(x["tags"].get("highway") for x in els).most_common():
+        print(f"    highway={k:16s} {v}개")
 
-    # 공사중·계획을 가려낼 수 있는가 — construction/proposed 의 속칭 칸
-    print("\n  공사중·계획으로 읽히는 길:")
-    n_show = 0
-    for e_ in els:
-        t = e_.get("tags", {})
-        hw = t.get("highway")
-        if hw not in ("construction", "proposed"):
-            continue
-        sub = t.get("construction") or t.get("proposed") or "?"
-        geom = e_.get("geometry") or []
-        print(f"    {t.get('name', '(이름없음)')[:30]:32s} {hw}={sub}"
-              f" · 꼭짓점 {len(geom)}개")
-        n_show += 1
-        if n_show >= 12:
-            break
-    if not n_show:
-        print("    (없음)")
+    # **앞선 탐침의 구멍.** construction 74개 중 12개만 찍어 보고 'primary
+    # 뿐' 이라고 읽을 뻔했다. 하위 종류를 통째로 센다 — 고속도로 공사가
+    # 있는지 없는지는 이 표가 정한다.
+    for tag in ("construction", "proposed"):
+        c = Counter(x["tags"].get(tag) for x in els if x["tags"].get(tag))
+        print(f"\n  {tag}=* 하위 종류: {dict(c) or '없음'}")
+        mot = [x for x in els
+               if x["tags"].get(tag) in ("motorway", "motorway_link", "trunk")]
+        for x in mot[:8]:
+            t = x["tags"]
+            print(f"    {str(t.get('name') or t.get('ref') or '(이름없음)')[:28]:30s}"
+                  f" {tag}={t.get(tag)} · 꼭짓점 {len(x.get('geometry') or [])}개")
 
-    # **꼭짓점 수가 핵심이다.** 2개면 직선이라 지금과 다를 게 없다.
-    pts = [len(e_.get("geometry") or []) for e_ in els if e_.get("geometry")]
+    # **우리 자료와 이으려면 이름이 맞아야 한다.** 도로공사 API 는
+    # routeName('경부선') 을 준다. OSM 쪽 이름·번호가 뭘로 오는지 본다.
+    mw = [x for x in els if x["tags"].get("highway") == "motorway"]
+    print(f"\n  motorway 의 이름/번호 (우리 routeName 과 이을 열쇠):")
+    for k in ("name", "ref"):
+        c = Counter(x["tags"].get(k) for x in mw if x["tags"].get(k))
+        print(f"    {k:5s} {' · '.join(f'{a!r}×{b}' for a, b in c.most_common(6))[:120]}")
+    pts = sorted(len(x.get("geometry") or []) for x in mw if x.get("geometry"))
     if pts:
-        pts.sort()
-        print(f"\n  꼭짓점: 가운데값 {pts[len(pts) // 2]}개 ·"
-              f" 가장 많은 것 {pts[-1]}개 · 2개짜리 {sum(1 for p in pts if p <= 2)}개")
-        big = max(els, key=lambda x: len(x.get("geometry") or []))
-        g = big.get("geometry") or []
-        print(f"  가장 긴 길 '{big['tags'].get('name', '?')}' 의 앞 3점: "
-              f"{[(round(p['lat'], 5), round(p['lon'], 5)) for p in g[:3]]}")
+        print(f"    꼭짓점: 가운데값 {pts[len(pts) // 2]}개 · 가장 많은 것 {pts[-1]}개"
+              f" · 2개짜리 {sum(1 for x in pts if x <= 2)}개")
     print("\n  ※ OSM 은 ODbL 이다 — 쓰려면 출처 표기와 조건을 확인해야 한다.")
 
 
@@ -117,7 +106,11 @@ def vworld() -> None:
     print("\n" + "=" * 72)
     print("2. 브이월드 도로중심선 lt_l_n3a0020000 — 관이 가진 선형")
     print("=" * 72)
-    s, w, n, e = BOX
+    # **앞선 탐침은 1000개 상한에 잘렸다.** 넓은 상자에서 이름 없는 동네
+    # 길이 먼저 1000개를 채우면 고속도로가 못 들어온다 — 그걸 '자료에
+    # 없다' 로 읽으면 틀린다. 경부고속도로 바로 위 좁은 상자로 묻는다.
+    s, w, n, e = 36.99, 127.25, 37.02, 127.29
+    print(f"  상자: 경부고속도로 위 {s},{w} ~ {n},{e}")
     q = {
         "SERVICE": "WFS", "VERSION": "1.1.0", "REQUEST": "GetFeature",
         "TYPENAME": "lt_l_n3a0020000", "OUTPUT": "application/json",
