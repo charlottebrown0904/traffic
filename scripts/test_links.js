@@ -143,7 +143,42 @@ const qr = fs.readFileSync(path.join(ROOT, 'public/lib/qr.js'), 'utf8');
 ok('QR 은 외부 서비스에 주소를 넘기지 않는다', !/https?:\/\/(?!www\.w3\.org)/.test(qr));
 ok('조용한 테두리를 4모듈 둔다', /quiet == null \? 4/.test(qr));
 
-console.log('\n10. 방침이 실제로 있다');
+console.log('\n10. SQL 의 함정 — 집계를 담은 식을 group by 1 로 묶지 않는다');
+/* 2026-09-16 에 실제로 터진 자리다. `select jsonb_build_object(..., count(*))
+   ... group by 1` 은 1번이 **그 jsonb_build_object 전체**를 가리켜
+   "aggregate functions are not allowed in GROUP BY" 로 죽는다.
+
+   무서운 것은 **CREATE FUNCTION 때는 안 죽는다**는 점이다 — plpgsql 은
+   함수 안의 SQL 을 부를 때 컴파일한다. '적용 성공' 을 보고 됐다고 믿게 된다.
+   그래서 글자로라도 이 꼴을 막는다. */
+const migDir = path.join(ROOT, 'supabase/migrations');
+const offenders = [];
+for (const f of fs.readdirSync(migDir).filter((x) => x.endsWith('.sql'))) {
+  // **주석을 먼저 걷는다.** 안 걷으면 '이렇게 쓰면 안 된다' 고 적어 둔
+  // 예시까지 잡아서, 사고를 기록한 파일이 사고로 신고된다.
+  const txt = fs.readFileSync(path.join(migDir, f), 'utf8')
+    .split('\n').map((ln) => ln.replace(/--.*$/, '')).join('\n');
+  // 'select jsonb_build_object(' 로 시작하는 덩어리마다, 다음 select 전까지
+  // 집계와 group by <숫자> 가 같이 있으면 잡는다.
+  const chunks = txt.split(/\bselect\b/i).slice(1);
+  for (const c of chunks) {
+    const head = c.slice(0, c.search(/\bselect\b/i) < 0 ? c.length : c.search(/\bselect\b/i));
+    if (!/^\s*(coalesce\(\s*)?jsonb_build_object\s*\(/i.test(head)) continue;
+    if (!/count\s*\(|sum\s*\(|max\s*\(|min\s*\(|avg\s*\(/i.test(head)) continue;
+    if (/\bgroup\s+by\s+\d/i.test(head)) offenders.push(f);
+  }
+}
+ok('집계를 담은 jsonb_build_object 를 group by 1 로 묶은 곳이 없다',
+   offenders.length === 0, [...new Set(offenders)].join(', '));
+
+ok('0014 가 그 사고를 적어 둔다',
+   /aggregate functions are not allowed in GROUP BY/.test(
+     fs.readFileSync(path.join(migDir, '0014_fix_group_by.sql'), 'utf8')));
+ok('기간 인자를 받는 판이 저장소에 있다 (DB 에만 있으면 안 된다)',
+   /admin_link_stats\(p_days int/.test(
+     fs.readFileSync(path.join(migDir, '0014_fix_group_by.sql'), 'utf8')));
+
+console.log('\n11. 방침이 실제로 있다');
 const legal = fs.readFileSync(path.join(ROOT, 'public/legal/index.html'), 'utf8');
 ok('행태정보 절이 있다', /행태정보/.test(legal));
 ok('거부 방법을 적는다', /차단|거부/.test(legal));

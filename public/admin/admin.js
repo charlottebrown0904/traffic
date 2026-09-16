@@ -452,9 +452,12 @@
         if (u.error) {
           return '<div class="adm-block"><b>아직 집계를 못 받습니다</b>'
             + '<p>' + E(u.error) + '</p>'
-            + '<p><code>supabase/migrations/0012_utm.sql</code> 을 Supabase '
-            + 'SQL Editor 에서 한 번 실행하면 열립니다. 화면 쪽(첫 접점 저장)은 '
-            + '이미 돌고 있으므로, 실행한 뒤 가입하는 분부터 경로가 붙습니다.</p></div>'
+            + '<p>표가 아직 없으면 <code>0012_utm.sql</code> 과 '
+            + '<code>0014_fix_group_by.sql</code> 을 차례로 실행하십시오. '
+            + '화면 쪽(첫 접점 저장)은 이미 돌고 있으므로, 실행한 뒤 가입하는 '
+            + '분부터 경로가 붙습니다.</p>'
+            + '<p><b>이미 실행했는데도 이 글이 보이면 함수가 오류를 낸 것입니다</b> — '
+            + '위 메시지를 그대로 알려 주십시오.</p></div>'
             + gaBlock(ga, on, c.ga);
         }
 
@@ -517,8 +520,13 @@
         if (L.error) {
           return '<div class="adm-block"><b>아직 장부를 못 받습니다</b>'
             + '<p>' + E(L.error) + '</p>'
-            + '<p><code>supabase/migrations/0013_links_audit.sql</code> 을 '
-            + 'Supabase SQL Editor 에서 한 번 실행하면 열립니다.</p></div>';
+            + '<p>표가 아직 없으면 <code>0013_links_audit.sql</code> 과 '
+            + '<code>0014_fix_group_by.sql</code> 을 Supabase SQL Editor 에서 '
+            + '차례로 실행하십시오.</p>'
+            + '<p><b>이미 실행했는데도 이 글이 보이면 마이그레이션 문제가 아니라 '
+            + '함수가 오류를 낸 것입니다</b> — 위 메시지를 그대로 알려 주십시오. '
+            + '\'표가 없다\' 와 \'함수가 깨졌다\' 는 다른 고장인데 화면이 하나로 '
+            + '보여 주면 엉뚱한 곳을 고치게 됩니다.</p></div>';
         }
         var chans = (L.channels || []).filter(function (x) { return x.active; });
         var links = (L.links || []).filter(function (x) { return !x.archived; });

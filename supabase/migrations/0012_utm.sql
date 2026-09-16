@@ -38,6 +38,8 @@ alter table public.profile add column if not exists landing_at   timestamptz;
 --
 -- profile 에는 전화번호와 권한이 같이 들어 있다. 그것을 열지 않고 **셈한
 -- 결과만** 돌려준다 (0008 과 같은 방식). 함수 안에서 관리자인지 다시 본다.
+-- ⚠ 이 아래 집계는 2026-09-16 에 고쳤다. `group by 1` 이 묶을 칸이 아니라
+-- jsonb_build_object(...) 전체를 가리켜 부를 때 죽었다. 사연은 0014 에 있다.
 create or replace function public.admin_utm_stats()
 returns jsonb
 language plpgsql
@@ -59,43 +61,45 @@ begin
     'tagged',  (select count(*) from profile where utm_source is not null),
     'since',   (select min(created_at) from profile where utm_source is not null),
     'by_source', (
-      select coalesce(jsonb_agg(x order by x->>'n' desc), '[]'::jsonb) from (
-        select jsonb_build_object(
-                 'source', coalesce(utm_source, '(직접 들어옴)'),
-                 'medium', coalesce(utm_medium, '—'),
-                 'n', count(*),
-                 'last', max(created_at)) as x
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'source', g.src, 'medium', g.med, 'n', g.n, 'last', g.last_at)
+               order by g.n desc), '[]'::jsonb)
+      from (
+        select coalesce(utm_source, '(직접 들어옴)') as src,
+               coalesce(utm_medium, '—') as med,
+               count(*) as n, max(created_at) as last_at
         from profile group by 1, 2 order by count(*) desc limit 30
-      ) t
+      ) g
     ),
     'by_campaign', (
-      select coalesce(jsonb_agg(x order by x->>'n' desc), '[]'::jsonb) from (
-        select jsonb_build_object(
-                 'campaign', utm_campaign,
-                 'source', coalesce(utm_source, '—'),
-                 'n', count(*)) as x
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'campaign', g.camp, 'source', g.src, 'n', g.n) order by g.n desc), '[]'::jsonb)
+      from (
+        select utm_campaign as camp, coalesce(utm_source, '—') as src, count(*) as n
         from profile where utm_campaign is not null
         group by 1, 2 order by count(*) desc limit 30
-      ) t
+      ) g
     ),
     'by_ref', (
-      select coalesce(jsonb_agg(x order by x->>'n' desc), '[]'::jsonb) from (
-        select jsonb_build_object('ref', landing_ref, 'n', count(*)) as x
+      select coalesce(jsonb_agg(jsonb_build_object('ref', g.ref, 'n', g.n)
+               order by g.n desc), '[]'::jsonb)
+      from (
+        select landing_ref as ref, count(*) as n
         from profile where landing_ref is not null
         group by 1 order by count(*) desc limit 20
-      ) t
+      ) g
     ),
     -- 최근 14일 가입 추이. 광고를 켠 날과 견주려면 날짜가 있어야 한다.
     'by_day', (
-      select coalesce(jsonb_agg(x order by x->>'day'), '[]'::jsonb) from (
-        select jsonb_build_object(
-                 'day', to_char(created_at at time zone 'Asia/Seoul', 'MM-DD'),
-                 'n', count(*),
-                 'tagged', count(*) filter (where utm_source is not null)) as x
-        from profile
-        where created_at > now() - interval '14 days'
-        group by 1 order by 1
-      ) t
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'day', g.day, 'n', g.n, 'tagged', g.tagged) order by g.day), '[]'::jsonb)
+      from (
+        select to_char(created_at at time zone 'Asia/Seoul', 'MM-DD') as day,
+               count(*) as n,
+               count(*) filter (where utm_source is not null) as tagged
+        from profile where created_at > now() - interval '14 days'
+        group by 1
+      ) g
     )
   ) into out;
   return out;

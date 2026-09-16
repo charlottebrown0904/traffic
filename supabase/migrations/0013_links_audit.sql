@@ -147,6 +147,8 @@ grant execute on function public.hit_link(text, text, text) to anon, authenticat
 -- 어드민이 읽을 집계 — 링크마다 클릭·가입·전환율
 -- profile 에는 전화번호와 권한이 같이 있다. 열지 않고 **센 결과만** 준다.
 -- ─────────────────────────────────────────────────────────────
+-- ⚠ 이 아래 집계는 2026-09-16 에 고쳤다. `group by 1` 이 묶을 칸이 아니라
+-- jsonb_build_object(...) 전체를 가리켜 부를 때 죽었다. 사연은 0014 에 있다.
 create or replace function public.admin_link_stats()
 returns jsonb
 language plpgsql security definer set search_path = public
@@ -185,22 +187,25 @@ begin
     ),
     -- 최근 14일 클릭 추이. 광고 켠 날과 견주려면 날짜가 있어야 한다.
     'clicks_by_day', (
-      select coalesce(jsonb_agg(x order by x->>'day'), '[]'::jsonb) from (
-        select jsonb_build_object(
-                 'day', to_char(at at time zone 'Asia/Seoul', 'MM-DD'),
-                 'n', count(*),
-                 'mobile', count(*) filter (where device = 'mobile')) as x
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'day', g.day, 'n', g.n, 'mobile', g.mobile) order by g.day), '[]'::jsonb)
+      from (
+        select to_char(at at time zone 'Asia/Seoul', 'MM-DD') as day,
+               count(*) as n,
+               count(*) filter (where device = 'mobile') as mobile
         from public.link_click
         where at > now() - interval '14 days'
-        group by 1 order by 1
-      ) t
+        group by 1
+      ) g
     ),
     'by_referer', (
-      select coalesce(jsonb_agg(x order by x->>'n' desc), '[]'::jsonb) from (
-        select jsonb_build_object('host', referer_host, 'n', count(*)) as x
+      select coalesce(jsonb_agg(jsonb_build_object('host', g.host, 'n', g.n)
+               order by g.n desc), '[]'::jsonb)
+      from (
+        select referer_host as host, count(*) as n
         from public.link_click where referer_host is not null
         group by 1 order by count(*) desc limit 20
-      ) t
+      ) g
     )
   ) into out;
   return out;
