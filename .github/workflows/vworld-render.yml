@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       probe:
-        description: "render(기본) / geocode-mask — 가려진 지번 좌표가 진짜인가"
+        description: "render(기본) / geocode-mask / roads — 고속도로 계획층 찾기"
         default: "render"
 
 jobs:
@@ -31,6 +31,12 @@ jobs:
       - name: 개발 층 그림 확인
         if: inputs.probe == 'render' || inputs.probe == ''
         run: python scripts/vworld_render_probe.py 2>&1 | tee /tmp/probe.log
+
+      # 고속도로 공사·신설 계획을 담은 층이 브이월드에 있는가 (2026-09-16 지시).
+      # 우리가 그리는 계획도로는 도시계획시설이라 고속국도가 안 들어온다.
+      - name: 고속도로 계획층 찾기
+        if: inputs.probe == 'roads'
+        run: python scripts/road_plan_probe.py 2>&1 | tee /tmp/probe.log
 
       # 가려진 지번('1**')으로 얻은 'parcel' 좌표가 진짜인가.
       # 이 컨테이너는 중계기를 못 부르므로 러너에서 돈다.
