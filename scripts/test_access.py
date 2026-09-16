@@ -172,6 +172,39 @@ check("tojiAdminNav" in (ROOT / "public" / "app" / "app.js").read_text(encoding=
       and "tojiAdminNav" in acct,
       "지도·계정 화면이 로그인 상태를 알 때 링크 힌트를 갱신한다")
 
+# ── 탭으로 나눈다 (2026-09-16 지시) ───────────────────────────────
+# "산출식 · 데이터베이스 · 판단 근거 · 논문 숫자 · 실거래 숫자 ·
+#  필지 분석 · 감정평가서 현황 각각 탭으로 구성 + 대쉬보드 추가".
+adm_css = (ROOT / "public" / "admin" / "style.css").read_text(encoding="utf-8")
+_want = ["대쉬보드", "산출식", "데이터베이스", "판단 근거", "논문 숫자",
+         "실거래 숫자", "필지 분석", "감정평가서 현황"]
+check(all(f"'{w}'" in adm for w in _want),
+      "지시한 일곱 항목 + 대쉬보드가 모두 탭 이름으로 있다")
+# 탭마다 칸이 하나라도 붙어 있어야 한다 — 빈 탭은 '고장' 으로 읽힌다.
+_ids = _re.findall(r"^    \['([a-z]+)', '", adm, _re.M)
+_tabids = _re.findall(r"^    \['([a-z]+)', '[^']+'\],$", adm, _re.M)
+check(_tabids and set(_tabids) <= set(_ids),
+      f"빈 탭이 없다 (탭 {len(set(_tabids))}개 · 칸이 붙은 탭 {len(set(_ids) & set(_tabids))}개)")
+check("hashchange" in adm and "wantedTab" in adm,
+      "주소의 #탭을 본다 — 새로고침해도 보던 탭이 남는다")
+check("lastCtx" in adm and "if (lastCtx) { render(null)" in adm,
+      "탭을 옮길 때 자료를 다시 부르지 않는다 (RPC 를 또 때리지 않는다)")
+check(".adm-tab[aria-selected=\"true\"]" in adm_css
+      and "background" in adm_css.split(".adm-tab[aria-selected")[1][:240],
+      "고른 탭을 색만으로 알리지 않는다 (바탕·테두리도 바뀐다)")
+check("adm-group" not in adm and "adm-group" not in adm_css,
+      "세로로 늘어놓던 묶음 제목은 걷어냈다")
+# 대쉬보드는 **새 숫자를 짓지 않는다** — 다른 탭이 이미 부르는 곳만 본다.
+# 카드 쪽만 떼어 본다 — TABS 목록에도 'board' 가 있어서 그냥 자르면
+# 탭 이름 줄과 카드 사이의 빈 구간이 잡힌다.
+_board = adm.split("['board', '한눈에")[1].split("// ══ 1.")[0]
+check("c.meta" in _board and "c.stats" in _board and "c.cover" in _board,
+      "대쉬보드는 이미 부르는 세 곳에서 머리 숫자만 뽑는다")
+check("cv.cells_ready" in _board,
+      "  24칸 숫자는 '부족한 칸' 탭과 같은 칸을 쓴다 (따로 세지 않는다)")
+check("모름" in _board and "adm-block" in _board,
+      "  못 받은 곳은 0 이 아니라 '모름' 이라고 적는다")
+
 print()
 print("4. 진짜 자물쇠 — 숫자 원천은 비공개 버킷에서만")
 sql4 = (ROOT / "supabase" / "migrations" / "0004_premium_storage.sql").read_text(encoding="utf-8")

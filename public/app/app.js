@@ -206,9 +206,6 @@ async function boot() {
   state.tradesShown = state.trades;
 
   if (state.meta.is_synthetic) $('#demo-banner').hidden = false;
-  $('#meta-stamp').innerHTML =
-    `${state.meta.year_min}–${state.meta.year_max} · 영업소 ${state.meta.counts.tollgates}` +
-    `<br>거래 ${state.meta.counts.trades_total.toLocaleString('ko-KR')}건`;
   $('#disclaimer').textContent = state.meta.disclaimer;
 
   if (CONFIG.homeUrl) {
@@ -2824,11 +2821,31 @@ window.__devPicked = devPicked;
  *   이라 그 구분을 안 담는다 — 지어내지 않는다. 대신 집행 단계가 그 자리를
  *   대신한다: 미집행이 아직 안 난 길이다.
  */
+/* 2026-09-16 지시: "택지·사업지구는 색상 구분이 잘되도록 구분할 것".
+ *
+ * 옛 다섯 색(#7C3AED·#2563EB·#0891B2·#65A30D·#9CA3AF)은 **쟀더니 실제로
+ * 못 가르는 색이었다.** 지구지정과 개발계획이 보통 시력에서도 ΔE 12.4 —
+ * 15 아래면 색만으로는 못 가른다. 게다가 회색(준공)은 채도가 0.019 라
+ * '색이 아니라 회색' 으로 읽힌다.
+ *
+ * 새 다섯 색은 **화면에 같이 뜨는 여섯 색을 한꺼번에 넣고** 골랐다 —
+ * 계획도로의 빨강·호박까지 포함해서다. 택지만 놓고 고르면 계획도로와
+ * 부딪힌다(그렇게 고른 주황 #C77700 은 부분집행 #F59E0B 과 ΔE 12.9 로
+ * 떨어졌다). 모든 짝에 대해 재서 통과한 값이다:
+ *
+ *   색약(deutan/protan/tritan) 최악 짝  ΔE 9.4   (8 이상이면 통과)
+ *   보통 시력 최악 짝                    ΔE 17.6  (15 이상이면 통과)
+ *
+ * 재는 자와 기준은 dataviz 스킬의 validate_palette.js 다. 색을 바꿀 때는
+ * 눈으로 고르지 말고 여섯을 다시 넣고 돌린다.
+ *
+ * ※ 준공만 회색으로 남긴다. 그것은 '한 갈래' 가 아니라 **끝난 것**이고,
+ *   기본으로 꺼져 있다. 끝난 것이 눈에 띄면 안 된다. */
 const DEV_STAGE = {
-  '지구지정': { color: '#7C3AED', rank: 1 },
-  '개발계획': { color: '#2563EB', rank: 2 },
-  '실시계획': { color: '#0891B2', rank: 3 },
-  '부분준공': { color: '#65A30D', rank: 4 },
+  '지구지정': { color: '#075985', rank: 1 },
+  '개발계획': { color: '#0EA5E9', rank: 2 },
+  '실시계획': { color: '#009E73', rank: 3 },
+  '부분준공': { color: '#7C3AED', rank: 4 },
   '준공': { color: '#9CA3AF', rank: 5, done: true },
   // 2026-09-16 지시: "미집행과 부분집행 색상 구분이 어려움 (비슷)".
   // #DC2626(빨강)과 #EA580C(주황)는 색상각이 25도밖에 안 떨어져 있었다.
@@ -2839,15 +2856,23 @@ const DEV_STAGE = {
   '집행완료': { color: '#6B7280', rank: 3, done: true, dash: '2 5' },
 };
 
-/* **얼마나 채울까.** 2026-09-16 지시 두 가지:
- *   "색상이 너무 진하게 채워져 있음 (z14~z16까지는 선으로만 표현)"
- *   "확대시 미집행 부는 투명 0%임 수정필요 (z17부터 아주 연하게 채움)"
+/* **얼마나 채울까 — 배율이 아니라 층이 정한다.** (2026-09-16 지시 2차)
  *
- * 멀리서는 면이 서로 덮여 바탕 지도가 안 보이므로 **선만** 긋고, 가까이
- * 가면 어디가 안쪽인지 알아야 하므로 **아주 연하게** 채운다. */
-const DEV_FILL_ZOOM = 17;
-function devFillOpacity(z) {
-  return z >= DEV_FILL_ZOOM ? 0.12 : 0;
+ * 아침에는 배율로 갈랐다(z17부터 0.12). 실제로 보고 나서 바뀐 지시는
+ * 이렇다:
+ *   "확대해도 색상 채우지 않도록 수정 (선으로만 구분 잘 됨)"   ← 계획도로
+ *   "항상 색상 채움 반투명(투명도 80%)"                        ← 택지·사업지구
+ *
+ * 갈라야 하는 까닭이 층마다 다르다. **계획도로는 길이다** — 폭이 몇십
+ * 미터인 띠라, 채우면 띠 전체가 색판이 되어 밑의 땅이 안 보인다. 선 두
+ * 줄이면 어디를 지나는지 다 읽힌다. **택지는 구역이다** — 안과 밖을
+ * 가르는 것이 요점이라 테두리만으로는 '이 필지가 안에 드는가' 를 못
+ * 짚는다. 그래서 늘 채우되 아주 옅게 둔다.
+ *
+ * 투명도 80% = 불투명도 0.2 다. */
+const DEV_FILL = { housing: 0.2, planroad: 0 };
+function devFillOpacity(part) {
+  return DEV_FILL[part] != null ? DEV_FILL[part] : 0;
 }
 window.__devFillOpacity = devFillOpacity;
 
@@ -2856,13 +2881,23 @@ function devStage(p) {
 }
 const DEVELOP_MIN_ZOOM = 10;
 
-/* 2026-09-16 지시: "z 12부터 계획도로 보여서 너무 느려진다 —
- * 계획도로는 14부터 보이도록".
+/* **문턱은 층마다 다르다.** (2026-09-16 지시 두 번)
  *
- * z12 화면 하나는 스무 칸이 넘고 칸마다 도형이 수백이라, 원주 언저리를
- * 한 번 펼치면 선 수천 개를 그린다. 배율을 둘 올리면 한 칸이 덮는 넓이가
- * 16분의 1이 된다. */
-const DEVVEC_MIN_ZOOM = 14;
+ *   "z 12부터 계획도로 보여서 너무 느려진다 — 계획도로는 14부터"
+ *   "택지,사업지구는 z12부터 표기 함"
+ *
+ * 같은 배율인데 무게가 다르기 때문이다. **계획도로는 도시계획선이라 한
+ * 시·군에 수천 줄**이 깔린다 — z12 로 원주 언저리를 한 번 펼치면 선 수천
+ * 개를 그리느라 화면이 멎는다. **택지·사업지구는 구역이라 한 시·군에
+ * 몇십 개**다. 같은 화면에서 도형 수가 두 자릿수 대 네 자릿수로 갈린다.
+ *
+ * 그래서 하나의 숫자로 묶지 않는다. 느린 쪽만 z14 로 올리고, 가벼운 쪽은
+ * 시·군이 한눈에 드는 z12 에 둔다 — 택지는 멀리서 봐야 쓸모가 있다.
+ *
+ * DEVVEC_MIN_ZOOM 은 **둘 중 낮은 쪽**이다. '여기부터 뭔가 나온다' 를
+ * 말하는 자리(배율 눈금)에만 쓰고, 부를지 말지는 층별 값으로 가른다. */
+const DEV_VEC_ZOOM = { zone: 12, planroad: 14 };
+const DEVVEC_MIN_ZOOM = Math.min(...Object.values(DEV_VEC_ZOOM));
 
 /** 지금 켜진 타일 갈래를 하나의 layer 열쇠로 접는다.
  *
@@ -2913,15 +2948,17 @@ function drawDevelop() {
   updateDevLegend();
   window.__develop = { on: state.develop, key, parts: { ...state.devParts },
                        pick: JSON.parse(JSON.stringify(state.devPick)),
-                       fill: devFillOpacity(map.getZoom()) };
+                       fill: { housing: devFillOpacity('housing'),
+                               planroad: devFillOpacity('planroad') } };
 }
 
 /* ── 계획도로·택지지구를 도형으로 (2026-09-14 지시) ───────────────────
  *
  * 연속지적도와 같은 길이다 — 화면에 걸치는 타일 칸마다 따로 받아 두면
- * 조금 움직여도 겹치는 칸은 다시 안 부른다. 배율 12 아래에서는 안 부른다:
- * 얕을수록 한 칸에 든 도형이 기하급수로 늘어 상한에 걸리고, 그러면 선이
- * 군데군데 빠진다 — 빠진 선은 없는 선보다 나쁘다.
+ * 조금 움직여도 겹치는 칸은 다시 안 부른다. 문턱 아래에서는 안 부른다
+ * (택지 z12 · 계획도로 z14 — DEV_VEC_ZOOM): 얕을수록 한 칸에 든 도형이
+ * 기하급수로 늘어 상한에 걸리고, 그러면 선이 군데군데 빠진다 — 빠진 선은
+ * 없는 선보다 나쁘다.
  */
 /* 배율 눈금 — +/− 바로 위에 'z 14 / 7~19' 를 적는다.
  *
@@ -2930,7 +2967,8 @@ function drawDevelop() {
  * 보이지" 가 된다. */
 const ZOOM_GATES = [
   [DEVELOP_MIN_ZOOM, '개발'],
-  [DEVVEC_MIN_ZOOM, '계획도로·사업지구'],
+  [DEV_VEC_ZOOM.zone, '택지·사업지구'],
+  [DEV_VEC_ZOOM.planroad, '계획도로'],
   [ZONING_MIN_ZOOM, '용도지역'],
   [CADASTRAL_MIN_ZOOM, '필지경계'],
 ];
@@ -2995,9 +3033,12 @@ const devVecCache = new Map();      // 'kind/z/x/y' → {items}
 const devVecAsked = new Set();
 let devVecLayer = null;
 
-function devVecTiles() {
+function devVecTiles(kind) {
   const z = map.getZoom();
-  if (z < DEVVEC_MIN_ZOOM) return [];
+  // kind 를 안 주면 **가장 낮은 문턱**으로 본다. 검사와 눈금이 그렇게 쓴다.
+  const gate = (kind && DEV_VEC_ZOOM[kind] != null)
+    ? DEV_VEC_ZOOM[kind] : DEVVEC_MIN_ZOOM;
+  if (z < gate) return [];
   const b = map.getBounds();
   const n = 2 ** z;
   const xy = (lat, lon) => [
@@ -3034,7 +3075,7 @@ function devVecTiles() {
   return out;
 }
 
-window.__devVecTiles = () => devVecTiles();   // 배율 문턱을 검사가 본다
+window.__devVecTiles = (kind) => devVecTiles(kind);   // 배율 문턱을 검사가 본다
 
 function devVecKinds() {
   return DEV_PARTS.filter((p) => p.vec && state.devParts[p.key])
@@ -3048,12 +3089,17 @@ function drawDevVec() {
   if (!state.develop) return;
   const kinds = devVecKinds();
   if (!kinds.length) return;
-  const tiles = devVecTiles();
   let drawn = 0;
   let asked = 0;
   let missing = 0;
+  let tiles = 0;
+  // **칸 목록을 층마다 따로 뽑는다.** 문턱이 달라졌으므로(택지 z12 ·
+  // 계획도로 z14) 하나의 목록을 나눠 쓸 수 없다. z12~13 에서는 택지만
+  // 칸이 나오고 계획도로는 빈 목록이 온다.
   kinds.forEach((kind) => {
-    tiles.forEach(([z, x, y]) => {
+    const kindTiles = devVecTiles(kind);
+    tiles += kindTiles.length;
+    kindTiles.forEach(([z, x, y]) => {
       const key = `${kind}/${z}/${x}/${y}`;
       const got = devVecCache.get(key);
       // **받아 둔 칸은 무조건 그린다.** 한도는 그리는 데가 아니라
@@ -3075,14 +3121,14 @@ function drawDevVec() {
         .catch(() => { devVecAsked.delete(key); });
     });
   });
-  window.__devvec = { kinds, tiles: tiles.length, drawn, asked, missing,
+  window.__devvec = { kinds, tiles, drawn, asked, missing,
                       cached: devVecCache.size };
 }
 
 function paintDevVec(kind, items) {
   let n = 0;
   const part = kind === 'planroad' ? 'planroad' : 'housing';
-  const fill = devFillOpacity(map.getZoom());
+  const fill = devFillOpacity(part);
   items.forEach((it) => {
     const stage = devStage(it.p || {});
     const spec = DEV_STAGE[stage];
@@ -3098,8 +3144,8 @@ function paintDevVec(kind, items) {
         opacity: .9,
         dashArray: (spec && spec.dash) || null,
         fillColor: color,
-        // z17 아래에서는 **선만** 긋는다. 면끼리 겹쳐 바탕 지도를 덮으면
-        // 어디가 어디인지 못 읽는다.
+        // 계획도로는 0 — 띠를 채우면 밑의 땅이 통째로 가려진다.
+        // 택지는 0.2 — 안과 밖을 갈라야 하므로 늘 채우되 아주 옅게.
         fillOpacity: fill,
       },
     }).bindTooltip(devVecTip(kind, it.p || {}, stage),

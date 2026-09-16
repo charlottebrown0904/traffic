@@ -145,12 +145,101 @@
     }).catch(function (e) { return { error: String(e && e.message || e) }; });
   }
 
+  /* ── 탭 ──────────────────────────────────────────────────────
+     2026-09-16 지시: "산출식 · 데이터베이스 · 판단 근거 · 논문 숫자 ·
+     실거래 숫자 · 필지 분석 · 감정평가서 현황 각각 탭으로 구성
+     + 대쉬보드 추가".
+
+     지금까지는 한 장에 열일곱 칸이 세로로 늘어서 있었다. 머리글이
+     '무엇이 어디 있다' 를 말해 주지 않아서, 원장 현황을 보려면 산출식
+     네 칸을 지나쳐 굴려야 했다.
+
+     탭 이름은 **지시한 일곱 개를 그대로** 쓴다. 운영은 지시에 없지만
+     이미 있던 칸이라 버리지 않고 맨 뒤에 둔다 — 지우라는 말이 아니었다.
+
+     주소에 #탭이 붙는다. 새로고침해도 보던 탭이 남고, 링크로 짚어
+     보낼 수 있다. */
+  var TABS = [
+    ['board', '대쉬보드'],
+    ['formula', '산출식'],
+    ['db', '데이터베이스'],
+    ['verdict', '판단 근거'],
+    ['paper', '논문 숫자'],
+    ['trade', '실거래 숫자'],
+    ['parcel', '필지 분석'],
+    ['appraisal', '감정평가서 현황'],
+    ['ops', '운영'],
+  ];
+
   /* ── 카드 ────────────────────────────────────────────────────
-     [묶음, 제목, 간략 내용, 자세히(ctx → HTML)] */
+     [탭, 제목, 간략 내용, 자세히(ctx → HTML)] */
   var CARDS = [
 
-    // ══ 1. 값을 어떻게 내는가 ══
-    ['값을 어떻게 내는가', '현재 가치 산출식 — 공시지가기준법 다섯 마디',
+    /* ══ 0. 대쉬보드 ══
+       2026-09-16 지시: "+ 대쉬보드 추가 (포멧은 추후 확정)".
+
+       **포맷이 안 정해졌다고 빈 칸을 두지는 않는다.** 대신 이미 부르고
+       있는 세 곳(화면 자료 meta · 원장 집계 RPC · 부족한 칸 RPC)에서
+       머리 숫자만 뽑아 한 줄로 세운다. 새 숫자를 짓지 않았으므로 나중에
+       포맷이 정해져도 버릴 것이 없다.
+
+       그리고 **막힌 것을 같이 적는다.** 숫자만 늘어놓은 대쉬보드는 기분만
+       좋게 하고 할 일을 안 알려 준다. 여기서 보고 싶은 것은 '얼마나
+       모았나' 가 아니라 '무엇이 다음인가' 다. */
+    ['board', '한눈에 — 지금 무엇이 서 있고 무엇이 막혀 있나',
+      '화면 자료 · 원장 · 부족한 칸의 머리 숫자를 한 줄로. 포맷은 아직 확정 전입니다.',
+      function (c) {
+        var m = c.meta || {};
+        var n = m.counts || {};
+        var st = c.stats || {};
+        var ck = st['check'] || {};
+        var sgg = st.sgg_cells || {};
+        var cv = c.cover || {};
+        var f = st.factors || {};
+
+        // 못 받은 곳은 숨기지 않고 '못 받았다' 고 적는다. 0 으로 적으면
+        // '자료가 없다' 와 '못 불렀다' 가 한 얼굴이 된다.
+        var broken = [];
+        if (!m.counts) broken.push('화면 자료(<code>meta.json</code>)');
+        if (st.error) broken.push('원장 집계 — ' + E(st.error));
+        if (cv.error) broken.push('부족한 칸 집계 — ' + E(cv.error));
+        if (!c.val) broken.push('비공개 버킷(<code>premium/valuation.json</code>)');
+
+        // '부족한 칸' 탭과 **같은 자료의 같은 칸**을 본다 (v.grid / v.cells_ready).
+        // 여기서 따로 세면 두 탭이 다른 숫자를 말할 수 있다.
+        var grid = cv.grid || [];
+
+        return '<p class="adm-stamp">화면 자료 <b>' + when(m.generated_at) + '</b>'
+          + ' · 원장 집계 <b>' + when(st.generated_at) + '</b></p>'
+          + '<h4>얼마나 서 있나</h4>'
+          + kpi([
+            ['실거래', N(n.trades_total)],
+            ['좌표 붙은 거래', N(n.trades_mapped)],
+            ['감정평가서 원장', N(st.total)],
+            ['격차율 행', N(f.rows)],
+            ['영업소', N(n.tollgates)],
+          ])
+          + '<h4>얼마나 믿을 만한가</h4>'
+          + kpi([
+            ['검산 통과', N(ck.pass) + ' / ' + N(ck.checkable)],
+            ['좌표 붙은 비율', pct(Number(n.trades_mapped), Number(n.trades_total))],
+            ['시군구 칸 (3건↑)', N(sgg.ready) + ' / ' + N(sgg['all'])],
+            ['24칸 중 선 칸', grid.length ? (N(cv.cells_ready) + ' / 24') : '—'],
+          ])
+          + (broken.length
+              ? '<div class="adm-block"><b>못 받은 것</b><ul><li>'
+                + broken.join('</li><li>') + '</li></ul>'
+                + '위 칸 가운데 <em class="adm-miss">—</em> 는 이 때문입니다. '
+                + '0 이 아니라 <b>모름</b>입니다.</div>'
+              : '<div class="adm-ok">부르는 네 곳(화면 자료 · 원장 집계 · 부족한 칸 · 비공개 버킷)이 모두 응답했습니다.</div>')
+          + '<div class="adm-note"><b>포맷은 확정 전입니다</b>(2026-09-16 지시). '
+          + '지금은 다른 탭이 이미 부르는 숫자에서 머리만 뽑아 세웠습니다 — '
+          + '새로 만든 숫자는 하나도 없으므로, 포맷이 정해지면 배치만 바꾸면 됩니다. '
+          + '무엇을 맨 위에 둘지 정해 주시면 그대로 맞춥니다.</div>';
+      }],
+
+    // ══ 1. 산출식 ══
+    ['formula', '현재 가치 산출식 — 공시지가기준법 다섯 마디',
       '감정평가에 관한 규칙 §14 의 순서 그대로. 표준지공시지가에 네 마디를 곱해 단가를 내고, 자리수 규칙으로 결정단가를 정합니다. 마디가 하나라도 비면 1.00 으로 메우지 않고 보류합니다.',
       function (c) {
         var v = c.val || {};
@@ -170,7 +259,7 @@
           + '<div class="adm-note">보류 규칙이 중요합니다. 비어 있는 마디를 1.00 으로 채우면 값이 <b>나오기는</b> 합니다. 그 값은 근거가 없는데도 근거가 있는 것처럼 보입니다. 그래서 화면은 "산출 보류 — 비어 있는 마디" 를 적습니다.</div>';
       }],
 
-    ['값을 어떻게 내는가', '그 밖의 요인 — 두 갈래와 합치는 법',
+    ['formula', '그 밖의 요인 — 두 갈래와 합치는 법',
       '공시지가가 시세에 얼마나 못 미치는지. 어디에도 공표되지 않는 숫자이고, 값을 가르는 가장 큰 마디입니다. 평가선례(감정평가서)와 거래사례(실거래) 두 갈래를 건수로 가중해 합칩니다.',
       function (c) {
         var v = c.val || {};
@@ -204,7 +293,7 @@
           + '<div class="adm-note">지역이 값을 많이 가릅니다. 같은 조건에서도 시·도를 바꾸면 전국 중앙값의 0.6~1.7배까지 벌어집니다. 그래서 지역을 먼저 보고, 표본이 얇을 때만 물러납니다.</div>';
       }],
 
-    ['값을 어떻게 내는가', '개별요인 격차율 표 — 도로 · 형상 · 지세 · 면적',
+    ['formula', '개별요인 격차율 표 — 도로 · 형상 · 지세 · 면적',
       '감정평가서 수백 건의 개별요인 비교표에서 배운 지수입니다. 대상과 표준지의 지수를 나눠 조건별 격차율을 만들고, 그것을 모두 곱합니다.',
       function (c) {
         var v = c.val || {};
@@ -249,7 +338,7 @@
           + '</p><p>대상과 표준지 중 한쪽만 걸려 있으면 표준지를 다시 고릅니다. 표준지 자료에 그 구역 정보가 없으면 "확인하지 못했다" 를 참고사항에 남깁니다 — 모르는 것을 같다고 처리하지 않습니다.</p>';
       }],
 
-    ['값을 어떻게 내는가', '표준지를 고르는 벌점',
+    ['formula', '표준지를 고르는 벌점',
       '대상과 조건이 가까운 표준지를 벌점이 작은 순으로 고릅니다. 용도지역이 다르면 아예 후보에서 뺍니다.',
       function (c) {
         var v = c.val || {};
@@ -271,7 +360,7 @@
       }],
 
     // ══ 2. 필지 진단 ══
-    ['필지 진단', '레이더 여섯 축 — 무엇을 재고 무엇과 견주는가',
+    ['parcel', '레이더 여섯 축 — 무엇을 재고 무엇과 견주는가',
       '도로 · 물류 교통 · 개발 여지 · 시장 동향 · 모양·지세 · 주변 이용. 모두 비슷한 조건의 거래와 견준 백분위입니다.',
       function () {
         return table(['축', '재는 것', '또래·비교 대상'], [
@@ -291,7 +380,7 @@
           + '<p>2026-09-12 지시로 축 설명에서 <b>재는 방법</b>을 뺐습니다. 몇 km 안의 어느 차종인지, 또래를 무슨 열쇠로 묶는지는 이 화면에만 둡니다.</p>';
       }],
 
-    ['필지 진단', '필지 특성 — 도로접면 · 형상 · 지세를 어디서 받나',
+    ['parcel', '필지 특성 — 도로접면 · 형상 · 지세를 어디서 받나',
       '브이월드 토지특성 조회로 필지마다 받아 parcel 표에 넣습니다. 전국을 나눠 받는 중이고, 아직 안 받은 필지는 "조사 전" 이라고 말합니다.',
       function (c) {
         var m = c.meta || {};
@@ -306,7 +395,7 @@
       }],
 
     // ══ 3. 판단 근거 ══
-    ['판단 근거', '다섯 가설 판정 — 무엇을 말할 수 있고 없는지',
+    ['verdict', '다섯 가설 판정 — 무엇을 말할 수 있고 없는지',
       '교통량과 지가의 관계를 다섯 갈래로 나눠 검정했습니다. "아직 모름" 과 "효과 없음" 은 다릅니다.',
       function (c) {
         var v = c.verdicts || {};
@@ -331,7 +420,7 @@
           + '<div class="adm-warn">이것이 서비스의 약한 고리입니다. 교통량이 늘면 오른다는 말을 우리는 <b>아직 증명하지 못했습니다.</b> 그래서 화면에서 미래 가치를 팔지 않고, 현재 가치(공시지가기준법)를 먼저 냅니다.</div>';
       }],
 
-    ['판단 근거', '선행연구 숫자 — 설계를 어디서 가져왔나',
+    ['paper', '선행연구 숫자 — 설계를 어디서 가져왔나',
       'IC 가까울수록 비싼 것이 아니라는 연구, 10km 라는 경계의 근거, 빨대효과라는 반대 경로.',
       function () {
         return '<h4>1. IC 이격거리와 가격</h4>'
@@ -355,7 +444,7 @@
       }],
 
     // ══ 4. 자료 ══
-    ['자료', '데이터베이스 현황 — 무엇이 얼마나 들어와 있나',
+    ['db', '데이터베이스 현황 — 무엇이 얼마나 들어와 있나',
       '실거래 · 교통량 · 필지 · 표준지 · 인구 · 조례. 화면이 쓰는 숫자는 모두 이 표에서 나옵니다.',
       function (c) {
         var m = c.meta || {};
@@ -386,7 +475,7 @@
           + '격차율 표와 표준지는 공개 폴더에 두지 않습니다 — 주소를 알면 누구나 받을 수 있기 때문입니다.</p>';
       }],
 
-    ['자료', '실거래 숫자 — 어떤 거래가 들어와 있나',
+    ['trade', '실거래 숫자 — 어떤 거래가 들어와 있나',
       '용도지역·이용상황·개발단계·도로접면별 분포. 필터가 무엇을 감추고 무엇을 보이는지도 여기서 봅니다.',
       function (c) {
         var m = c.meta || {};
@@ -413,7 +502,7 @@
           + '그래서 화면에 보이는 것은 표본이고, 통계는 전체로 냅니다.</div>';
       }],
 
-    ['자료', '개발 한도 — 법령 상한과 시·군 조례',
+    ['db', '개발 한도 — 법령 상한과 시·군 조례',
       '건폐율·용적률은 법이 상한을 정하고 조례가 그보다 낮게 정합니다. 경사도·표고·입목축적 기준은 조례에만 있습니다.',
       function (c) {
         var z = c.zoning || {};
@@ -436,7 +525,7 @@
       }],
 
     // ══ 5. 감정평가서 ══
-    ['감정평가서', '원장 현황 — 몇 건이 들어와 있고 얼마나 믿을 만한가',
+    ['appraisal', '원장 현황 — 몇 건이 들어와 있고 얼마나 믿을 만한가',
       '감정평가서를 판독해 필지 단위로 쌓은 비공개 원장입니다. 건수, 검산 통과율, 판독 종류, 지역·조건별 분포를 봅니다.',
       function (c) {
         var s = c.stats || {};
@@ -489,7 +578,7 @@
           + '그래서 중앙값이 1.00 으로 몰립니다 — 분포를 볼 때는 1 미만·1 초과 칸을 보십시오.</div>';
       }],
 
-    ['감정평가서', '부족한 칸 — 용도지역군 × 지목군 24칸 중 몇 칸이 서는가',
+    ['appraisal', '부족한 칸 — 용도지역군 × 지목군 24칸 중 몇 칸이 서는가',
       '그 밖의 요인은 이 24칸에서 옵니다. 세 건이 안 되는 칸은 값을 내지 않고 한 단계 물러납니다. 어느 칸이 비었는지가 곧 다음에 무엇을 구해야 하는지입니다.',
       function (c) {
         var v = c.cover || {};
@@ -567,7 +656,7 @@
           + '한쪽만 고치면 화면과 산출이 어긋납니다. 문서: <code>docs/appraisal-coverage.md</code></div>';
       }],
 
-    ['감정평가서', '보완 계획 — 다음에 무엇을 모아야 하나',
+    ['appraisal', '보완 계획 — 다음에 무엇을 모아야 하나',
       '빈 칸과 얇은 칸을 메우는 순서입니다. 칸 하나에 최소 세 건, 쓸 만하려면 열 건이 목표입니다.',
       function (c) {
         var s = c.stats || {};
@@ -607,7 +696,7 @@
       }],
 
     // ══ 6. 운영 ══
-    ['운영', '화면에 공개하는 것과 감추는 것',
+    ['ops', '화면에 공개하는 것과 감추는 것',
       '값은 보여 주고 만드는 법은 감춥니다. 어디까지 보여 주는지 한 줄로 정리했습니다.',
       function () {
         return table(['자료', '어디까지', '왜'], [
@@ -624,7 +713,7 @@
           + '그래서 이 파일에는 숫자를 적지 않고, 실행할 때 버킷·RPC 에서 가져옵니다. 새 내용을 더할 때도 같게 하십시오.</div>';
       }],
 
-    ['운영', '등급과 자물쇠 — 무엇이 무엇을 막나',
+    ['ops', '등급과 자물쇠 — 무엇이 무엇을 막나',
       '화면에서 가리는 것은 편의이고, 진짜 자물쇠는 데이터베이스입니다.',
       function (c) {
         var acc = c.acc || {};
@@ -646,7 +735,7 @@
           + '가리려면 인증을 거치는 API 뒤로 옮겨야 합니다. 지금 목적은 가입을 받는 것이라 여기까지 해 두었습니다.</p>';
       }],
 
-    ['운영', '한도와 비용 — 어디서 먼저 막히나',
+    ['ops', '한도와 비용 — 어디서 먼저 막히나',
       'Vercel 함수 호출, GitHub Actions 분, Supabase 무료 한도, 브이월드 키 쿼터.',
       function () {
         return table(['자원', '한도', '지금 쓰는 곳'], [
@@ -666,39 +755,70 @@
       }],
   ];
 
-  /* ── 그리기 ─────────────────────────────────────────────── */
+  /* ── 그리기 ───────────────────────────────────────────────
+     탭 하나만 그린다. 열일곱 칸을 한 번에 그리면 안 보는 탭의
+     표까지 다 만들고(원장 표만 수백 줄이다), 굴림자가 뜻을 잃는다. */
+
+  function tabOf(id) {
+    for (var i = 0; i < TABS.length; i += 1) if (TABS[i][0] === id) return TABS[i];
+    return null;
+  }
+  /** 주소의 #탭. 모르는 값이면 첫 탭(대쉬보드). */
+  function wantedTab() {
+    var h = String(location.hash || '').replace(/^#/, '');
+    return tabOf(h) ? h : TABS[0][0];
+  }
+
+  var lastCtx = null;
+
   function render(ctx) {
-    var groups = [];
-    CARDS.forEach(function (card) {
-      if (!groups.length || groups[groups.length - 1].name !== card[0]) {
-        groups.push({ name: card[0], items: [] });
-      }
-      groups[groups.length - 1].items.push(card);
-    });
+    if (ctx) lastCtx = ctx;
+    ctx = lastCtx || {};
+    var cur = wantedTab();
+
+    var bar = '<nav class="adm-tabs" role="tablist">' + TABS.map(function (t) {
+      var on = t[0] === cur;
+      var n = CARDS.filter(function (card) { return card[0] === t[0]; }).length;
+      return '<a class="adm-tab" role="tab" href="#' + t[0] + '"'
+        + ' aria-selected="' + on + '"' + (on ? ' aria-current="page"' : '') + '>'
+        + E(t[1]) + (n > 1 ? '<i>' + n + '</i>' : '') + '</a>';
+    }).join('') + '</nav>';
+
+    var mine = CARDS.filter(function (card) { return card[0] === cur; });
     var i = 0;
-    var html = '<div class="adm-head"><h1>Admin</h1>'
-      + '<p>산출식 · 데이터베이스 · 판단 근거 · 논문 숫자 · 실거래 숫자 · 필지 분석 · 감정평가서 현황을 한곳에 모았습니다. '
-      + '제목을 누르면 자세한 내용이 열립니다.</p>'
-      + '<p class="adm-stamp">관리자 전용 · 이 화면의 숫자는 비공개 버킷과 관리자 전용 집계에서 실시간으로 받아옵니다</p></div>';
-    groups.forEach(function (g) {
-      html += '<div class="adm-group">' + E(g.name) + '</div>';
-      g.items.forEach(function (card) {
-        i += 1;
-        var body;
-        try { body = card[3](ctx); } catch (e) {
-          body = '<div class="adm-block">이 칸을 그리다 막혔습니다 — ' + E(e && e.message || e) + '</div>';
-        }
-        html += '<details class="adm-card"><summary>'
-          + '<span class="adm-n">' + (i < 10 ? '0' : '') + i + '</span>'
-          + '<span class="adm-t">' + E(card[1]) + '</span>'
-          + '<span class="adm-more">자세히</span>'
-          + '<span class="adm-s">' + E(card[2]) + '</span>'
-          + '</summary><div class="adm-body">' + body + '</div></details>';
-      });
-    });
-    root.innerHTML = html;
+    var body = mine.map(function (card) {
+      i += 1;
+      var inner;
+      try { inner = card[3](ctx); } catch (e) {
+        inner = '<div class="adm-block">이 칸을 그리다 막혔습니다 — ' + E(e && e.message || e) + '</div>';
+      }
+      // 칸이 하나뿐인 탭은 접어 둘 이유가 없다 — 열어 둔다. 접힌 칸
+      // 하나만 있는 화면은 '아무것도 없다' 로 읽힌다.
+      var open = mine.length === 1 ? ' open' : '';
+      return '<details class="adm-card"' + open + '><summary>'
+        + '<span class="adm-n">' + (i < 10 ? '0' : '') + i + '</span>'
+        + '<span class="adm-t">' + E(card[1]) + '</span>'
+        + '<span class="adm-more">자세히</span>'
+        + '<span class="adm-s">' + E(card[2]) + '</span>'
+        + '</summary><div class="adm-body">' + inner + '</div></details>';
+    }).join('');
+
+    // 칸이 하나면 이미 펼쳐 놓았으니 '누르면 열립니다' 는 거짓말이다.
+    var lead = E((tabOf(cur) || [])[1] || '')
+      + (mine.length > 1 ? ' — 제목을 누르면 자세한 내용이 열립니다.' : '');
+    root.innerHTML = '<div class="adm-head"><h1>Admin</h1>'
+      + '<p>' + lead + '</p>'
+      + '<p class="adm-stamp">관리자 전용 · 이 화면의 숫자는 비공개 버킷과 관리자 전용 집계에서 실시간으로 받아옵니다</p></div>'
+      + bar
+      + (body || '<p class="note">이 탭에는 아직 칸이 없습니다.</p>');
     if (window.tojiThemeMount) window.tojiThemeMount();
   }
+
+  // 탭을 누르면 주소가 바뀌고 그때 다시 그린다. 자료는 다시 안 부른다
+  // (lastCtx 를 들고 있다) — 탭을 옮길 때마다 RPC 를 또 때리면 안 된다.
+  window.addEventListener('hashchange', function () {
+    if (lastCtx) { render(null); window.scrollTo(0, 0); }
+  });
 
   function deny(msg, cta) {
     root.innerHTML = '<div class="auth-card"><h1>Admin</h1>'

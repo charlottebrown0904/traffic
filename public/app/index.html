@@ -17,7 +17,7 @@
 <link rel="stylesheet" href="/lib/theme.css?v=20260912a">
 <script src="/lib/theme.js?v=20260912a"></script>
 <script src="/lib/adminnav.js?v=20260912a"></script>
-<link rel="stylesheet" href="/app/style.css?v=20260916a">
+<link rel="stylesheet" href="/app/style.css?v=20260916b">
 </head>
 <body>
 
@@ -95,8 +95,10 @@
            role="combobox" aria-expanded="false" aria-controls="find-list">
     <ul class="find-list" id="find-list" role="listbox" hidden></ul>
   </div>
-  <div class="meta-stamp" id="meta-stamp"></div>
-
+  <!-- 숫자 도장('2006–2025 · 영업소 561 · 거래 11,793,406건')을 뺐다
+       (2026-09-16 지시). 지도를 보러 온 사람에게 전국 합계는 할 일이
+       없는 숫자였고, 머리띠에서 검색칸 옆자리를 먹고 있었다.
+       같은 숫자는 /admin 의 '데이터베이스 현황' 이 그대로 말한다. -->
   <!-- 나머지 화면으로 가는 길 (2026-09-12). 지도에서 게시판·내 계정으로
        갈 방법이 화면에 없었다 — 가이드는 지도 위 안내문 안에만 있었고,
        내 계정은 등급 잠금 문구 안에만 있었다. -->
@@ -781,6 +783,6 @@
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
 <script src="/lib/access.js?v=20260912d"></script>
-<script src="/app/gate.js?v=20260916a"></script>
+<script src="/app/gate.js?v=20260916b"></script>
 </body>
 </html>

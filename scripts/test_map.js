@@ -1790,6 +1790,10 @@ async function stubCommon(pg) {
         roadShown: !road.hidden, indShown: !ind.hidden,
         미집행색: chip(pick('planroad', '미집행')),
         부분집행색: chip(pick('planroad', '부분집행')),
+        지구지정색: chip(pick('housing', '지구지정')),
+        개발계획색: chip(pick('housing', '개발계획')),
+        실시계획색: chip(pick('housing', '실시계획')),
+        부분준공색: chip(pick('housing', '부분준공')),
         미집행눌림: pick('planroad', '미집행').getAttribute('aria-pressed'),
         집행완료눌림: pick('planroad', '집행완료').getAttribute('aria-pressed'),
         준공눌림: pick('housing', '준공').getAttribute('aria-pressed'),
@@ -1810,6 +1814,22 @@ async function stubCommon(pg) {
     check('미집행·부분집행 색이 실제로 벌어졌다',
           subs.미집행색.includes('#DC2626') && subs.부분집행색.includes('#F59E0B'),
           `${subs.미집행색} / ${subs.부분집행색}`);
+    /* **택지 다섯 단계도 닮았다** (2026-09-16 지시: "택지,사업지구는
+       색상 구분이 잘되도록 구분할 것"). 옛 색은 지구지정 #7C3AED 과
+       개발계획 #2563EB 가 보통 시력에서 ΔE 12.4 였다 — 15 아래면 색만으로
+       못 가른다. 새 값은 화면에 같이 뜨는 여섯 색(계획도로 포함)을 한꺼번에
+       넣고 재서 고른 것이다. 여기서는 **옛 값으로 되돌아가지 않았는지**를
+       지킨다 — 다시 고를 때는 dataviz 의 validate_palette.js 로 재라. */
+    const 택지색 = [subs.지구지정색, subs.개발계획색, subs.실시계획색, subs.부분준공색];
+    check('택지 네 단계 색이 서로 다르다',
+          new Set(택지색.map((c) => c.replace(/\s/g, ''))).size === 4,
+          택지색.join(' / '));
+    check('못 가르던 옛 두 색으로 돌아가지 않았다',
+          !subs.지구지정색.includes('#7C3AED') && !subs.개발계획색.includes('#2563EB'),
+          `${subs.지구지정색} / ${subs.개발계획색}`);
+    // 계획도로와도 안 부딪혀야 한다 — 두 층은 같이 켜진다.
+    check('택지 색이 계획도로의 빨강·호박과 겹치지 않는다',
+          !택지색.some((c) => /#DC2626|#F59E0B/i.test(c)), 택지색.join(' / '));
     check('산업단지 색칩은 비워 둔다 (브이월드 그림이라 우리 색이 아니다)',
           subs.산업칩빔 === true, `is-none=${subs.산업칩빔}`);
     // 도시첨단은 전국 아홉 곳뿐이다 — 안 보이는 것이 정상임을 화면이 말한다.
@@ -1835,39 +1855,52 @@ async function stubCommon(pg) {
     check('넷을 다 켜면 합친 층 하나로 부른다 (함수 호출을 아낀다)',
           indAll === 'industry', `key=${indAll}`);
 
-    /* **면을 얼마나 채우나** (2026-09-16 지시: z14~16 은 선으로만,
-       z17 부터 아주 연하게). */
+    /* **면을 얼마나 채우나 — 배율이 아니라 층이 정한다** (2026-09-16
+       지시 2차: "확대해도 색상 채우지 않도록" = 계획도로 ·
+       "항상 색상 채움 반투명(투명도 80%)" = 택지·사업지구). */
     const devFills = await page.evaluate(() =>
       window.__devFillOpacity
-        ? { z14: window.__devFillOpacity(14), z16: window.__devFillOpacity(16),
-            z17: window.__devFillOpacity(17), z19: window.__devFillOpacity(19) }
+        ? { 계획도로: window.__devFillOpacity('planroad'),
+            택지: window.__devFillOpacity('housing'),
+            모르는층: window.__devFillOpacity('nope') }
         : null);
-    check('z16 까지는 선으로만 (면을 안 채운다)',
-          devFills && devFills.z14 === 0 && devFills.z16 === 0,
-          devFills ? `z14 ${devFills.z14} · z16 ${devFills.z16}` : '(안 내보냄)');
-    check('z17 부터 아주 연하게 채운다 (투명 0% 가 아니다)',
-          devFills && devFills.z17 > 0 && devFills.z17 <= 0.2 && devFills.z19 > 0,
-          devFills ? `z17 ${devFills.z17}` : '');
+    check('계획도로는 확대해도 안 채운다 (선으로만)',
+          devFills && devFills.계획도로 === 0,
+          devFills ? `계획도로 ${devFills.계획도로}` : '(안 내보냄)');
+    check('택지·사업지구는 늘 채운다 — 투명도 80% (불투명 0.2)',
+          devFills && devFills.택지 === 0.2, devFills ? `택지 ${devFills.택지}` : '');
+    check('모르는 층은 안 채운다 (선은 남는다)',
+          devFills && devFills.모르는층 === 0, `${devFills && devFills.모르는층}`);
 
-    /* 계획도로는 z14 부터 (2026-09-16 지시: "z 12부터 계획도로 보여서
-       너무 느려진다"). */
+    /* **문턱이 층마다 다르다** (2026-09-16 지시 두 번): 계획도로는
+       z12 에서 너무 느려 z14 로, 택지·사업지구는 z12 부터. 도형 수가
+       두 자릿수 대 네 자릿수로 갈리기 때문이다. */
     const gate = await page.evaluate(() => {
       const keep = window.__zoom;
       const keepB = window.__bbox;
       // 좁은 화면을 준다 — devVecTiles 는 화면이 너무 넓으면 한 칸도
       // 안 부른다(안전장치). 그 안전장치가 아니라 **배율 문턱**을 본다.
       window.__bbox = [37.30, 127.90, 37.36, 127.98];
-      window.__zoom = 13;
-      const a = window.__devVecTiles ? window.__devVecTiles().length : -1;
-      window.__zoom = 14;
-      const b = window.__devVecTiles ? window.__devVecTiles().length : -1;
+      const at = (z, kind) => {
+        window.__zoom = z;
+        return window.__devVecTiles ? window.__devVecTiles(kind).length : -1;
+      };
+      const out = {
+        도로11: at(11, 'planroad'), 도로12: at(12, 'planroad'),
+        도로13: at(13, 'planroad'), 도로14: at(14, 'planroad'),
+        택지11: at(11, 'zone'), 택지12: at(12, 'zone'),
+      };
       window.__zoom = keep;
       window.__bbox = keepB;
-      return { z13: a, z14: b };
+      return out;
     });
-    check('계획도로·사업지구는 z13 에서 한 칸도 안 부른다',
-          gate.z13 === 0, `z13 ${gate.z13}칸`);
-    check('z14 부터 부른다', gate.z14 > 0, `z14 ${gate.z14}칸`);
+    check('계획도로는 z13 까지 한 칸도 안 부른다',
+          gate.도로12 === 0 && gate.도로13 === 0,
+          `z12 ${gate.도로12}칸 · z13 ${gate.도로13}칸`);
+    check('계획도로는 z14 부터 부른다', gate.도로14 > 0, `z14 ${gate.도로14}칸`);
+    check('택지·사업지구는 z12 부터 부른다 (계획도로보다 둘 이르다)',
+          gate.택지11 === 0 && gate.택지12 > 0,
+          `z11 ${gate.택지11}칸 · z12 ${gate.택지12}칸`);
 
     /* 철도역 — 종류로 가를 칸이 자료에 반만 차 있어 **정차 규모**로
        가른다 (2026-09-16 물음: "철도역도 종류가 나눌 수 있는 지 확인"). */
@@ -3106,6 +3139,9 @@ async function stubCommon(pg) {
       noteBtn: !!document.querySelector('.map-tools #map-note-btn'),
       findInHeader: !!document.querySelector('.topbar .map-find #find-q'),
       findOverMap: !!document.querySelector('.map-wrap .map-find #find-q'),
+      stamp: !!document.getElementById('meta-stamp'),
+      stampText: /영업소 \d|거래 [\d,]+건/.test(
+        (document.querySelector('.topbar') || {}).textContent || ''),
     }));
     check('가이드가 머리띠에서 빠졌다', !chrome.guideInHeader);
     check('가이드·면책이 지도 아래 자리를 비웠다',
@@ -3117,6 +3153,12 @@ async function stubCommon(pg) {
     check('검색은 머리띠에, 지도 위가 아니다',
           chrome.findInHeader && !chrome.findOverMap,
           `머리띠=${chrome.findInHeader} 지도위=${chrome.findOverMap}`);
+    /* 숫자 도장을 뺐다 (2026-09-16 지시: "2006–2025 · 영업소 561
+       거래 11,793,406건  삭제"). 지도를 보러 온 사람에게 전국 합계는
+       할 일이 없는 숫자이고, 검색칸 옆자리를 먹고 있었다. */
+    check('머리띠에 전국 합계 숫자 도장이 없다',
+          !chrome.stamp && !chrome.stampText,
+          `칸=${chrome.stamp} 글자=${chrome.stampText}`);
 
     // ── 탭 정리 (요구사항 2026-09-10) ──
     const tabs = await page.evaluate(() => {

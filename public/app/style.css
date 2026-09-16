@@ -224,7 +224,6 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 }
 .guide-link:hover{background:var(--accent-soft)}
 .guide-link:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-.meta-stamp{margin-left:.9rem; font-size:.74rem; color:var(--faint); text-align:right}
 
 /* 나머지 화면으로 가는 길. 머리띠 오른쪽 끝에 붙는다. */
 .sitenav{display:flex; align-items:center; gap:.15rem; margin-left:auto}
@@ -741,7 +740,6 @@ body.picking .leaflet-container{cursor:crosshair}
     height:auto; flex-wrap:wrap; gap:.5rem .75rem; padding:.55rem .8rem;
   }
   .brand-sub{display:none}
-  .meta-stamp{display:none}
   .guide-link{margin-left:auto; font-size:.76rem; padding:.28rem .55rem}
   .sitenav{order:5; margin-left:auto; flex:0 0 auto; gap:.1rem}
   .sitenav a{font-size:.78rem; padding:.3rem .45rem}
