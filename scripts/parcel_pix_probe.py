@@ -1,32 +1,31 @@
-"""필지 선이 화면과 틀어지는가 — 화소로 잰다 (2026-09-16 지시).
+"""우리가 찍는 자리가 브이월드가 칠하는 자리와 같은가 — 화소로 잰다.
 
-  "필지경계와 지도 틀어짐 발생 (대구)"
+  "필지경계와 지도 틀어짐 발생 (대구)"  (2026-09-16 지시)
 
-앞 탐침(parcel_shift_probe)은 **자료끼리** 견줬다 — 지오코더 점이 그
-지번의 필지 안에 드는가. 다섯 곳 중 넷이 들었고 대구 북구가 2m 로 가장
-잘 맞았다. 즉 **자료는 밀리지 않았다.** 그런데 화면은 틀어져 보인다.
+parcelshift 탐침이 답을 반쯤 줬다. 지오코더 점이 그 지번의 필지 **안에**
+드는지 다섯 곳에서 쟀더니 넷이 들었고 대구 북구가 2m 로 가장 잘 맞았다.
+**자료는 안 밀렸다.** 그러면 남는 자리는 우리가 그리는 자리다.
 
-그러면 남는 자리는 하나다 — **우리가 그리는 자리**다. 화면의 필지 선은
-브이월드가 칠해 주는 그림이 아니라, 우리가 WFS 로 좌표를 받아 Leaflet
-으로 직접 그리는 선이다(api/tile.js parcelLines → app.js drawCadastral).
-바탕 타일은 브이월드가 그린 그림이고, 선은 우리가 그린 것이다. 둘 사이가
-어긋날 자리가 거기에 있다.
+1차는 못 쟀다. 지적층을 WMS 로 받아 대조군으로 쓰려 했는데 다섯 곳 모두
+**빈 그림**이 왔다. 그건 이미 재 놓은 것이었다 — 브이월드 WMS 는
+lp_pa_cbnd_bubun 을 안 그려 준다(scripts/cadastral_tile_probe.py). 애초에
+그래서 화면이 선을 직접 그린다. 재 놓은 것을 안 보고 대조군으로 골랐다.
 
-그래서 **같은 층을 두 길로 받아 겹친다.**
+**그래서 칠해지는 층으로 잰다.** 물음은 층과 무관하다 — "경위도를 화소로
+옮기는 우리 셈법이 브이월드와 같은 자리를 가리키나". 용도지역·도시계획도로
+는 WMS 가 실제로 칠해 주고(화면에 이미 그렇게 깔린다) WFS 로 좌표도 준다.
+같은 층을 두 길로 받아 겹치면 셈법이 그대로 드러난다.
 
-  ① 브이월드가 칠한 지적 그림 (WMS, EPSG:3857, 타일 한 칸)
-  ② 우리가 받는 지적 좌표 (WFS, EPSG:4326) 를 같은 칸에 우리 셈법으로 찍기
+  ① 브이월드가 칠한 그림 (WMS, EPSG:3857, 타일 한 칸)
+  ② 그 층의 좌표 (WFS, EPSG:4326) 를 우리 셈법으로 같은 칸에 찍기
 
-둘 다 같은 필지의 같은 선이다. 우리 셈법이 맞으면 두 그림의 선이 **같은
-화소**에 놓인다. 어긋나면 그 어긋난 화소 수가 곧 답이고, z17 에서 한 화소는
-1m 남짓이라 미터로 바로 읽힌다.
+-12~+12 화소를 다 밀어 보고 가장 잘 겹치는 자리를 찾는다. (0,0) 이 이기면
+우리 셈법이 맞다. z17 에서 한 화소는 1m 남짓이라 어긋난 화소가 곧 미터다.
 
-맞춰 보는 방법은 밀어 보기다. -12~+12 화소를 다 밀어 보고 가장 잘 겹치는
-자리를 찾는다. (0,0) 이 이기면 우리 셈법이 맞는 것이고, 다른 자리가
-이기면 그 방향과 크기가 곧 버그의 모양이다.
-
-**대조군을 함께 잰다** — 서울·안성도 같이. 대구만 재고 '대구가 문제' 라고
-하면 그건 측정이 아니라 짐작이다.
+**덤으로 상한도 센다.** 한 칸에 600개까지만 받는다(api/tile.js
+PARCEL_VEC_MAX). 도심 한 칸이 그 위면 필지가 **빠진 채** 그려진다 —
+어긋남과 빠짐은 화면에서 비슷해 보인다. 대구 중구는 z17 한 칸에 이미
+283개였다. z16 은 그 넷을 합친 넓이다.
 
   python scripts/parcel_pix_probe.py
 """
@@ -47,14 +46,15 @@ WMS = "https://api.vworld.kr/req/wms"
 WFS = "https://api.vworld.kr/req/wfs"
 DOMAIN = os.environ.get("VWORLD_DOMAIN", "https://toji.fyi")
 
-LAYER = "lp_pa_cbnd_bubun"
+CAD = "lp_pa_cbnd_bubun"
+# 셈법을 재는 데 쓸 층. WMS 가 **실제로 칠해 주는** 것이라야 뜻이 있다.
+REF = [("lt_c_uq111", "용도지역(도시)"), ("lt_c_upisuq151", "도시계획(도로)")]
 Z = 17
 SIZE = 256
-# 밀어 볼 범위. z17 한 화소가 1m 남짓이니 ±12m 를 본다.
 SHIFT = 12
 E = 20037508.342789244
+VEC_MAX = 600                       # api/tile.js PARCEL_VEC_MAX 와 같은 값
 
-# 앞 탐침이 지오코더에서 받은 점 그대로. 내가 새로 고르지 않는다.
 SPOTS = [
     ("대구 중구", 35.871949, 128.595969),
     ("대구 북구", 35.896148, 128.522670),
@@ -92,9 +92,8 @@ def merc(lon: float, lat: float) -> tuple[float, float]:
 def tile_of(lon: float, lat: float, z: int) -> tuple[int, int]:
     n = 2 ** z
     r = math.radians(lat)
-    xt = int((lon + 180.0) / 360.0 * n)
-    yt = int((1.0 - math.log(math.tan(r) + 1.0 / math.cos(r)) / math.pi) / 2.0 * n)
-    return xt, yt
+    return (int((lon + 180.0) / 360.0 * n),
+            int((1.0 - math.log(math.tan(r) + 1.0 / math.cos(r)) / math.pi) / 2.0 * n))
 
 
 def merc_bbox(z: int, x: int, y: int) -> tuple[float, float, float, float]:
@@ -112,13 +111,12 @@ def deg_bbox(z: int, x: int, y: int) -> tuple[float, float, float, float]:
             (x + 1) / n * 360.0 - 180.0, lat(y))
 
 
-def wms_mask(z: int, x: int, y: int):
-    """브이월드가 **칠한** 지적 그림. 알파가 있는 화소가 선이다."""
+def wms_mask(layer: str, z: int, x: int, y: int) -> set:
     from PIL import Image                              # noqa: PLC0415
     minx, miny, maxx, maxy = merc_bbox(z, x, y)
     r = relay(WMS, {
         "SERVICE": "WMS", "REQUEST": "GetMap", "VERSION": "1.3.0",
-        "LAYERS": LAYER, "STYLES": "", "CRS": "EPSG:3857",
+        "LAYERS": layer, "STYLES": "", "CRS": "EPSG:3857",
         "BBOX": f"{minx},{miny},{maxx},{maxy}",
         "WIDTH": str(SIZE), "HEIGHT": str(SIZE),
         "FORMAT": "image/png", "TRANSPARENT": "true",
@@ -129,66 +127,57 @@ def wms_mask(z: int, x: int, y: int):
     return {(i, j) for j in range(SIZE) for i in range(SIZE) if px[i, j][3] > 24}
 
 
-def wfs_mask(z: int, x: int, y: int):
-    """우리가 받는 좌표를, **우리 셈법으로** 같은 칸에 찍는다.
-
-    api/tile.js parcelLines 와 같은 호출이라야 뜻이 있다 — 1.1.0,
-    BBOX 는 [w,s,e,n], SRSNAME 은 EPSG:4326.
-    """
-    from PIL import Image, ImageDraw                   # noqa: PLC0415
+def wfs_feats(layer: str, z: int, x: int, y: int, cap: int = VEC_MAX):
+    """api/tile.js parcelLines 와 **같은 호출**이라야 뜻이 있다."""
     w, s, e, n = deg_bbox(z, x, y)
     r = relay(WFS, {
         "SERVICE": "WFS", "VERSION": "1.1.0", "REQUEST": "GetFeature",
-        "TYPENAME": LAYER, "BBOX": f"{w},{s},{e},{n}",
+        "TYPENAME": layer, "BBOX": f"{w},{s},{e},{n}",
         "SRSNAME": "EPSG:4326", "OUTPUT": "application/json",
-        "MAXFEATURES": "600", "RESULTTYPE": "results",
+        "MAXFEATURES": str(cap), "RESULTTYPE": "results",
         "key": "__via_relay__", "DOMAIN": DOMAIN,
     })
     try:
-        body = r.json()
+        return (r.json().get("features") or [])
     except Exception:                                  # noqa: BLE001
-        return None, 0
-    feats = body.get("features") or []
+        return None
+
+
+def paint(feats, z: int, x: int, y: int, fill: bool) -> set:
+    """받은 좌표를 **우리 셈법으로** 같은 칸에 찍는다."""
+    from PIL import Image, ImageDraw                   # noqa: PLC0415
     minx, miny, maxx, maxy = merc_bbox(z, x, y)
     im = Image.new("1", (SIZE, SIZE), 0)
     dr = ImageDraw.Draw(im)
-
-    def put(ring):
-        pts = []
-        for c in ring:
-            mx, my = merc(float(c[0]), float(c[1]))
-            pts.append(((mx - minx) / (maxx - minx) * SIZE,
-                        (maxy - my) / (maxy - miny) * SIZE))
-        if len(pts) >= 2:
-            dr.line(pts, fill=1, width=1)
-
     for f in feats:
         g = (f or {}).get("geometry") or {}
-        polys = (g.get("coordinates") or []) if g.get("type") == "MultiPolygon" \
-            else [g.get("coordinates") or []] if g.get("type") == "Polygon" else []
+        t = g.get("type")
+        polys = (g.get("coordinates") or []) if t == "MultiPolygon" \
+            else [g.get("coordinates") or []] if t == "Polygon" else []
         for rings in polys:
-            for ring in rings:
-                put(ring)
+            for k, ring in enumerate(rings):
+                pts = []
+                for c in ring:
+                    mx, my = merc(float(c[0]), float(c[1]))
+                    pts.append(((mx - minx) / (maxx - minx) * SIZE,
+                                (maxy - my) / (maxy - miny) * SIZE))
+                if len(pts) < 2:
+                    continue
+                if fill and k == 0:
+                    dr.polygon(pts, fill=1)
+                elif fill:
+                    dr.polygon(pts, fill=0)            # 구멍
+                else:
+                    dr.line(pts, fill=1, width=1)
     px = im.load()
-    return {(i, j) for j in range(SIZE) for i in range(SIZE) if px[i, j]}, len(feats)
-
-
-def grow(mask: set, r: int = 1) -> set:
-    out = set()
-    for (i, j) in mask:
-        for di in range(-r, r + 1):
-            for dj in range(-r, r + 1):
-                out.add((i + di, j + dj))
-    return out
+    return {(i, j) for j in range(SIZE) for i in range(SIZE) if px[i, j]}
 
 
 def best_shift(theirs: set, ours: set):
-    """가장 잘 겹치는 밀기. (0,0) 이 이기면 우리 셈법이 맞다."""
-    fat = grow(ours, 1)
     rows = []
     for dy in range(-SHIFT, SHIFT + 1):
         for dx in range(-SHIFT, SHIFT + 1):
-            hit = sum(1 for (i, j) in theirs if (i + dx, j + dy) in fat)
+            hit = sum(1 for (i, j) in theirs if (i + dx, j + dy) in ours)
             rows.append((hit, dx, dy))
     rows.sort(key=lambda t: (-t[0], abs(t[1]) + abs(t[2])))
     zero = next(h for h, dx, dy in rows if dx == 0 and dy == 0)
@@ -198,40 +187,57 @@ def best_shift(theirs: set, ours: set):
 def main() -> None:
     bar = "=" * 72
     print(bar)
-    print("필지 선이 화면과 틀어지는가 — 같은 층을 두 길로 받아 화소로 견준다")
+    print("우리 셈법이 브이월드와 같은 자리를 가리키나 — 화소로 견준다")
     print(bar)
-    print("  ① 브이월드가 칠한 지적 그림(WMS)  ② 우리가 받아 우리가 찍은 선(WFS)")
-    print(f"  z{Z} · 한 화소 ≈ 1m · -{SHIFT}~+{SHIFT} 화소를 밀어 본다")
+    print("  지적은 WMS 가 안 칠해 준다(이미 잰 것). 그래서 **칠해지는 층**으로")
+    print(f"  잰다 — 물음은 층과 무관하다. z{Z} · 한 화소 ≈ 1m · ±{SHIFT} 화소")
     print()
     for name, lat, lon in SPOTS:
         x, y = tile_of(lon, lat, Z)
-        try:
-            theirs = wms_mask(Z, x, y)
-            ours, cnt = wfs_mask(Z, x, y)
-        except Exception as err:                       # noqa: BLE001
-            print(f"  {name:<10} 못 쟀다 — {type(err).__name__}: {err}")
-            continue
-        if ours is None:
-            print(f"  {name:<10} WFS 가 JSON 을 안 줬다")
-            continue
-        if not theirs or not ours:
-            print(f"  {name:<10} 그림 화소 {len(theirs)} · 우리 화소 "
-                  f"{len(ours)} · 필지 {cnt} — 견줄 것이 없다")
-            continue
-        (hit, dx, dy), zero = best_shift(theirs, ours)
-        tag = "**(0,0) 이 이긴다 — 우리 셈법이 맞다**" if (dx, dy) == (0, 0) \
-            else f"**({dx:+d},{dy:+d}) 로 밀어야 맞는다**"
-        print(f"  {name:<10} 필지 {cnt:>3}개 · 그림선 {len(theirs):>5}화소 · "
-              f"우리선 {len(ours):>5}화소")
-        print(f"  {'':<10} 겹침 제자리 {zero / len(theirs) * 100:5.1f}% → "
-              f"가장 잘 겹칠 때 {hit / len(theirs) * 100:5.1f}%  {tag}")
-    print()
+        print(f"  {name}")
+        for layer, label in REF:
+            try:
+                theirs = wms_mask(layer, Z, x, y)
+                feats = wfs_feats(layer, Z, x, y)
+            except Exception as err:                   # noqa: BLE001
+                print(f"    {label:<14} 못 쟀다 — {type(err).__name__}: {err}")
+                continue
+            if feats is None:
+                print(f"    {label:<14} WFS 가 JSON 을 안 줬다")
+                continue
+            if not theirs or not feats:
+                print(f"    {label:<14} 그림 {len(theirs):>5}화소 · 도형 "
+                      f"{len(feats):>3}개 — 이 칸엔 없다")
+                continue
+            ours = paint(feats, Z, x, y, fill=True)
+            if not ours:
+                print(f"    {label:<14} 우리가 찍은 것이 0화소 — 도형이 점·선이다")
+                continue
+            (hit, dx, dy), zero = best_shift(theirs, ours)
+            tag = "**(0,0) 이 이긴다 — 셈법이 맞다**" if (dx, dy) == (0, 0) \
+                else f"**({dx:+d},{dy:+d}) 로 밀어야 맞는다 ≈ {math.hypot(dx, dy):.0f}m**"
+            print(f"    {label:<14} 그림 {len(theirs):>5}화소 · 우리 "
+                  f"{len(ours):>5}화소 · 도형 {len(feats):>3}개")
+            print(f"    {'':<14} 제자리 {zero / len(theirs) * 100:5.1f}% → "
+                  f"가장 잘 겹칠 때 {hit / len(theirs) * 100:5.1f}%  {tag}")
+        # 상한에 걸리면 필지가 **빠진 채** 그려진다. 어긋남과 비슷해 보인다.
+        for zz in (16, 17):
+            xx, yy = tile_of(lon, lat, zz)
+            fs = wfs_feats(CAD, zz, xx, yy)
+            if fs is None:
+                print(f"    필지 z{zz}        못 셌다")
+                continue
+            over = " ← **상한에 걸렸다. 빠진 필지가 있다**" if len(fs) >= VEC_MAX else ""
+            print(f"    필지 z{zz}        한 칸에 {len(fs):>3}개 "
+                  f"(상한 {VEC_MAX}){over}")
+        print()
     print(bar)
     print("무엇을 보고 판단하나")
     print(bar)
-    print("  · 어디서나 (0,0) → 우리 셈법은 맞다. 틀어짐은 다른 데 있다")
+    print("  · 어디서나 (0,0) → 우리 셈법은 맞다. 남은 것은 빠짐(상한)이다")
     print("  · 대구만 밀림 → 그 지역 그림과 좌표가 서로 다른 기준이다")
     print("  · 어디서나 같은 방향으로 밀림 → 우리 좌표 변환이 틀렸다")
+    print("  · 상한에 걸린 칸이 있으면 → 그 칸은 필지가 빠진 채 그려진다")
 
 
 if __name__ == "__main__":
