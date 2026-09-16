@@ -953,6 +953,248 @@ async function adminShape(req, res) {
 }
 
 /** 선 목록을 돌려준다. 빈 칸도 캐시한다 — 바다는 늘 비어 있다. */
+/* ── 고속도로를 **선이 아니라 필지로** 그린다 (2026-09-16 지시) ──────────
+ *
+ *   "계획은 살려 놓고 실제로 표시는 계획 도로처럼 **필지 기준으로 선택**
+ *    될 수 있도록 방법을 전환바랍니다."
+ *
+ * 두 문이 닫힌 것을 먼저 확인했다.
+ *
+ *   · 도시계획시설(lt_c_upisuq151)에 '고속' 을 가려낼 칸이 **없다**.
+ *     안성 589개의 모든 칸을 세어 봤다 (scripts/road_kras_probe.py).
+ *     토지이음에서 보이는 대로2류는 주간선·보조간선·집산도로다.
+ *   · 브이월드 WFS 177개 층에 **도로구역도가 없다** (vworld-layers run 15).
+ *
+ * 그래서 남은 길로 간다 — **우리가 가진 선 둘레의 필지를 지적에서 고른다.**
+ * 실측이 이 길을 열어 줬다 (scripts/road_parcel_probe.py):
+ *
+ *   서평택JCT-안산JCT   0.0m 448도 · 0.0m 446-1도 · 0.2m 964-1구
+ *   읍내JCT-군위JCT     0.1m 305도 · 0.1m 308-1도 · 1.0m 산54-1도
+ *   안성 서운면(신설)    0.4m 667장 · 0.9m 산138-22임 · 1.3m 산139임
+ *
+ * 세 가지가 한꺼번에 나왔다.
+ *
+ *   ① 우리 선이 도로 필지 위에 **0.0~2.2m** 로 놓인다.
+ *   ② **지목이 지번에 붙어 온다** ('448도'). 따로 칸이 없어도 갈린다.
+ *   ③ 신설 구간만 지목이 임야·공장용지다 — **아직 편입 전인 땅**이다.
+ *      땅 주인에게 가장 중요한 것이 그것이므로 색을 나눠 그린다.
+ *
+ * 띠 너비도 쟀다. 10m 6~9개 · 20m 6~12개 · **30m 7~14개** · 50m 12~48개.
+ * 30m 에서 깨끗이 끊기고 50m 부터 옆 필지가 딸려 온다. 고속도로 용지폭
+ * (왕복 4차로 30m 안팎)과도 맞는다. 내가 고른 값이 아니라 잰 값이다.
+ */
+const ROAD_BAND_M = 30;
+// 배율 15 아래로는 안 준다. 필지는 가까이서 보는 것이고, 멀리서는 선이
+// 그 일을 한다. 아래로 열면 한 칸에 브이월드를 열 번씩 부르게 된다.
+const ROAD_PARCEL_MIN_ZOOM = 15;
+// 한 번 물을 때 덮는 선의 길이. 길면 네모가 넓어져 옆 필지가 딸려 오고,
+// 짧으면 호출이 는다. 200m 면 네모가 200×200m 을 안 넘는다.
+const ROAD_CHUNK_M = 200;
+// 한 칸이 브이월드를 두드릴 수 있는 횟수. 고속도로가 지나는 칸만 낸다.
+const ROAD_CHUNK_MAX = 6;
+const ROAD_PARCEL_MAX = 300;
+// 화면이 받는 그 주소를 우리도 쓴다 (app.js DATA_BUCKET).
+const DATA_BUCKET = process.env.DATA_BUCKET
+  || "https://caykbxvnebpifcduqjre.supabase.co/storage/v1/object/public/appdata";
+const ROAD_TTL_MS = 60 * 60 * 1000;
+let roadJson = null;
+let roadJsonAt = 0;
+
+/** road.json 을 버킷에서 받아 한 시간 들고 있는다. */
+async function roadItems() {
+  if (roadJson && Date.now() - roadJsonAt < ROAD_TTL_MS) return roadJson;
+  try {
+    const r = await fetch(`${DATA_BUCKET}/road.json`);
+    if (!r.ok) return roadJson || [];
+    const body = await r.json();
+    roadJson = Array.isArray(body && body.items) ? body.items : [];
+    roadJsonAt = Date.now();
+  } catch (err) {
+    return roadJson || [];        // 예전 것이라도 있으면 그것을 쓴다
+  }
+  return roadJson;
+}
+
+/** 가까운 두 점 사이 거리(m). 한반도 위도에서는 평면으로 봐도 된다. */
+function metresBetween(aLat, aLon, bLat, bLon) {
+  const k = Math.cos(((aLat + bLat) / 2) * Math.PI / 180);
+  return Math.hypot((bLat - aLat) * 111320, (bLon - aLon) * 111320 * k);
+}
+
+/** 점에서 선분까지(m). 꼭짓점 거리만 재면 긴 선분 가운데가 멀게 나온다. */
+function metresToSeg(lat, lon, a, b) {
+  const k = Math.cos((lat * Math.PI) / 180);
+  const px = lon * k; const py = lat;
+  const ax = a[1] * k; const ay = a[0];
+  const bx = b[1] * k; const by = b[0];
+  const dx = bx - ax; const dy = by - ay;
+  if (dx === 0 && dy === 0) return metresBetween(lat, lon, a[0], a[1]);
+  let t = ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy);
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot((px - (ax + t * dx)) * 111320,
+                    (py - (ay + t * dy)) * 111320);
+}
+
+/** 지번표기('448도' · '산54-1 도')의 **끝 글자가 지목**이다. */
+function jimokOf(label) {
+  const m = String(label || "").trim().match(/([가-힣]+)$/);
+  return m ? m[1] : null;
+}
+
+/** 선분 묶음을 감싸는 네모를 띠만큼 넓힌다. */
+function padBox(segs, band) {
+  let s = 90; let w = 180; let n = -90; let e = -180;
+  for (const [a, b] of segs) {
+    s = Math.min(s, a[0], b[0]); n = Math.max(n, a[0], b[0]);
+    w = Math.min(w, a[1], b[1]); e = Math.max(e, a[1], b[1]);
+  }
+  const dLat = band / 111320;
+  const dLon = band / (111320 * Math.cos(((s + n) / 2) * Math.PI / 180) || 1);
+  return [w - dLon, s - dLat, e + dLon, n + dLat];
+}
+
+/** 이 칸을 지나는 선분들을 200m 어치씩 묶는다. */
+function roadChunks(items, box) {
+  const [w, s, e, n] = box;
+  const dLat = ROAD_BAND_M / 111320;
+  const dLon = ROAD_BAND_M / (111320 * Math.cos(((s + n) / 2) * Math.PI / 180) || 1);
+  const out = [];
+  for (const it of items) {
+    const path = it.path;
+    if (!Array.isArray(path) || path.length < 2) continue;
+    let cur = []; let len = 0;
+    const flush = () => {
+      if (cur.length) out.push({ it, segs: cur });
+      cur = []; len = 0;
+    };
+    for (let i = 0; i + 1 < path.length; i += 1) {
+      const a = path[i]; const b = path[i + 1];
+      // 이 선분의 네모가 칸(띠만큼 넓힌)과 안 겹치면 건너뛴다.
+      if (Math.max(a[0], b[0]) < s - dLat || Math.min(a[0], b[0]) > n + dLat
+          || Math.max(a[1], b[1]) < w - dLon || Math.min(a[1], b[1]) > e + dLon) {
+        flush();
+        continue;
+      }
+      cur.push([a, b]);
+      len += metresBetween(a[0], a[1], b[0], b[1]);
+      if (len >= ROAD_CHUNK_M) flush();
+    }
+    flush();
+  }
+  return out;
+}
+
+/** 고속도로가 깔린(또는 깔릴) **필지**를 그 칸 몫만큼 돌려준다. */
+async function roadParcels(req, res) {
+  const z = whole(String(req.query.z ?? ""));
+  const y = whole(String(req.query.y ?? ""));
+  const x = whole(String(req.query.x ?? ""));
+  if (z === null || y === null || x === null) {
+    return fail(res, 400, "z·y·x 가 0 이상의 정수여야 합니다");
+  }
+  if (z < ROAD_PARCEL_MIN_ZOOM || z > MAX_ZOOM) {
+    return fail(res, 400,
+      `z 는 ${ROAD_PARCEL_MIN_ZOOM}~${MAX_ZOOM} 이어야 합니다`);
+  }
+  const span = 2 ** z;
+  if (y >= span || x >= span) return fail(res, 400, "그 배율의 격자 밖입니다");
+  const box = degBbox(z, x, y);
+  const [w, s, e, n] = box;
+  if (n < KOREA.latMin || s > KOREA.latMax
+      || e < KOREA.lonMin || w > KOREA.lonMax) {
+    return sendRoadParcels(res, [], true);
+  }
+  const items = await roadItems();
+  const chunks = roadChunks(items, box);
+  // 고속도로가 안 지나는 칸이면 브이월드를 아예 안 부른다. 화면은 칸마다
+  // 부르므로 이 갈래가 대부분이다 — 여기서 값이 갈린다.
+  if (!chunks.length) return sendRoadParcels(res, [], true);
+  const use = chunks.slice(0, ROAD_CHUNK_MAX);
+  const host = (req.headers || {}).host;
+  const got = await Promise.all(use.map(async (c) => {
+    const out = await callVworld({
+      SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
+      TYPENAME: PARCEL_VEC_TYPENAME,
+      BBOX: padBox(c.segs, ROAD_BAND_M).join(","),
+      SRSNAME: "EPSG:4326", OUTPUT: "application/json",
+      MAXFEATURES: String(ROAD_PARCEL_MAX), RESULTTYPE: "results",
+      DOMAIN: process.env.VWORLD_REFERER || `https://${host || "toji.fyi"}/`,
+    }, VWORLD_WFS, host);
+    if (out.keyMissing) return { err: "key" };
+    if (!out.upstream) return { err: out.timedOut ? "timeout" : "call" };
+    try {
+      const body = await out.upstream.json();
+      return { c, feats: Array.isArray(body && body.features) ? body.features : [] };
+    } catch (err) {
+      return { err: "notjson" };
+    }
+  }));
+  const bad = got.find((g) => g.err);
+  if (bad) {
+    if (bad.err === "key") {
+      return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
+    }
+    if (bad.err === "timeout") {
+      return fail(res, 504, `브이월드 응답 없음 (${TIMEOUT_MS / 1000}초 초과)`);
+    }
+    return fail(res, bad.err === "call" ? 502 : 502,
+      bad.err === "call" ? "브이월드 호출 실패"
+                         : "브이월드가 필지 목록 대신 다른 것을 줬습니다");
+  }
+  const seen = new Set();
+  const out = [];
+  for (const g of got) {
+    for (const f of g.feats) {
+      const geom = round6((f || {}).geometry);
+      if (!geom) continue;
+      const ring = outerRing(geom);
+      if (!ring.length) continue;
+      // 띠 밖이면 버린다. 필지의 **가장 가까운 꼭짓점**으로 잰다 —
+      // 가운데로 재면 길쭉한 도로 필지가 멀게 나온다.
+      let near = Infinity;
+      for (const c of ring) {
+        for (const [a, b] of g.c.segs) {
+          const d = metresToSeg(Number(c[1]), Number(c[0]), a, b);
+          if (d < near) near = d;
+          if (near <= ROAD_BAND_M) break;
+        }
+        if (near <= ROAD_BAND_M) break;
+      }
+      if (near > ROAD_BAND_M) continue;
+      const src = (f || {}).properties || {};
+      const label = src.lnm_lndcgr_smbol || src.jibun || "";
+      const key = src.pnu || JSON.stringify(firstPoint(geom));
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const jimok = jimokOf(label);
+      out.push({
+        g: geom,
+        b: String(label),
+        j: jimok,
+        // 지목이 '도' 면 이미 도로가 된 땅, 아니면 **아직 편입 전**이다.
+        r: jimok === "도" ? 1 : 0,
+        s: String(g.c.it.name || ""),
+        t: String(g.c.it.stage || ""),
+      });
+    }
+  }
+  return sendRoadParcels(res, out, chunks.length <= ROAD_CHUNK_MAX);
+}
+
+/** 다각형의 바깥 고리. 구멍은 거리 재기에 안 쓴다. */
+function outerRing(geom) {
+  const t = (geom || {}).type;
+  const cs = (geom || {}).coordinates || [];
+  if (t === "Polygon") return cs[0] || [];
+  if (t === "MultiPolygon") return (cs[0] || [])[0] || [];
+  return [];
+}
+
+function sendRoadParcels(res, items, whole_) {
+  res.setHeader("cache-control", CACHE_OK);
+  return res.status(200).json({ n: items.length, whole: whole_, items });
+}
+
 function sendLines(res, geoms, whole_) {
   res.setHeader("cache-control", CACHE_OK);
   return res.status(200).json({ n: geoms.length, whole: whole_, geoms });
@@ -1215,6 +1457,10 @@ module.exports = async function handler(req, res) {
   if (mode === "devvec") {
     return developShapes(req, res);
   }
+  // 고속도로를 선이 아니라 **필지**로 (2026-09-16 지시).
+  if (mode === "roadparcels") {
+    return roadParcels(req, res);
+  }
 
   const z = whole(String(req.query.z ?? ""));
   const y = whole(String(req.query.y ?? ""));
@@ -1396,6 +1642,10 @@ module.exports.LAYERS = LAYERS;
 // 검사가 창을 비우고 시작할 수 있게. **여기여야 한다** — 위에 두면
 // module.exports = handler 가 통째로 덮어써 사라진다.
 module.exports.__resetRate = () => rateHits.clear();
+// 검사가 버킷에서 받은 road.json 을 비운다. 안 비우면 앞 절이 받아 둔
+// 것을 뒤 절이 그대로 써서, 고치지도 않은 검사가 갑자기 빨개진다.
+module.exports.__resetRoad = () => { roadJson = null; roadJsonAt = 0; };
+module.exports.jimokOf = jimokOf;
 module.exports.BASEMAPS = BASEMAPS;
 module.exports.hitsPoint = hitsPoint;
 module.exports.PARCEL_FIELDS = PARCEL_FIELDS;

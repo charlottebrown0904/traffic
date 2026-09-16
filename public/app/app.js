@@ -1846,6 +1846,9 @@ function buildMap() {
   });
   // 닫으면 그때 다시 그린다 — 열려 있는 동안 밀린 갱신을 여기서 갚는다.
   map.on('moveend', () => { if (state.develop) drawDevVec(); });
+  // 고속도로 필지는 칸 단위라 움직일 때마다 다시 고른다.
+  map.on('moveend', drawRoadParcels);
+  map.on('zoomend', () => { drawRoad(); drawRoadParcels(); });
   map.on('popupclose', (e) => {
     const cls = ((e.popup || {}).options || {}).className;
     if (cls !== 'lp-pop') return;
@@ -3002,10 +3005,13 @@ function addDevelopLayer() {
   developLayer = L.layerGroup();
   railLayer = L.layerGroup();
   roadLayer = L.layerGroup();
+  roadParcelLayer = L.layerGroup();
   if (state.develop) {
     developLayer.addTo(map); railLayer.addTo(map); roadLayer.addTo(map);
+    roadParcelLayer.addTo(map);
   }
   drawDevelop();
+  drawRoadParcels();
 }
 
 function drawDevelop() {
@@ -3025,6 +3031,7 @@ function drawDevelop() {
   });
   drawRail();
   drawRoad();
+  drawRoadParcels();
   drawDevVec();
   updateDevLegend();
   window.__develop = { on: state.develop, key, parts: { ...state.devParts },
@@ -3445,6 +3452,137 @@ function roadTip(it) {
         + ' 실제 노선 모양이 아닙니다</span>');
 }
 
+/* 고속도로를 **필지로** 그린다 (2026-09-16 지시).
+ *
+ *   "계획은 살려 놓고 실제로 표시는 계획 도로처럼 필지 기준으로 선택될
+ *    수 있도록 방법을 전환바랍니다."
+ *
+ * 선은 아무리 잘 맞춰도 필지와 무관하다. 그래서 가까이서는 **선 둘레
+ * 30m 안의 필지**를 받아 면으로 그린다. 30m 는 고른 값이 아니라 잰
+ * 값이다 (scripts/road_parcel_probe.py: 30m 안 7~14개 · 50m 12~48개).
+ *
+ * 두 갈래로 나눠 칠한다. 지목이 '도' 면 이미 도로가 된 땅이고, 아니면
+ * **아직 편입 전인 땅**이다. 안성 신설 구간이 실제로 임야·공장용지였다.
+ * 땅 주인에게 중요한 것은 뒤쪽이므로 그것을 눈에 띄게 그린다.
+ */
+const ROADP_MIN_ZOOM = 15;
+const ROADP_TILE_ZOOM = 17;        // 이보다 잘게 쪼개 부르지 않는다
+const ROADP_MAX_TILES = 8;
+const ROADP_RETRY_MS = 30_000;
+let roadParcelLayer = null;
+const rpTiles = new Map();
+const rpAsked = new Set();
+const rpFailed = new Map();
+
+function rpTileList() {
+  const z = Math.min(Math.round(map.getZoom()), ROADP_TILE_ZOOM);
+  const b = map.getBounds();
+  const n = 2 ** z;
+  const xOf = (lon) => Math.floor(((lon + 180) / 360) * n);
+  const yOf = (lat0) => {
+    const lat = Math.max(-85.05, Math.min(85.05, lat0));
+    const r = (lat * Math.PI) / 180;
+    return Math.floor(
+      ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n);
+  };
+  const x1 = xOf(b.getWest()); const x2 = xOf(b.getEast());
+  const y1 = yOf(b.getNorth()); const y2 = yOf(b.getSouth());
+  if ((x2 - x1 + 1) * (y2 - y1 + 1) > CAD_MAX_VIEW) return [];
+  const out = [];
+  for (let x = x1; x <= x2; x += 1) {
+    for (let y = y1; y <= y2; y += 1) {
+      if (x < 0 || y < 0 || x >= n || y >= n) continue;
+      out.push([z, x, y]);
+    }
+  }
+  const cx = (x1 + x2) / 2; const cy = (y1 + y2) / 2;
+  out.sort((a, b2) => (Math.abs(a[1] - cx) + Math.abs(a[2] - cy))
+                    - (Math.abs(b2[1] - cx) + Math.abs(b2[2] - cy)));
+  return out;
+}
+
+function rpTip(p) {
+  const road = p.r === 1;
+  return `<b>${escapeHtml(p.b || '')}</b>`
+    + (p.s ? `<br>${escapeHtml(p.s)}` : '')
+    + (p.t ? ` · ${escapeHtml(p.t)}` : '')
+    + (road
+      ? '<br><span class="dev-why">이미 도로인 땅입니다 (지목 도로)</span>'
+      : `<br><b>아직 도로가 아닙니다</b>${p.j ? ` · 지목 ${escapeHtml(p.j)}` : ''}`
+        + '<br><span class="dev-why">노선 30m 안이라 편입될 수 있습니다 —'
+        + ' 편입 여부는 사업시행자 고시로 확인하셔야 합니다</span>');
+}
+
+function drawRoadParcels() {
+  if (!map || !roadParcelLayer) return;
+  const on = state.develop && state.devParts.highway
+    && map.getZoom() >= ROADP_MIN_ZOOM;
+  if (!on) {
+    roadParcelLayer.clearLayers();
+    rpTiles.clear();
+    window.__roadParcels = { on: false, drawn: 0 };
+    return;
+  }
+  const want = rpTileList();
+  const keep = new Set(want.map(([z, x, y]) => `${z}/${x}/${y}`));
+  for (const [key, layer] of rpTiles) {
+    if (!keep.has(key)) { roadParcelLayer.removeLayer(layer); rpTiles.delete(key); }
+  }
+  const now = Date.now();
+  for (const [z, x, y] of want) {
+    const key = `${z}/${x}/${y}`;
+    if (rpTiles.has(key) || rpAsked.has(key)) continue;
+    if (now - (rpFailed.get(key) || 0) < ROADP_RETRY_MS) continue;
+    if (rpAsked.size >= ROADP_MAX_TILES) break;
+    rpAsked.add(key);
+    fetchRoadParcelTile(z, x, y, key);
+  }
+  let drawn = 0;
+  for (const layer of rpTiles.values()) drawn += layer.getLayers().length;
+  window.__roadParcels = { on: true, drawn, tiles: rpTiles.size };
+}
+
+function fetchRoadParcelTile(z, x, y, key) {
+  let ok = false;
+  fetch(`/api/tile?mode=roadparcels&z=${z}&x=${x}&y=${y}`)
+    .then((r) => { if (r.ok) ok = true; return r.ok ? r.json() : null; })
+    .then((d) => {
+      if (!d || !roadParcelLayer) return;
+      if (!state.develop || !state.devParts.highway) return;
+      if (map.getZoom() < ROADP_MIN_ZOOM) return;
+      if (!rpTileList().some(([a, b, c]) => `${a}/${b}/${c}` === key)) return;
+      const group = L.layerGroup();
+      (d.items || []).forEach((p) => {
+        if (!devPicked('highway', p.t)) return;
+        const core = roadStageColor(p.t);
+        const road = p.r === 1;
+        L.geoJSON({ type: 'Feature', properties: {}, geometry: p.g }, {
+          pane: 'overlayPane',
+          style: {
+            color: core,
+            weight: road ? 1 : 2,
+            // 편입 전인 땅은 테를 끊어 그린다 — 아직 정해지지 않았다는
+            // 뜻을 색 하나 더 쓰지 않고 말한다.
+            dashArray: road ? null : '5 4',
+            fillColor: core,
+            fillOpacity: road ? 0.35 : 0.2,
+          },
+        }).bindTooltip(rpTip(p), { direction: 'top', sticky: true })
+          .addTo(group);
+      });
+      group.addTo(roadParcelLayer);
+      rpTiles.set(key, group);
+      window.__roadParcels = { on: true, tiles: rpTiles.size,
+                              drawn: group.getLayers().length };
+    })
+    .catch(() => { /* 한 칸이 안 와도 나머지는 그린다. */ })
+    .finally(() => {
+      rpAsked.delete(key);
+      if (!ok) rpFailed.set(key, Date.now());
+      if (state.develop && state.devParts.highway) drawRoadParcels();
+    });
+}
+
 function drawRoad() {
   if (!roadLayer) return;
   roadLayer.clearLayers();
@@ -3464,21 +3602,29 @@ function drawRoad() {
        없으므로(proposed 0건) 끝까지 직선이다. */
     const line = (Array.isArray(it.path) && it.path.length >= 2)
       ? it.path : [a, b];
+    /* **가까이서는 선이 주인공이 아니다.** 배율 15부터는 필지를 면으로
+       그리므로(drawRoadParcels), 선은 '이 띠를 따라 고른 것' 이라는 안내로
+       만 남긴다. 선을 통째로 지우지는 않는다 — 면이 아직 안 왔을 때 화면이
+       비어 버린다. */
+    const close = map.getZoom() >= ROADP_MIN_ZOOM;
     // 테를 먼저 깔고 그 위에 심을 얹는다 — 두 겹이라야 어느 바탕에서도
     // 선이 보인다. 흰 심(계획)은 테가 없으면 밝은 지도에서 사라진다.
+    if (!close) {
+      L.polyline(line, {
+        pane: 'overlayPane', color: '#1F2937', weight: 8, opacity: .55,
+        lineCap: 'round', lineJoin: 'round',
+      }).addTo(roadLayer);
+    }
     L.polyline(line, {
-      pane: 'overlayPane', color: '#1F2937', weight: 8, opacity: .55,
-      lineCap: 'round', lineJoin: 'round',
-    }).addTo(roadLayer);
-    L.polyline(line, {
-      pane: 'overlayPane', color: core, weight: 4, opacity: .95,
+      pane: 'overlayPane', color: core,
+      weight: close ? 2 : 4, opacity: close ? .35 : .95,
       dashArray: plan ? '10 7' : null, lineCap: 'round', lineJoin: 'round',
     }).bindTooltip(roadTip(it), { direction: 'top', sticky: true })
       .addTo(roadLayer);
     if (!n) window.__roadTipSample = roadTip(it);   // 검사가 본다
     /* 두 끝의 점은 **직선일 때만** 찍는다. 그 점의 뜻이 '자료가 여기까지만
        말해 준다' 라서, 선형을 따라 그린 구간에 찍으면 거짓말이 된다. */
-    (it.path ? [] : [a, b]).forEach((pt) => {
+    ((it.path || close) ? [] : [a, b]).forEach((pt) => {
       L.circleMarker(pt, {
         pane: 'markerPane', radius: 4, color: '#1F2937', weight: 2,
         fillColor: core, fillOpacity: 1,
@@ -3501,10 +3647,14 @@ function toggleDevelop(on) {
   if (on) {
     developLayer.addTo(map); railLayer.addTo(map);
     if (roadLayer) roadLayer.addTo(map);
+    if (roadParcelLayer) roadParcelLayer.addTo(map);
   } else {
     developLayer.remove();
     railLayer.remove();
-    if (roadLayer) roadLayer.remove();
+    if (roadLayer) { roadLayer.remove(); }
+    if (roadParcelLayer) {
+      roadParcelLayer.remove(); roadParcelLayer.clearLayers(); rpTiles.clear();
+    }
     if (devVecLayer) devVecLayer.clearLayers();
   }
   drawDevelop();

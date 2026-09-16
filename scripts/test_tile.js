@@ -884,6 +884,112 @@ const call = async (query, method = 'GET', headers = {}) => {
   check('19자리 숫자가 아니면 상류를 부르지 않는다', badPnu.code === 400 && calls.length === 0);
 
   console.log();
+  console.log('19. 고속도로를 선이 아니라 필지로 (mode=roadparcels)');
+  // 지시: "계획은 살려 놓고 실제로 표시는 계획 도로처럼 **필지 기준으로
+  // 선택**될 수 있도록 방법을 전환바랍니다."
+  //
+  // 두 문이 닫힌 것을 먼저 쟀다 — 도시계획시설에 '고속' 칸이 없고
+  // (road_kras_probe), 브이월드 177개 층에 도로구역도가 없다
+  // (vworld-layers run 15). 그래서 우리 선 둘레 30m 의 필지를 고른다.
+  // 30m 는 잰 값이다 (road_parcel_probe: 30m 7~14개 · 50m 12~48개).
+  const tileOf = (lat, lon, z) => {
+    const n = 2 ** z;
+    const r = (lat * Math.PI) / 180;
+    return [Math.floor(((lon + 180) / 360) * n),
+            Math.floor(((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n)];
+  };
+  const RLAT = 37.0012; const RLON = 127.0012;
+  const [RX, RY] = tileOf(RLAT, RLON, 16);
+  const ROAD_JSON = { items: [
+    { name: '서평택JCT-안산JCT', stage: '계획', kind: '확장',
+      a: [RLAT, RLON], b: [RLAT, RLON + 0.004],
+      path: [[RLAT, RLON], [RLAT, RLON + 0.002], [RLAT, RLON + 0.004]] },
+  ] };
+  // 세 필지 — 선 위(지목 도) · 선 30m 안이지만 아직 임야 · 멀리(200m 밖).
+  const sq = (lat, lon, d = 0.00008) => ({ type: 'Polygon', coordinates: [[
+    [lon - d, lat - d], [lon + d, lat - d],
+    [lon + d, lat + d], [lon - d, lat + d], [lon - d, lat - d]]] });
+  const ROAD_PARCELS = { type: 'FeatureCollection', features: [
+    { properties: { pnu: '1', lnm_lndcgr_smbol: '448도' },
+      geometry: sq(RLAT, RLON + 0.002) },
+    { properties: { pnu: '2', lnm_lndcgr_smbol: '산138-22임' },
+      geometry: sq(RLAT + 0.0002, RLON + 0.002) },
+    { properties: { pnu: '3', lnm_lndcgr_smbol: '12-3답' },
+      geometry: sq(RLAT + 0.0020, RLON + 0.002) },
+  ] };
+  const stubRoad = (parcels = ROAD_PARCELS, road = ROAD_JSON) => {
+    calls = [];
+    global.fetch = async (url, opts) => {
+      const u = String(url);
+      calls.push({ url: u, headers: (opts && opts.headers) || {} });
+      if (/road\.json/.test(u)) {
+        return { ok: true, status: 200,
+                 headers: { get: () => 'application/json' },
+                 json: async () => road, text: async () => JSON.stringify(road) };
+      }
+      return parcelReply(parcels);
+    };
+  };
+  const wfsCalls = () => calls.filter((c) => /\/req\/wfs\?/.test(c.url));
+
+  handler.__resetRoad();
+  stubRoad();
+  const rp = await call({ mode: 'roadparcels', z: '16', x: String(RX), y: String(RY) });
+  check('선 30m 안의 필지만 준다 (200m 밖은 뺀다)',
+        (rp.json_ || {}).n === 2,
+        `${(rp.json_ || {}).n} · ${((rp.json_ || {}).items || []).map((i) => i.b).join(',')}`);
+  const byLabel = Object.fromEntries(
+    ((rp.json_ || {}).items || []).map((i) => [i.b, i]));
+  check("지목이 '도' 면 이미 도로인 땅으로 표시한다",
+        (byLabel['448도'] || {}).r === 1 && (byLabel['448도'] || {}).j === '도',
+        JSON.stringify(byLabel['448도'] || null));
+  // **이것이 요점이다.** 신설 구간은 아직 임야·전·답이고, 그 땅이
+  // 편입될지 여부가 땅 주인에게 가장 중요하다 (안성 서운면 실측).
+  check('아직 도로가 아닌 땅은 따로 표시한다 (편입 전)',
+        (byLabel['산138-22임'] || {}).r === 0
+        && (byLabel['산138-22임'] || {}).j === '임',
+        JSON.stringify(byLabel['산138-22임'] || null));
+  check('어느 구간인지·어느 단계인지 함께 싣는다',
+        (byLabel['448도'] || {}).s === '서평택JCT-안산JCT'
+        && (byLabel['448도'] || {}).t === '계획',
+        JSON.stringify(byLabel['448도'] || null));
+  // 네모는 선 둘레만 감싸야 한다. 칸 전체로 물으면 도심에서 수백 개가
+  // 와서 값이 통째로 달라진다.
+  const rpBox = decodeURIComponent(
+    ((wfsCalls()[0] || {}).url || '').match(/BBOX=([^&]*)/)?.[1] || '')
+    .split(',').map(Number);
+  check('선을 감싼 좁은 네모로 묻는다 (칸 전체가 아니다)',
+        rpBox.length === 4 && (rpBox[3] - rpBox[1]) * 111320 < 200,
+        `세로 ${((rpBox[3] - rpBox[1]) * 111320).toFixed(0)}m`);
+
+  // 고속도로가 안 지나는 칸은 **브이월드를 아예 안 부른다.** 화면은 칸마다
+  // 부르므로 이 갈래가 대부분이다 — 여기서 값이 갈린다.
+  handler.__resetRoad();
+  stubRoad();
+  const rpFar = await call({ mode: 'roadparcels', z: '16',
+                           x: String(RX + 30), y: String(RY + 30) });
+  check('고속도로가 안 지나는 칸은 브이월드를 안 부른다',
+        rpFar.code === 200 && (rpFar.json_ || {}).n === 0
+        && wfsCalls().length === 0,
+        `${rpFar.code} · WFS ${wfsCalls().length}회`);
+
+  // 얕은 배율은 거절한다 — 한 칸이 너무 넓어 브이월드를 열 번씩 부른다.
+  handler.__resetRoad();
+  stubRoad();
+  const rpShallow = await call({ mode: 'roadparcels', z: '13',
+                                 x: String(RX >> 3), y: String(RY >> 3) });
+  check('배율 15 아래는 거절한다',
+        rpShallow.code === 400 && wfsCalls().length === 0,
+        String(rpShallow.code));
+
+  // 지번표기에서 지목을 떼는 것이 이 기능의 뼈대다. 연속지적도에는
+  // 지목 칸이 따로 없고 '448도' 처럼 붙어서 온다 (road_parcel_probe).
+  check("지목 떼기: '448도' → 도", handler.jimokOf('448도') === '도');
+  check("지목 떼기: '산54-1 도' → 도", handler.jimokOf('산54-1 도') === '도');
+  check("지목 떼기: '산138-22임' → 임", handler.jimokOf('산138-22임') === '임');
+  check("지목 떼기: '964-1구' → 구", handler.jimokOf('964-1구') === '구');
+
+  console.log();
   console.log('16. 속도 제한 — 훑는 프로그램이 브이월드 한도를 대신 태우지 못하게');
   // 이 함수가 도는 것이 곧 브이월드를 부르는 것이다. 엣지 캐시가
   // 받아낸 요청은 여기까지 안 오므로, 여기가 정확한 자리다.
