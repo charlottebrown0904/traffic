@@ -119,6 +119,7 @@ out geom;"""
             "name": t.get("name") or "",
             "ref": t.get("ref") or "",
             "building": t.get("highway") == "construction",
+            "src": "osm",
             "pts": [(p["lat"], p["lon"]) for p in g],
         })
     return out
@@ -135,21 +136,40 @@ class Route:
 
     def __init__(self, ways: list[dict]):
         self.ways = ways
+        # 이 노선의 조각이 어디서 왔나. 출처가 섞이면 '관' 을 앞세운다 —
+        # 준공 선형은 관 자료가 원천이고 OSM 은 공사중만 보탠다.
+        #
+        # **모르면 'osm' 으로 둔다.** 표기는 덜 붙이는 쪽이 아니라 더
+        # 붙이는 쪽이 안전하다 — ODbL 이 걸린 것은 OSM 쪽이므로, 관
+        # 자료를 OSM 이라 적는 것보다 그 반대가 위험하다.
+        srcs = {w.get("src") for w in ways if w.get("src")}
+        self.src = "관" if "관" in srcs else "osm"
         self.edges = defaultdict(list)          # 마디 → [(이웃, 길이, 좌표들)]
+        # **마디 이름이 좌표가 아닐 수 있다.** 관 자료는 f_node 가
+        # 'A123' 같은 글자다. 그래서 마디마다 자리를 따로 적어 둔다 —
+        # 안 그러면 가장 가까운 마디를 찾을 때 글자로 거리를 재려 든다.
+        self.pos = {}
         for w in ways:
             pts = w["pts"]
-            a, b = _node(pts[0]), _node(pts[-1])
+            # **관 자료는 마디 이름을 이미 갖고 있다** (f_node·t_node).
+            # 그때는 좌표를 반올림해 꿰맬 필요가 없다 — 관이 정한 마디를
+            # 그대로 쓰는 편이 정확하다. OSM 처럼 이름이 없으면 예전대로
+            # 양 끝 좌표를 반올림해 잇는다.
+            a = w.get("a") or _node(pts[0])
+            b = w.get("b") or _node(pts[-1])
             if a == b:
                 continue
             d = sum(km(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
             self.edges[a].append((b, d, pts))
             self.edges[b].append((a, d, pts[::-1]))
+            self.pos[a] = pts[0]
+            self.pos[b] = pts[-1]
 
     def nearest_node(self, pt):
         """그 자리에 가장 가까운 마디. 없으면 (None, 큰 수)."""
         best, bd = None, 1e9
-        for nd in self.edges:
-            d = km(pt, nd)
+        for nd, at in self.pos.items():
+            d = km(pt, at)
             if d < bd:
                 best, bd = nd, d
         return best, bd
@@ -286,7 +306,10 @@ def corridor(route, a, b):
 
 
 def snap(routes: dict, name: str, a, b, ext_km: float):
-    """(좌표들, 비) 또는 (None, 까닭).
+    """(좌표들, 비, 출처) 또는 (None, 까닭, None).
+
+    **출처를 함께 돌려주는 까닭**: 말풍선이 어디서 온 선형인지 밝혀야
+    한다. 준공은 관 자료, 공사중은 OSM(ODbL) 이라 표기가 다르다.
 
     **틀린 선형은 직선보다 나쁘다.** 그물을 통과 못 하면 좌표를 안 내고,
     부르는 쪽이 직선으로 되돌린다.
@@ -302,7 +325,7 @@ def snap(routes: dict, name: str, a, b, ext_km: float):
         # 걸러 내고, 걸리면 직선으로 되돌아간다.
         cands = [r for k, r in routes.items() if k.isdigit()]
     if not cands:
-        return None, "노선 못 찾음"
+        return None, "노선 못 찾음", None
     # 여럿이면 두 끝에 더 가까운 쪽을 고른다.
     r = min(cands, key=lambda x: (x.nearest_node(tuple(a))[1]
                                   + x.nearest_node(tuple(b))[1]))
@@ -311,11 +334,12 @@ def snap(routes: dict, name: str, a, b, ext_km: float):
         # 이어 붙이기가 안 되면 훑어서 모은다 (상·하행이 갈린 자리).
         pts = corridor(r, tuple(a), tuple(b))
     if not pts:
-        return None, "경로 없음"
+        return None, "경로 없음", None
     if not ext_km:
-        return None, "연장 없음"
+        return None, "연장 없음", None
     length = sum(km(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
     ratio = length / ext_km
     if not (PATH_LO <= ratio <= PATH_HI):
-        return None, f"경로비 {ratio:.2f}"
-    return [[round(p[0], 5), round(p[1], 5)] for p in simplify(pts)], ratio
+        return None, f"경로비 {ratio:.2f}", None
+    return ([[round(p[0], 5), round(p[1], 5)] for p in simplify(pts)],
+            ratio, r.src)

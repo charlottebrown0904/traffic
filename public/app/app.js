@@ -3432,9 +3432,15 @@ function roadTip(it) {
     // 화면에 있었던 탓에 이 칸이 한 번도 안 그려졌다.
     + (it.done_on ? `<br>준공 ${escapeHtml(String(it.done_on))}` : '')
     + (it.axis ? `<br>${escapeHtml(it.axis)}${it.line ? ' · ' + escapeHtml(it.line) : ''}` : '')
+    /* **출처를 선형마다 따로 적는다.** 준공은 관 자료(브이월드 표준
+       노드링크), 공사중은 아직 안 만든 길이라 관 자료에 없어 OSM 이다.
+       둘을 한 문구로 뭉뚱그리면 ODbL 이 안 걸린 것에까지 ODbL 을 적거나
+       그 반대가 된다. */
     + (it.path
-      ? '<br><span class="dev-why">실제 노선 선형입니다 ·'
-        + ' 선형 © OpenStreetMap 기여자 (ODbL)</span>'
+      ? '<br><span class="dev-why">실제 노선 선형입니다 · 선형 '
+        + (it.path_src === '관'
+          ? '© 국토교통부 브이월드'
+          : '© OpenStreetMap 기여자 (ODbL)') + '</span>'
       : '<br><span class="dev-why">구간의 시작과 끝을 이은 선입니다 —'
         + ' 실제 노선 모양이 아닙니다</span>');
 }

@@ -341,16 +341,36 @@ def snap_all(rows) -> None:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
     import osm_geom as OG                              # noqa: PLC0415
 
-    print("\nOSM 선형 받는 중 (남한 전체 motorway + construction)…")
+    ways = []
+
+    # **관 자료를 먼저 쓴다** (2026-09-16 지시: "갈아끼워주세요").
+    # 관이 만든 선형이고, 차로수가 딸려 오고, f_node/t_node 가 있어
+    # 그래프를 꿰맬 필요가 없고, ODbL 을 안 밟는다.
+    print("\n관 자료 선형 받는 중 (브이월드 데이터 API · 고속국도)…")
+    try:
+        import moct_geom as MG                         # noqa: PLC0415
+        ways = MG.fetch()
+    except Exception as exc:                           # noqa: BLE001
+        print(f"  ✗ 못 받았다: {type(exc).__name__} {exc}")
+
+    # **공사중은 관 자료에 없다** — 아직 안 만든 길이라서. 그 한 갈래만
+    # OSM 에서 가져온다. 준공 선형까지 OSM 으로 덮지 않는다.
+    print("\nOSM 에서 공사중만 (관 자료에 없는 길)…")
     try:
         with requests.Session() as ses:
-            ways = OG.fetch(ses)
+            osm = OG.fetch(ses)
+        osm = [w for w in osm if w["building"]]
+        print(f"  공사중 조각 {len(osm):,}개")
+        ways += osm
     except Exception as exc:                           # noqa: BLE001
-        print(f"  ✗ 못 받았다: {type(exc).__name__} {exc} — 직선 그대로 둔다")
+        print(f"  ✗ 못 받았다: {type(exc).__name__} {exc}")
+
+    if not ways:
+        print("  선형을 하나도 못 받았다 — 직선 그대로 둔다")
         return
     routes = OG.build_routes(ways)
     built = sum(1 for w in ways if w["building"])
-    print(f"  조각 {len(ways):,}개 (공사중 {built:,}) · 노선 {len(routes)}개")
+    print(f"\n조각 {len(ways):,}개 (공사중 {built:,}) · 노선 {len(routes)}개")
     print(f"  노선 이름: {', '.join(sorted(routes)[:12])}…")
 
     ok = 0
@@ -364,16 +384,24 @@ def snap_all(rows) -> None:
         if not name:
             why["노선명 없음"] += 1
             continue
-        path, res = OG.snap(routes, name, it["a"], it["b"], it.get("km") or 0)
+        path, res, src = OG.snap(routes, name, it["a"], it["b"],
+                                 it.get("km") or 0)
         if path:
             it["path"] = path
             it["path_ratio"] = round(res, 2)
+            it["path_src"] = src        # 말풍선이 출처를 밝힌다
             ok += 1
         else:
             why[res] += 1
             if res == "노선 못 찾음":
                 miss_name[(name, OG.route_key(name))] += 1
-    print(f"\n선형 붙임 {ok}/{len(rows)}")
+    by_src = defaultdict(int)
+    for it in rows:
+        if it.get("path"):
+            by_src[it.get("path_src") or "?"] += 1
+    print(f"\n선형 붙임 {ok}/{len(rows)}"
+          + (f" (관 자료 {by_src.get('관', 0)} · OSM {by_src.get('osm', 0)})"
+             if by_src else ""))
     # 경로비는 값마다 한 줄이 되어 표를 뒤덮는다 — 한 줄로 묶는다.
     tidy = defaultdict(int)
     for w, n in why.items():
@@ -398,7 +426,7 @@ def main() -> None:
     ap.add_argument("--upload", action="store_true",
                     help="만든 뒤 공개 버킷에 올린다 (저장소에 커밋하지 않는다)")
     ap.add_argument("--osm", action="store_true",
-                    help="OSM 선형에 스냅한다 (직선 대신 실제 노선 모양)")
+                    help="실제 선형에 스냅한다 (관 자료 + 공사중은 OSM)")
     args = ap.parse_args()
 
     idx = build_index()

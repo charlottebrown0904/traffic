@@ -69,17 +69,29 @@ def main() -> None:
     ]
     routes = OG.build_routes(ways)
     full = OG.km((36.00, 127.00), (36.03, 127.00))
-    path, res = OG.snap(routes, "시험선", (36.00, 127.00), (36.03, 127.00), full)
+    path, res, src = OG.snap(routes, "시험선", (36.00, 127.00),
+                             (36.03, 127.00), full)
     check("조각 셋을 한 경로로 꿴다", bool(path) and len(path) >= 2,
           f"꼭짓점 {len(path) if path else 0}개 · 비 {res}")
+    # **출처를 함께 돌려줘야 한다** — 말풍선 표기가 관 자료와 OSM 이 다르다.
+    check("출처를 함께 돌려준다", src == "osm", f"출처 {src}")
+
+    # 관 자료 조각은 마디 이름(f_node·t_node)을 그대로 쓴다 — 꿰맬 필요 없음
+    moct = [dict(w, src="관", a=f"N{i}", b=f"N{i + 1}")
+            for i, w in enumerate(ways)]
+    mpath, mres, msrc = OG.snap(OG.build_routes(moct), "시험선",
+                                (36.00, 127.00), (36.03, 127.00), full)
+    check("관 자료는 마디 이름으로 이어지고 출처가 '관' 이다",
+          bool(mpath) and msrc == "관", f"출처 {msrc} · 비 {mres}")
 
     # 4. **그물.** 고시 연장이 경로의 절반이면 엉뚱한 길을 따라간 것이다.
-    bad, why = OG.snap(routes, "시험선", (36.00, 127.00), (36.03, 127.00),
-                       full / 3)
+    bad, why, _ = OG.snap(routes, "시험선", (36.00, 127.00), (36.03, 127.00),
+                          full / 3)
     check("연장과 안 맞으면 좌표를 안 낸다", bad is None, f"→ {why}")
 
     # 5. 모르는 노선은 조용히 비켜선다 (직선으로 되돌아간다)
-    none, why2 = OG.snap(routes, "없는선", (36.0, 127.0), (36.03, 127.0), full)
+    none, why2, _ = OG.snap(routes, "없는선", (36.0, 127.0), (36.03, 127.0),
+                            full)
     check("모르는 노선이면 비켜선다", none is None, f"→ {why2}")
 
     # 6. 긴 경로에서 스택이 안 넘친다 — 되돌이로 짜면 여기서 터진다

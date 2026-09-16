@@ -2056,7 +2056,9 @@ async function stubCommon(pg) {
       const path = [[36.5, 127.4], [36.55, 127.44], [36.6, 127.5]];
       window.state.road = { items: [
         { stage: '공사중', kind: '공사', name: '굽은 것', km: 9,
-          a: [36.5, 127.4], b: [36.6, 127.5], path },
+          a: [36.5, 127.4], b: [36.6, 127.5], path, path_src: 'osm' },
+        { stage: '준공', kind: '공사', name: '관 자료 것', km: 9,
+          a: [36.5, 127.4], b: [36.6, 127.5], path, path_src: '관' },
         { stage: '공사중', kind: '공사', name: '곧은 것', km: 9,
           a: [36.7, 127.6], b: [36.8, 127.7] },
       ] };
@@ -2065,19 +2067,25 @@ async function stubCommon(pg) {
       // 가짜 지도의 polyline 은 __latlngs 에 넣어 둔다 (스텁 참고).
       const lines = (window.__lines || []).map((l) => (l.__latlngs || []).length);
       const tipPath = window.roadTip(window.state.road.items[0]);
-      const tipPlain = window.roadTip(window.state.road.items[1]);
+      const tipMoct = window.roadTip(window.state.road.items[1]);
+      const tipPlain = window.roadTip(window.state.road.items[2]);
       window.state.road = keep;
       window.drawRoad();
-      return { lines, tipPath, tipPlain };
+      return { lines, tipPath, tipMoct, tipPlain };
     });
     // 굽은 것은 3점짜리 선 두 겹, 곧은 것은 2점짜리 선 두 겹.
     check('선형이 있으면 꼭짓점을 그대로 그린다',
           geom.lines.filter((n) => n === 3).length === 2,
           `선 길이들 ${JSON.stringify(geom.lines)}`);
-    check('선형을 따라 그리면 실제 노선이라고 적고 출처를 밝힌다',
+    check('OSM 선형이면 ODbL 출처를 적는다',
           /실제 노선 선형/.test(geom.tipPath)
             && /OpenStreetMap/.test(geom.tipPath),
           geom.tipPath.slice(-95));
+    /* **관 자료에 ODbL 을 적으면 안 된다** — 걸리지도 않은 조건을
+       적는 것이고, 반대로 OSM 것에 안 적으면 표기 의무를 빠뜨린다. */
+    check('관 자료 선형이면 브이월드를 적고 ODbL 은 안 적는다',
+          /브이월드/.test(geom.tipMoct) && !/ODbL/.test(geom.tipMoct),
+          geom.tipMoct.slice(-80));
     check('선형이 없으면 실제 노선이 아니라고 그대로 적는다',
           /실제 노선 모양이 아닙니다/.test(geom.tipPlain)
             && !/OpenStreetMap/.test(geom.tipPlain),
