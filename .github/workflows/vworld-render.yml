@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       probe:
-        description: "render(기본) / geocode-mask / roads — 고속도로 계획층 찾기"
+        description: "render / geocode-mask / roads / roadbuild — 고속도로 건설자료"
         default: "render"
 
 jobs:
@@ -37,6 +37,15 @@ jobs:
       - name: 고속도로 계획층 찾기
         if: inputs.probe == 'roads'
         run: python scripts/road_plan_probe.py 2>&1 | tee /tmp/probe.log
+
+      # 지도층에 계획이 없으므로 **사업 자료**에서 찾는다. 도로공사 포털에
+      # '공사현황' 이 있고 거기 시점·종점 **주소**가 있으면, 우리 지오코더로
+      # 좌표를 붙여 선으로 그릴 수 있다.
+      - name: 고속도로 건설·공사 자료 찾기
+        if: inputs.probe == 'roadbuild'
+        env:
+          EX_API_KEY: ${{ secrets.EX_API_KEY }}
+        run: python scripts/road_build_probe.py 2>&1 | tee /tmp/probe.log
 
       # 가려진 지번('1**')으로 얻은 'parcel' 좌표가 진짜인가.
       # 이 컨테이너는 중계기를 못 부르므로 러너에서 돈다.
