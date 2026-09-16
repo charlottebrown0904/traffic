@@ -71,11 +71,14 @@ def route_key(name: str) -> str:
 
 def fetch(session, timeout: int = 900) -> list[dict]:
     """남한의 고속도로 조각을 통째로 받는다 (준공 + 공사중)."""
-    s, w, n, e = KR_BBOX
+    # **상자로 자르면 일본이 들어온다.** 33~38.7N·124.5~131.2E 는 규슈와
+    # 혼슈 서쪽 끝을 품어서, 첫 실행의 '노선 130개' 에 中国自動車道·
+    # 九州自動車道 가 섞였다. 나라 경계로 자른다 — 느려도 이것이 맞다.
     q = f"""[out:json][timeout:{timeout}];
+area["ISO3166-1"="KR"][admin_level=2]->.kr;
 (
-  way["highway"="motorway"]({s},{w},{n},{e});
-  way["highway"="construction"]["construction"="motorway"]({s},{w},{n},{e});
+  way["highway"="motorway"](area.kr);
+  way["highway"="construction"]["construction"="motorway"](area.kr);
 );
 out geom;"""
     r = session.post(OVERPASS, data={"data": q}, headers=UA, timeout=timeout + 60)
@@ -219,3 +222,25 @@ def simplify(pts, tol_m: float = 25.0):
             stack.append((lo, wi))
             stack.append((wi, hi))
     return [pts[i] for i in sorted(keep)]
+
+
+def snap(routes: dict, name: str, a, b, ext_km: float):
+    """(좌표들, 비) 또는 (None, 까닭).
+
+    **틀린 선형은 직선보다 나쁘다.** 그물을 통과 못 하면 좌표를 안 내고,
+    부르는 쪽이 직선으로 되돌린다.
+    """
+    key = route_key(name)
+    r = routes.get(key)
+    if r is None:
+        return None, "노선 못 찾음"
+    pts = r.path(tuple(a), tuple(b))
+    if not pts:
+        return None, "경로 없음"
+    if not ext_km:
+        return None, "연장 없음"
+    length = sum(km(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
+    ratio = length / ext_km
+    if not (PATH_LO <= ratio <= PATH_HI):
+        return None, f"경로비 {ratio:.2f}"
+    return [[round(p[0], 5), round(p[1], 5)] for p in simplify(pts)], ratio
