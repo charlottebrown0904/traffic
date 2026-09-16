@@ -660,6 +660,99 @@ const call = async (query, method = 'GET', headers = {}) => {
         sea.code === 200 && (sea.json_ || {}).n === 0 && calls.length === 0,
         `${sea.code} · 호출 ${calls.length}회`);
 
+  // ── 상한에 걸린 칸은 쪼개서 다시 묻는다 (2026-09-16) ──
+  //
+  // 지시: "필지경계와 지도 틀어짐 발생 (대구)".
+  //
+  // 좌표가 밀린 것이 아니었다. 같은 자리에서 브이월드가 칠한 그림과
+  // 우리가 찍은 선을 화소로 견줬더니 다섯 곳 모두 (0,0) 이 이겼다
+  // (scripts/parcel_pix_probe.py). 틀어져 보인 까닭은 **필지가 빠져서**다.
+  //
+  //   대구 중구  z16 600개(상한) · z17 599개   ← 어느 배율로 봐도 걸린다
+  //   서울 중구  z16 600개(상한) · z17 142개
+  //
+  // 상한에 걸리면 브이월드가 먼저 준 것만 오고 나머지는 통째로 빠진다.
+  // 빠진 자리에 선이 없으니 사람 눈에는 '경계가 안 맞는' 것으로 보인다.
+  const bulk = (n, tag) => ({
+    type: 'FeatureCollection',
+    features: Array.from({ length: n }, (_, i) => ({
+      properties: { pnu: `${tag}-${i}` },
+      geometry: { type: 'Polygon', coordinates: [[
+        [127 + i / 1e6, 37], [127.0004, 37.0],
+        [127.0004, 37.0004], [127 + i / 1e6, 37]]] },
+    })),
+  });
+  // 부를 때마다 다음 답을 준다. 마지막 것은 계속 쓴다.
+  function stubSeq(bodies) {
+    calls = [];
+    let i = 0;
+    global.fetch = async (url, opts) => {
+      calls.push({ url: String(url), headers: (opts && opts.headers) || {} });
+      const body = bodies[Math.min(i, bodies.length - 1)];
+      i += 1;
+      return parcelReply(body);
+    };
+  }
+
+  stubSeq([bulk(2, 'a')]);
+  const plain = await call({ mode: 'parcels', z: '16', x: '55938', y: '25506' });
+  check('상한을 브이월드 자신의 상한(1000)까지 부른다',
+        /MAXFEATURES=1000/.test((calls[0] || {}).url || ''),
+        ((calls[0] || {}).url || '').match(/MAXFEATURES=\d+/) || '없음');
+  check('안 걸린 칸은 한 번만 묻는다 (시골에서 값을 안 치른다)',
+        calls.length === 1 && (plain.json_ || {}).whole === true,
+        `호출 ${calls.length}회 · whole=${(plain.json_ || {}).whole}`);
+
+  // 상한에 닿으면 넷으로 쪼개 다시 묻는다.
+  stubSeq([bulk(1000, 'big'), bulk(3, 'q')]);
+  const split = await call({ mode: 'parcels', z: '16', x: '55938', y: '25506' });
+  check('상한에 걸리면 칸을 넷으로 쪼개 다시 묻는다',
+        calls.length === 5, `호출 ${calls.length}회`);
+  const boxOf = (u) => decodeURIComponent((u.match(/BBOX=([^&]*)/) || ['', ''])[1])
+    .split(',').map(Number);
+  const whole_ = boxOf(calls[0].url);
+  const quads = calls.slice(1).map((c) => boxOf(c.url));
+  check('쪼갠 넷이 원래 칸을 딱 덮는다',
+        quads.length === 4
+        && quads.every((q) => q[0] >= whole_[0] - 1e-9 && q[2] <= whole_[2] + 1e-9
+                              && q[1] >= whole_[1] - 1e-9 && q[3] <= whole_[3] + 1e-9)
+        && Math.abs(Math.min(...quads.map((q) => q[0])) - whole_[0]) < 1e-9
+        && Math.abs(Math.max(...quads.map((q) => q[2])) - whole_[2]) < 1e-9,
+        quads.map((q) => q.map((v) => v.toFixed(4)).join(',')).join(' | '));
+  // 넷을 합치면 12개인데, 조각마다 같은 필지 셋이 겹쳐 온다. 세 개여야
+  // 한다 — 겹친 것을 안 걷어내면 선이 굵어 보이고 몸통이 네 배가 된다.
+  check('경계에 걸쳐 두 번 온 필지는 한 번만 그린다',
+        (split.json_ || {}).n === 3, String((split.json_ || {}).n));
+  check('쪼개서 다 받았으면 whole 은 참',
+        (split.json_ || {}).whole === true,
+        String((split.json_ || {}).whole));
+
+  // 쪼개도 조각이 여전히 상한이면 한 번 더. 그래도 넘치면 솔직히 알린다.
+  stubSeq([bulk(1000, 'x')]);
+  const deep = await call({ mode: 'parcels', z: '16', x: '55938', y: '25506' });
+  check('두 깊이까지만 쪼갠다 (1 + 4 + 16)',
+        calls.length === 21, `호출 ${calls.length}회`);
+  check('그래도 넘치면 whole 을 거짓으로 알린다',
+        (deep.json_ || {}).whole === false,
+        String((deep.json_ || {}).whole));
+
+  // 한 조각이 안 오면 반쪽을 그리지 않는다 — 반쪽이 곧 틀어짐이다.
+  calls = [];
+  let nth = 0;
+  global.fetch = async (url) => {
+    calls.push({ url: String(url) });
+    nth += 1;
+    if (nth === 1) return parcelReply(bulk(1000, 'big'));
+    if (nth === 2) return { ok: false, status: 500,
+                            headers: { get: () => 'text/plain' },
+                            text: async () => 'boom',
+                            json: async () => { throw new Error('boom'); } };
+    return parcelReply(bulk(2, 'q'));
+  };
+  const broken = await call({ mode: 'parcels', z: '16', x: '55938', y: '25506' });
+  check('조각 하나가 안 오면 반쪽을 그리지 않는다 (502)',
+        broken.code === 502, String(broken.code));
+
   console.log();
   console.log("16. 개발 층을 도형으로 (mode=devvec) — 완공된 것을 걸러 내려고");
   // 그림(WMS)으로는 못 거른다 — 브이월드가 이미 칠해서 준다. 그래서

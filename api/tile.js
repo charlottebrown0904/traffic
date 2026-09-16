@@ -82,10 +82,29 @@ const PARCEL_MAXFEATURES = "200";
 // 엣지 캐시(s-maxage 이레)가 받아내고 새 칸만 나간다.
 const PARCEL_VEC_TYPENAME = "lp_pa_cbnd_bubun";
 const PARCEL_VEC_MIN_ZOOM = 16;
-// 한 칸에 이보다 많으면 자른다. z16 한 칸은 한 변 600m 남짓이라
-// 도심이라도 이 안에서 끝난다. 상한이 없으면 서울 한복판에서
-// 한 칸이 수백 KB 가 된다.
-const PARCEL_VEC_MAX = 600;
+// 한 번에 받을 수 있는 상한. **600 은 도심에서 모자랐다** (2026-09-16,
+// scripts/parcel_pix_probe.py):
+//
+//   대구 중구  z16 600개(상한) · z17 599개    ← 어느 배율로 봐도 걸린다
+//   서울 중구  z16 600개(상한) · z17 142개
+//   부산 중구  z16 577개       · z17 283개
+//
+// 걸리면 브이월드가 먼저 준 것만 오고 **나머지는 통째로 빠진다.** 화면은
+// 빠진 자리에 선이 없으니 '경계가 지도와 안 맞는다' 로 보인다 — 받은
+// 지시가 그것이었다("필지경계와 지도 틀어짐 발생 (대구)").
+//
+// 좌표가 밀린 것이 아니다. 같은 자리에서 브이월드가 칠한 그림과 우리가
+// 찍은 선을 화소로 견줬더니 다섯 곳 모두 (0,0) 이 이겼다.
+//
+// 1000 은 브이월드 WFS 자신의 상한이다 — 더 불러도 안 준다. 그래서
+// 그것으로도 모자라면 **칸을 넷으로 쪼개 다시 묻는다** (아래 gatherParcels).
+const PARCEL_VEC_MAX = 1000;
+// 쪼개기 깊이. 한 번 쪼개면 넷, 두 번이면 열여섯이다. 대구 중구가 z17
+// 한 칸에 599개였으므로 z16 을 한 번만 쪼개도 조각마다 600 언저리 —
+// 1000 아래로 떨어진다. 둘째 깊이는 보험이다.
+const PARCEL_SPLIT_DEPTH = 2;
+// 한 요청이 브이월드를 두드릴 수 있는 횟수 (1 + 4 + 16).
+const PARCEL_CALL_BUDGET = 21;
 // 우리가 쓰는 칸 이름. collect/landchar.FIELDS 와 같은 것을 본다 —
 // 둘이 어긋나면 화면과 분석이 다른 땅을 말한다.
 // dt_d194 는 서른 칸을 준다. 열 칸만 쓰고 있었다 (2026-09-10 실측).
@@ -649,6 +668,41 @@ async function parcelLines(req, res) {
       e < KOREA.lonMin || w > KOREA.lonMax) {
     return sendLines(res, [], true);
   }
+  const got = await gatherParcels(req, [w, s, e, n], 0, { n: 0 });
+  if (got.err === "key") {
+    return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
+  }
+  if (got.err === "timeout") {
+    return fail(res, 504, `브이월드 응답 없음 (${TIMEOUT_MS / 1000}초 초과)`);
+  }
+  if (got.err === "call") return fail(res, 502, "브이월드 호출 실패");
+  if (got.err === "notjson") {
+    // 한도 초과·키 오류는 JSON 이 아니라 XML 로 온다. 그것을 빈
+    // 목록인 척 돌려주면 '필지가 없는 동네' 로 읽힌다.
+    return fail(res, 502, "브이월드가 필지 목록 대신 다른 것을 줬습니다");
+  }
+  // 쪼개서 물으면 경계에 걸친 필지가 두 조각 모두에 온다. 두 번 그리면
+  // 선이 굵어 보이고 몸통도 커진다 — 첫 꼭짓점으로 같은 것을 걷어낸다.
+  const seen = new Set();
+  const geoms = [];
+  for (const f of got.feats) {
+    const g = round6((f || {}).geometry);
+    if (!g) continue;
+    // firstPoint 는 개발 층이 겹친 도형을 가릴 때 쓰는 그것을 그대로
+    // 쓴다. 같은 이름의 함수를 하나 더 두면 **뒤에 선언한 것이 이긴다** —
+    // 이 자리에서 실제로 그랬고, 겹친 필지가 안 걷혔다 (검사가 잡았다).
+    const pt = firstPoint(g);
+    const key = pt ? JSON.stringify(pt) : null;
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    geoms.push(g);
+  }
+  return sendLines(res, geoms, !got.capped);
+}
+
+
+/** 상자 하나를 브이월드에 묻는다. 상한에 닿았는지도 같이 돌려준다. */
+async function askParcelBox(req, [w, s, e, n]) {
   const out = await callVworld({
     // 1.1.0 한 길뿐이다 — parcelInfo 의 주석 참고.
     SERVICE: "WFS", REQUEST: "GetFeature", VERSION: "1.1.0",
@@ -660,27 +714,44 @@ async function parcelLines(req, res) {
     DOMAIN: process.env.VWORLD_REFERER
       || `https://${(req.headers || {}).host || "toji.fyi"}/`,
   }, VWORLD_WFS, (req.headers || {}).host);
-  if (out.keyMissing) return fail(res, 503, "VWORLD_KEY 가 설정되지 않았습니다");
-  if (!out.upstream) {
-    return fail(res, out.timedOut ? 504 : 502,
-      out.timedOut ? `브이월드 응답 없음 (${TIMEOUT_MS / 1000}초 초과)`
-                   : "브이월드 호출 실패");
-  }
+  if (out.keyMissing) return { err: "key" };
+  if (!out.upstream) return { err: out.timedOut ? "timeout" : "call" };
   let body;
   try {
     body = await out.upstream.json();
   } catch (err) {
-    // 한도 초과·키 오류는 JSON 이 아니라 XML 로 온다. 그것을 빈
-    // 목록인 척 돌려주면 '필지가 없는 동네' 로 읽힌다.
-    return fail(res, 502, "브이월드가 필지 목록 대신 다른 것을 줬습니다");
+    return { err: "notjson" };
   }
   const feats = Array.isArray(body && body.features) ? body.features : [];
-  const geoms = [];
-  for (const f of feats) {
-    const g = round6((f || {}).geometry);
-    if (g) geoms.push(g);
-  }
-  return sendLines(res, geoms, feats.length < PARCEL_VEC_MAX);
+  return { feats, capped: feats.length >= PARCEL_VEC_MAX };
+}
+
+/** 상한에 걸리면 **칸을 넷으로 쪼개 다시 묻는다.**
+ *
+ * 상한에 걸린 칸을 그대로 그리면 필지가 빠진 채로 그려지는데, 화면에서
+ * 그것은 '없는 것' 이 아니라 '틀어진 것' 으로 보인다. 빠지느니 한 번 더
+ * 묻는 편이 낫다. 쪼개기는 **걸렸을 때만** 도므로 시골 칸은 그대로
+ * 한 번이다 — 도심에서만 값을 치른다.
+ */
+async function gatherParcels(req, box, depth, budget) {
+  budget.n += 1;
+  const got = await askParcelBox(req, box);
+  if (got.err) return got;
+  if (!got.capped || depth >= PARCEL_SPLIT_DEPTH
+      || budget.n + 4 > PARCEL_CALL_BUDGET) return got;
+  const [w, s, e, n] = box;
+  const mx = (w + e) / 2;
+  const my = (s + n) / 2;
+  const parts = await Promise.all([
+    [w, s, mx, my], [mx, s, e, my], [w, my, mx, n], [mx, my, e, n],
+  ].map((q) => gatherParcels(req, q, depth + 1, budget)));
+  // 한 조각이라도 못 받으면 반쪽을 그리지 않는다 — 반쪽이 곧 틀어짐이다.
+  const bad = parts.find((p) => p.err);
+  if (bad) return bad;
+  return {
+    feats: parts.flatMap((p) => p.feats),
+    capped: parts.some((p) => p.capped),
+  };
 }
 
 /* 개발 층을 **도형으로** 준다 (2026-09-14 지시).
