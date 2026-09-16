@@ -191,29 +191,50 @@ def plan_rows(idx):
 
 
 def work_rows(idx):
-    """도로공사 공사현황. 중계기가 있어야 한다."""
+    """도로공사 공사현황. 중계기가 있어야 한다.
+
+    **쪽 넘기기는 자료가 말하는 count 를 따른다.** 예전에는 '한 쪽이
+    100건보다 적으면 끝' 으로 봤는데, 그렇게 돌린 실행이 595건 중 198건
+    에서 멈췄다. 마지막 쪽이 아닌데도 100건이 덜 온 것이다.
+    """
     sys.path.insert(0, str(ROOT / "src"))
     from redt.collect.http import get                   # noqa: PLC0415
     EX = "https://data.ex.co.kr/openapi/safeDriving/hiwayCnstnPrss"
-    out, dropped = [], []
+    out, dropped, cache = [], [], {}
     for cd, stage in (("C02", "공사중"), ("C03", "준공")):
-        page = 1
+        page, seen, total = 1, 0, None
         while True:
             r = get(EX, {"key": "__via_relay__", "type": "json",
                          "cmcnCstrClssCd": cd, "numOfRows": "100",
                          "pageNo": str(page), "pagingYN": "Y"}, timeout=60)
             body = r.json()
+            if total is None:
+                total = _int(body.get("count") or body.get("totalCount"))
             items = next((v for v in body.values()
                           if isinstance(v, list) and v and isinstance(v[0], dict)), [])
             if not items:
                 break
+            seen += len(items)
             for it in items:
-                row = one_work(idx, it, stage)
-                (out if row else dropped).append(row or (it.get("sectionName"), "좌표"))
-            if len(items) < 100:
+                row, why = one_work(idx, it, stage, cache)
+                (out.append(row) if row
+                 else dropped.append((it.get("sectionName"), why)))
+            if total and seen >= total:
+                break
+            if not total and len(items) < 100:
                 break
             page += 1
+            if page > 30:                              # 안전줄
+                break
+        print(f"  {stage}: 자료가 말하는 {total} · 받은 {seen}")
     return out, dropped
+
+
+def _int(v):
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
 
 
 def clean_addr(a: str) -> str:
@@ -225,20 +246,77 @@ def clean_addr(a: str) -> str:
     return re.sub(r"\s+", " ", a).strip()
 
 
-def one_work(idx, it: dict, stage: str):
+def umd_token(addr: str) -> str:
+    """주소에서 **읍·면·동 마디**를 집는다.
+
+    예전에는 마지막 마디만 봤다. 그런데 공사현황 주소는 '경기도 화성시
+    동탄면 방교리' 처럼 **리까지** 오는 것이 가장 흔하다(198건 중 118건).
+    우리 이름 사전은 읍·면을 묶어 가운데를 쓰므로 리는 아예 없다 —
+    그래서 198건 중 15건밖에 안 붙었다. 뒤에서부터 훑어 읍·면·동으로
+    끝나는 마디를 먼저 집고, 없으면 마지막 마디를 쓴다.
+    """
+    parts = (addr or "").split()
+    for t in reversed(parts):
+        if t.endswith(("읍", "면", "동")) and len(t) > 1:
+            return t
+    return parts[-1] if parts else ""
+
+
+def geo_pair(cache: dict, a: str, b: str, ext_km: float):
+    """명부로 못 찾으면 **지오코더에 물어본다** (중계기 경유).
+
+    탐침이 이 길로 12건 중 대부분을 붙였고 비가 0.91~1.07 이었다
+    (road_work_probe.py). 명부는 읍·면까지가 한계라 리·지번 주소는
+    여기서만 풀린다.
+    """
+    try:
+        from redt.collect.geocode import geocode_one    # noqa: PLC0415
+    except Exception:                                   # noqa: BLE001
+        return None
+    pts = []
+    for addr in (a, b):
+        if addr not in cache:
+            try:
+                y, x = geocode_one(addr, kind="PARCEL")
+            except Exception:                           # noqa: BLE001
+                y = x = None
+            if y is None:
+                try:
+                    y, x = geocode_one(addr, kind="ROAD")
+                except Exception:                       # noqa: BLE001
+                    y = x = None
+            cache[addr] = (y, x) if y is not None else None
+        pts.append(cache[addr])
+    if not pts[0] or not pts[1]:
+        return None
+    d = km(pts[0], pts[1])
+    if d < 0.05 or not ext_km:
+        return None
+    return (abs(d / ext_km - 1), "지오코더", pts[0], "지오코더", pts[1], d)
+
+
+def one_work(idx, it: dict, stage: str, cache: dict | None = None):
+    """(줄, 버린 까닭). 까닭을 돌려주는 것은 로그가 '좌표' 한 마디만
+    남겨서 무엇을 고쳐야 할지 알 수 없었기 때문이다."""
+    cache = {} if cache is None else cache
     ext = float(re.sub(r"[^0-9.]", "", str(it.get("cnstnExtns") or "")) or 0)
     a, b = clean_addr(it.get("cnstnStpntAddr")), clean_addr(it.get("cnstnEnpntAddr"))
-    if not a or not b or not ext:
-        return None
-    # 주소의 마지막 두 마디(읍면동·리)로 우리 명부에서 찾는다 —
-    # 지오코더를 안 부르고도 대부분 걸린다.
-    got = pick_pair(idx, a.split()[-1], b.split()[-1], ext)
+    if not a or not b:
+        return None, "주소 없음"
+    if not ext:
+        return None, "연장 없음"
+    # 먼저 우리 명부(요금소·시군구·읍면동)로 — 부르지 않고 끝나면 제일 좋다.
+    got = pick_pair(idx, umd_token(a), umd_token(b), ext)
+    if got and RATIO_LO <= got[5] / ext <= RATIO_HI:
+        pass
+    else:
+        got = geo_pair(cache, a, b, ext)
     if not got:
-        return None
+        return None, "좌표 못 얻음"
     _s, sa, pa, sb, pb, d = got
     ratio = d / ext
     if not (RATIO_LO <= ratio <= RATIO_HI):
-        return None
+        return None, f"비 {ratio:.2f}"
     return {
         "stage": stage, "kind": "공사",
         "route": it.get("routeName"), "section": it.get("sectionName"),
@@ -248,7 +326,7 @@ def one_work(idx, it: dict, stage: str):
         "a": [round(pa[0], 5), round(pa[1], 5)],
         "b": [round(pb[0], 5), round(pb[1], 5)],
         "src": f"{sa}/{sb}", "ratio": round(ratio, 2),
-    }
+    }, ""
 
 
 def main() -> None:
@@ -274,6 +352,11 @@ def main() -> None:
             print(f"\n공사  못 받았다: {type(exc).__name__} {exc}")
         else:
             print(f"\n공사  올림 {len(work)} · 버림 {len(wdrop)}")
+            why = defaultdict(int)
+            for _n, w in wdrop:
+                why[re.sub(r"비 .*", "비가 안 맞음", w or "?")] += 1
+            for w, n in sorted(why.items(), key=lambda kv: -kv[1]):
+                print(f"   버린 까닭 {w}: {n}건")
 
     payload = {
         "generated_at": __import__("datetime").datetime.now(
@@ -297,6 +380,8 @@ def main() -> None:
         if keep:
             payload["items"] = plan + keep
             print(f"\n(공사 {len(keep)}줄은 예전 것을 그대로 둔다)")
+    # public/app/data 는 .gitignore 라 새 체크아웃에 **폴더 자체가 없다.**
+    OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
                    encoding="utf-8")
     print(f"\n{OUT.relative_to(ROOT)} · {len(payload['items'])}줄 · "
