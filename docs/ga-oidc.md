@@ -125,17 +125,24 @@ principal://iam.googleapis.com/projects/<프로젝트번호>/locations/global/wo
 Google Analytics → 관리 → 속성 액세스 관리 → 서비스 계정 이메일을
 **뷰어**로 추가. 그 이상은 주지 않는다 — 우리는 읽기만 한다.
 
-**속성 ID**(숫자. 측정 ID `G-…` 와 다르다)를 적어 둔다.
+**속성 ID** 는 `554631159`(속성 `tojilab`, 2026-09-16 확인). 같은 화면의
+계정 ID `408434597` 도, 측정 ID `G-RW6MCG84SF` 도 아니다 — 셋이 나란히
+보이므로 헷갈리기 쉽다. 계정 줄이 "없음(사용자의 권한 수준이 낮음)" 으로
+남는 것은 의도한 상태다. 계정 전체가 아니라 속성 하나에만 권한을 줬다.
+
+서비스 계정 주소는 `ga-reader@sado-toji.iam.gserviceaccount.com` 이다.
 
 ### 7. Vercel — 환경변수 다섯 (Production 에만)
 
 | 이름 | 값 |
 |---|---|
-| `GA_PROPERTY_ID` | GA 속성 ID (숫자) |
-| `GCP_PROJECT_NUMBER` | GCP 프로젝트 번호 |
-| `GCP_WIF_POOL_ID` | 4번의 풀 ID |
-| `GCP_WIF_PROVIDER_ID` | 4번의 공급자 ID |
-| `GCP_SERVICE_ACCOUNT_EMAIL` | 5번의 서비스 계정 이메일 |
+| `GA_PROPERTY_ID` | `554631159` |
+| `GCP_PROJECT_NUMBER` | GCP 프로젝트 번호 (`sado-toji` 의 숫자) |
+| `GCP_WIF_POOL_ID` | `vercel` |
+| `GCP_WIF_PROVIDER_ID` | `vercel-oidc` |
+| `GCP_SERVICE_ACCOUNT_EMAIL` | `ga-reader@sado-toji.iam.gserviceaccount.com` |
+
+프로젝트 번호 한 줄만 화면에서 확인하면 된다. 나머지 넷은 확정된 값이다.
 
 **다섯 개 다 비밀이 아니다.** 식별자일 뿐이라 새어도 그것만으로는 아무것도
 못 한다 — 실제 권한은 OIDC 토큰이 증명한다. 그래도 Production 에만 둔다.
