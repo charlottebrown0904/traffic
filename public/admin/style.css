@@ -132,3 +132,63 @@
 }
 .adm-kpi b{display:block;font-size:20px;font-weight:800;letter-spacing:-.02em}
 .adm-kpi span{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
+
+/* ── 성과 대시보드 (2026-09-16 2차) ──────────────────────── */
+/* 기간 칩 */
+.pd-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 14px}
+.pd{
+  font:inherit;font-size:13px;font-weight:700;padding:5px 13px;cursor:pointer;
+  border-radius:999px;border:1px solid var(--border-strong);
+  background:var(--surface);color:var(--muted)
+}
+.pd:hover{color:var(--ink)}
+.pd.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.pd.busy{opacity:.5}
+.pd-note{font-size:12px;color:var(--faint);margin-left:4px}
+
+/* 채널 고르기 — 여러 개 */
+.ch-grid{grid-column:1/-1;display:grid;gap:8px}
+@media (min-width:560px){ .ch-grid{grid-template-columns:1fr 1fr} }
+.ch-box{
+  display:flex;align-items:flex-start;gap:9px;padding:10px 12px;cursor:pointer;
+  border:1px solid var(--border);border-radius:10px;background:var(--surface);
+  font-weight:400
+}
+.ch-box:hover{border-color:var(--border-strong)}
+.ch-box:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.ch-box input{margin-top:3px;flex:none;accent-color:var(--accent)}
+.ch-box b{display:block;font-size:14px;font-weight:700;color:var(--ink)}
+.ch-box i{display:block;font-style:normal;font-size:12px;color:var(--muted);margin-top:1px}
+
+.adm-hint{font-size:12px;font-weight:400;color:var(--faint)}
+.adm-sub{font-style:normal;font-size:11.5px;color:var(--faint)}
+
+/* 막대그래프 — 한 계열, 브랜드 강조 하나.
+   SVG 를 가로로 늘여 쓰면 모서리가 타원이 되고 값 글자가 찌그러진다.
+   칸마다 div 를 두면 그 일이 없고 밑변이 바닥에 붙는다. */
+.bc{margin:0 0 18px;border:1px solid var(--border);border-radius:var(--radius,12px);
+    padding:12px 14px 8px;background:var(--surface)}
+.bc figcaption{font-size:13px;font-weight:700;margin-bottom:10px}
+.bc figcaption span{font-weight:400;color:var(--muted);font-size:12px}
+.bc-plot{
+  display:flex;align-items:flex-end;gap:2px;
+  height:120px;padding-top:16px;box-sizing:border-box   /* 위 16px 은 값 이름표 자리 */
+}
+.bc-col{flex:1 1 0;min-width:0;height:100%;display:flex;align-items:flex-end}
+/* 막대는 위만 둥글다 — 아래는 기준선에 붙는다 */
+.bc-col i{display:block;width:100%;position:relative;font-style:normal;background:var(--accent);border-radius:4px 4px 0 0}
+.bc-col:hover i{background:var(--brand-warm,var(--accent))}
+/* 값 이름표는 막대 위에 **떠 있다.** 흐름에 두면 이름표가 붙은 막대만
+   짧아져 같은 눈금이 아니게 된다 (그려 보고 나서 고쳤다). */
+.bc-col i b{
+  position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
+  font-size:11px;font-weight:700;color:var(--ink);line-height:1;
+  margin-bottom:3px;white-space:nowrap
+}
+.bc-x{display:flex;justify-content:space-between;font-size:11px;color:var(--faint);margin-top:4px}
+
+/* 표 안의 크기 비교 막대 */
+.cmp{display:block;height:8px;min-width:2px;width:var(--w);
+     background:var(--accent);border-radius:4px}
+
+.lnk-table{overflow-x:auto}

@@ -114,7 +114,25 @@ for (const f of ['public/index.html', 'public/app/index.html', 'public/admin/ind
   ok(`${f} — anonymize_ip`, /anonymize_ip/.test(h));
 }
 
-console.log('\n9. 방침이 실제로 있다');
+console.log('\n9. 대쉬보드와 그림');
+const adm = fs.readFileSync(path.join(ROOT, 'public/admin/admin.js'), 'utf8');
+ok('대쉬보드 탭은 칸이 여럿이어도 늘 펼쳐 둔다', /cur === 'board'\) \? ' open'/.test(adm));
+ok('기간 칩 넷 (오늘·7일·30일·전체)', /\[0, '오늘'\][\s\S]*?\[null, '전체'\]/.test(adm));
+ok('기간을 바꾸면 DB 에서 다시 센다 (화면에서 자르지 않는다)',
+   /getLinks\(days\)/.test(adm) && /p_days/.test(adm));
+ok('채널을 여러 개 고를 수 있다', /ch-pick:checked/.test(adm));
+ok('막대는 SVG 를 늘이지 않는다 (모서리·글자가 찌그러진다)',
+   !/preserveAspectRatio="none"/.test(adm));
+ok('값 이름표는 막대 안에 떠 있다 (흐름에 두면 그 막대만 짧아진다)',
+   /'<i style="height:'[\s\S]{0,200}<b>/.test(adm));
+ok('값 이름표는 전부가 아니라 최대·마지막만', /i === maxAt \|\| i === last/.test(adm));
+ok('막대마다 짚으면 값이 나온다 (title)', /title="' \+ E\(r\.day\)/.test(adm));
+ok('채널 비교 막대는 같은 한 눈금을 쓴다', /function compareTable[\s\S]{0,400}?\/ max\) \* 100/.test(adm));
+const css = fs.readFileSync(path.join(ROOT, 'public/admin/style.css'), 'utf8');
+ok('막대 위만 둥글다 (아래는 기준선에 붙는다)', /border-radius:4px 4px 0 0/.test(css));
+ok('이름표 자리를 위에 비워 둔다', /padding-top:16px/.test(css));
+
+console.log('\n10. 방침이 실제로 있다');
 const legal = fs.readFileSync(path.join(ROOT, 'public/legal/index.html'), 'utf8');
 ok('행태정보 절이 있다', /행태정보/.test(legal));
 ok('거부 방법을 적는다', /차단|거부/.test(legal));

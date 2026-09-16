@@ -88,6 +88,67 @@
       + '곧 "왔지만 가입하지 않은 사람" 입니다.</div>';
   }
 
+  /* 일별 클릭 막대.
+
+     한 계열(클릭)이고 하는 일은 **크기 비교**라 눈금 하나면 된다. 색은
+     브랜드 강조 하나 — 계열이 하나뿐이라 서로 구별할 상대가 없다
+     (두 테마 모두 바탕 대비 3:1 을 넘는 것은 확인했다).
+
+     **막대 끝에 숫자를 전부 적지 않는다.** 가장 큰 날과 마지막 날만 적는다.
+     전부 적으면 글자끼리 겹쳐 그림이 표만도 못해진다. 나머지는 막대에 얹은
+     <title> 로 짚으면 나온다. */
+  function barChart(rows) {
+    if (!rows || !rows.length) {
+      return '<div class="adm-note">아직 클릭이 없습니다. 링크를 뿌리면 여기에 날짜별로 쌓입니다.</div>';
+    }
+    var max = Math.max.apply(null, rows.map(function (r) { return r.n || 0; })) || 1;
+    var maxAt = rows.reduce(function (a, r, i) { return (r.n || 0) > (rows[a].n || 0) ? i : a; }, 0);
+    var last = rows.length - 1;
+
+    /* **SVG 대신 HTML 막대다.** viewBox 를 가로로 늘여 그리면 모서리가
+       타원이 되고 값 글자까지 찌그러진다 — 실제로 그려 보고 나서 바꿨다.
+       칸마다 div 하나면 늘어날 일이 없고, 밑변이 바닥에 그대로 붙는다. */
+    var bars = rows.map(function (r, i) {
+      var h = (r.n || 0) ? Math.max(((r.n || 0) / max) * 100, 2) : 0;
+      var show = (i === maxAt || i === last);
+      return '<div class="bc-col" title="' + E(r.day) + ' · 클릭 ' + (r.n || 0)
+        + (r.mobile ? ' (모바일 ' + r.mobile + ')' : '') + '">'
+        // 이름표는 막대 **안**에 넣고 흐름 밖으로 띄운다. 흐름에 두면
+        // 이름표가 붙은 막대만 그만큼 짧아져 눈금이 하나가 아니게 된다.
+        + '<i style="height:' + h.toFixed(1) + '%">'
+        + (show ? '<b>' + (r.n || 0) + '</b>' : '') + '</i></div>';
+    }).join('');
+
+    return '<figure class="bc">'
+      + '<figcaption>일별 클릭 <span>' + E(rows[0].day) + ' – ' + E(rows[last].day)
+      + ' · 가장 많은 날 ' + max + '회</span></figcaption>'
+      + '<div class="bc-plot" role="img" aria-label="날짜별 클릭 수 막대그래프. 가장 많은 날 '
+      + max + '회, 마지막 날 ' + (rows[last].n || 0) + '회.">' + bars + '</div>'
+      + '<div class="bc-x"><span>' + E(rows[0].day) + '</span>'
+      + '<span>' + E(rows[last].day) + '</span></div>'
+      + '</figure>';
+  }
+
+  /* 채널별 성과 — 표에 크기 막대를 얹는다. 숫자만 있으면 '11 과 3 중 어느
+     쪽이 큰가' 를 매번 읽어서 재야 한다. 막대는 그걸 눈이 대신 한다.
+     막대는 같은 한 눈금(그 표의 최대값)을 쓴다. */
+  function compareTable(rows) {
+    if (!rows || !rows.length) {
+      return '<p><em class="adm-miss">아직 채널별로 셀 것이 없습니다.</em></p>';
+    }
+    var max = Math.max.apply(null, rows.map(function (r) { return r.clicks || 0; })) || 1;
+    return table(['채널', '뿌린 링크', '클릭', '가입', '전환율', '클릭 비교'],
+      rows.map(function (r) {
+        var w = Math.round(((r.clicks || 0) / max) * 100);
+        return [
+          '<b>' + E(r.source) + '</b> <i class="adm-sub">' + E(r.medium) + '</i>',
+          N(r.links), N(r.clicks), N(r.signups),
+          r.clicks ? (Math.round((r.signups || 0) / r.clicks * 1000) / 10) + '%' : '—',
+          '<span class="cmp" style="--w:' + w + '%" aria-hidden="true"></span>',
+        ];
+      }), { num: [1, 2, 3, 4] });
+  }
+
   function table(head, rows, opt) {
     var o = opt || {};
     var th = head.map(function (h, i) {
@@ -199,10 +260,10 @@
 
   /* 유입 경로 집계 (0012). profile 에는 전화번호와 권한이 같이 들어 있어
      열지 않는다 — 셈한 결과만 온다. 함수 안에서 is_admin() 을 다시 본다. */
-  function getLinks() {
+  function getLinks(days) {
     var sb = window.SB;
     if (!sb) return Promise.resolve({ error: '연결 없음' });
-    return sb.rpc('admin_link_stats').then(function (res) {
+    return sb.rpc('admin_link_stats', { p_days: days == null ? null : days }).then(function (res) {
       return res.error ? { error: res.error.message } : (res.data || {});
     }).catch(function (e) { return { error: String(e && e.message || e) }; });
   }
@@ -406,8 +467,8 @@
        0012 로 '어디서 온 사람이 회원이 됐나'(분자)는 세게 됐지만
        **'몇 명이 눌렀나'(분모)를 못 셌다.** 분모가 없으면 전환율이
        안 나오고, 전환율이 없으면 광고 둘 중 어느 쪽이 나은지 끝내 모른다. */
-    ['board', '링크를 만들고 클릭을 센다 — 단축 링크와 전환율',
-      '손으로 물음표를 붙이지 않습니다. 오타 하나면 그 캠페인이 딴 줄로 샙니다.',
+    ['board', '링크를 만들고 성과를 본다 — UTM · 단축 링크 · 전환율',
+      '채널을 여러 개 골라 한 번에 만듭니다. 기간을 바꾸면 클릭·가입이 그 기간으로 다시 셉니다.',
       function (c) {
         var L = c.links || {};
         if (L.error) {
@@ -417,65 +478,80 @@
             + 'Supabase SQL Editor 에서 한 번 실행하면 열립니다.</p></div>';
         }
         var chans = (L.channels || []).filter(function (x) { return x.active; });
-        var links = L.links || [];
-        var live = links.filter(function (x) { return !x.archived; });
-        var clicks = live.reduce(function (a, x) { return a + (x.clicks || 0); }, 0);
-        var signs = live.reduce(function (a, x) { return a + (x.signups || 0); }, 0);
+        var links = (L.links || []).filter(function (x) { return !x.archived; });
+        var days = L.days == null ? null : L.days;
+        var clicks = links.reduce(function (a, x) { return a + (x.clicks || 0); }, 0);
+        var signs = links.reduce(function (a, x) { return a + (x.signups || 0); }, 0);
 
-        var opts = chans.map(function (ch) {
-          return '<option value="' + E(ch.code) + '">' + E(ch.name)
-            + ' (' + E(ch.source) + ' / ' + E(ch.medium) + ')</option>';
+        var PERIODS = [[0, '오늘'], [7, '7일'], [30, '30일'], [null, '전체']];
+        var chips = PERIODS.map(function (pd) {
+          var on = (pd[0] === days);
+          return '<button class="pd' + (on ? ' on' : '') + '" data-days="'
+            + (pd[0] == null ? '' : pd[0]) + '"' + (on ? ' aria-current="true"' : '') + '>'
+            + pd[1] + '</button>';
         }).join('');
 
-        return '<div class="adm-kpi"><b>' + N(live.length) + '</b><span>살아 있는 링크</span>'
+        var boxes = chans.map(function (ch) {
+          return '<label class="ch-box"><input type="checkbox" class="ch-pick" value="'
+            + E(ch.code) + '">'
+            + '<span><b>' + E(ch.name) + '</b>'
+            + '<i>' + E(ch.source) + ' / ' + E(ch.medium)
+            + (ch.note ? ' — ' + E(ch.note) : '') + '</i></span></label>';
+        }).join('');
+
+        return '<div class="pd-row" id="pd-row">' + chips
+          + '<span class="pd-note">기간은 <b>클릭·가입</b>에 함께 적용됩니다.</span></div>'
+
+          + '<div class="adm-kpi"><b>' + N(links.length) + '</b><span>살아 있는 링크</span>'
           + '<b>' + N(clicks) + '</b><span>클릭</span>'
           + '<b>' + N(signs) + '</b><span>가입</span>'
           + '<b>' + (clicks ? (Math.round(signs / clicks * 1000) / 10) + '%' : '—') + '</b><span>전환율</span></div>'
 
-          + '<h4>새 링크 만들기</h4>'
+          + barChart(L.by_day || [])
+
+          + '<h4>1. 어느 채널에 뿌릴 건가요? <span class="adm-hint">여러 개 고를 수 있습니다</span></h4>'
           + (chans.length
             ? '<form class="lnk-form" id="lnk-form">'
-              + '<label>채널<select id="lnk-ch">' + opts + '</select></label>'
-              + '<label>캠페인<input id="lnk-camp" value="launch" maxlength="60" placeholder="launch"></label>'
-              + '<label>소재<input id="lnk-content" maxlength="60" placeholder="자동 제안"></label>'
-              + '<label>키워드(검색광고)<input id="lnk-term" maxlength="60" placeholder="비워도 됩니다"></label>'
-              + '<label>도착할 쪽<select id="lnk-dest">'
+              + '<div class="ch-grid">' + boxes + '</div>'
+              + '<label>2. 어디로 보낼까요?<select id="lnk-dest">'
                 + '<option value="/">첫 화면</option>'
                 + '<option value="/app">지도</option>'
-                + '<option value="/guide">가이드</option>'
+                + '<option value="/guide">토지·건축 가이드</option>'
                 + '<option value="/account">가입</option></select></label>'
-              + '<label>메모<input id="lnk-label" maxlength="80" placeholder="나중에 알아보려고"></label>'
-              + '<button type="submit" class="btn">만들기</button>'
+              + '<label>캠페인<input id="lnk-camp" value="launch" maxlength="60"></label>'
+              + '<label>소재 <span class="adm-hint">비우면 자동</span>'
+                + '<input id="lnk-content" maxlength="60" placeholder="자동 제안"></label>'
+              + '<label>메모 (선택)<input id="lnk-label" maxlength="80" placeholder="예: 9/16 카카오 채널"></label>'
+              + '<button type="submit" class="btn">링크 만들기</button>'
               + '<p class="lnk-msg" id="lnk-msg"></p>'
               + '</form>'
-            : '<div class="adm-block">채널이 없습니다. <code>utm_channel</code> 에 한 줄 넣으면 '
-              + '여기 뜹니다.</div>')
+            : '<div class="adm-block">채널이 없습니다. <code>utm_channel</code> 에 한 줄 넣으면 여기 뜹니다.</div>')
 
-          + '<h4>만든 링크</h4>'
-          + (live.length
-            ? table(['짧은 주소', '메모', '소스·매체', '캠페인·소재', '클릭', '가입', '전환율'],
-                live.map(function (x) {
+          + '<h4>2. 만든 링크</h4>'
+          + (links.length
+            ? '<div class="lnk-table">' + table(
+                ['채널', '소재', '메모', '짧은 링크', '클릭', '가입', '전환율'],
+                links.map(function (x) {
+                  var short = x.short_code ? 'https://toji.fyi/l/' + x.short_code : null;
                   return [
-                    x.short_code
-                      ? '<code>toji.fyi/l/' + E(x.short_code) + '</code>'
-                        + ' <button class="lnk-copy" data-code="' + E(x.short_code) + '">복사</button>'
-                      : '<em class="adm-miss">없음</em>',
-                    E(x.label || ''),
                     E(x.source) + ' / ' + E(x.medium),
-                    E(x.campaign) + (x.content ? ' · ' + E(x.content) : ''),
-                    N(x.clicks),
+                    x.content ? E(x.content) : '<em class="adm-miss">—</em>',
+                    E(x.label || ''),
+                    short
+                      ? '<code>toji.fyi/l/' + E(x.short_code) + '</code>'
+                        + ' <button class="lnk-copy" data-url="' + E(short) + '">복사</button>'
+                        + ' <button class="lnk-copy" data-url="' + E(x.url) + '">긴 링크</button>'
+                      : '<em class="adm-miss">없음</em>',
+                    N(x.clicks) + (x.clicks_all !== x.clicks
+                      ? ' <i class="adm-sub">누적 ' + N(x.clicks_all) + '</i>' : ''),
                     N(x.signups),
                     x.clicks ? (Math.round((x.signups || 0) / x.clicks * 1000) / 10) + '%' : '—',
                   ];
-                }), { num: [4, 5, 6] })
-            : '<p><em class="adm-miss">아직 만든 링크가 없습니다.</em></p>')
+                }), { num: [4, 5, 6] }) + '</div>'
+            : '<p><em class="adm-miss">아직 만든 링크가 없습니다. 위에서 채널을 고르고 만들어 보세요.</em></p>')
 
-          + ((L.clicks_by_day || []).length
-            ? '<h4>최근 14일 클릭</h4>'
-              + table(['날짜', '클릭', '모바일'], L.clicks_by_day.map(function (r) {
-                  return [E(r.day), N(r.n), N(r.mobile)];
-                }), { num: [1, 2] })
-            : '')
+          + '<h4>3. 채널별 성과 <span class="adm-hint">utm_source / medium</span></h4>'
+          + compareTable(L.by_source || [])
 
           + ((L.by_referer || []).length
             ? '<h4>어느 사이트에서 눌렀나</h4>'
@@ -486,9 +562,10 @@
 
           + '<div class="adm-note"><b>세는 규칙.</b> 302 로 보내고 캐시를 막습니다 — '
           + '301 이면 브라우저가 기억해 <b>두 번째 클릭부터 서버에 안 옵니다</b>. '
-          + '카카오톡·페북·슬랙의 <b>링크 미리보기 봇은 빼고</b> 셉니다 (안 빼면 '
-          + '아무도 안 눌러도 숫자가 오릅니다). 목적지는 장부의 주소 칸만 씁니다 — '
-          + '주소에 담아 보낸 곳으로는 절대 안 보냅니다(오픈 리다이렉트).</div>';
+          + '카카오톡·페북·슬랙의 <b>링크 미리보기 봇은 빼고</b> 셉니다. '
+          + '목적지는 장부의 주소 칸만 씁니다 — 주소에 담아 보낸 곳으로는 안 보냅니다.<br>'
+          + '<b>전환(가입)은 손으로 안 적습니다.</b> 회원의 첫 접점 꼬리표와 링크의 '
+          + 'UTM 조합을 맞춰 자동으로 셉니다.</div>';
       }],
 
     /* 감사 로그. 승인·등급 변경은 사람의 권한을 바꾸는 일이다. */
@@ -1074,9 +1151,10 @@
       try { inner = card[3](ctx); } catch (e) {
         inner = '<div class="adm-block">이 칸을 그리다 막혔습니다 — ' + E(e && e.message || e) + '</div>';
       }
-      // 칸이 하나뿐인 탭은 접어 둘 이유가 없다 — 열어 둔다. 접힌 칸
-      // 하나만 있는 화면은 '아무것도 없다' 로 읽힌다.
-      var open = mine.length === 1 ? ' open' : '';
+      // 칸이 하나뿐인 탭은 접어 둘 이유가 없다. **대쉬보드는 칸이 여럿이어도
+      // 늘 펼친다** (2026-09-16 지시) — 매일 보는 화면에서 매번 눌러 여는 것은
+      // 한 단계가 아니라 '안 보게 되는' 이유가 된다.
+      var open = (mine.length === 1 || cur === 'board') ? ' open' : '';
       return '<details class="adm-card"' + open + '><summary>'
         + '<span class="adm-n">' + (i < 10 ? '0' : '') + i + '</span>'
         + '<span class="adm-t">' + E(card[1]) + '</span>'
@@ -1097,14 +1175,13 @@
     wireLinks(ctx);
   }
 
-  /* 링크 만들기·복사. render 가 HTML 을 통째로 갈아 끼우므로 매번 다시 건다. */
+  /* 링크 만들기·복사·기간. render 가 HTML 을 통째로 갈아 끼우므로 매번 다시 건다. */
   function wireLinks(ctx) {
-    var form = document.getElementById('lnk-form');
-    var msg = document.getElementById('lnk-msg');
     var L = (ctx && ctx.links) || {};
     var chans = L.channels || [];
     var links = L.links || [];
     var U = window.UTM;
+    var msg = document.getElementById('lnk-msg');
 
     function say(t, bad) {
       if (!msg) return;
@@ -1115,28 +1192,36 @@
       for (var i = 0; i < chans.length; i++) if (chans[i].code === code) return chans[i];
       return null;
     }
-
-    // 소재 코드를 미리 채워 준다. 사람이 고치면 제안을 멈춘다.
-    var sel = document.getElementById('lnk-ch');
-    var ct = document.getElementById('lnk-content');
-    var touched = false;
-    if (ct) ct.addEventListener('input', function () { touched = true; });
-    function propose() {
-      if (!sel || !ct || touched || !U) return;
-      var ch = chanOf(sel.value);
-      if (!ch) return;
-      var mine = links.filter(function (x) { return x.source === ch.source && x.medium === ch.medium; });
-      ct.value = U.suggestContent(ch, mine);
+    function picked() {
+      return Array.prototype.slice.call(document.querySelectorAll('.ch-pick:checked'))
+        .map(function (el) { return chanOf(el.value); }).filter(Boolean);
     }
-    if (sel) sel.addEventListener('change', propose);
-    propose();
 
-    // 복사. **저장과 복사를 갈라 말한다** — 복사만 막혔는데 '저장 실패'
-    // 라고 하면 같은 링크를 또 만들게 된다.
+    /* 기간 칩. 누르면 그 기간으로 **다시 세어** 온다 — 화면에서 자르지
+       않는다. 링크마다 그 기간의 클릭을 DB 가 세는 편이 정확하다. */
+    var row = document.getElementById('pd-row');
+    if (row) {
+      Array.prototype.forEach.call(row.querySelectorAll('.pd'), function (b) {
+        b.addEventListener('click', async function () {
+          var v = b.getAttribute('data-days');
+          var days = v === '' ? null : Number(v);
+          Array.prototype.forEach.call(row.querySelectorAll('.pd'), function (x) {
+            x.classList.toggle('on', x === b);
+          });
+          b.classList.add('busy');
+          lastCtx.links = await getLinks(days);
+          render(null);
+        });
+      });
+    }
+
+    /* 복사. **저장과 복사를 갈라 말한다** — 복사만 막혔는데 '저장 실패' 라고
+       하면 같은 링크를 또 만들게 된다. */
     Array.prototype.forEach.call(document.querySelectorAll('.lnk-copy'), function (b) {
       b.addEventListener('click', function () {
-        var url = 'https://toji.fyi/l/' + b.getAttribute('data-code');
-        var done = function () { b.textContent = '복사됨'; setTimeout(function () { b.textContent = '복사'; }, 1500); };
+        var url = b.getAttribute('data-url');
+        var was = b.textContent;
+        var done = function () { b.textContent = '복사됨'; setTimeout(function () { b.textContent = was; }, 1400); };
         try {
           navigator.clipboard.writeText(url).then(done, function () {
             window.prompt('복사가 막혔습니다. 직접 복사하세요:', url);
@@ -1145,54 +1230,79 @@
       });
     });
 
+    var form = document.getElementById('lnk-form');
     if (!form || !U || !window.SB) return;
+
+    // 소재 코드를 미리 채워 준다. 하나만 골랐을 때만 — 여럿이면 채널마다
+    // 다른 코드가 붙어야 하므로 각자 제안하게 둔다.
+    var ct = document.getElementById('lnk-content');
+    var touched = false;
+    if (ct) ct.addEventListener('input', function () { touched = true; });
+    function propose() {
+      if (!ct || touched) return;
+      var p = picked();
+      if (p.length !== 1) { ct.value = ''; ct.placeholder = p.length > 1 ? '채널마다 자동' : '자동 제안'; return; }
+      var mine = links.filter(function (x) { return x.source === p[0].source && x.medium === p[0].medium; });
+      ct.value = U.suggestContent(p[0], mine);
+    }
+    Array.prototype.forEach.call(document.querySelectorAll('.ch-pick'), function (el) {
+      el.addEventListener('change', propose);
+    });
+
     form.addEventListener('submit', async function (ev) {
       ev.preventDefault();
-      var ch = chanOf(sel.value);
-      if (!ch) { say('채널을 고르세요', true); return; }
+      var picks = picked();
+      if (!picks.length) { say('채널을 하나 이상 고르세요', true); return; }
+
       var camp = document.getElementById('lnk-camp').value;
       var content = ct.value;
-      var term = document.getElementById('lnk-term').value;
       var dest = document.getElementById('lnk-dest').value;
       var label = document.getElementById('lnk-label').value;
 
       // 한글은 주소에서 %EC… 로 부풀어 카카오톡·문자에서 잘린다.
-      var bad = [camp, content, term].filter(function (v) { return U.hasHangul(v); });
-      if (bad.length) { say('한글은 링크에 못 넣습니다 — 영문·숫자로 적어 주세요', true); return; }
-
-      var parts = {
-        source: U.normValue(ch.source), medium: U.normValue(ch.medium),
-        campaign: U.normValue(camp), content: U.normValue(content) || null,
-        term: U.normValue(term) || null,
-      };
-      if (!parts.campaign) { say('캠페인 이름이 필요합니다', true); return; }
-
-      var url = U.buildUrl('https://toji.fyi' + (dest === '/' ? '' : dest), parts);
-      var code = U.suggestCode(ch.code, content);
-
-      say('만드는 중…');
-      var row = Object.assign({}, parts, {
-        channel_id: ch.id, url: url, short_code: code,
-        label: label || null,
-      });
-      var res = await window.SB.from('utm_link').insert(row).select().maybeSingle();
-      if (res.error && /duplicate|unique/i.test(res.error.message || '')) {
-        // 코드가 겹치면 뒤에 네 글자를 붙여 한 번 더. 사람이 다시 치게 하지 않는다.
-        row.short_code = (code + '-' + U.randomSuffix()).slice(0, 40);
-        res = await window.SB.from('utm_link').insert(row).select().maybeSingle();
+      if ([camp, content].some(function (v) { return U.hasHangul(v); })) {
+        say('캠페인·소재에 한글은 못 넣습니다 — 영문·숫자로 적어 주세요 (메모는 한글 괜찮습니다)', true);
+        return;
       }
-      if (res.error) { say('저장 실패 — ' + res.error.message, true); return; }
+      var campaign = U.normValue(camp);
+      if (!campaign) { say('캠페인 이름이 필요합니다', true); return; }
 
-      var made = 'https://toji.fyi/l/' + row.short_code;
-      say('만들었습니다: ' + made);
+      say(picks.length + '개 만드는 중…');
+      var made = [], failed = [];
+      for (var i = 0; i < picks.length; i++) {
+        var ch = picks[i];
+        var mine = links.filter(function (x) { return x.source === ch.source && x.medium === ch.medium; });
+        var ctv = U.normValue(content) || U.suggestContent(ch, mine);
+        var parts = {
+          source: U.normValue(ch.source), medium: U.normValue(ch.medium),
+          campaign: campaign, content: ctv || null, term: null,
+        };
+        var row2 = Object.assign({}, parts, {
+          channel_id: ch.id,
+          url: U.buildUrl('https://toji.fyi' + (dest === '/' ? '' : dest), parts),
+          short_code: U.suggestCode(ch.code, ctv),
+          label: label || ch.name,
+        });
+        var res = await window.SB.from('utm_link').insert(row2).select().maybeSingle();
+        if (res.error && /duplicate|unique/i.test(res.error.message || '')) {
+          // 코드가 겹치면 뒤에 네 글자를 붙여 한 번 더. 사람이 다시 치게 하지 않는다.
+          row2.short_code = (row2.short_code + '-' + U.randomSuffix()).slice(0, 40);
+          res = await window.SB.from('utm_link').insert(row2).select().maybeSingle();
+        }
+        if (res.error) failed.push(ch.name + ' (' + res.error.message + ')');
+        else made.push('https://toji.fyi/l/' + row2.short_code);
+      }
+
+      if (!made.length) { say('전부 실패했습니다 — ' + failed.join(' / '), true); return; }
+      var txt = made.join('\n');
+      var tail = failed.length ? ' · 실패 ' + failed.length + '건: ' + failed.join(' / ') : '';
       try {
-        await navigator.clipboard.writeText(made);
-        say('만들었고 복사까지 됐습니다: ' + made);
+        await navigator.clipboard.writeText(txt);
+        say(made.length + '개 만들었고 클립보드에 담았습니다' + tail, failed.length > 0);
       } catch (e) {
-        say('만들었습니다(복사는 막혔습니다): ' + made);
+        say(made.length + '개 만들었습니다(복사는 막혔습니다)' + tail, failed.length > 0);
       }
-      var fresh = await getLinks();
-      lastCtx.links = fresh;
+      lastCtx.links = await getLinks(L.days == null ? null : L.days);
       render(null);
     });
   }
