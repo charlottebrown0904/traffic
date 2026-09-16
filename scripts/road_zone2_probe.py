@@ -73,7 +73,22 @@ def b_check() -> None:
     bar("B · 오류 본문을 통째로 본다 — 서버가 무엇이 틀렸는지 말해 준다")
     s, w, n, e = BOX
     tries = [
-        ("NED WFS · F251", "https://api.vworld.kr/ned/wfs/getLandUseWFS",
+        # **서버가 이름을 알려 줬다.** F251 은 내가 지어낸 값이었고,
+        # 유효한 것은 dt_d154 하나라고 오류 본문이 그대로 적어 줬다
+        # (INVALID_TYPE: "유효한 파라미터 타입 : dt_d154").
+        ("NED WFS · dt_d154", "https://api.vworld.kr/ned/wfs/getLandUseWFS",
+         {"typename": "dt_d154", "bbox": f"{w},{s},{e},{n}",
+          "srsname": "EPSG:4326", "maxFeatures": "10",
+          "key": "__via_relay__", "domain": DOMAIN}),
+        # 이름이 맞아도 형식을 안 주면 XML 로 올 수 있다. 한 줄 더 둔다.
+        ("NED WFS · dt_d154 · json",
+         "https://api.vworld.kr/ned/wfs/getLandUseWFS",
+         {"typename": "dt_d154", "bbox": f"{w},{s},{e},{n}",
+          "srsname": "EPSG:4326", "maxFeatures": "10", "format": "json",
+          "output": "application/json",
+          "key": "__via_relay__", "domain": DOMAIN}),
+        ("NED WFS · F251 (틀린 이름, 오류 본문 확인용)",
+         "https://api.vworld.kr/ned/wfs/getLandUseWFS",
          {"typename": "F251", "bbox": f"{w},{s},{e},{n}",
           "srsname": "EPSG:4326", "maxFeatures": "5",
           "key": "__via_relay__", "domain": DOMAIN}),
@@ -104,7 +119,7 @@ def b_check() -> None:
         body = " ".join((r.text or "").split())
         print(f"  {label:<26} {r.status_code} · {len(r.text or ''):>6}B")
         # **자르지 않는다.** 지난번에 잘라서 까닭을 못 봤다.
-        print(f"    {body[:700]}")
+        print(f"    {body[:1100]}")
         print()
 
 
