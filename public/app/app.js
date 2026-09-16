@@ -3428,6 +3428,9 @@ function roadTip(it) {
     + (it.lanes ? `<br>왕복 ${escapeHtml(it.lanes)}차로` : '')
     + (it.cost_eok ? `<br>총사업비 ${won(it.cost_eok)}` : '')
     + (it.term ? `<br>공사기간 ${escapeHtml(it.term)}` : '')
+    // 준공 줄은 날짜가 가장 쓸모 있는 칸인데 여태 안 보였다 — 계획만
+    // 화면에 있었던 탓에 이 칸이 한 번도 안 그려졌다.
+    + (it.done_on ? `<br>준공 ${escapeHtml(String(it.done_on))}` : '')
     + (it.axis ? `<br>${escapeHtml(it.axis)}${it.line ? ' · ' + escapeHtml(it.line) : ''}` : '')
     + '<br><span class="dev-why">구간의 시작과 끝을 이은 선입니다 —'
     + ' 실제 노선 모양이 아닙니다</span>';

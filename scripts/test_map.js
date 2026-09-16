@@ -2012,6 +2012,41 @@ async function stubCommon(pg) {
     check('말풍선이 실제 노선이 아니라고 적는다',
           /실제 노선 모양이 아닙니다/.test(roadNote), roadNote.slice(0, 70));
 
+    /* **공사중·준공은 여태 한 번도 안 그려졌다.** road.json 에 계획만
+       들어 있었기 때문이다. 자료가 그 줄을 싣기 시작하면 처음 도는
+       길이므로, 세 단계를 다 담은 가짜 자료를 넣고 여기서 먼저 돌린다.
+       기본값에서 준공은 꺼져 있으니 셋 중 둘만 그려져야 한다. */
+    const stages = await page.evaluate(() => {
+      const keep = window.state.road;
+      window.state.road = { items: [
+        { stage: '계획', kind: '신설', name: 'ㄱ', km: 10,
+          a: [36.5, 127.4], b: [36.6, 127.5] },
+        { stage: '공사중', kind: '공사', name: 'ㄴ', km: 5,
+          term: '2024-01~2026-12', a: [36.7, 127.6], b: [36.8, 127.7] },
+        { stage: '준공', kind: '공사', name: 'ㄷ', km: 3,
+          done_on: '20240401', a: [36.9, 127.8], b: [37.0, 127.9] },
+      ] };
+      const tips = [];
+      const real = window.roadTip;
+      window.drawRoad();
+      const base = (window.__road || {}).drawn;
+      // 준공까지 켜면 셋이 다 그려진다.
+      window.state.devPick.highway['준공'] = true;
+      window.drawRoad();
+      const all = (window.__road || {}).drawn;
+      window.state.devPick.highway['준공'] = false;
+      const tip = window.roadTip ? window.roadTip(window.state.road.items[2]) : '';
+      window.state.road = keep;
+      window.drawRoad();
+      return { base, all, tip, tips, real: typeof real };
+    });
+    check('기본값에서 계획·공사중만 그리고 준공은 뺀다',
+          stages.base === 2, `그린 것 ${stages.base}`);
+    check('준공을 켜면 세 단계가 다 그려진다',
+          stages.all === 3, `그린 것 ${stages.all}`);
+    check('준공 줄 말풍선에 준공 날짜가 있다',
+          /준공 20240401/.test(stages.tip), stages.tip.slice(0, 90));
+
     /* 철도역 — 종류로 가를 칸이 자료에 반만 차 있어 **정차 규모**로
        가른다 (2026-09-16 물음: "철도역도 종류가 나눌 수 있는 지 확인"). */
     const rs = await page.evaluate(() => window.__railSize ? {
