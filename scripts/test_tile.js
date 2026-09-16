@@ -990,6 +990,26 @@ const call = async (query, method = 'GET', headers = {}) => {
         (byLabel['산138-22임'] || {}).c === '저촉',
         String((byLabel['산138-22임'] || {}).c));
 
+  /* **이름에는 쉼표가 들어갈 수 있다.** 라이브에서 65개 중 셋이 이름을
+     '준보전산지' 로 달고 나왔다 — 이름 목록을 쉼표로 잘라 코드와 같은
+     자리번호로 집었기 때문이다. 코드(UIA100)와 저촉(1·2·3)에는 쉼표가
+     못 들어가므로 그 둘은 안 밀리지만, 이름은 한 칸만 품어도 뒤가
+     전부 밀린다. */
+  handler.__resetRoad();
+  stubRoad({ type: 'FeatureCollection', features: [
+    luFeat('9', '산11-5임', RLAT, RLON + 0.002,
+           'UFM200,UIA100',
+           '준보전산지(경사도,입목축적 기준),도로구역(세종안성)',
+           '1,1', '포함,포함'),
+  ] });
+  const comma = await call({ mode: 'roadparcels', z: '16',
+                             x: String(RX), y: String(RY) });
+  const one = ((comma.json_ || {}).items || [])[0] || {};
+  check('이름에 쉼표가 있어도 도로구역 이름을 옳게 집는다',
+        one.z === '도로구역(세종안성)', String(one.z));
+  check('그 경우에도 필지는 남는다 (거르개는 코드로 본다)',
+        (comma.json_ || {}).n === 1, String((comma.json_ || {}).n));
+
   // 띠는 이제 **어디를 물을지**만 정한다. 네모가 좁아야 값이 안 는다.
   const rpBox = decodeURIComponent((rpUrl.match(/bbox=([^&]*)/) || ['', ''])[1])
     .split(',').map(Number);

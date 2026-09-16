@@ -1210,19 +1210,30 @@ async function roadParcels(req, res) {
  */
 function roadZoneOf(src) {
   const codes = String(src.prpos_area_dstrc_code_list || "").split(",");
-  const names = String(src.prpos_area_dstrc_nm_list || "").split(",");
   const hows = String(src.cnflc_at_list || "").split(",");
   const howNames = String(src.cnflc_at_nm_list || "").split(",");
-  for (let i = 0; i < codes.length; i += 1) {
-    if (codes[i].trim() !== ROAD_ZONE_CODE) continue;
-    // 3(접함)은 **옆 필지**다. 남기면 지시 1 이 그대로 남는다.
-    if (!ROAD_ZONE_HIT.has((hows[i] || "").trim())) return null;
-    return {
-      name: (names[i] || "도로구역").trim(),
-      how: (howNames[i] || "").trim(),
-    };
-  }
-  return null;
+  const i = codes.findIndex((c) => c.trim() === ROAD_ZONE_CODE);
+  if (i < 0) return null;
+  // 3(접함)은 **옆 필지**다. 남기면 지시 1 이 그대로 남는다.
+  if (!ROAD_ZONE_HIT.has((hows[i] || "").trim())) return null;
+  return { name: roadZoneName(src), how: (howNames[i] || "").trim() };
+}
+
+/** 도로구역의 **이름**만 따로 찾는다 — 자리번호로 집으면 안 된다.
+ *
+ * 라이브에서 65개 중 셋이 이름을 '준보전산지' 로 달고 나왔다. 이름 목록을
+ * 쉼표로 잘라 같은 자리번호로 집었기 때문인데, **이름에는 쉼표가 들어갈
+ * 수 있다.** 코드(UIA100)와 저촉(1·2·3)에는 못 들어가므로 그 둘은 자리가
+ * 어긋날 수 없지만, 이름 목록은 한 칸만 쉼표를 품어도 뒤가 전부 밀린다.
+ *
+ * 그래서 이름은 자리로 찾지 않고 **'도로구역' 으로 시작하는 것**을 고른다.
+ * 못 찾으면 노선 없이 '도로구역' 이라고만 적는다 — 틀린 이름을 적느니
+ * 덜 적는 편이 낫다.
+ */
+function roadZoneName(src) {
+  const raw = String(src.prpos_area_dstrc_nm_list || "");
+  const hit = raw.split(",").find((n) => n.trim().startsWith("도로구역"));
+  return (hit || "도로구역").trim();
 }
 
 function sendRoadParcels(res, items, whole_) {
