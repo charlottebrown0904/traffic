@@ -62,11 +62,33 @@ def km(a, b) -> float:
     return 6371.0 * 2 * math.asin(math.sqrt(h))
 
 
+# 이름이 바뀐 노선. 자료는 옛 이름을, OSM 은 새 이름을 쓴다.
+ALIAS = {"88올림픽": "광주대구"}
+
+
 def route_key(name: str) -> str:
-    """'경부선' 도 '경부고속도로' 도 '경부' 로 모은다."""
-    s = re.sub(r"\s+", "", str(name or ""))
+    """'경부선' 도 '경부고속도로' 도 '경부' 로 모은다.
+
+    **가장 큰 걸림돌은 붙임표였다.** 우리 자료는 '고창-담양선' 인데
+    OSM 은 '고창담양고속도로' 다. 116건이 '노선 못 찾음' 으로 떨어진
+    까닭의 태반이 이 한 글자였다.
+    """
+    s = re.sub(r"[\s·・‧\-–—_]", "", str(name or ""))
+    s = re.sub(r"의지선$", "", s)
     s = re.sub(r"(고속국도|고속도로|고속화도로|지선|선)$", "", s)
-    return s
+    return ALIAS.get(s, s)
+
+
+def route_keys(name: str) -> list[str]:
+    """한 칸에 노선이 여럿 적힌 것이 있다 ('대전-통영선,중부선').
+    쉼표로 갈라 하나씩 다 시도한다."""
+    out, seen = [], set()
+    for part in re.split(r"[,/·]|\s및\s", str(name or "")):
+        k = route_key(part)
+        if k and k not in seen:
+            seen.add(k)
+            out.append(k)
+    return out
 
 
 def fetch(session, timeout: int = 900) -> list[dict]:
@@ -269,10 +291,12 @@ def snap(routes: dict, name: str, a, b, ext_km: float):
     **틀린 선형은 직선보다 나쁘다.** 그물을 통과 못 하면 좌표를 안 내고,
     부르는 쪽이 직선으로 되돌린다.
     """
-    key = route_key(name)
-    r = routes.get(key)
-    if r is None:
+    cands = [routes[k] for k in route_keys(name) if k in routes]
+    if not cands:
         return None, "노선 못 찾음"
+    # 여럿이면 두 끝에 더 가까운 쪽을 고른다.
+    r = min(cands, key=lambda x: (x.nearest_node(tuple(a))[1]
+                                  + x.nearest_node(tuple(b))[1]))
     pts = r.path(tuple(a), tuple(b))
     if not pts:
         # 이어 붙이기가 안 되면 훑어서 모은다 (상·하행이 갈린 자리).
