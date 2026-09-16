@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="토지맥">
-  <title>토지맥</title>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="토지랩">
+  <title>토지랩</title>
   <defs>
     <clipPath id="plot">
       <path d="M256 130 L432 256 L256 382 L80 256 Z"/>

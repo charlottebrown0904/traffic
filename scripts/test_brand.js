@@ -1,6 +1,6 @@
 /* 이름 검사 — 화면에 낡은 이름이 남아 있지 않은지 본다.
 
-   이름은 두 번 바뀌었다 (사도 토지 → 토지 고고 → 토지맥). 그때마다
+   이름은 두 번 바뀌었다 (사도 토지 → 토지 고고 → 토지랩). 그때마다
    한두 곳이 옛 이름으로 남았다. 머리띠는 눈에 띄니 금방 고치지만,
    <title> · og:site_name · manifest 는 **화면을 봐도 안 보이는 자리**다.
    브라우저 탭과 공유 카드와 홈화면 아이콘에서만 보이므로, 사람이
@@ -11,7 +11,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..');
-const NAME = '토지맥';
+const NAME = '토지랩';
 /* 다시 쓰면 안 되는 옛 이름. 'toji-gogo' 는 뺀다 — 그것은 Vercel·
    Cloudflare 의 프로젝트 이름이라 화면에 안 나오고, 함부로 바꾸면
    배포가 끊긴다. */
