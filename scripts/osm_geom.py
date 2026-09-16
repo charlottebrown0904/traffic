@@ -293,6 +293,15 @@ def snap(routes: dict, name: str, a, b, ext_km: float):
     """
     cands = [routes[k] for k in route_keys(name) if k in routes]
     if not cands:
+        # **OSM 에는 이름 없이 번호만 붙은 조각이 있다** (열쇠가 '30',
+        # '45' 처럼 숫자로 잡힌다). 당진영덕 20건이 여기서 떨어졌다.
+        #
+        # 어느 번호가 어느 노선인지 **내가 적어 넣지 않는다** — 오늘
+        # 추측으로 네 번 틀렸다. 숫자 열쇠를 전부 후보로 던져 놓고,
+        # 두 끝과의 거리와 경로비 그물이 고르게 둔다. 틀린 것은 그물이
+        # 걸러 내고, 걸리면 직선으로 되돌아간다.
+        cands = [r for k, r in routes.items() if k.isdigit()]
+    if not cands:
         return None, "노선 못 찾음"
     # 여럿이면 두 끝에 더 가까운 쪽을 고른다.
     r = min(cands, key=lambda x: (x.nearest_node(tuple(a))[1]
