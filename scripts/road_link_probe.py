@@ -116,32 +116,63 @@ def try_filters(layer: str, props: list) -> None:
     print("\n" + "-" * 72)
     print(f"  {layer} — 걸러 받기 / 나눠 받기 시험")
     print("-" * 72)
-    base, _ = wfs(layer, maxf=5)
-    n_base = len((base or {}).get("features") or [])
-    print(f"    기준(MAXFEATURES=5): {n_base}개")
 
-    # 1) 쪽 넘기기 — 두 쪽이 서로 다른 것이 오면 나눠 받을 수 있다.
+    col = next((c for c in ("rd_rank_h", "road_rank", "rddv") if c in props), None)
+    print(f"    거를 칸: {col}")
+
+    # 1) 쪽 넘기기
     a, _ = wfs(layer, {"STARTINDEX": "0"}, maxf=5)
     b, _ = wfs(layer, {"STARTINDEX": "5"}, maxf=5)
-    ida = [str((f.get("properties") or {}).get("ufid") or f.get("id")) for f in (a or {}).get("features", [])]
-    idb = [str((f.get("properties") or {}).get("ufid") or f.get("id")) for f in (b or {}).get("features", [])]
-    same = bool(ida) and ida == idb
-    print(f"    STARTINDEX 0 vs 5: {'같다 — 안 먹는다' if same else '다르다 — 쪽 넘기기 된다'}"
-          f" ({len(ida)}개 / {len(idb)}개)")
+    ida = [str((f.get("properties") or {}).get("ufid") or f.get("id"))
+           for f in (a or {}).get("features", [])]
+    idb = [str((f.get("properties") or {}).get("ufid") or f.get("id"))
+           for f in (b or {}).get("features", [])]
+    print(f"    STARTINDEX  {'같다 — 안 먹는다' if ida and ida == idb else '다르다 — 된다'}")
 
-    # 2) 속성으로 걸러 받기 — 층마다 되는 칸이 다르다.
-    for key in ("attrFilter", "CQL_FILTER", "PROPERTYNAME"):
-        col = "rd_rank_h" if "rd_rank_h" in props else ("rddv" if "rddv" in props else None)
-        if not col:
-            continue
-        val = {"attrFilter": f"{col}:like:고속", "CQL_FILTER": f"{col} LIKE '%고속%'",
-               "PROPERTYNAME": col}[key]
+    if not col:
+        return
+
+    # 2) WFS 속성 필터. **앞서 5개가 왔다고 '된다' 로 읽을 뻔했다** —
+    #    값을 보니 거르지 않은 것이 그대로 온 것이었다. 그래서 이제는
+    #    돌아온 값이 실제로 걸러졌는지까지 본다.
+    for key, val in (("attrFilter", f"{col}:like:고속"),
+                     ("CQL_FILTER", f"{col} LIKE '%고속%'")):
         got, err = wfs(layer, {key: val}, maxf=5)
         if err:
-            print(f"    {key:12s} ✗ {err[:60]}")
+            print(f"    {key:11s} ✗ {err[:50]}")
             continue
         fs = (got or {}).get("features") or []
-        print(f"    {key:12s} {len(fs)}개" + (f" · 보기 {str((fs[0].get('properties') or {}).get(col))[:24]}" if fs else ""))
+        vals = {str((f.get("properties") or {}).get(col)) for f in fs}
+        worked = bool(fs) and all("고속" in v for v in vals)
+        print(f"    {key:11s} {len(fs)}개 · 값 {sorted(vals)[:3]}"
+              f" → {'걸러졌다' if worked else '**안 걸러졌다** (무시됨)'}")
+
+    # 3) **아직 안 해 본 길: 브이월드 데이터 API.**
+    #    /req/wfs 와 /req/data 는 다른 문이다. attrFilter 는 원래 이쪽
+    #    것이라, WFS 에서 무시된 것을 여기서는 받아 줄 수 있다.
+    print("\n    데이터 API (/req/data) — attrFilter 가 원래 사는 곳")
+    s_, w_, n_, e_ = BOX
+    for flt in (f"{col}:like:고속", f"{col}:=:101"):
+        q = {"service": "data", "request": "GetFeature", "format": "json",
+             "data": layer.upper(), "geometry": "true", "size": "5",
+             "attrFilter": flt, "crs": "EPSG:4326",
+             "geomFilter": f"BOX({w_},{s_},{e_},{n_})",
+             "key": "__via_relay__", "domain": "https://toji.fyi"}
+        try:
+            r = relay("https://api.vworld.kr/req/data?"
+                      + urllib.parse.urlencode(q))
+            body = r.json()
+        except Exception as exc:                        # noqa: BLE001
+            print(f"      {flt:24s} ✗ {type(exc).__name__}")
+            continue
+        resp = (body or {}).get("response") or {}
+        status = resp.get("status")
+        feats = (((resp.get("result") or {}).get("featureCollection") or {})
+                 .get("features") or [])
+        vals = {str(((f.get("properties") or {}).get(col))) for f in feats}
+        err = (resp.get("error") or {}).get("text")
+        print(f"      {flt:24s} status={status} · {len(feats)}개"
+              f" · 값 {sorted(vals)[:3]}" + (f" · {err}" if err else ""))
 
 
 def main() -> None:
