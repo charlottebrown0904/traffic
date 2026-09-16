@@ -7727,6 +7727,49 @@ async function findLdCode(sg, name) {
 
 /* 검색어를 주소로 푼다: 완성한 주소 글(text)과, PNU 를 만들 재료(색인에서
    찾은 읍·면·동 이름 name · 시군구 코드 sg · 지번). */
+/* **'북구' 는 네 곳, '중구' 도 네 곳이다** (2026-09-16 지시: "주소 검색이
+   이상합니다 (대구)"). regions 에서 이름만으로 첫 줄을 집으면 '대구광역시
+   북구' 를 쳤는데 광주 북구가 잡히고, 그 시·도가 앞에 붙어
+   '전남광역시… 대구광역시 북구' 가 된다. '중구' 는 서울이 앞에 붙었다.
+
+   그래서 **친 글에 시·도가 있으면 그 안에서만 고른다.** */
+function findSido(words, regions) {
+  const names = [...new Set((regions || []).map((r) => r.sido).filter(Boolean))];
+  for (const sd of names) {
+    if (words.includes(sd)) return sd;
+    // '대구광역시' 대신 '대구' 라고 쳐도 알아듣는다.
+    const short = sd.replace(/(특별자치시|특별자치도|광역시|특별시|도)$/, '');
+    if (short && short !== sd && words.includes(short)) return sd;
+  }
+  return '';
+}
+window.__findSido = findSido;          // 검사가 본다
+
+function findSigungu(words, regions, sido) {
+  const pool = sido ? (regions || []).filter((r) => r.sido === sido)
+    : (regions || []);
+  /* **이름이 두 낱말인 시·군·구가 있다** — regions 에 '성남시 분당구',
+     '수원시 영통구' 처럼 들어 있다. 낱말을 하나씩만 견주면 이런 곳은
+     영영 안 맞아서 시·도가 안 붙는다. 긴 것부터 본다 — '성남시 분당구'
+     가 '분당구' 보다 먼저 걸려야 한다. */
+  for (let n = 2; n >= 1; n -= 1) {
+    for (let i = 0; i + n <= words.length; i += 1) {
+      const chunk = words.slice(i, i + n).join(' ');
+      const hit = pool.find((r) => r.name === chunk);
+      if (hit) return hit;
+    }
+  }
+  /* 꼬리만 쳐도 알아본다 — '분당구' 는 regions 에 '성남시 분당구' 로만
+     있다. **딱 맞는 것을 다 본 뒤에** 오므로, '북구' 처럼 이름 그대로
+     있는 곳을 가로채지 않는다. */
+  for (const w of words) {
+    const hit = pool.find((r) => r.name.endsWith(' ' + w));
+    if (hit) return hit;
+  }
+  return null;
+}
+window.__findSigungu = findSigungu;
+
 function findAddressParse(q, rows) {
   const jb = findJibun(q);
   const clean = q.replace(/\s+/g, ' ').trim();
@@ -7739,7 +7782,8 @@ function findAddressParse(q, rows) {
     const hit = (rows || []).find((r) => r.k === 'umd' && (r.n === name || r.n.endsWith(' ' + name)));
     if (hit) { out.name = hit.n; out.sg = String(hit.sg || ''); break; }
   }
-  const hasSg = regions.find((r) => words.includes(r.name));
+  const sido = findSido(words, regions);
+  const hasSg = findSigungu(words, regions, sido);
   if (hasSg) {
     const sd = hasSg.sido || '';
     out.text = sd && !words.includes(sd) ? `${sd} ${clean}` : clean;
@@ -7760,7 +7804,9 @@ function findAddressText(q, rows) {
     return (byCode && byCode.sido) || SIDO_BY_PREFIX[c.slice(0, 2)] || '';
   };
   // 이미 시·군·구가 들어 있나 (시·도도 함께면 그대로).
-  const hasSg = regions.find((r) => words.includes(r.name));
+  // **친 글의 시·도를 먼저 본다** — 안 그러면 같은 이름의 딴 동네가 잡힌다.
+  const sido = findSido(words, regions);
+  const hasSg = findSigungu(words, regions, sido);
   if (hasSg) {
     const sd = hasSg.sido || '';
     return sd && !clean.startsWith(sd) && !words.includes(sd) ? `${sd} ${clean}` : clean;

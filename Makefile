@@ -69,6 +69,7 @@ test: test-server
 	$(PY) scripts/test_analysis.py
 	node scripts/test_palette.js
 	node scripts/test_board.js
+	node scripts/test_find.js
 	node scripts/test_gate.js
 	node scripts/test_rank.js
 	node scripts/test_map.js
