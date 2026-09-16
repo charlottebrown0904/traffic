@@ -203,10 +203,65 @@ def zone_by_pnu() -> None:
         print()
 
 
+def zone_shapes() -> None:
+    """**면으로도 받을 수 있나.** 이것이 값을 100배 가른다.
+
+    속성(PNU 하나에 한 번)만 되면 한 칸에 필지 50개를 물어야 한다.
+    면(상자 하나에 한 번)이 되면 칸마다 한 번이면 끝이다.
+
+    앞 실행에서 data.go.kr 두 줄이 400 으로 막혔는데, 까닭은 자료가
+    아니라 **내가 http:// 로 적어서**였다(중계기: "https 만 허용합니다").
+    같은 길을 https 로 다시 두드린다.
+    """
+    bar("Q4 · 도로구역을 **면으로** 받을 수 있나 (값이 100배 갈린다)")
+    s, w, n, e = BOX
+    tries = [
+        ("NED WFS (브이월드)",
+         "https://api.vworld.kr/ned/wfs/getLandUseWFS",
+         {"typename": "F251", "bbox": f"{w},{s},{e},{n}",
+          "srsname": "EPSG:4326", "maxFeatures": "20",
+          "key": "__via_relay__", "domain": DOMAIN}),
+        ("NED 데이터 (도형)",
+         "https://api.vworld.kr/ned/data/getLandUseArea",
+         {"pnu": PNU, "format": "json", "numOfRows": "50", "pageNo": "1",
+          "key": "__via_relay__", "domain": DOMAIN}),
+        ("NSDI WFS (https 로 다시)",
+         "https://apis.data.go.kr/1611000/nsdi/LandUseService/wfs/getLandUseWFS",
+         {"typename": "F251", "bbox": f"{w},{s},{e},{n}",
+          "srsname": "EPSG:4326", "maxFeatures": "20"}),
+        ("NSDI 속성 (https 로 다시)",
+         "https://apis.data.go.kr/1611000/nsdi/LandUseService/attr/getLandUseAttr",
+         {"pnu": PNU, "format": "json", "numOfRows": "50", "pageNo": "1"}),
+        # 목록에서 눈에 띈 층 하나. 이름이 '토지이용계획도' 다.
+        ("lt_c_lhblpn 토지이용계획도",
+         WFS,
+         {"SERVICE": "WFS", "VERSION": "1.1.0", "REQUEST": "GetFeature",
+          "TYPENAME": "lt_c_lhblpn", "OUTPUT": "application/json",
+          "SRSNAME": "EPSG:4326", "MAXFEATURES": "20",
+          "BBOX": f"{w},{s},{e},{n}", "DOMAIN": DOMAIN,
+          "key": "__via_relay__"}),
+    ]
+    for label, url, params in tries:
+        try:
+            r = relay(url, params, timeout=60)
+            body = r.text or ""
+        except Exception as err:                       # noqa: BLE001
+            print(f"  {label:<26} 못 불렀다 — {type(err).__name__}")
+            continue
+        hit = "도로구역" in body
+        geom = ("coordinates" in body) or ("gml:" in body) or ("<gml" in body)
+        print(f"  {label:<26} {r.status_code} · {len(body):>7}B"
+              f"{'  도로구역 있음' if hit else ''}"
+              f"{'  · **도형이 온다**' if geom else ''}")
+        print(f"  {'':<26} {' '.join(body[:190].split())[:170]}")
+        print()
+
+
 def main() -> None:
     all_layers()
     kras_here()
     zone_by_pnu()
+    zone_shapes()
     bar("무엇을 보고 판단하나")
     print("  · 도로구역 층이 목록에 있으면 → 그 면으로 필지를 고른다 (최선)")
     print("  · PNU 로 지역지구를 물을 수 있으면 → 도형 없이도 정확히 고른다")
