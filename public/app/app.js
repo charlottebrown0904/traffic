@@ -7309,6 +7309,10 @@ async function askParcel(latlng) {
   }
   drawParcelShape(res.geom);
   const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng], res.zones || []) : null;
+  // 계단의 마지막 칸 — 도구를 실제로 쓴 순간. 가입만 하고 안 쓰는 사람과
+  // 갈라 보려면 이것이 있어야 한다. **매번** 센다(1회가 아니다) — 몇 필지를
+  // 보는지가 곧 얼마나 쓰는지다. 지번·좌표는 넣지 않는다.
+  if (window.TRACK) window.TRACK.event('parcel_view', { zone: (res.zones && res.zones[0]) || '(unknown)' });
   detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng],
                         res.addr, res.zones || [], limits));
   window.__parcel = { parcel, diag, geom: res.geom || null,

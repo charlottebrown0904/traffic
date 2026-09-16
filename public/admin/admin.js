@@ -39,6 +39,48 @@
   /* GA 상태 한 칸. **켜졌다고 말하려면 실제로 켜져 있어야 한다** —
      측정 ID 가 비어 있으면 track.js 가 스크립트를 아예 안 붙인다.
      '붙였는데 안 쌓인다' 는 가장 찾기 어려운 고장이라 여기서 갈라 적는다. */
+  /* 계단 — 도착에서 필지까지 어디서 사람이 빠지나.
+
+     GA 의 '이벤트 수' 표만 보면 어느 칸이 새는지 안 보인다. 순서대로 놓고
+     바로 앞 칸 대비 남은 비율을 적으면 **한 줄만 보면 된다.**
+     칸마다 막대는 같은 한 눈금(첫 칸)을 쓴다. */
+  var FUNNEL = [
+    ['landing_view', '첫 화면 도착'],
+    ['cta_click', '가입 단추 누름'],
+    ['login_start', '로그인 시작'],
+    ['signup_done', '가입 완료'],
+    ['map_open', '지도 열기'],
+    ['parcel_view', '필지 보기'],
+  ];
+
+  function funnelBlock(byEvent) {
+    var got = {};
+    (byEvent || []).forEach(function (r) { got[r.key[0]] = r.v[0]; });
+    var top = got[FUNNEL[0][0]] || 0;
+    if (!top) {
+      return '<div class="adm-note">계단은 아직 셀 것이 없습니다. '
+        + 'GA 가 켜져 있으니 사람이 들어오면 <code>landing_view</code> 부터 쌓입니다.</div>';
+    }
+    var prev = null;
+    return '<h5>계단 — 어디서 빠지나</h5><div class="fn">'
+      + FUNNEL.map(function (f) {
+        var n = got[f[0]] || 0;
+        var w = Math.round((n / top) * 100);
+        var drop = (prev == null || !prev) ? '' : (n > prev
+          ? '<i class="up">+' + Math.round((n / prev - 1) * 100) + '%</i>'
+          : '<i>' + Math.round((n / prev) * 100) + '% 남음</i>');
+        prev = n;
+        return '<div class="fn-row">'
+          + '<span class="fn-nm">' + E(f[1]) + ' <code>' + E(f[0]) + '</code></span>'
+          + '<span class="fn-bar"><i style="width:' + w + '%"></i></span>'
+          + '<span class="fn-n">' + N(n) + drop + '</span></div>';
+      }).join('') + '</div>'
+      + '<div class="adm-note"><b>매번 세는 칸과 한 번만 세는 칸이 섞여 있습니다.</b> '
+      + '도착·지도 열기·가입 완료는 한 사람당 한 번(같은 탭 기준), '
+      + '단추 누름·로그인 시작·필지 보기는 매번입니다. 그래서 아래 칸이 위 칸보다 '
+      + '클 수 있습니다 — 한 사람이 필지를 여럿 보면 그렇습니다. 고장이 아닙니다.</div>';
+  }
+
   function gaBlock(ga, on, g) {
     g = g || {};
     var head = '<h4>방문 통계 (GA4)</h4>'
@@ -77,8 +119,9 @@
               return [E(r.key[0]), E(r.key[1]), N(r.v[0])];
             }), { num: [2] })
         : '')
+      + funnelBlock(g.by_event)
       + (ev.length
-        ? '<h5>이벤트</h5>'
+        ? '<h5>이벤트 — 전부</h5>'
           + table(['이벤트', '횟수'], ev.map(function (r) {
               return [E(r.key[0]), N(r.v[0])];
             }), { num: [1] })
@@ -541,6 +584,8 @@
                       ? '<code>toji.fyi/l/' + E(x.short_code) + '</code>'
                         + ' <button class="lnk-copy" data-url="' + E(short) + '">복사</button>'
                         + ' <button class="lnk-copy" data-url="' + E(x.url) + '">긴 링크</button>'
+                        + ' <button class="lnk-qr" data-url="' + E(short) + '"'
+                        + ' data-code="' + E(x.short_code) + '">QR</button>'
                       : '<em class="adm-miss">없음</em>',
                     N(x.clicks) + (x.clicks_all !== x.clicks
                       ? ' <i class="adm-sub">누적 ' + N(x.clicks_all) + '</i>' : ''),
@@ -1227,6 +1272,36 @@
             window.prompt('복사가 막혔습니다. 직접 복사하세요:', url);
           });
         } catch (e) { window.prompt('복사가 막혔습니다. 직접 복사하세요:', url); }
+      });
+    });
+
+    /* QR — 눌러야 그린다. 링크가 스무 개면 스무 장을 미리 그리는 셈이라
+       열 때마다 화면이 멎는다. 그리고 대부분은 안 쓴다. */
+    Array.prototype.forEach.call(document.querySelectorAll('.lnk-qr'), function (b) {
+      b.addEventListener('click', function () {
+        if (!window.QR) { window.alert('QR 부호기를 못 불렀습니다'); return; }
+        var url = b.getAttribute('data-url');
+        var code = b.getAttribute('data-code');
+        var svg = window.QR.svg(url, { px: 220 });
+        if (!svg) { window.alert('이 주소는 QR 로 담기에 깁니다'); return; }
+        var box = document.getElementById('qr-box');
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'qr-box'; box.className = 'qr-box';
+          document.body.appendChild(box);
+          box.addEventListener('click', function (e) {
+            if (e.target === box || e.target.classList.contains('qr-close')) box.remove();
+          });
+        }
+        box.innerHTML = '<div class="qr-card">'
+          + '<button class="qr-close" aria-label="닫기">×</button>'
+          + svg
+          + '<p class="qr-url"><code>' + E(url) + '</code></p>'
+          + '<p class="qr-hint">인쇄물에 넣을 때는 <b>2cm 이상</b>으로 뽑으십시오. '
+          + '흰 여백(테두리)을 잘라내면 못 읽습니다.</p>'
+          + '<a class="btn" download="qr-' + E(code) + '.svg" href="data:image/svg+xml;charset=utf-8,'
+          + encodeURIComponent(window.QR.svg(url, { px: 1024 })) + '">SVG 내려받기</a>'
+          + '</div>';
       });
     });
 

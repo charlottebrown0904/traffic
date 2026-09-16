@@ -105,9 +105,38 @@
         landing_at: f.at || null,
       };
     },
-    /** GA 에 사건 하나. GA 가 없으면 조용히 아무것도 안 한다. */
+    /** GA 에 사건 하나.
+
+        **캠페인을 자동으로 붙인다.** 안 붙이면 GA 안에서 '이 이벤트가 어느
+        광고에서 나온 것인가' 를 되짚을 수 없다. 첫 접점의 값을 쓴다 —
+        마지막 접점을 쓰면 광고로 들어온 사람이 나중에 검색으로 재방문했을 때
+        그 행동이 자연유입 몫이 된다.
+
+        gtag 가 아직 없어도 버리지 않는다. head 인라인이 스텁을 먼저 세우므로
+        보통은 있지만, 측정 ID 가 비었을 때는 없다 — 그때는 조용히 넘어간다.
+        **개인정보·토큰은 절대 파라미터에 넣지 않는다.** */
     event: function (name, params) {
-      if (typeof window.gtag === 'function') window.gtag('event', name, params || {});
+      if (typeof window.gtag !== 'function') return;
+      var f = readStore(KEY_FIRST) || {};
+      var p = {};
+      Object.keys(params || {}).forEach(function (k) { p[k] = params[k]; });
+      p.campaign = f.utm_campaign || '(none)';
+      p.first_source = f.utm_source || (f.referrer ? 'referral' : '(direct)');
+      window.gtag('event', name, p);
+    },
+
+    /** 한 번만 보낼 사건. 같은 탭에서 두 번 안 간다.
+
+        같은 이벤트가 두 번 찍히는 것은 흔한 사고다 — 화면 조각이 두 군데서
+        그려지거나, 뒤로가기로 같은 쪽에 다시 들어오면 그렇게 된다. 그러면
+        계단의 분모가 부풀어 **전환율이 실제보다 낮게** 나온다. */
+    once: function (name, params) {
+      var k = 'toji.ev.' + name;
+      try {
+        if (sessionStorage.getItem(k)) return;
+        sessionStorage.setItem(k, '1');
+      } catch (e) { /* 사생활 창 — 그때는 매번 보낸다 */ }
+      window.TRACK.event(name, params);
     },
   };
 
@@ -126,4 +155,12 @@
       utm_campaign: now.utm_campaign || '(none)',
     });
   }
+
+  /* ── 계단의 첫 칸과 마지막 칸은 주소만 보면 안다 ─────────────────
+     나머지(cta_click · login_start · signup_done · parcel_view)는 그 일이
+     실제로 일어나는 자리에서 부른다. 여기서 몰아서 부르면 '눌렀다' 가
+     아니라 '그 쪽을 열었다' 를 세게 되고, 그 둘은 다른 숫자다. */
+  var path = location.pathname.replace(/\/$/, '') || '/';
+  if (path === '/') window.TRACK.once('landing_view', { landing: '/' });
+  else if (path === '/app') window.TRACK.once('map_open', {});
 })();

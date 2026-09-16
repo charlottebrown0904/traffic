@@ -29,6 +29,9 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-p]"), function (btn) {
       btn.addEventListener("click", async function () {
         btn.disabled = true;
+        // 계단의 셋째 칸. **누른 순간**을 센다 — 구글로 넘어간 뒤에는
+        // 우리 쪽 코드가 안 돌아서 셀 기회가 없다.
+        if (window.TRACK) window.TRACK.event("login_start", { provider: btn.dataset.p, at: "landing" });
         try {
           // /account 로 돌아온다 — 그 화면이 지도·게시판·프로필·로그아웃을 보여 준다.
           var r = await window.SBUtil.signIn(btn.dataset.p, location.origin + "/account");
@@ -69,6 +72,18 @@
       else renderButtons(box, providers);
     });
   }
+
+  /* 계단의 둘째 칸 — '회원 가입하고 보기' 를 누른 순간.
+     스크립트가 단추로 바꾸기 전의 링크도, 바꾼 뒤의 단추도 같이 잡으려고
+     문서 하나에 위임해 건다. from 으로 머리 쪽인지 아래 쪽인지 가른다. */
+  document.addEventListener("click", function (ev) {
+    var a = ev.target && ev.target.closest && ev.target.closest(".hero-link, .tool-link");
+    if (!a || !window.TRACK) return;
+    window.TRACK.event("cta_click", {
+      from: a.classList.contains("hero-link") ? "hero" : "bottom",
+      to: (a.getAttribute("href") || "").split("?")[0],
+    });
+  });
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", main);
   else main();

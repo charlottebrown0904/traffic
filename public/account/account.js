@@ -36,6 +36,7 @@
     Array.prototype.forEach.call(root.querySelectorAll("[data-p]"), function (btn) {
       btn.addEventListener("click", async function () {
         btn.disabled = true;
+        if (window.TRACK) window.TRACK.event("login_start", { provider: btn.dataset.p, at: "account" });
         try {
           var back = new URLSearchParams(location.search).get("next") || "/account";
           var r = await window.SBUtil.signIn(btn.dataset.p, location.origin + back);
@@ -269,8 +270,25 @@
     } catch (e) { /* 계정 화면을 막지 않는다 */ }
   }
 
+  /* 계단의 넷째 칸 — 가입이 실제로 끝난 순간.
+
+     구글·카카오에서 돌아오면 여기로 온다. 프로필은 가입할 때 트리거가
+     만들므로, **방금 만들어진 프로필**이면 이번에 가입한 것이다.
+     10분을 창으로 잡는다 — 소셜 로그인 왕복이 그보다 오래 걸리는 일은 없다.
+     TRACK.once 가 같은 탭에서 두 번 가는 것을 막는다. */
+  function markSignup(me) {
+    try {
+      if (!window.TRACK) return;
+      var at = me.profile && me.profile.created_at;
+      if (!at) return;
+      if (Date.now() - new Date(at).getTime() > 10 * 60 * 1000) return;
+      window.TRACK.once("signup_done", { status: (me.profile || {}).status || "pending" });
+    } catch (e) { /* 계정 화면을 막지 않는다 */ }
+  }
+
   function accountView(me) {
     stampUtm(me);
+    markSignup(me);
     var u = me.user;
     var p = me.profile || {};
     var name = p.nickname || u.email || "이용자";

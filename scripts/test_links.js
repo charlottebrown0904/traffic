@@ -132,6 +132,17 @@ const css = fs.readFileSync(path.join(ROOT, 'public/admin/style.css'), 'utf8');
 ok('막대 위만 둥글다 (아래는 기준선에 붙는다)', /border-radius:4px 4px 0 0/.test(css));
 ok('이름표 자리를 위에 비워 둔다', /padding-top:16px/.test(css));
 
+ok('계단 이벤트 여섯 칸이 있다',
+   /landing_view[\s\S]{0,400}cta_click[\s\S]{0,400}login_start[\s\S]{0,400}signup_done[\s\S]{0,400}map_open[\s\S]{0,400}parcel_view/.test(adm));
+ok('QR 은 눌러야 그린다 (미리 스무 장 그리지 않는다)', /lnk-qr[\s\S]{0,600}addEventListener\('click'/.test(adm));
+const tr = fs.readFileSync(path.join(ROOT, 'public/lib/track.js'), 'utf8');
+ok('한 번만 보낼 사건은 같은 탭에서 두 번 안 간다', /once: function/.test(tr) && /sessionStorage/.test(tr));
+ok('모든 사건에 캠페인이 자동으로 붙는다', /p\.campaign = f\.utm_campaign/.test(tr));
+ok('첫 접점 기준으로 붙인다 (마지막 접점이 아니다)', /readStore\(KEY_FIRST\)/.test(tr));
+const qr = fs.readFileSync(path.join(ROOT, 'public/lib/qr.js'), 'utf8');
+ok('QR 은 외부 서비스에 주소를 넘기지 않는다', !/https?:\/\/(?!www\.w3\.org)/.test(qr));
+ok('조용한 테두리를 4모듈 둔다', /quiet == null \? 4/.test(qr));
+
 console.log('\n10. 방침이 실제로 있다');
 const legal = fs.readFileSync(path.join(ROOT, 'public/legal/index.html'), 'utf8');
 ok('행태정보 절이 있다', /행태정보/.test(legal));

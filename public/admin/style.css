@@ -192,3 +192,41 @@
      background:var(--accent);border-radius:4px}
 
 .lnk-table{overflow-x:auto}
+
+/* ── 계단 (2026-09-16) ───────────────────────────────────── */
+.fn{display:grid;gap:6px;margin:8px 0 6px}
+.fn-row{display:grid;grid-template-columns:minmax(0,1fr) 40% auto;gap:10px;align-items:center}
+@media (max-width:520px){ .fn-row{grid-template-columns:minmax(0,1fr) auto} .fn-bar{display:none} }
+.fn-nm{font-size:13px;font-weight:700;min-width:0}
+.fn-nm code{font-weight:400;font-size:11px;color:var(--faint)}
+.fn-bar{height:10px;background:var(--surface-2);border-radius:5px;overflow:hidden}
+.fn-bar i{display:block;height:100%;background:var(--accent);border-radius:5px}
+.fn-n{font-size:13px;font-weight:700;text-align:right;white-space:nowrap;
+      font-variant-numeric:tabular-nums}
+.fn-n i{display:block;font-style:normal;font-size:11px;font-weight:400;color:var(--muted)}
+.fn-n i.up{color:var(--accent)}
+
+/* ── QR (2026-09-16) ─────────────────────────────────────── */
+.lnk-qr{
+  font:inherit;font-size:11px;padding:2px 7px;margin-left:4px;cursor:pointer;
+  border-radius:6px;border:1px solid var(--border-strong);
+  background:var(--surface-2);color:var(--muted)
+}
+.lnk-qr:hover{color:var(--ink)}
+.qr-box{
+  position:fixed;inset:0;z-index:900;display:grid;place-items:center;
+  background:rgba(0,0,0,.45);padding:20px
+}
+.qr-card{
+  position:relative;background:var(--surface);border-radius:var(--radius,14px);
+  padding:22px;max-width:320px;text-align:center;
+  box-shadow:0 20px 50px -20px rgba(0,0,0,.5)
+}
+/* QR 은 흰 바탕 검은 무늬여야 읽힌다 — 어두운 테마에서도 반전하지 않는다 */
+.qr-card svg{display:block;margin:0 auto 12px;border-radius:6px}
+.qr-close{
+  position:absolute;top:8px;right:10px;font:inherit;font-size:20px;line-height:1;
+  border:0;background:none;color:var(--muted);cursor:pointer
+}
+.qr-url{margin:0 0 8px;font-size:12px;word-break:break-all;color:var(--muted)}
+.qr-hint{margin:0 0 14px;font-size:12px;color:var(--faint);line-height:1.6}
