@@ -1927,12 +1927,20 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .dev-opt[aria-pressed="false"] { opacity: .45; }
 .dev-opt[aria-pressed="false"] .dev-sw { filter: grayscale(1); }
 .dev-opt:hover { border-color: var(--accent, #2563EB); }
+/* 색칩. **테두리를 늘 두른다** — 칩이 지도와 같은 투명도(0.6)로 깔리기
+   때문에, 어두운 색(국가산단 검정)은 다크모드 바탕에, 밝은 색(농공
+   연두)은 라이트모드 바탕에 묻힌다. 지도에서도 구역마다 테두리가
+   있으므로 칩에 테두리를 두는 것이 오히려 지도와 닮은 모습이다. */
 .dev-sw {
   width: .68rem; height: .68rem; border-radius: .16rem;
   display: inline-block; flex: none;
+  border: 1px solid var(--border-strong, rgba(120, 120, 120, .55));
+  box-sizing: border-box;
 }
-/* 산업단지처럼 **우리가 색을 정하지 않는** 갈래. 빈 칸으로 두고 빗금을
-   쳐서 '색은 지도 그대로' 임을 말한다 — 아무 색이나 칠하면 거짓이 된다. */
+/* 색을 아직 모르는 갈래의 자리. 빗금을 쳐서 '여기는 색을 안 정했다' 를
+   말한다 — 아무 색이나 칠하면 거짓이 된다. 산업단지 넷은 2026-09-16 에
+   브이월드 그림에서 재서 채웠으므로 지금 이 칸을 쓰는 갈래는 없다.
+   자료에 새 단계가 생겼을 때를 위해 남겨 둔다. */
 .dev-sw.is-none {
   background: repeating-linear-gradient(45deg,
     rgba(120, 120, 120, .45) 0 2px, transparent 2px 4px);

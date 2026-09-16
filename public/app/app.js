@@ -1683,6 +1683,13 @@ function updateTierCounts() {
   });
 }
 
+/* 지도가 갈 수 있는 배율의 끝 (docs/map-zoom-levels.md 가 기준이다).
+ *
+ * 아래끝 7 — 그보다 멀면 우리가 그리는 것이 하나도 없다. 위끝 19 —
+ * 배경 타일이 거기까지만 있다. */
+const MAP_MIN_ZOOM = 7;
+const MAP_MAX_ZOOM = 19;
+
 /* 마커 한 개의 색·크기·툴팁. 지도를 만들 때와 연도·차종을 바꿀 때
  * 같은 함수를 쓴다 — 두 군데에 따로 쓰면 한쪽만 고치게 된다. */
 const LABEL_ZOOM = 10;
@@ -1784,8 +1791,16 @@ function buildMap() {
   // auto 를 줍니다). 층 순서는 그대로 두고 가로채기만 없앱니다.
   // 값은 원 561개 + 밴드 몇 개뿐이고, 이것들은 화면을 옮겨도 다시
   // 그리지 않습니다 — SVG 로 감당이 됩니다.
-  map = L.map('map', { zoomControl: false, preferCanvas: false })
-    .setView([36.5, 127.8], 7);
+  /* **배율 아래끝을 7 로 못박는다** (2026-09-16 지시: "z0 ~ z6 삭제").
+   *
+   * 여태 지도에 minZoom 을 안 줘서 Leaflet 이 배경 타일의 기본값 0 을
+   * 썼다. 그래서 눈금이 'z 7 / 0~19' 로 떴고, 손가락을 한 번 더 오므리면
+   * 한반도가 점이 되는 자리까지 내려갔다. **그 여섯 배율에는 우리가
+   * 그리는 것이 하나도 없다** — 땅값 분위도 태그도 z7 부터다. 갈 수는
+   * 있는데 아무것도 없는 자리는 고장으로 읽힌다. */
+  map = L.map('map', { zoomControl: false, preferCanvas: false,
+                       minZoom: MAP_MIN_ZOOM, maxZoom: MAP_MAX_ZOOM })
+    .setView([36.5, 127.8], MAP_MIN_ZOOM);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
   // **지금 몇 배율인지, 끝이 어디인지를 숫자로 보인다** (2026-09-15 지시:
   // "(-)(+) 위? 옆? 어디까지가 최대/최소인지 모르겠음"). +/− 만으로는
@@ -2769,21 +2784,43 @@ const DEV_PARTS = [
 
 /* 층마다 고를 수 있는 **세부 갈래**와 그 색.
  *
- * 산업단지의 색은 비워 둔다 — 브이월드가 이미 칠해서 주는 **그림**이라
- * 우리가 정하는 색이 아니다. 지어낸 색을 범례에 적으면 지도와 범례가
- * 서로 다른 색을 말하게 되고, 그것은 범례가 없는 것보다 나쁘다.
- * (색을 실제로 재는 일은 scripts/vworld_render_probe.py 가 한다.)
+ * 산업단지의 색은 **지어내지 않고 잰 값**이다 — 브이월드가 이미 칠해서
+ * 주는 그림이라 우리가 정하는 색이 아니기 때문이다. 아래 표를 보라.
  */
 const DEV_PICKS = {
   /* 개수는 브이월드 WFS 를 직접 세어 적은 것이다 (vworld-render run 8,
      2026-09-16). 적어 두는 까닭: **도시첨단은 전국에 아홉 곳뿐**이라
      켜 놓고 아무것도 안 보이는 것이 정상이다. 그 사실을 화면이 말하지
      않으면 '층이 고장났나' 로 읽는다. */
+  /* **산업단지 색은 브이월드가 칠한 것을 재서 적었다** (2026-09-16 지시:
+     "현재 반영된 색상으로 표현 (현재는 전부 회색 빗금)").
+   *
+   * 이 네 층은 그림(WMS)이라 우리가 색을 정하지 않는다. 그러니 범례를
+   * 채우려면 지도에서 실제로 재는 수밖에 없다. 아침에 한 번 실패했는데,
+   * '가장 많이 쓰인 **불투명** 화소' 를 세었기 때문이다 — 면은 반투명이고
+   * 불투명한 것은 글자와 테두리뿐이라 국가산단이 #000000 9화소로 나왔다.
+   * 거꾸로(알파가 0도 255도 아닌 화소) 재니 답이 나왔다.
+   *
+   *   국가      #000000  반월 37,686화소 · 반투명 중 90%
+   *   일반      #FF8F00  탕정 5,971 (83%) · 향남 613 (74%) — 두 자리 일치
+   *   도시첨단  #A81194  동탄 165화소 · 51%
+   *   농공      #CFFC00  탕정 79화소 · 41%
+   *
+   * 알파는 넷 다 **0.60** 이다. 색칩도 같은 0.6 으로 깔아야 지도와 같은
+   * 색으로 보인다 — 진하게 칠하면 범례와 지도가 어긋난다.
+   * (재는 자는 scripts/vworld_render_probe.py · vworld-render run 11.)
+   *
+   * 국가산단이 검정인 것은 이상해 보이지만 화소 수와 비중이 가장 튼튼한
+   * 값이다. 짐작으로 딴 색을 적느니 잰 값을 적는다. */
   industry: [
-    { id: '국가', label: '국가 68곳', tile: 'industry_gug' },
-    { id: '일반', label: '일반 257곳', tile: 'industry_ilban' },
-    { id: '첨단', label: '도시첨단 9곳', tile: 'industry_dosi' },
-    { id: '농공', label: '농공 147곳', tile: 'industry_nong' },
+    { id: '국가', label: '국가 68곳', tile: 'industry_gug',
+      color: 'rgba(0,0,0,.6)' },
+    { id: '일반', label: '일반 257곳', tile: 'industry_ilban',
+      color: 'rgba(255,143,0,.6)' },
+    { id: '첨단', label: '도시첨단 9곳', tile: 'industry_dosi',
+      color: 'rgba(168,17,148,.6)' },
+    { id: '농공', label: '농공 147곳', tile: 'industry_nong',
+      color: 'rgba(207,252,0,.6)' },
   ],
   housing: [
     { id: '지구지정', label: '지구지정' }, { id: '개발계획', label: '개발계획' },
@@ -3097,6 +3134,18 @@ function drawDevVec() {
   let asked = 0;
   let missing = 0;
   let tiles = 0;
+  /* **같은 도형을 두 번 그리지 않는다** (2026-09-16 보고: "같은 부분준공인데
+     투명도 차이가 발생하는 이유?").
+   *
+   * 브이월드 WFS 는 칸에 **걸치는** 도형을 전부 준다. 동탄2 처럼 큰
+   * 사업지구는 칸 대여섯 개에 걸쳐 있어서 칸마다 한 번씩 온다. 그것을
+   * 그대로 그리면 같은 면이 여러 겹 쌓이고, 반투명이라 **겹친 수만큼
+   * 진해진다**: 0.2 를 두 겹이면 0.36, 세 겹이면 0.49. 화면에는 같은
+   * '부분준공' 인데 색이 다른 것으로 나타난다 — 단계를 잘못 읽게 된다.
+   *
+   * 한 판에 하나씩만 그린다. 판마다 새로 만드는 것이 요점이다 — 층을
+   * 껐다 켜거나 화면을 옮기면 다시 그려야 하니까. */
+  const seen = new Set();
   // **칸 목록을 층마다 따로 뽑는다.** 문턱이 달라졌으므로(택지 z12 ·
   // 계획도로 z14) 하나의 목록을 나눠 쓸 수 없다. z12~13 에서는 택지만
   // 칸이 나오고 계획도로는 빈 목록이 온다.
@@ -3108,7 +3157,7 @@ function drawDevVec() {
       const got = devVecCache.get(key);
       // **받아 둔 칸은 무조건 그린다.** 한도는 그리는 데가 아니라
       // 물어 오는 데에만 건다.
-      if (got) { drawn += paintDevVec(kind, got); return; }
+      if (got) { drawn += paintDevVec(kind, got, seen); return; }
       missing += 1;
       if (devVecAsked.has(key)) return;
       if (asked >= DEVVEC_FETCH_PER_PASS) return;   // 나머지는 다음 판에
@@ -3126,14 +3175,30 @@ function drawDevVec() {
     });
   });
   window.__devvec = { kinds, tiles, drawn, asked, missing,
-                      cached: devVecCache.size };
+                      unique: seen.size, cached: devVecCache.size };
 }
 
-function paintDevVec(kind, items) {
+/** 검사가 배율·화면을 바꾼 뒤 다시 그리게 하는 손잡이. 가짜 지도는
+ *  moveend 를 안 쏘므로 부를 길이 따로 있어야 한다. */
+window.__redrawDevVec = function () {
+  devVecCache.clear();
+  devVecAsked.clear();
+  drawDevVec();
+}
+
+function paintDevVec(kind, items, seen) {
   let n = 0;
   const part = kind === 'planroad' ? 'planroad' : 'housing';
   const fill = devFillOpacity(part);
   items.forEach((it) => {
+    // 이 판에서 이미 그린 도형이면 건너뛴다. 이름표가 없는 옛 칸
+    // (캐시에 남아 있을 수 있다)은 거르지 않고 그대로 그린다 —
+    // 안 그리는 것보다 겹쳐 그리는 쪽이 덜 나쁘다.
+    if (seen && it.k) {
+      const id = `${kind}/${it.k}`;
+      if (seen.has(id)) return;
+      seen.add(id);
+    }
     const stage = devStage(it.p || {});
     const spec = DEV_STAGE[stage];
     // 세부 갈래로 걸러 낸다 (2026-09-16). 예전 '완공 보기' 한 칸이 하던

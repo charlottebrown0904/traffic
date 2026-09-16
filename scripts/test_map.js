@@ -1797,9 +1797,13 @@ async function stubCommon(pg) {
         미집행눌림: pick('planroad', '미집행').getAttribute('aria-pressed'),
         집행완료눌림: pick('planroad', '집행완료').getAttribute('aria-pressed'),
         준공눌림: pick('housing', '준공').getAttribute('aria-pressed'),
-        // 산업단지 색은 브이월드 그림이라 **우리가 안 정한다** — 빈 칩이다.
+        // 산업단지 색은 브이월드 그림에서 **재서** 적었다 (빈 칩이 아니다).
         산업칩빔: pick('industry', '국가').querySelector('.dev-sw')
           .classList.contains('is-none'),
+        국가색: chip(pick('industry', '국가')),
+        일반색: chip(pick('industry', '일반')),
+        첨단색: chip(pick('industry', '첨단')),
+        농공색: chip(pick('industry', '농공')),
         산업이름: pick('industry', '첨단').textContent.trim(),
       };
     });
@@ -1830,8 +1834,19 @@ async function stubCommon(pg) {
     // 계획도로와도 안 부딪혀야 한다 — 두 층은 같이 켜진다.
     check('택지 색이 계획도로의 빨강·호박과 겹치지 않는다',
           !택지색.some((c) => /#DC2626|#F59E0B/i.test(c)), 택지색.join(' / '));
-    check('산업단지 색칩은 비워 둔다 (브이월드 그림이라 우리 색이 아니다)',
-          subs.산업칩빔 === true, `is-none=${subs.산업칩빔}`);
+    /* 2026-09-16 지시: "국가, 일반, 도시첨단, 농공 : 현재 반영된 색상으로
+       표현 (현재는 전부 회색 빗금)". 브이월드가 칠한 색을 재서 넣었다 —
+       빈 칩이 아니고, 넷이 서로 다르고, 지도와 같은 알파 0.6 이다. */
+    const 산단색 = [subs.국가색, subs.일반색, subs.첨단색, subs.농공색];
+    check('산업단지 색칩이 더는 비어 있지 않다',
+          subs.산업칩빔 === false && 산단색.every((c) => /rgba?\(/.test(c)),
+          산단색.join(' / '));
+    check('넷이 서로 다른 색이다',
+          new Set(산단색.map((c) => c.replace(/\s/g, ''))).size === 4,
+          산단색.join(' / '));
+    // 지도는 알파 0.6 으로 칠한다 — 칩을 진하게 깔면 범례와 지도가 어긋난다.
+    check('색칩도 지도와 같은 투명도(0.6)로 깐다',
+          산단색.every((c) => /0\.6|\.6\)/.test(c)), 산단색.join(' / '));
     // 도시첨단은 전국 아홉 곳뿐이다 — 안 보이는 것이 정상임을 화면이 말한다.
     check('산업단지 갈래에 전국 개수를 적는다', /9곳/.test(subs.산업이름),
           subs.산업이름);
@@ -1901,6 +1916,42 @@ async function stubCommon(pg) {
     check('택지·사업지구는 z12 부터 부른다 (계획도로보다 둘 이르다)',
           gate.택지11 === 0 && gate.택지12 > 0,
           `z11 ${gate.택지11}칸 · z12 ${gate.택지12}칸`);
+
+    /* **같은 도형이 칸마다 오면 겹쳐 그려진다** (2026-09-16 보고:
+       "같은 부분준공인데 투명도 차이가 발생하는 이유?").
+
+       브이월드 WFS 는 칸에 '걸치는' 것을 전부 준다 — 큰 사업지구는 칸
+       대여섯 개에 걸쳐 있어 칸마다 한 번씩 온다. 그대로 그리면 반투명이
+       겹쳐 진해지고, 같은 단계인데 색이 달라 보인다.
+
+       똑같은 도형(이름표 하나)만 돌려주는 가짜 응답을 깔고, 칸이 여럿인
+       화면에서 **한 번만 그려지는지** 본다. */
+    await page.route('**/api/tile?mode=devvec*', (r) => r.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ n: 1, whole: true, items: [{
+        k: 'zone.1', p: { cat_nam: '부분준공', zonename: '겹친지구' },
+        g: { type: 'Polygon', coordinates: [[[127.90, 37.30], [127.98, 37.30],
+                                             [127.98, 37.36], [127.90, 37.36],
+                                             [127.90, 37.30]]] },
+      }] }),
+    }));
+    const dedup = await page.evaluate(async () => {
+      const keep = window.__zoom; const keepB = window.__bbox;
+      window.__bbox = [37.30, 127.90, 37.36, 127.98];
+      window.__zoom = 14;
+      window.__redrawDevVec && window.__redrawDevVec();
+      await new Promise((ok) => setTimeout(ok, 1200));
+      const got = { ...(window.__devvec || {}) };
+      window.__zoom = keep; window.__bbox = keepB;
+      return got;
+    });
+    /* 켜져 있는 층마다 한 번씩이다 — 가짜 응답을 두 층이 같이 쓰므로
+       층 수만큼 나온다. 요점은 **칸 수만큼 나오지 않는다**는 것이다. */
+    check('칸이 여럿이어도 같은 도형은 한 번만 그린다',
+          dedup.tiles > 1 && dedup.drawn === (dedup.kinds || []).length,
+          `칸 ${dedup.tiles} · 층 ${(dedup.kinds || []).length} · `
+          + `그린 것 ${dedup.drawn} (고치기 전이면 ${dedup.tiles})`);
+    await page.unroute('**/api/tile?mode=devvec*');
 
     /* 철도역 — 종류로 가를 칸이 자료에 반만 차 있어 **정차 규모**로
        가른다 (2026-09-16 물음: "철도역도 종류가 나눌 수 있는 지 확인"). */
@@ -5405,6 +5456,17 @@ async function stubCommon(pg) {
     check('문서에 상수가 사는 곳이 적혀 있다',
           doc.includes('TRADE_MIN_ZOOM') && doc.includes('CADASTRAL_MIN_ZOOM'),
           '');
+
+    /* **z0~z6 을 없앴다** (2026-09-16 지시). 가짜 지도는 minZoom 7 을
+       흉내 내고 있어서 눈금 검사가 계속 통과했지만, 진짜 지도는 L.map 에
+       minZoom 을 안 줘서 배경 타일의 기본값 0 을 쓰고 있었다 — 검사가
+       흉내만 보고 있었던 셈이다. 그래서 여기서는 **원본 글자**를 본다. */
+    check('지도 아래끝이 7 로 못박혀 있다',
+          /const MAP_MIN_ZOOM = 7;/.test(app)
+          && /L\.map\('map',[\s\S]{0,200}?minZoom: MAP_MIN_ZOOM/.test(app),
+          /minZoom: MAP_MIN_ZOOM/.test(app) ? '' : 'L.map 에 minZoom 이 없다');
+    check('문서도 z7 이 아래끝이라고 말한다',
+          doc.includes('MAP_MIN_ZOOM') && /z0\s*~\s*z6|0–6/.test(doc), '');
   }
 
   console.log();

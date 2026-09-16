@@ -767,9 +767,30 @@ async function developShapes(req, res) {
     for (const k of spec.keep) {
       if (src[k] != null) props[k] = src[k];
     }
-    items.push({ g, p: props });
+    // **도형 하나를 가리키는 이름표.**
+    //
+    // WFS 는 BBOX 에 '걸치는' 것을 전부 준다. 동탄2 처럼 큰 사업지구는
+    // 칸 여러 개에 걸쳐 있어서 **칸마다 같은 도형이 한 번씩 온다.**
+    // 화면이 그것을 그대로 그리면 같은 면이 여러 겹 쌓여, 반투명 채움이
+    // 겹친 만큼 진해진다 (0.2 를 두 번 겹치면 0.36). 2026-09-16 보고:
+    // "같은 부분준공인데 투명도 차이가 발생하는 이유?"
+    //
+    // 그래서 화면이 겹친 것을 골라낼 수 있도록 이름표를 같이 보낸다.
+    // 브이월드가 주는 f.id 가 'lt_c_lhzone.123' 꼴로 도형마다 다르다.
+    // 없으면 지구코드로, 그것도 없으면 첫 좌표로 대신한다 — 좌표는
+    // 같은 도형이면 칸이 달라도 같은 값이 나온다(round6 이 먼저다).
+    const k = (typeof f.id === 'string' && f.id) || src.zonecode
+      || JSON.stringify(firstPoint(g));
+    items.push({ k: String(k), g, p: props });
   }
   return sendShapes(res, items, feats.length < DEV_VEC_MAX);
+}
+
+/** 도형의 첫 좌표. 이름표가 없는 도형을 가릴 때만 쓴다. */
+function firstPoint(g) {
+  let c = g && g.coordinates;
+  while (Array.isArray(c) && Array.isArray(c[0])) c = c[0];
+  return Array.isArray(c) ? c : null;
 }
 
 function sendShapes(res, items, whole_) {
