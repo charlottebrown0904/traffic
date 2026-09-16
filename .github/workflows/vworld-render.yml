@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       probe:
-        description: "render / geocode-mask / roads / roadbuild / roadwork"
+        description: "render / geocode-mask / roads / roadbuild / roadwork / roadgeom"
         default: "render"
 
 jobs:
@@ -52,6 +52,13 @@ jobs:
       - name: 고속도로 공사현황 실측
         if: inputs.probe == 'roadwork'
         run: python scripts/road_work_probe.py 2>&1 | tee /tmp/probe.log
+
+      # 직선 대신 **실제 노선 모양**을 어디서 얻나. 배경 지도(OSM)에
+      # 이미 그 선이 보이므로, 같은 자리를 OSM 과 도로중심선 양쪽에서
+      # 받아 꼭짓점 수까지 재 본다.
+      - name: 고속도로 선형 원천 탐침
+        if: inputs.probe == 'roadgeom'
+        run: python scripts/road_geom_probe.py 2>&1 | tee /tmp/probe.log
 
       # 가려진 지번('1**')으로 얻은 'parcel' 좌표가 진짜인가.
       # 이 컨테이너는 중계기를 못 부르므로 러너에서 돈다.
