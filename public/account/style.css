@@ -64,12 +64,39 @@
 
 .post-list{list-style:none; margin:0; padding:0; border-top:1px solid var(--border)}
 .post-list li{border-bottom:1px solid var(--border)}
+/* 제목 줄만 링크다. 아랫줄(작성자·날짜)에는 누를 수 있는 이름 단추가 있어
+   링크 안에 둘 수 없다 — <a> 안의 <button> 은 문법도 틀리고 눌러도 글로
+   넘어가 버린다. 그래서 위아래 여백을 두 줄이 나눠 갖는다. */
 .post-list a{
-  display:block; padding:.95rem .25rem; color:inherit; text-decoration:none;
+  display:block; padding:.95rem .25rem .2rem; color:inherit; text-decoration:none;
 }
 .post-list a:hover{background:var(--surface-2)}
 .post-list .t{font-weight:600; display:block; margin-bottom:.2rem}
-.post-list .m{font-size:.82rem; color:var(--faint)}
+.post-list .m{font-size:.82rem; color:var(--faint); padding:0 .25rem .95rem}
+
+/* 작성자 이름 단추 — 글자처럼 보이되 누를 수 있다는 것이 드러나야 한다.
+   점선 밑줄이 그 표시다. 실선으로 하면 링크로 읽혀 '어디로 가나' 를 묻게 된다. */
+.who-btn{
+  background:none; border:0; padding:0; font:inherit; color:inherit; cursor:pointer;
+  border-bottom:1px dotted var(--border-strong);
+}
+.who-btn:hover{color:var(--accent); border-bottom-color:var(--accent)}
+.who-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+/* 프로필 쪽지창 */
+.who-pop{
+  position:fixed; inset:0; z-index:50; display:flex; align-items:center; justify-content:center;
+  padding:1rem; background:rgba(0,0,0,.42);
+}
+.who-card{
+  width:min(24rem,100%); background:var(--surface); color:var(--ink);
+  border:1px solid var(--border-strong); border-radius:12px; padding:1.1rem 1.2rem;
+  box-shadow:0 12px 34px rgba(0,0,0,.22);
+}
+.who-card h3{margin:0 0 .6rem; font-size:1.05rem}
+.who-card .note{margin:0; font-size:.88rem; color:var(--muted)}
+.who-card .who-tip{margin:.6rem 0 0; font-size:.85rem; color:var(--muted); line-height:1.6}
+.who-mail{margin:0 0 .7rem; font-family:"IBM Plex Mono",monospace; font-size:.9rem; word-break:break-all}
 .badge{
   display:inline-block; padding:.1rem .45rem; border-radius:5px; font-size:.72rem;
   background:var(--surface-2); color:var(--muted); margin-right:.4rem; vertical-align:.05rem;

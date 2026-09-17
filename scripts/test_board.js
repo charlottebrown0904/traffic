@@ -76,6 +76,14 @@ const PORT = 8199;
       if (table === 'profile_public') {
         return { data: [ME, OTHER].filter(p => (filters.in || []).includes(p.id)), error: null };
       }
+      /* profile 은 **RLS 가 본인 행과 관리자에게만 연다.** 스텁도 그렇게
+         군다 — 일반 회원에게 빈 결과를 주지 않으면, 화면이 '못 읽었을 때'
+         무엇을 하는지를 검사가 영영 못 본다. */
+      if (table === 'profile') {
+        const mine = filters.id === ME.id;
+        if (window.__role !== 'admin' && !mine) return { data: null, error: null };
+        return { data: { email: filters.id === OTHER.id ? 'other@x.com' : 'me@x.com' }, error: null };
+      }
       return { data: [], error: null };
     }
 
@@ -154,6 +162,76 @@ const PORT = 8199;
     checks.push([`${label}: 글 목록을 안 보여준다`,
                  !(await page.evaluate(() => !!document.querySelector('.post-list')))]);
   }
+
+  /* ── 2026-09-17 지시 ────────────────────────────────────────────
+     · "게시판 화면에서 우측 '토지랩'은 '내 계정'으로 수정"
+     · "글 작성자/댓글 작성자 프로필 클릭 시 메일 보내기 팝업"
+
+     둘째는 **보는 사람에 따라 다른 것을 말해야 한다.** 회원 메일 주소는
+     아무에게나 보이면 안 되므로, 일반 회원에게는 주소가 아니라 왜 없는지가
+     떠야 한다. 화면이 숨기는 것이 아니라 자료가 안 오는 것이라는 점이
+     중요해서, 스텁도 RLS 처럼 빈 결과를 준다. */
+  await page.goto(`http://127.0.0.1:${PORT}/board/`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelector('.post-list'));
+  const navText = await page.evaluate(() => document.getElementById('nav-me').textContent.trim());
+  checks.push(["머리띠 끝 칸이 '내 계정' 이다 (내 이름으로 안 바뀐다)", navText === '내 계정']);
+
+  const btnCount = await page.evaluate(() => document.querySelectorAll('.who-btn').length);
+  checks.push(['목록의 작성자 이름이 누를 수 있는 단추다', btnCount === 2]);
+  // 단추가 링크 **안**에 있으면 눌러도 글로 넘어가 버린다.
+  checks.push(['이름 단추는 글 링크 밖에 있다',
+               await page.evaluate(() => !document.querySelector('.post-list a .who-btn'))]);
+
+  // 일반 회원이 남의 이름을 눌렀을 때
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.who-btn')].find((x) => x.dataset.uid === 'u-other');
+    b.click();
+  });
+  await page.waitForFunction(() => {
+    const el = document.querySelector('#who-body');
+    return el && !/불러오는 중/.test(el.textContent);
+  });
+  let pop = await page.evaluate(() => document.getElementById('who-pop').innerText);
+  checks.push(['일반회원: 창이 뜬다', /남/.test(pop)]);
+  checks.push(['일반회원: 남의 메일 주소가 안 보인다', !/other@x\.com/.test(pop)]);
+  checks.push(['일반회원: 왜 없는지 말한다', /공개하지 않습니다/.test(pop)]);
+  checks.push(['일반회원: mailto 링크가 없다',
+               await page.evaluate(() => !document.querySelector('#who-pop a[href^="mailto:"]'))]);
+  // Esc 로 닫힌다 — 닫는 길이 없으면 화면이 잠긴다.
+  await page.keyboard.press('Escape');
+  checks.push(['Esc 로 닫힌다', await page.evaluate(() => !document.getElementById('who-pop'))]);
+
+  // 관리자가 같은 이름을 눌렀을 때
+  await page.goto(`http://127.0.0.1:${PORT}/board/?role=admin`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelector('.who-btn'));
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('.who-btn')].find((x) => x.dataset.uid === 'u-other');
+    b.click();
+  });
+  await page.waitForFunction(() => {
+    const el = document.querySelector('#who-body');
+    return el && !/불러오는 중/.test(el.textContent);
+  });
+  pop = await page.evaluate(() => document.getElementById('who-pop').innerText);
+  const mailHref = await page.evaluate(() => {
+    const a = document.querySelector('#who-pop a[href^="mailto:"]');
+    return a ? a.getAttribute('href') : '';
+  });
+  checks.push(['관리자: 메일 주소가 보인다', /other@x\.com/.test(pop)]);
+  checks.push(['관리자: 메일 보내기가 그 주소로 간다', /^mailto:other%40x\.com/.test(mailHref)]);
+  checks.push(['관리자: 제목이 미리 적힌다', /subject=/.test(mailHref)]);
+
+  // 공지는 관리자만 (지시). 진짜 자물쇠는 RLS(0016) 이고 여기서는 칸을 본다.
+  await page.goto(`http://127.0.0.1:${PORT}/board/#/write`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('cat'));
+  const opts = await page.evaluate(() =>
+    [...document.querySelectorAll('#cat option')].map((o) => o.value));
+  checks.push(['일반회원 글쓰기 칸에 공지가 없다', opts.indexOf('notice') < 0, opts.join(',')]);
+  await page.goto(`http://127.0.0.1:${PORT}/board/?role=admin#/write`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('cat'));
+  const optsA = await page.evaluate(() =>
+    [...document.querySelectorAll('#cat option')].map((o) => o.value));
+  checks.push(['관리자 글쓰기 칸에는 공지가 있다', optsA.indexOf('notice') >= 0, optsA.join(',')]);
 
   console.log('');
   let bad = 0;

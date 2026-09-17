@@ -992,10 +992,20 @@ function renderRank() {
       : '<button type="button" class="btn-trend" disabled title="이 영업소는 추이 자료가 없습니다">지가 추이</button>';
     const region = [r.sido, r.sigungu].filter(Boolean).join(' ') ||
                    '<span class="hint">미상</span>';
+    /* **지역은 두 자리에 적는다** (보고된 문제 2026-09-17: "지역(주소)로 인해
+       하나의 칸들이 너무 높음 (모바일에서)").
+
+       좁은 화면에서 '경기도 성남시 분당구' 가 한 글자씩 줄바꿈해 한 줄이
+       열두 줄이 됐다. 표의 다른 칸은 줄바꿈을 안 하니(막대·단추·숫자) 폭이
+       모자랄 때 눌리는 것은 이름과 지역뿐이기 때문이다.
+
+       그래서 좁으면 지역 칸을 통째로 접고 영업소 이름 **밑줄**로 보낸다.
+       칸이 하나 줄어 남은 칸들이 제 폭을 찾는다. 넓은 화면에서는 예전처럼
+       따로 선다 — 그쪽은 눌릴 일이 없다. 어느 쪽이든 자료는 화면에 있다. */
     return `<tr>
       <td class="rank">${i + 1}</td>
-      <td>${escapeHtml(r.name)}</td>
-      <td>${region}</td>
+      <td class="who"><span class="nm">${escapeHtml(r.name)}</span><span class="sub">${region}</span></td>
+      <td class="reg">${region}</td>
       <td class="num bar"><span style="width:${width}%"></span><b>${num(r.value)}</b></td>
       <td class="act">${trendBtn}</td>
       <td class="num">${yoyBars(r.yoy)}</td>

@@ -97,7 +97,16 @@ const colIdx = (page) => page.evaluate((want) => {
 const rows = (page, at) => page.evaluate((ix) =>
   Array.from(document.querySelectorAll('#rank-table tbody tr')).map((tr) => {
     const td = tr.querySelectorAll('td');
-    const txt = (i) => (i >= 0 && td[i] ? td[i].textContent.trim() : '');
+    /* **영업소 칸에는 글자가 둘 있다** (2026-09-17). 좁은 화면에서 주소가
+       한 글자씩 줄바꿈해 행 높이가 210px 이 되던 문제를 고치면서, 지역을
+       이름 밑줄로도 적게 했다(.sub). 칸의 textContent 를 그냥 읽으면
+       '서울경기도 성남시 분당구' 가 되어 이름 검사가 통째로 틀린다.
+       칸 안에 이름만 담은 자리(.nm)가 있으면 그것을 읽는다. */
+    const txt = (i) => {
+      if (!(i >= 0 && td[i])) return '';
+      const nm = td[i].querySelector('.nm');
+      return (nm || td[i]).textContent.trim();
+    };
     return {
       rank: Number(txt(ix.rank)),
       name: txt(ix.name),

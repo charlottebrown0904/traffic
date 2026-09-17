@@ -220,6 +220,40 @@ check("stdlandBase" not in cfg and "jsdelivr" not in cfg, "공개 CDN 주소가 
 ps = (ROOT / "src" / "redt" / "premium_store.py").read_text(encoding="utf-8")
 check('os.environ["SUPABASE_SERVICE_KEY"]' in ps and "x-upsert" in ps, "올리기는 service key 로만 · 덮어쓰기")
 
+# ── 표시 이름 중복 · 공지는 관리자만 (0016, 2026-09-17 지시) ─────────
+#
+# 둘 다 **화면이 아니라 데이터베이스가** 막아야 하는 것들이다. 공개 anon
+# 키로 REST 를 직접 부르는 길이 늘 열려 있기 때문이다.
+sql16 = (ROOT / "supabase" / "migrations" / "0016_nickname_unique_notice_admin.sql").read_text(encoding="utf-8")
+check("create unique index" in sql16 and "lower(btrim(nickname))" in sql16,
+      "표시 이름은 대소문자·공백을 무시하고 유일하다")
+check("where nickname is not null and btrim(nickname) <> ''" in sql16,
+      "  아직 이름을 안 정한 계정 여럿은 겹친 것이 아니다")
+# 가입 트리거가 이 잠금에 걸려 죽으면 **가입 자체가 막힌다** — 트리거 안에서
+# 터진 예외는 auth.users 삽입까지 되돌린다. 빈 이름을 찾는 고리가 있어야 한다.
+check("while exists" in sql16 and "handle_new_user" in sql16,
+      "  가입 기본 이름이 겹쳐도 가입은 안 죽는다")
+check("nickname_taken" in sql16 and "grant execute on function public.nickname_taken(text) to authenticated" in sql16
+      and "from public, anon" in sql16,
+      "중복 확인은 로그인한 사람만 부른다")
+check("nickname_taken" in acct and '"23505"' in acct,
+      "화면은 저장 전에 묻고, 그 틈에 생긴 충돌(23505)도 같은 말로 잡는다")
+# post_insert 는 처음부터 막고 있었고, post_update 가 뚫려 있었다 —
+# 자유로 쓴 뒤 category 만 notice 로 고치면 공지가 됐다.
+check("create policy post_update on public.post" in sql16
+      and "category <> 'notice' or public.is_admin()" in sql16,
+      "공지는 고칠 때도 관리자만 (자유 → 공지 로 바꾸는 길을 막는다)")
+board_js = (ROOT / "public" / "board" / "board.js").read_text(encoding="utf-8")
+check('isAdmin ? \'<option value="notice">' in board_js,
+      "  화면의 공지 칸도 관리자에게만 보인다 (편의 — 자물쇠는 위)")
+# 게시판 프로필 창은 **관리자에게만** 메일을 보여준다. 그것도 화면이 가리는
+# 것이 아니라 RLS 가 행을 안 주는 것이다 — profile_public 뷰에는 메일 칸이 없다.
+sql2 = (ROOT / "supabase" / "migrations" / "0002_profile_public.sql").read_text(encoding="utf-8")
+check("select id, nickname from public.profile" in sql2,
+      "게시판이 이름을 읽는 뷰에는 여전히 id·nickname 두 칸뿐이다")
+check('from("profile").select("email")' in board_js,
+      "  메일은 잠긴 profile 표에서 읽는다 (공개 뷰가 아니다)")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건:")

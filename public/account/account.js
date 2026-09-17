@@ -339,7 +339,7 @@
       '<button class="btn sm" type="submit">저장</button>' +
       '<button class="btn sm ghost" type="button" id="pf-cancel">취소</button>' +
       '<span class="note-in" id="pf-msg"></span></p>' +
-      '<p class="note">게시판과 화면에 보이는 이름입니다. 2~20자. 사진은 아직 받지 않습니다.</p>' +
+      '<p class="note">게시판과 화면에 보이는 이름입니다. 2~20자. 같은 이름은 쓸 수 없습니다.</p>' +
       "</form>" +
       '<div id="members" style="margin-top:1.5rem"></div>' +
       "</div>";
@@ -359,11 +359,33 @@
       var v = document.getElementById("pf-name").value.trim();
       var msg = document.getElementById("pf-msg");
       if (v.length < 2 || v.length > 20) { msg.textContent = "이름은 2~20자로 적어 주세요."; return; }
+
+      /* 이름이 겹치는지 먼저 묻는다 (지시 2026-09-17).
+
+         **묻는 것과 막는 것은 다르다.** 여기서 묻는 것은 사람이 저장을
+         누르기 전에 알 수 있게 하려는 것뿐이고, 진짜 자물쇠는 데이터베이스의
+         유일 색인(profile_nickname_uniq)이다. 물어본 뒤 저장하기까지의 틈에
+         다른 사람이 같은 이름을 넣을 수 있기 때문이다 — 그때는 아래에서
+         23505 를 잡아 같은 말을 한다.
+
+         대소문자·앞뒤 공백 규칙은 화면이 아니라 nickname_taken() 안에 있다.
+         두 곳에 적으면 언젠가 갈라진다. */
+      msg.textContent = "이름을 확인하는 중…";
+      var dup = await window.SB.rpc("nickname_taken", { p_nick: v });
+      if (dup.error) { msg.textContent = "이름을 확인하지 못했습니다 — " + dup.error.message; return; }
+      if (dup.data === true) { msg.textContent = "이미 쓰고 있는 이름입니다. 다른 이름으로 적어 주세요."; return; }
+
       msg.textContent = "저장하는 중…";
       // 본인 행만 고칠 수 있다(RLS). 등급·상태 열은 트리거가 막으므로 이름만 간다.
       var r = await window.SB.from("profile").update({ nickname: v }).eq("id", u.id)
         .select("nickname").single();
-      if (r.error) { msg.textContent = "저장하지 못했습니다 — " + r.error.message; return; }
+      if (r.error) {
+        // 23505 = 유일 위반. 방금 그 틈에 누가 먼저 넣은 것이다.
+        msg.textContent = r.error.code === "23505"
+          ? "이미 쓰고 있는 이름입니다. 다른 이름으로 적어 주세요."
+          : "저장하지 못했습니다 — " + r.error.message;
+        return;
+      }
       me.profile = Object.assign({}, p, { nickname: r.data.nickname });
       accountView(me);
     });

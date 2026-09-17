@@ -37,9 +37,86 @@
   }
 
   // 닉네임을 아직 정하지 않은 계정도 있다. 빈칸으로 두면 줄이 어긋난다.
-  function who(map, uid) {
-    return E((map && map[uid]) || "이용자");
+  function whoName(map, uid) {
+    return (map && map[uid]) || "이용자";
   }
+
+  /* 작성자 이름은 **누를 수 있는 것**이다 (지시 2026-09-17: "글 작성자/댓글
+     작성자 프로필 클릭 시 메일 보내기 팝업"). 링크가 아니라 단추다 —
+     갈 곳이 있는 것이 아니라 그 자리에서 열리는 것이므로. */
+  function who(map, uid) {
+    if (!uid) return E(whoName(map, uid));
+    return '<button type="button" class="who-btn" data-uid="' + E(uid) +
+           '" data-name="' + E(whoName(map, uid)) + '">' + E(whoName(map, uid)) + "</button>";
+  }
+
+  /* 프로필 쪽지창.
+
+     **메일 주소는 아무에게나 보여주지 않는다.** profile 의 RLS 가 본인 행과
+     관리자에게만 열려 있고(0001·0003), 게시판이 이름을 읽는 profile_public
+     뷰에는 id 와 nickname 두 칸뿐이다 — 그 뷰에 칸을 늘리는 순간 그 뷰가
+     안전한 근거가 깨진다(0002 의 경고).
+
+     그래서 이 창은 **보는 사람에 따라 다른 것을 말한다.** 관리자에게는
+     메일 주소와 '메일 보내기' 를, 그 밖에는 왜 주소가 없는지와 댓글로
+     답하는 길을 적는다. 화면이 숨기는 것이 아니라 자료가 안 오는 것이라,
+     개발자 도구를 열어도 나오지 않는다. */
+  function closeWho() {
+    var el = document.getElementById("who-pop");
+    if (el) el.remove();
+    document.removeEventListener("keydown", whoEsc);
+  }
+  function whoEsc(e) { if (e.key === "Escape") closeWho(); }
+
+  async function openWho(uid, name) {
+    closeWho();
+    var wrap = document.createElement("div");
+    wrap.id = "who-pop";
+    wrap.className = "who-pop";
+    wrap.innerHTML =
+      '<div class="who-card" role="dialog" aria-modal="true" aria-label="' + E(name) + ' 프로필">' +
+      "<h3>" + E(name) + "</h3>" +
+      '<div id="who-body"><p class="note">불러오는 중…</p></div>' +
+      '<p style="margin:.9rem 0 0"><button class="btn sm ghost" id="who-close">닫기</button></p>' +
+      "</div>";
+    document.body.appendChild(wrap);
+    wrap.addEventListener("click", function (e) { if (e.target === wrap) closeWho(); });
+    document.getElementById("who-close").addEventListener("click", closeWho);
+    document.addEventListener("keydown", whoEsc);
+    document.getElementById("who-close").focus();
+
+    // 관리자가 아니면 행이 아예 안 온다 — 오류가 아니라 빈 결과다.
+    var r = await window.SB.from("profile").select("email").eq("id", uid).maybeSingle();
+    var mail = r && r.data && r.data.email;
+    var body = document.getElementById("who-body");
+    if (!body) return;                       // 기다리는 사이에 닫혔다
+    if (mail) {
+      var href = "mailto:" + encodeURIComponent(mail) +
+                 "?subject=" + encodeURIComponent("[토지랩] 문의");
+      body.innerHTML =
+        '<p class="who-mail">' + E(mail) + "</p>" +
+        '<p style="display:flex;gap:.5rem;flex-wrap:wrap">' +
+        '<a class="btn sm" href="' + E(href) + '">메일 보내기</a>' +
+        '<button class="btn sm ghost" id="who-copy">주소 복사</button></p>';
+      var copy = document.getElementById("who-copy");
+      if (copy) copy.addEventListener("click", function () {
+        navigator.clipboard.writeText(mail).then(function () { copy.textContent = "복사했습니다"; });
+      });
+    } else {
+      body.innerHTML =
+        '<p class="note">회원의 메일 주소는 공개하지 않습니다.</p>' +
+        // 두 줄 다 상자로 두면 작은 창이 상자 두 개로 꽉 찬다. 아랫줄은 맨 글이다.
+        '<p class="who-tip">이 글에 <b>댓글</b>을 남기면 글쓴이가 볼 수 있습니다.</p>';
+    }
+  }
+
+  // 이름 단추는 목록·상세·댓글 어디에나 생긴다. 자리마다 걸지 않고 한 번만 건다.
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest(".who-btn");
+    if (!b) return;
+    e.preventDefault();
+    openWho(b.dataset.uid, b.dataset.name || "이용자");
+  });
 
   function needLogin(what) {
     return (
@@ -80,8 +157,11 @@
               '<span class="t">' +
               '<span class="badge ' + (p.category === "notice" ? "notice" : "") + '">' + CATS[p.category] + "</span>" +
               E(p.title) + "</span>" +
-              '<span class="m">' + who(names, p.user_id) + " · " +
-              window.SBUtil.when(p.created_at) + "</span></a></li>"
+              "</a>" +
+              // 이름 단추는 **링크 밖**에 둔다. <a> 안에 <button> 을 넣으면
+              // 문법도 틀리고, 눌렀을 때 글로 넘어가 버려 창이 안 열린다.
+              '<div class="m">' + who(names, p.user_id) + " · " +
+              window.SBUtil.when(p.created_at) + "</div></li>"
             );
           })
           .join("")
@@ -212,8 +292,13 @@
   (async function () {
     if (!window.SBUtil.guard(root)) return;
     me = await window.SBUtil.me();
-    var nav = document.getElementById("nav-me");
-    if (me && nav) nav.textContent = (me.profile && me.profile.nickname) || "내 계정";
+    /* 머리띠 끝 칸은 **'내 계정'** 그대로 둔다 (지시 2026-09-17:
+       "게시판 화면에서 우측 '토지랩'은 '내 계정'으로 수정").
+
+       예전에는 여기에 내 표시 이름을 넣었다. 그러면 같은 자리가 화면마다
+       다른 말을 하고 — 지도·가이드에서는 '내 계정', 게시판에서만 이름 —
+       게다가 그 이름이 서비스 이름과 같으면(토지랩) 머리띠 왼쪽 상표와
+       겹쳐 보여 무엇을 누르는 칸인지 알 수 없게 된다. */
 
     /* 승인 전이면 목록이 **빈 채로** 뜬다. RLS 가 글을 안 내주기 때문에
        오류도 안 난다. 빈 게시판은 '글이 없구나' 로 읽히므로, 왜 비었는지를
