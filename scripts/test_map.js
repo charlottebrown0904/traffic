@@ -1163,14 +1163,19 @@ async function stubCommon(pg) {
     const moved = await page.evaluate(() => ({
       // stage-filters 는 뺐다 (요구사항 2026-09-09: "토지-개발단계는
       // 선택 제외"). 목록에 남겨 두면 없어진 것을 계속 찾는다.
-      trade: ['kind-filters', 'year-from', 'year-to',
-              'road-filter', 'parcel-only']
+      trade: ['kind-filters', 'year-from', 'year-to']
         .filter((id) => !document.getElementById(id)),
       // 용도지역 칸도 뺐다 (요구사항 2026-09-10: "실거래 표시에서
       // 용지역은 삭제합니다. 항상 전체 표기 함"). 되살아나면 잡는다 —
       // 되살아나는 순간 처음 화면에서 스물두 종이 다시 빠진다.
+      //
+      // 도로 접함(road-filter · land-box)과 지번 좌표 토글(parcel-only)도
+      // 2026-09-17 지시로 뺐다. 같은 목록에 넣어 되살아나면 잡는다 —
+      // parcel-only 가 되살아나면 '숨김이 기본' 이라는 약속이 조용히
+      // 토글로 되돌아간다.
       gone: ['stage-filters', 'lu-core',
-             'land-use-filters', 'lu-all', 'lu-none']
+             'land-use-filters', 'lu-all', 'lu-none',
+             'road-filter', 'land-box', 'parcel-only']
         .filter((id) => document.getElementById(id)),
       ic: ['tg-year', 'tg-vehicle', 'tier-filters', 'band-legend']
         .filter((id) => !document.getElementById(id)),
@@ -1258,42 +1263,24 @@ async function stubCommon(pg) {
     check('같은 분류를 다시 누르면 닫힌다', again.shut && !again.chipOn);
 
     console.log();
-    console.log('4-C. 토지 하위 필터를 켜면 토지도 같이 켜진다');
-    // 보고된 문제(2026-09-08): "제2종일반주거지역 처럼 일부 용도지역
-    // 클릭 시 지도에 표기되지 않습니다."
+    console.log('4-C. 토지 하위 필터가 하나도 안 남았다');
+    // 예전에는 '토지 하위 필터를 켜면 토지도 같이 켜진다'(ensureLandOn)를
+    // 봤다. 그 덫(2026-09-08 보고: 조건을 켜도 토지가 꺼져 있어 지도가
+    // 비던 것)을 만들던 칸이 셋 다 없어졌다 — 개발단계(2026-09-09) ·
+    // 용도지역(2026-09-10) · 도로 접함(2026-09-17).
     //
-    // 고장이 아니라 덫이었다. 용도지역·개발단계·도로접은 **토지에만 거는
-    // 조건**인데, 물건 종류에서 '토지' 가 꺼져 있으면(처음이 그렇다)
-    // 아무리 켜도 걸러낼 토지가 없다. 화면은 아무 말도 안 하고 비어 있다.
-    //
-    // 용도지역 칸은 뺐다 (요구사항 2026-09-10). 덫이 사라진 것은
-    // 아니다 — 도로 접함이 같은 성격의 조건으로 남아 있다.
+    // 덫 자체가 사라졌으므로 덫을 피하는 장치도 지웠다. 되살아나면
+    // 잡는다 — 하위 필터를 다시 넣는 날 ensureLandOn 도 같이 돌아와야
+    // 한다는 뜻이다.
     await openCat('trade');
-    const trap = await page.evaluate(() => {
-      const kinds = document.getElementById('kind-filters');
-      const land = [...kinds.querySelectorAll('input')]
-        .find((i) => i.dataset.key === 'land');
-      // 일부러 토지를 끈 채로 시작한다 (처음 화면이 그렇다).
-      if (land.checked) land.click();
-      const before = land.checked;
-      const rsel = document.getElementById('road-filter');
-      rsel.value = 'ok';
-      rsel.dispatchEvent(new Event('change'));
-      return { before, after: land.checked, picked: rsel.value };
-    });
-    check('토지가 꺼진 채로 시작한다 (그것이 덫이었다)', trap.before === false);
-    check('도로 접함을 고르면 토지도 켜진다',
-          trap.after === true, `${trap.picked} → 토지 ${trap.after}`);
-    // 뒤 절들이 '처음 화면' 을 본다. 여기서 만진 것을 되돌려 놓는다 —
-    // 안 그러면 이 검사가 다음 검사를 깨뜨린다.
-    await page.evaluate(() => {
-      const rsel = document.getElementById('road-filter');
-      rsel.value = 'all';
-      rsel.dispatchEvent(new Event('change'));
-      const land = [...document.querySelectorAll('#kind-filters input')]
-        .find((i) => i.dataset.key === 'land');
-      if (land.checked) land.click();
-    });
+    const trap = await page.evaluate(() => ({
+      road: !!document.getElementById('road-filter'),
+      landBox: !!document.getElementById('land-box'),
+      parcelOnly: !!document.getElementById('parcel-only'),
+    }));
+    check('도로 접함 칸이 없다', !trap.road);
+    check('토지 묶음(land-box)이 없다', !trap.landBox);
+    check('지번 좌표 토글이 없다 (숨김이 기본이다)', !trap.parcelOnly);
 
     console.log();
     console.log('4-B. 거래 연도를 좌/우 손잡이로');
@@ -1361,14 +1348,23 @@ async function stubCommon(pg) {
           .filter((e) => e.id !== 'deal-year-note')
           .filter((e) => vis(e) && e.textContent.trim().length > 40).length,
         live: (document.getElementById('deal-year-note') || {}).textContent || '',
+        // 실거래 표시 묶음은 물음표를 하나도 안 갖는다 (2026-09-17).
+        tradeDots: document.querySelectorAll(
+          '.sheet-pane[data-cat="trade"] .info-dot').length,
       };
     });
-    check('제목마다 물음표 단추가 있다', why.buttons >= 5, `${why.buttons}개`);
+    // 실거래 표시 묶음의 물음표 넷은 지웠다 (요구사항 2026-09-17:
+    // "물건 종류 / 지도에 적을 것 / 거래 연도 3가지 설명 삭제" · "도로
+    // 접함 내용 전체 삭제"). 나머지 묶음(IC·실거래 가격·개발)의 설명은
+    // 그대로다 — 그쪽은 지우라는 말이 없었다.
+    check('남은 제목에는 물음표 단추가 있다', why.buttons >= 4, `${why.buttons}개`);
     check('단추가 물음표 하나다', why.labels.every((t) => t === '?'),
           why.labels.join(''));
     check('처음에는 다 접혀 있다 (필터부터 보이게)', why.openAtStart === 0,
           `${why.openAtStart}개 펼쳐짐`);
-    check('접어도 설명은 지우지 않는다', /1\.7배/.test(why.text) && /계획관리/.test(why.text));
+    check('접어도 남긴 설명은 지우지 않는다', /계획관리/.test(why.text));
+    check('실거래 표시 묶음에는 물음표가 없다', why.tradeDots === 0,
+          `${why.tradeDots}개 남음`);
     // 관리지역이 왜 따로 있는지도 여기서 답한다 (2006~2010년의 잔재).
     check('관리지역이 왜 따로 있는지 적어 둔다', /2006~2010/.test(why.text));
     check('접고 나면 긴 줄글이 안 남는다', why.loose === 0, `${why.loose}줄`);
@@ -1377,8 +1373,16 @@ async function stubCommon(pg) {
     check('표본이 몇 건인지는 접지 않는다',
           /건/.test(why.live) && why.live.length > 10, why.live.slice(0, 70));
 
+    // **실거래 표시 묶음에는 이제 물음표가 없다** (2026-09-17). 펼침·접힘은
+    // 물음표가 남아 있는 묶음(IC)에서 본다 — 열려 있는 묶음을 그냥 집으면
+    // 이 검사가 '기능이 깨졌다' 가 아니라 '단추가 없다' 로 터진다.
+    await page.evaluate(() => {
+      document.querySelector('.cat[data-cat="ic"]').click();
+    });
+    await page.waitForTimeout(150);
     const whyOpen = await page.evaluate(() => {
       const b = document.querySelector('.sheet-pane:not([hidden]) .info-dot');
+      if (!b) return { missing: true };
       b.click();
       const body = b.closest('h2, h3').nextElementSibling;
       return { open: !body.hidden, on: b.classList.contains('is-on'),
@@ -1389,6 +1393,7 @@ async function stubCommon(pg) {
           JSON.stringify(whyOpen));
     const whyShut = await page.evaluate(() => {
       const b = document.querySelector('.sheet-pane:not([hidden]) .info-dot');
+      if (!b) return false;
       b.click();
       return b.closest('h2, h3').nextElementSibling.hidden;
     });
@@ -2216,11 +2221,15 @@ async function stubCommon(pg) {
             `토지 ${land.length} · 공장 ${fac.length}`);
       check('종류대로 붙는다 (용도지역이 아니라)',
             land.every((o) => o.kind === 'land') && fac.every((o) => o.kind === 'factory'));
-      // 법정동 중심점은 ±1~2km 라 '그 자리' 가 아니다. 옅게 찍어 구별한다.
+      // 법정동 중심점은 ±1~2km 라 '그 자리' 가 아니다. **이제는 옅게
+      // 찍는 대신 아예 안 찍는다** (요구사항 2026-09-17: "정확한 주소가
+      // 안찍힌 물건은 일단 모두 숨김 처리"). 옅게 찍어 구별하던 규칙을
+      // 사용자가 뒤집은 것이라, 검사도 뒤집어 못 박는다 — 한 점이라도
+      // 섞이면 '자리를 못 믿을 점' 이 조용히 지도에 돌아온 것이다.
       const coarse = tradeStyle.filter((o) => o.geocodeLevel !== 'parcel');
-      check('거친 좌표는 옅게 찍는다',
-            coarse.every((o) => /trade-coarse/.test(o.html)),
-            `거친 것 ${coarse.length}개`);
+      check('지번 좌표가 아닌 거래는 아예 안 찍는다',
+            coarse.length === 0,
+            `섞인 것 ${coarse.length}개`);
       // 보고된 문제(2026-09-04): "실거래 및 매물 표시는 IC 아래로."
       // 무리를 붙이는 순서로는 못 고친다 — Leaflet 은 divIcon 마커를
       // markerPane(600)에, 원을 overlayPane(400)에 그려서 거래가 항상
@@ -5015,8 +5024,18 @@ async function stubCommon(pg) {
           geocode_level: 'parcel', stage: '개발완료',
           road_side: '맹지', car_ok: 'N', parcel_shape: '가로장방',
           parcel_slope: '평지', official_price: 60000 },
-        // IC 에서 먼 곳 — 법정동 중심점 좌표. 예전에는 좌표가 아예 없어
-        // 지도에서 통째로 빠지던 종류다.
+        // 지번 좌표인데 **필지 특성만 아직 안 붙은** 거래. 전국의 22.3%
+        // 만 조사돼 있으므로 실제 자료에서는 이쪽이 다수다. 말풍선이
+        // '조사 전' 이라고 말하는지를 이 건으로 본다 — 예전에는 아래
+        // 무안군 건으로 봤는데, 그것이 법정동 중심점이라 이제 안 그려진다.
+        { kind: 'land', lat: 37.6, lon: 127.6, deal_year: 2025, deal_month: 11,
+          price_per_m2: 120000, price_krw: 120000000, area_m2: 1000,
+          sido: '경기도', sigungu: '용인시', umd: '원삼면', jibun: '45',
+          jimok: '답', land_use: '자연녹지지역', deal_type: '중개거래',
+          geocode_level: 'parcel', stage: '원지' },
+        // IC 에서 먼 곳 — 법정동 중심점 좌표. 좌표가 아예 없어 빠지던 것을
+        // 살렸다가(2026-09-14), 자리를 못 믿어 다시 숨긴다(2026-09-17).
+        // **일부러 남겨 둔다** — 숨기는 규칙이 도는지 볼 표본이 있어야 한다.
         { kind: 'land', lat: 34.8, lon: 126.4, deal_year: 2025, deal_month: 1,
           price_per_m2: 30000, price_krw: 45000000, area_m2: 1500,
           sido: '전라남도', sigungu: '무안군', umd: '삼향읍', jibun: '901',
@@ -5074,36 +5093,26 @@ async function stubCommon(pg) {
       await page2.waitForTimeout(300);
 
       const styles = await page2.evaluate(() => window.__tradeStyles || []);
-      // 여덟이다 — 공장계 넷 + 토지 넷. 용도지역 칸을 없애기 전에는
-      // 일곱이었다 (요구사항 2026-09-10). 농림지역 한 건이 기본값에서
-      // 걸러져 안 보였던 것이고, 그 한 건이 이 숫자로 돌아왔다.
-      check('고른 기간의 거래가 그려진다', styles.length === 8,
+      // **여덟이다.** 넣은 아홉 건 중 법정동 중심점(umd) 한 건이 빠진다
+      // (요구사항 2026-09-17: "정확한 주소가 안찍힌 물건은 일단 모두 숨김
+      // 처리"). 표본에 umd 한 건을 **일부러 남겨 둔다** — 숨기는 규칙이
+      // 도는지 볼 것이 없으면 이 검사는 아무것도 안 본 셈이 된다.
+      check('고른 기간의 지번 좌표 거래가 그려진다', styles.length === 8,
             `${styles.length}개`);
-      // 반경 밖(무안군) 거래도 그려져야 한다. 예전에는 좌표가 아예 없어
-      // 지도에서 통째로 빠졌다.
-      check('IC 반경 밖 거래도 그려진다',
-            styles.some((x) => x.geocodeLevel === 'umd'),
+      // 반경 밖(무안군) 거래는 법정동 중심점이라 이제 안 그린다. 예전에는
+      // '좌표가 아예 없어 빠지던 것을 살렸다' 를 여기서 봤는데, 지금은
+      // 살린 뒤 **자리를 못 믿어 뺀** 것이다 — 뜻이 다르므로 검사도 바꾼다.
+      check('법정동 중심점 거래는 안 그린다',
+            !styles.some((x) => x.geocodeLevel === 'umd'),
             styles.map((x) => x.geocodeLevel).join(','));
       check('거래 표식을 누를 수 있다',
             styles.length > 0 && styles.every((x) => x.interactive === true));
 
-      // 법정동 중심점 거래는 흩어 놓는다 (2026-09-14 지시).
-      //
-      // 지역 태그도 같은 중심점에 앉으므로, 흩지 않으면 단가 태그가
-      // 거래 태그에 가린다. 지번 좌표 거래는 **건드리지 않는다** — 그쪽은
-      // 자리가 정확한데 흔들면 거짓이 된다.
-      const coarseAt = styles.filter((x) => x.geocodeLevel === 'umd' && x.at);
+      // 법정동 중심점 거래를 흩어 그리던 규칙(2026-09-14)은 그릴 거래가
+      // 없어져 돌지 않는다. 코드는 남아 있다 — 다시 보여주기로 하면
+      // visibleTrades() 의 한 줄만 지우면 되고, 그때 이 검사도 되살린다.
       const fineAt = styles.filter((x) => x.geocodeLevel === 'parcel' && x.at);
-      const first = coarseAt[0];
-      const off = (first && first.srcAt)
-        ? [Math.abs(first.at[0] - first.srcAt[0]), Math.abs(first.at[1] - first.srcAt[1])]
-        : [0, 0];
-      // 300m 안쪽으로만 흩는다 — 이 점의 오차(±1~2km)보다 훨씬 작다.
-      check('법정동 중심점 거래는 태그와 안 겹치게 흩어 그린다',
-            coarseAt.length > 0 && (off[0] > 1e-5 || off[1] > 1e-5)
-            && off[0] < 0.004 && off[1] < 0.005,
-            `옮긴 거리 ${off.map((v) => v.toFixed(5)).join(', ')}도`);
-      check('지번 좌표 거래는 그대로 둔다',
+      check('지번 좌표 거래는 그대로 둔다 (흔들면 거짓이 된다)',
             fineAt.length > 0 && fineAt.every((x) => x.srcAt
               && Math.abs(x.at[0] - x.srcAt[0]) < 1e-12
               && Math.abs(x.at[1] - x.srcAt[1]) < 1e-12),
@@ -5111,7 +5120,6 @@ async function stubCommon(pg) {
 
       const land = styles.find((x) => x.kind === 'land' && x.geocodeLevel === 'parcel');
       const fac = styles.find((x) => x.kind === 'factory');
-      const coarse = styles.find((x) => x.geocodeLevel === 'umd');
       check('말풍선에 주소가 들어 있다',
             !!land && /화성시/.test(land.popup) && /123-4/.test(land.popup),
             land ? land.popup.slice(0, 60) : '없음');
@@ -5127,13 +5135,13 @@ async function stubCommon(pg) {
       check('말풍선에 용도지역이 들어 있다', !!land && /계획관리/.test(land.popup));
       check('공장은 건축연도와 건물면적을 적는다',
             !!fac && /2010년/.test(fac.popup) && /건물면적/.test(fac.popup));
-      // 법정동 중심점은 실제 필지가 아니다. 지번을 적어 놓고 점을 찍으면
-      // 보는 사람은 그 자리라고 읽는다 — 땅을 보러 가는 사람에게 2km 는
-      // 다른 동네다.
-      check('법정동 중심점 거래는 실제 위치가 아니라고 말한다',
-            !!coarse && /법정동 중심점/.test(coarse.popup)
-            && /실제 필지 위치가 아닙니다/.test(coarse.popup));
-      check('지번 좌표에는 그 경고가 없다',
+      // 법정동 중심점은 실제 필지가 아니다. 예전에는 말풍선에 그렇다고
+      // 적어 두고 옅게 찍었는데, 이제는 아예 안 찍는다 (2026-09-17).
+      // 그러니 '경고 문구가 붙는가' 대신 **그런 점이 없는가**를 본다.
+      check('자리를 못 믿을 점이 지도에 없다',
+            !styles.some((x) => x.geocodeLevel !== 'parcel'),
+            styles.map((x) => x.geocodeLevel).join(','));
+      check('남은 점에는 위치 경고가 없다',
             !!land && !/실제 필지 위치가 아닙니다/.test(land.popup));
 
       // 표본이라는 사실을 화면이 말하는가.
@@ -5219,21 +5227,23 @@ async function stubCommon(pg) {
        * 농림지역 거래가 통째로 빠져 있었다. 칸을 없앤 것이 아니라
        * **조건을 안 거는 것**이라, 켜고 끌 것 없이 다 보여야 한다. */
       const landUi = await page2.evaluate(() => ({
-        hidden: document.getElementById('land-box').hidden,
+        landBox: !!document.getElementById('land-box'),
         box: !!document.getElementById('land-use-filters'),
         all: !!document.getElementById('lu-all'),
         none: !!document.getElementById('lu-none'),
         road: !!document.getElementById('road-filter'),
       }));
-      // 도로 접함은 여기 남아 있으므로 묶음 자체는 그대로 선다.
-      check('토지 필터 묶음이 보인다', landUi.hidden === false);
-      check('도로 접함은 그대로 있다', landUi.road);
+      // 도로 접함까지 빠지면서 묶음(land-box) 자체가 없어졌다 (2026-09-17).
+      check('토지 하위 필터 묶음이 통째로 없다', !landUi.landBox && !landUi.road,
+            `묶음 ${landUi.landBox} · 도로 ${landUi.road}`);
       check('용도지역 칸이 없다', !landUi.box && !landUi.all && !landUi.none,
             `칸 ${landUi.box} · 전체 ${landUi.all} · 해제 ${landUi.none}`);
 
-      // 아무것도 안 만졌는데 네 건이 다 보인다 — 계획관리 둘(2024·2025),
-      // 농림 하나, 자연녹지 하나. **농림이 들어 있는 것이 핵심이다**:
-      // 예전 기본값에서는 이 한 건이 빠져 있었다.
+      // 아무것도 안 만졌는데 네 건이 다 보인다 — 계획관리 둘(2024·2025) ·
+      // 농림 하나 · 자연녹지 하나(용인시). **농림이 들어 있는 것이
+      // 핵심이다**: 예전 기본값에서는 이 한 건이 빠져 있었다. 무안군
+      // 자연녹지는 법정동 중심점이라 2026-09-17 지시로 빠진다 —
+      // 용도지역 때문이 아니다.
       const allLu = await page2.evaluate(() => {
         const t = (window.__tradeStyles || []);
         return {
@@ -5256,58 +5266,23 @@ async function stubCommon(pg) {
             !!landPop && /\(원지\)|\(개발완료\)/.test(landPop.popup),
             landPop ? (landPop.popup.match(/지목[^<]*<[^>]*>[^<]*</) || [''])[0] : '없음');
 
-      /* ── 토지: 도로 접함 (2026-09-07 지시) ──
-       * "도로를 접하는 가가 제일 중요합니다." 실측이 크기까지 확인했다 —
-       * 차가 들어가느냐가 단가를 남이천 +66%, 안성 +67% 가른다. */
-      const roadUi = await page2.evaluate(() => {
-        const s = document.getElementById('road-filter');
-        return { value: s.value, disabled: s.disabled,
-                 options: [...s.options].map((o) => o.value),
-                 texts: [...s.options].map((o) => o.textContent.trim()) };
-      });
-      check('도로 접함 필터가 선다',
-            roadUi.options.join(',') === 'all,ok,no', roadUi.options.join(','));
-      check('기본값은 전체다 — 조사 안 된 거래를 감추지 않는다',
-            roadUi.value === 'all' && roadUi.disabled === false, roadUi.value);
-      check('칸마다 건수를 적는다',
-            roadUi.texts.some((t) => /61,764건/.test(t))
-            && roadUi.texts.some((t) => /117,711건/.test(t)),
-            roadUi.texts.join(' | '));
-
-      // 차 진입 가능만 고르면 그것만 남는다. 공장은 그대로여야 한다 —
-      // 도로 접함은 토지에만 거는 조건이다.
-      // 필터가 아래 시트로 옮겨졌다 (2026-09-08). 열어야 만질 수 있다.
-      await page2.evaluate(() => {
-        const b = document.querySelector('.cat[data-cat="trade"]');
-        if (b && !b.classList.contains('is-on')) b.click();
-      });
-      await page2.waitForTimeout(150);
-      await page2.selectOption('#road-filter', 'ok');
-      await page2.waitForTimeout(300);
-      const roadOk = await page2.evaluate(() => (window.__tradeStyles || []).slice());
-      check('차 진입 가능만 고르면 그것만 남는다',
-            roadOk.filter((x) => x.kind === 'land').length === 2
-            && roadOk.filter((x) => x.kind === 'factory').length === 4,
-            `토지 ${roadOk.filter((x) => x.kind === 'land').length} · `
-            + `공장계 ${roadOk.filter((x) => x.kind === 'factory').length}`);
-      check('조사 안 된 거래를 차 진입 가능으로 세지 않는다',
-            roadOk.filter((x) => x.kind === 'land').length === 2
-            && roadOk.filter((x) => x.kind === 'land')
-              .every((x) => /세로한면\(가\)/.test(x.popup)),
-            roadOk.filter((x) => x.kind === 'land').length + '건');
-
-      await page2.selectOption('#road-filter', 'no');
-      await page2.waitForTimeout(300);
-      const roadNo = await page2.evaluate(() => (window.__tradeStyles || []).slice());
-      // **조사 안 된 것을 맹지로 몰지 않는다.** 그러면 아직 안 받은 땅이
-      // 전부 최악으로 셈해진다 — 지금은 그것이 대부분이다.
-      check('맹지만 고르면 조사 안 된 거래는 안 딸려 온다',
-            roadNo.filter((x) => x.kind === 'land').length === 1
-            && /맹지/.test(roadNo.find((x) => x.kind === 'land').popup),
-            `토지 ${roadNo.filter((x) => x.kind === 'land').length}건`);
-
-      await page2.selectOption('#road-filter', 'all');
-      await page2.waitForTimeout(300);
+      /* ── 토지: 도로 접함으로 **거르지는 않는다** (요구사항 2026-09-17) ──
+       *
+       * "도로 접함 내용 전체 삭제". 2026-09-07 에 세운 칸이다 — 차가
+       * 들어가느냐가 단가를 남이천 +66%, 안성 +67% 가른다는 실측이 근거
+       * 였다. 그 실측이 틀린 것은 아니고, **화면에서 고르는 칸을 뺀** 것이다.
+       *
+       * 자료(car_ok · road_side)는 그대로 실려 오고 말풍선도 그대로 적는다
+       * (바로 아래 검사). 없어진 것은 거르는 조건뿐이다. */
+      const roadGone = await page2.evaluate(() => ({
+        sel: !!document.getElementById('road-filter'),
+        drawn: (window.__tradeStyles || []).length,
+      }));
+      check('도로 접함 고르는 칸이 없다', !roadGone.sel);
+      // 거르는 조건이 사라졌으므로 맹지(여주)도 그대로 남아 있어야 한다.
+      // 조건이 남아 있었다면 여기서 토지가 줄어든다.
+      check('맹지 거래도 안 걸러진다', roadGone.drawn === 8,
+            `${roadGone.drawn}개`);
 
       // 말풍선이 도로접·형상·공시지가를 적는가.
       const roadPop = await page2.evaluate(() =>
@@ -5331,7 +5306,7 @@ async function stubCommon(pg) {
       // **조사 안 된 것을 맹지처럼 보이게 두지 않는다.** 비어 있는 것과
       // '맹지' 는 전혀 다른데, 아무 말도 없으면 읽는 사람은 둘을 못 가른다.
       const bare = await page2.evaluate(() =>
-        (window.__tradeStyles || []).find((x) => /무안군/.test(x.popup)));
+        (window.__tradeStyles || []).find((x) => /용인시/.test(x.popup)));
       check('필지 특성이 없는 토지는 조사 전이라고 말한다',
             !!bare && /아직 조사 전/.test(bare.popup)
             && /맹지라는 뜻이 아닙니다/.test(bare.popup),
@@ -5582,7 +5557,23 @@ async function stubCommon(pg) {
 
     // 낮은 배율에서 아예 안 그리는 길이 있는가.
     check('배율이 낮으면 그리기 전에 되돌아간다',
-          /map\.getZoom\(\) < TRADE_MIN_ZOOM/.test(app), '');
+          /map\.getZoom\(\) < tradeMinZoomNow\(\)/.test(app), '');
+
+    /* **무작위 표본은 한 칸 더 당겨야 나온다** (요구사항 2026-09-17).
+     *
+     *   "거래 연도 설정 시 지금 보이는 화면의 물건만 로딩(무작위 표본이
+     *    아님) … 로딩 부하때문에 무작위면 배율을 올릴 때만 나타나게 하기로
+     *    변경."
+     *
+     * 다섯 해가 넘으면 그 해 파일 대신 전 기간 표본(state.trades)으로
+     * 물러나는데, 그 표본은 전국에 성기게 흩어져 있어 **지금 보고 있는
+     * 곳과 무관하다.** 화면에 걸치는 면적이 작아질수록 그 어긋남도 줄어든다 —
+     * 그래서 표본일 때만 문턱을 글자 배율(z16)까지 올린다. */
+    check('무작위 표본은 문턱이 더 높다',
+          /state\.yearWide \? TRADE_LABEL_ZOOM : TRADE_MIN_ZOOM/.test(app), '');
+    check('왜 안 보이는지 화면이 말한다 (기간을 좁히라고)',
+          /이 표본은 <strong>더 당겨야<\/strong> 나타납니다/.test(app)
+          && /기간을 5년 이내로 좁히면/.test(app), '');
 
     /* 고속도로를 **선이 아니라 필지로** (2026-09-16 지시).
      *

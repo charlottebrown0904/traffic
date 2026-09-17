@@ -67,11 +67,8 @@ const state = {
   dealYear: 'all', tradeCache: {}, tradesShown: null,
   activeStages: new Set(), activeLandUse: new Set(),
   hasStageFilter: false, hasLandUseFilter: false,
-  // 'all' | 'ok' | 'no'. 기본은 'all' — 필지 특성을 아직 전국의 일부만
-  // 훑었으므로, 여기서 걸면 조사 안 된 거래가 통째로 사라진다.
-  roadFilter: 'all',
   activeKinds: new Set(),
-  parcelOnly: false, selected: null, tiers: null,
+  selected: null, tiers: null,
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
   apiAvailable: false, verdicts: null,
   verdictSets: {}, verdictKind: 'land',
@@ -545,7 +542,6 @@ function buildFilters() {
     input.type = 'checkbox';
     // 처음에는 꺼 둔다 (state.activeKinds 가 비어 있는 것과 짝이 맞아야 한다).
     input.checked = state.activeKinds.has(key);
-    // 토지 하위 필터가 이 칸을 찾아 켤 수 있어야 한다 (ensureLandOn).
     input.dataset.key = key;
     input.addEventListener('change', () => {
       input.checked ? state.activeKinds.add(key) : state.activeKinds.delete(key);
@@ -559,84 +555,17 @@ function buildFilters() {
     kinds.append(label);
   });
 
-  /* **토지 하위 필터를 만지면 토지를 켠다.**
-   *
-   * 보고된 문제(2026-09-08): "제2종일반주거지역 처럼 일부 용도지역 클릭 시
-   * 지도에 표기되지 않습니다."
-   *
-   * 고장이 아니라 덫이었다. 용도지역·개발단계·도로접은 **토지에만 거는
-   * 조건**인데, 물건 종류에서 '토지' 가 꺼져 있으면(처음이 그렇다) 아무리
-   * 켜도 걸러낼 토지가 없다. 화면은 아무 말도 안 하고 비어 있다.
-   *
-   * 조건을 켠 사람은 그것을 보고 싶은 것이다. 토지를 같이 켠다. */
-  function ensureLandOn() {
-    if (state.activeKinds.has('land')) return;
-    state.activeKinds.add('land');
-    const box = document.getElementById('kind-filters');
-    if (box) {
-      box.querySelectorAll('input').forEach((i) => {
-        if (i.dataset.key === 'land') i.checked = true;
-      });
-    }
-  }
-
-  /* ── 토지: 개발단계 · 용도지역 ──
-   *
-   * 요구사항(2026-09-07). 토지 표본의 78% 가 전·답·임야인데, 그
-   * 값은 개발 가능 여부·도로접·모양이 정한다. 실거래 자료는 그 셋을
-   * 하나도 안 준다(scripts/land_shape_probe.py 가 확인 중). 우리가 쥔
-   * 유일한 단서가 지목이라, 지목으로 개발단계를 갈라 놓고 고르게 한다.
-   *
-   * 칸은 자료에서 만든다. 없는 것은 칸도 안 생긴다. */
-  const landBox = document.getElementById('land-box');
-  const stageMix = state.meta.stage_mix || {};
-  const luMix = state.meta.land_use_mix || {};
-  // 토지가 아예 없으면 이 묶음을 통째로 숨긴다.
-  //
-  // **둘 다 비었을 때만 숨긴다.** 예전에는 stage_mix 만 봤는데, 개발단계
-  // 칸을 뺀 지금(2026-09-09) 그 하나에 매달아 두면 개발단계 자료가
-  // 없다는 이유로 도로접함·용도지역까지 통째로 사라진다.
-  if (landBox) {
-    landBox.hidden = !Object.keys(stageMix).length
-                     && !Object.keys(luMix).length;
-  }
-
-  const nfmt = (v) => v.toLocaleString('ko-KR');
-
   // 개발단계 칸은 뺐다 (요구사항 2026-09-09: "토지-개발단계는 선택
   // 제외"). state.hasStageFilter 가 false 로 남으므로 visibleTrades 가
   // 이 조건을 통째로 건너뛴다 — **필터가 없는 것**이지 전부 끈 것이
   // 아니다. 그 둘은 다르고, 그 구분을 검사가 이미 못 박아 두었다.
   state.hasStageFilter = false;
 
-  /* 도로 접함 — 요구사항(2026-09-07): "도로를 접하는 가가 제일
-   * 중요합니다." 실측이 크기까지 확인했다: 차가 들어가느냐가 단가를
-   * 남이천 +66%, 안성 +67% 가른다. 두 표본에서 같은 크기다.
-   *
-   * 칸 이름 옆에 건수를 적는다. 지금은 '조사 안 됨' 이 압도적인데,
-   * 그것을 안 보여 주면 '차 진입 가능' 을 골랐을 때 지도가 텅 비는
-   * 이유를 알 수가 없다. */
-  const rsel = $('#road-filter');
-  if (rsel) {
-    const roadMix = state.meta.road_mix || {};
-    const cnt = (k) => (typeof roadMix[k] === 'number'
-      ? ` (${nfmt(roadMix[k])}건)` : '');
-    const known = (roadMix['차 진입 가능'] || 0) + (roadMix['진입 어려움'] || 0);
-    rsel.innerHTML =
-      `<option value="all">전체${known ? '' : ' — 아직 조사 전'}</option>`
-      + `<option value="ok">차 진입 가능${cnt('차 진입 가능')}</option>`
-      + `<option value="no">진입 어려움 · 맹지${cnt('진입 어려움')}</option>`;
-    rsel.value = state.roadFilter;
-    // 조사된 것이 하나도 없으면 고를 수 있게 두지 않는다 — 골라 봐야
-    // 지도가 비고, 왜 비는지는 안 보인다.
-    rsel.disabled = !known;
-    rsel.addEventListener('change', () => {
-      state.roadFilter = rsel.value;
-      // 도로 접함도 토지에만 거는 조건이다 (ensureLandOn 참조).
-      if (rsel.value !== 'all') ensureLandOn();
-      refreshMap();
-    });
-  }
+  // 도로 접함 칸도 뺐다 (요구사항 2026-09-17: "도로 접함 내용 전체
+  // 삭제"). #road-filter · #land-box 는 이제 화면에 없다 — 토지 하위
+  // 필터가 하나도 안 남았으므로 그 필터가 켜졌을 때 '토지'를 대신 켜
+  // 주던 ensureLandOn() 도 같이 지웠다. 남기면 아무도 안 부르는 죽은
+  // 함수였다.
 
   // 용도지역 칸은 뺐다 (요구사항 2026-09-10: "실거래 표시에서 용지역은
   // 삭제합니다. 항상 전체 표기 함").
@@ -712,10 +641,8 @@ function buildFilters() {
     paint();
   }
 
-  $('#parcel-only').addEventListener('change', (e) => {
-    state.parcelOnly = e.target.checked;
-    refreshMap();
-  });
+  // #parcel-only 토글은 없앴다 (요구사항 2026-09-17). geocode_level 이
+  // parcel 이 아닌 거래는 visibleTrades() 가 항상 거른다 — 아래 참조.
 
   // 처음 그릴 때도 개수를 채운다. 안 하면 전부 0 으로 보인다.
   updateTierCounts();
@@ -2031,6 +1958,28 @@ async function loadTradeYears(from, to) {
   state.tradesShown = out;
 }
 
+/* 지금 이 배율에서 실거래를 그려도 되는가.
+ *
+ * 요구사항(2026-09-17): "거래 연도 설정 시 지금 보이는 화면의 물건만
+ * 로딩(무작위 표본이 아님), 무작위면 내가 보고 싶은 곳이 아님 …
+ * 로딩 부하때문에 무작위면 배율을 올릴 때만 나타나게 하기로 변경."
+ *
+ * **진짜 바람은 '화면에 보이는 지역의 실제 자료' 지 표본이 아니다.**
+ * 그런데 trades-{year}.json 은 해마다 전국 파일이라 지역으로 쪼개져
+ * 있지 않다 — 좌표로 미리 나눈 조각이 없다(땅값 분위지도의 umd_index
+ * 같은 bbox 색인이 실거래에는 없다). 그 조각을 새로 만드는 일은 이
+ * 자리에서 손볼 수 있는 크기가 아니라, 사용자가 정한 절충안을 그대로
+ * 옮긴다 — 무작위 표본(yearWide) 은 **그대로 두되**, 그 표본이 나타나는
+ * 배율을 평소(z14, TRADE_MIN_ZOOM)보다 올린다. 화면에 걸치는 면적이
+ * 작아질수록 그 안에 든 무작위 표본이 실제와 어긋나는 정도도 줄고,
+ * 좌표당 그리기 비용(로딩 부하)도 준다.
+ *
+ * TRADE_LABEL_ZOOM(연속지적도 필지 경계가 뜨는 배율)을 그대로 빌린다 —
+ * 새 상수를 하나 더 늘리지 않고, 이미 근거가 있는 문턱에 얹는다. */
+function tradeMinZoomNow() {
+  return state.yearWide ? TRADE_LABEL_ZOOM : TRADE_MIN_ZOOM;
+}
+
 /* 표본이라는 사실을 화면에 적는다.
  *
  * 이 한 줄이 없으면 '2019년 계획관리 거래는 이 열 점이 전부' 로 읽힌다.
@@ -2079,6 +2028,18 @@ function updateYearNote() {
       + ' 땅값을 색으로 보여주고 있습니다.</em>';
     return;
   }
+  // **무작위 표본(yearWide)은 한 번 더 당겨야 나타난다** (요구사항
+  // 2026-09-17 — tradeMinZoomNow() 주석 참조). 일반 실거래는 이미
+  // 그려질 배율인데 표본만 안 보이면 '이 동네만 없다' 로 읽힌다 — 이유를
+  // 짚어 준다.
+  if (state.yearWide && map && map.getZoom() < TRADE_LABEL_ZOOM) {
+    node.innerHTML = text
+      + ' · <em>선택한 기간이 넓어 전 기간 표본으로 보여드리는 중입니다 —'
+      + ' 이 표본은 <strong>더 당겨야</strong> 나타납니다 (필지 구획이'
+      + ' 보이는 배율부터). 기간을 5년 이내로 좁히면 지금 배율에서도'
+      + ' 바로 보입니다.</em>';
+    return;
+  }
   // 화면에 실제로 몇 개가 그려졌는지. 잘렸으면 반드시 말한다.
   if (typeof state.tradeInView === 'number') {
     text += ` · 지금 보이는 영역 ${n(state.tradeInView)}건`;
@@ -2114,7 +2075,14 @@ function visibleTrades() {
   // 연도는 파일을 고를 때 이미 갈렸다. 여기서 또 자르지 않는다.
   return rows.filter((t) => {
     if (!state.activeKinds.has(tradeFilterKey(t))) return false;
-    if (state.parcelOnly && t.geocode_level !== 'parcel') return false;
+    // 정확한 지번 좌표가 없는 거래(법정동 중심점)는 **항상** 뺀다
+    // (요구사항 2026-09-17: "정확한 주소가 안찍힌 물건은 일단 모두 숨김
+    // 처리"). 예전에는 #parcel-only 를 체크해야만 걸리는 토글이었다 —
+    // 이제 고정값이다. tradeLatLng()·tradeMarker() 의 coarse 흩뿌리기·
+    // is-coarse 스타일·pop-warn 문구는 그대로 남아 있지만 이 필터를
+    // 통과한 거래가 없으니 지금은 부르지 않는다 — 나중에 다시 보여주기로
+    // 하면 이 한 줄만 지우면 된다.
+    if (t.geocode_level !== 'parcel') return false;
     // 개발단계·용도지역은 **토지에만** 건다. 공장·창고에 걸면
     // 토지 칸을 만질 때마다 공장이 같이 사라진다.
     //
@@ -2122,21 +2090,15 @@ function visibleTrades() {
     // (수집이 아직 새 코드로 안 돈 상태) 집합이 비는데, 그것을 그대로
     // 거르면 토지가 통째로 사라진다. 필터가 없는 것과 전부 끈 것은
     // 다른 상황이다 — 검사가 이것을 잡았다.
+    //
+    // 도로 접함 필터는 뺐다 (요구사항 2026-09-17: "도로 접함 내용 전체
+    // 삭제"). car_ok 값 자체는 자료에 그대로 남아 있다 — 거르는 조건만
+    // 없앴다.
     if (t.kind === 'land') {
       if (state.hasStageFilter
           && !state.activeStages.has(t.stage || '지목 미상')) return false;
       if (state.hasLandUseFilter
           && !state.activeLandUse.has(t.land_use || '용도 미상')) return false;
-      // 도로 접함. car_ok 는 파이썬이 판정해서 실어 준다 — 여기서
-      // 문자열을 다시 뜯지 않는다('세로한면(가)' 와 '(불)' 은 한 글자
-      // 차이라 갈라 두면 언젠가 어긋난다).
-      //
-      // **조사 안 된 것은 어느 쪽도 아니다.** 'ok' 를 골랐을 때 빈 값을
-      // 남기면 맹지가 섞이고, 'no' 에 남기면 아직 모르는 땅이 맹지로
-      // 몰린다. 그래서 둘 다에서 뺀다 — 고르는 순간 표본이 '조사된 것'
-      // 으로 좁아진다는 뜻이고, 그 숫자는 아래 안내가 말해 준다.
-      if (state.roadFilter === 'ok' && t.car_ok !== 'Y') return false;
-      if (state.roadFilter === 'no' && t.car_ok !== 'N') return false;
     }
     return true;
   });
@@ -2176,7 +2138,10 @@ function drawTrades() {
   // 0 으로 두지 않고 null 로 둔다 — 0 건은 '이 동네에 거래가 없다' 는
   // 뜻이고, 여기서는 '아직 안 보여줄 배율' 이라 뜻이 다르다. 안내 문구가
   // 그 둘을 갈라 말해야 한다.
-  if (map.getZoom() < TRADE_MIN_ZOOM) {
+  //
+  // 문턱은 tradeMinZoomNow() 가 정한다 — 무작위 표본(yearWide)일 때는
+  // 한 칸 더 높다 (요구사항 2026-09-17).
+  if (map.getZoom() < tradeMinZoomNow()) {
     state.tradeInView = null;
     state.tradeDrawn = 0;
     state.tradeLabelled = false;

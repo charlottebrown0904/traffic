@@ -31,7 +31,7 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 <link rel="stylesheet" href="/lib/theme.css?v=20260912a">
 <script src="/lib/theme.js?v=20260912a"></script>
 <script src="/lib/adminnav.js?v=20260912a"></script>
-<link rel="stylesheet" href="/app/style.css?v=20260916q">
+<link rel="stylesheet" href="/app/style.css?v=20260917a">
 </head>
 <body>
 
@@ -145,27 +145,17 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
       <div class="sheet-body">
 
       <!-- ── 실거래 표시 ── -->
+      <!-- 설명 팝업(물음표) 셋을 지웠다 (요구사항 2026-09-17: "물건 종류 /
+           지도에 적을 것 / 거래 연도 3가지 설명 삭제"). 칸이 무엇을 하는지는
+           이름으로 충분히 읽힌다는 판단이다. 같은 지시로 '도로 접함' 칸과
+           '지번단위 좌표만' 토글은 통째로 없앴다 — 이유는 app.js 의
+           visibleTrades() 주석에 있다. -->
       <section class="sheet-pane" data-cat="trade" hidden>
-        <h3>물건 종류
-          <button type="button" class="info-dot" aria-expanded="false"
-                  aria-label="설명 보기">?</button></h3>
-        <div class="info-pop" hidden>
-          <p><strong>공장·창고</strong>가 분석의 기준 물건입니다. 토지는
-            지목·형상·도로 조건에 따라 물건마다 값이 크게 흔들려 효과를
-            가려내기 어렵습니다.</p>
-        </div>
+        <h3>물건 종류</h3>
         <div class="checks" id="kind-filters"></div>
 
-        <h3>지도에 적을 것
-          <button type="button" class="info-dot" aria-expanded="false"
-                  aria-label="설명 보기">?</button></h3>
-        <div class="info-pop" hidden>
-          <p>거래를 <strong>눌러야만</strong> 무슨 물건인지 알 수 있으면
-            스무 건을 견주는 데 스무 번을 눌러야 합니다. 지도는 한눈에
-            견주라고 있는 것이라, 핀에 값을 적습니다.</p>
-          <p><strong>당겨 보면 핀이 뜹니다.</strong> 멀리서는 점 그대로입니다 —
-            전국에 천 개가 넘는 글자를 달면 서로 덮여 하나도 못 읽습니다.</p>
-        </div>
+        <!-- '지도에 적을 것' → '태그 편집' (요구사항 2026-09-17). -->
+        <h3>태그 편집</h3>
         <div class="lp-chips">
           <div class="lp-filter" data-filter="pin">
             <button type="button" class="lp-pill" aria-expanded="false">
@@ -175,14 +165,7 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
           </div>
         </div>
 
-        <h3>거래 연도
-          <button type="button" class="info-dot" aria-expanded="false"
-                  aria-label="설명 보기">?</button></h3>
-        <div class="info-pop" hidden>
-          <p>양끝을 잡아 <strong>범위</strong>를 정합니다. 해마다 파일이
-            따로 있어서, 넓게 잡을수록 받는 양이 늘어납니다 — 아래 줄이
-            몇 건을 받았는지 말해 줍니다.</p>
-        </div>
+        <h3>거래 연도</h3>
         <div class="year-range" id="year-range">
           <output id="year-out"></output>
           <div class="yr-track">
@@ -193,40 +176,11 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
         </div>
         <p class="hint" id="deal-year-note"></p>
 
-        <div id="land-box">
-          <h3>토지 — 도로 접함
-            <button type="button" class="info-dot" aria-expanded="false"
-                    aria-label="설명 보기">?</button></h3>
-          <div class="info-pop" hidden>
-            <p>차가 들어가는 땅과 못 들어가는 땅은 같은 동네에서도 단가가
-              <strong>1.7배</strong> 벌어집니다 (남이천 +66% · 안성 +67% 실측).
-              필지 특성은 전국의 22.3% 만 조사돼 있어 대부분이
-              <strong>조사 안 됨</strong>입니다.</p>
-          </div>
-          <label class="field">
-            <span>도로 접함</span>
-            <select id="road-filter"></select>
-          </label>
-
-          <!-- **용도지역 칸은 뺐다** (요구사항 2026-09-10: "실거래
-               표시에서 용지역은 삭제합니다. 항상 전체 표기 함").
-
-               스물다섯 종이 세로로 늘어서 왼쪽 칸의 절반을 먹고 있었고,
-               처음에 셋만 켜져 있어서 나머지 스물둘이 지도에서 빠진 채로
-               시작했다. 땅을 찾는 사람은 대개 '어느 용도지역이냐' 보다
-               '여기 뭐가 거래됐냐' 를 먼저 본다.
-
-               지운 것이 아니라 **조건 자체를 안 건다.** app.js 가
-               state.hasLandUseFilter 를 false 로 두므로 visibleTrades 가
-               이 조건을 통째로 건너뛴다 — 전부 끈 것과는 다르다.
-
-               '실거래 가격' 의 용도지역 고르기는 그대로다. 그쪽은 지도에
-               적히는 중앙값을 정하는 것이라 성격이 다르다. -->
-        </div>
-        <label class="check">
-          <input type="checkbox" id="parcel-only">
-          <span>지번단위 좌표만 <em>정밀도 높은 거래</em></span>
-        </label>
+        <!-- 정확한 지번 좌표가 없는 거래(법정동 중심점)는 항상 숨긴다
+             (요구사항 2026-09-17: "정확한 주소가 안찍힌 물건은 일단 모두
+             숨김 처리"). 토글이 아니라 고정값이다 — visibleTrades() 가
+             무조건 거른다. -->
+        <p class="hint">지번 좌표가 없는 거래(법정동 중심점)는 표시하지 않습니다.</p>
       </section>
 
       <!-- ── IC ── -->
@@ -792,12 +746,12 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="/app/config.js?v=20260905a"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/app/supabase.js?v=20260916q"></script>
-<script src="/lib/track.js?v=20260916q"></script>
+<script src="/app/supabase.js?v=20260917a"></script>
+<script src="/lib/track.js?v=20260917a"></script>
 <script src="/lib/supabase-init.js?v=20260905a"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
 <script src="/lib/access.js?v=20260912d"></script>
-<script src="/app/gate.js?v=20260916q"></script>
+<script src="/app/gate.js?v=20260917a"></script>
 </body>
 </html>
