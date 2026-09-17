@@ -4152,6 +4152,10 @@ function selectTollgate(id) {
     bandLayer.addLayer(bandRing(t.lat, t.lon, bands[i][1], i, false));
   }
   map.panTo([t.lat, t.lon]);
+  window.__detail = {
+    on: true, selected: state.selected,
+    bands: bandLayer.getLayers ? bandLayer.getLayers().length : 0,
+  };
 }
 
 /* ─────────── 상세 패널 ─────────── */
@@ -4277,11 +4281,32 @@ function showDetail(on) {
     // 칸을 닫으면 윤곽도 지운다. 카드가 없는데 파란 테두리만 남아
     // 있으면 무엇을 고른 것인지 알 길이 없다.
     drawParcelShape(null);
+    /* **반경 원도 같이 지운다** (보고된 문제 2026-09-17: "ic클릭 후 x눌러
+       닫기해도 범위는 안 사라짐").
+
+       바로 위 줄이 필지 윤곽에 대해 하던 말이 반경 원에도 그대로 맞는데,
+       원만 빠져 있었다. 지우는 자리가 딱 한 곳 있었고(IC 층을 통째로 끌
+       때) 닫기 단추는 그 길로 안 갔다. 고른 것을 푸는 곳이 두 군데가
+       되면 한 곳은 반드시 빠진다 — 이제 **닫기가 곧 선택 해제**다.
+
+       영업소 표식의 굵은 테두리도 함께 되돌린다. 원은 사라졌는데 표식만
+       굵게 남으면 '아직 뭔가 골라져 있다' 로 읽힌다. */
+    if (bandLayer) bandLayer.clearLayers();
+    if (state.selected) {
+      state.selected = null;
+      markers.forEach((m) => m.setStyle({ weight: 2 }));
+    }
   }
   // 지도가 넓어졌다 좁아졌다 하므로 Leaflet 에 알려야 한다. 안 알리면
   // 타일이 회색으로 남고 클릭 좌표가 어긋난다.
   if (map) setTimeout(() => map.invalidateSize(), 0);
-  window.__detail = { on: !!on };
+  // 검사가 '카드는 닫혔는데 원은 남았나' 를 밖에서 볼 구멍. 둘을 따로
+  // 내놓지 않으면 그 어긋남을 검사로 옮길 수가 없다.
+  window.__detail = {
+    on: !!on,
+    selected: state.selected || null,
+    bands: (bandLayer && bandLayer.getLayers) ? bandLayer.getLayers().length : 0,
+  };
 }
 
 function statCard(key, value, signed) {

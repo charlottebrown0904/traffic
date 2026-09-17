@@ -364,9 +364,31 @@ def _zone_names(p: dict) -> list[str]:
 # 3. 비교표준지 선정
 #
 # 감정평가 실무기준(610-1.5.2.1)의 순서다: ① 용도지역·지구가 같고
-# ② 이용상황이 같고 ③ 주위환경이 비슷하고 ④ 가까운 것. 평가서 41건에서
-# 용도지역은 41/41, 지목군은 39/41 일치했고 도로접면은 20/41 이 달랐다
-# — 도로접면은 격차율로 메우는 항목이지 선정 조건이 아니다.
+# ② 이용상황이 같고 ③ 주위환경이 비슷하고 ④ 가까운 것.
+#
+# **무엇을 거르고 무엇에 벌점을 줄지는 원장이 정한다.** 평가사가 실제로
+# 고른 표준지가 대상과 얼마나 같은지를 세면, 그 비율이 곧 그 항목의
+# 무게다. 처음 잰 것은 41건이었고, 2026-09-17 에 **893건**으로 다시 쟀다
+# (appraisal_case 전체, 저장소의 정규화 함수 그대로):
+#
+#     용도지역군          786/788   100%   ← 거른다
+#     용도지역 앞 4글자    784/792    99%   ← 거른다
+#     지목군              666/782    85%   ← 벌점 0.5
+#     지세(경사)          585/686    85%   ← 벌점 0.3  (아래 참고)
+#     같은 읍·면·동       639/893    72%   ← 벌점 1.0
+#     형상               471/798    59%   ← 벌점 0.2
+#     도로접면 등급        380/678    56%   ← 벌점 0.3/단
+#
+# 도로접면은 **선정 조건이 아니다.** 44%가 어긋나고 그중 18%는 두 단이나
+# 차이가 난다 — 그것을 맞추자고 더 먼 표준지를 고르면 오히려 나빠진다.
+# 격차율(개별요인)로 메우는 항목이고, 41건에서 본 것과 20배 표본에서도
+# 같은 결론이 나왔다.
+#
+# **지세는 다르다.** 85%로 지목군과 같은 수준인데 벌점은 형상(0.2) 쪽에
+# 가깝다 — 재 보니 어긋나 있었다. 다만 무게를 바꾸는 판정은 이 표가 아니라
+# value-test(실거래와의 오차)가 한다. PRICE_BAND 를 좁혔다가 멀쩡한 선정까지
+# 흔든 적이 있다(아래). 그래서 기본값은 그대로 두고 REDT_PEN_SLOPE 로 재 볼
+# 수 있게만 열어 둔다. 자세한 것은 docs/appraisal-standard.md §2-6.
 # ─────────────────────────────────────────────────────────────────
 
 def _grade_of_road(text) -> int | None:
@@ -394,6 +416,14 @@ def haversine_km(lat1, lon1, lat2, lon2) -> float:
 # 500m 안이다 — 거리가 너무 싸다. 환경변수 REDT_DIST_WEIGHT 로 바꿔 가며
 # value-test 로 잰다 (같은 표본·같은 원장에서 나란히 돌려야 견줄 수 있다).
 DIST_WEIGHT = float(os.environ.get("REDT_DIST_WEIGHT", "1.0"))
+
+# 불일치 벌점. 단위는 **km** 다 — '그만큼 먼 표준지와 같다' 로 읽는다.
+# 옆의 비율은 원장 893건에서 평가사가 그 항목을 맞춘 비율(위 표).
+PEN_USE = 0.5              # 지목군 다름            85% 맞춤
+PEN_ROAD_PER_GRADE = 0.3   # 도로접면 한 단당        56% 맞춤
+PEN_SHAPE = 0.2            # 형상 다름              59% 맞춤
+PEN_SLOPE = float(os.environ.get("REDT_PEN_SLOPE", "0.3"))   # 지세 다름  85% 맞춤
+PEN_UMD = 1.0              # 다른 읍·면·동          72% 맞춤
 
 PRICE_BAND = (0.5, 2.0)
 PRICE_PEN_PER_LOG = 4.0
@@ -454,23 +484,23 @@ def pick_standard(subject: dict, candidates: list[dict], top: int = 3,
         pen = 0.0
         why = []
         if ug and use_group(c.get("jimok"), c.get("use_situation")) != ug:
-            pen += 0.5
+            pen += PEN_USE
             why.append("지목군 다름")
         g1, g2 = _grade_of_road(subject.get("road_side")), _grade_of_road(c.get("road_side"))
         if g1 is not None and g2 is not None and g1 != g2:
-            pen += 0.3 * abs(g1 - g2)
+            pen += PEN_ROAD_PER_GRADE * abs(g1 - g2)
             why.append(f"도로접면 {abs(g1 - g2)}단 차")
         if subject.get("shape") and c.get("shape") \
                 and shape_index(subject["shape"]) != shape_index(c["shape"]):
-            pen += 0.2
+            pen += PEN_SHAPE
             why.append("형상 다름")
         s1 = slope_index(subject.get("slope"), "*")
         s2 = slope_index(c.get("slope"), "*")
         if s1 is not None and s2 is not None and s1 != s2:
-            pen += 0.3
+            pen += PEN_SLOPE
             why.append("지세 다름")
         if umd and str(c.get("pnu") or "")[:10] != umd:
-            pen += 1.0
+            pen += PEN_UMD
             why.append("다른 읍면동")
         # **같은 지목군일 때만** 가격 수준을 본다. 지목이 다르면 공시지가
         # 격차의 대부분이 지목 탓이고, 그것은 USE_MISMATCH 가 이미 맡는다 —

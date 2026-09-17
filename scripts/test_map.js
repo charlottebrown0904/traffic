@@ -1033,12 +1033,28 @@ async function stubCommon(pg) {
       const box = document.getElementById('detail');
       const btn = box.querySelector('.detail-close');
       const opened = !box.hidden;
+      const ringsBefore = window.__map.circles.length;
       if (btn) btn.click();
-      return { opened, had: !!btn, closed: box.hidden };
+      return { opened, had: !!btn, closed: box.hidden,
+               ringsBefore, ringsAfter: window.__map.circles.length,
+               peek: window.__detail || {} };
     });
     check('오른쪽 칸에 닫기 단추가 있다', shut.opened && shut.had,
           `열림=${shut.opened} · 단추=${shut.had}`);
     check('누르면 실제로 닫힌다', shut.closed, `hidden=${shut.closed}`);
+    /* **닫으면 반경 원도 사라진다** (보고된 문제 2026-09-17: "ic클릭 후
+       x눌러 닫기해도 범위는 안 사라짐").
+
+       원을 지우는 자리가 한 곳뿐이었고(IC 층을 통째로 끌 때) 닫기 단추는
+       그 길로 안 갔다. 카드는 닫혔는데 원만 남으면 무엇을 고른 것인지
+       알 길이 없다 — 필지 윤곽에 대해 이미 하던 말이 원에만 안 붙어
+       있었다. 여는 것과 닫는 것을 따로 세므로, 한쪽만 고쳐도 걸린다. */
+    check('닫기 전에는 반경 원이 그려져 있었다', shut.ringsBefore >= 3,
+          `${shut.ringsBefore}개`);
+    check('닫으면 반경 원도 같이 사라진다', shut.ringsAfter === 0,
+          `${shut.ringsAfter}개 남음`);
+    check('닫으면 고른 영업소도 풀린다', shut.peek.selected == null,
+          String(shut.peek.selected));
     // 닫았으니 뒤 절들이 볼 수 있게 다시 연다.
     await page.evaluate(() => {
       const el2 = document.querySelector('tr[data-id], [data-id]');

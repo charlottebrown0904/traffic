@@ -80,7 +80,19 @@
 
        신청일  profile.created_at (로그인으로 가입한 순간)
        가입일  profile.approved_at (관리자가 승인한 순간 — 0006 트리거)        */
-  var members = { rows: [], status: "all", grade: "all", q: "", sort: "created_desc" };
+  /* picked — 체크한 회원의 id (지시 2026-09-17: "체크 박스 추가 + 선택 후
+     메일보내기"). **표 밖에 둔다.** 표는 정렬·필터·저장 때마다 통째로 다시
+     그려지므로, 체크 상태를 DOM 에 두면 그때마다 사라진다. 필터를 바꿔 가며
+     몇 사람을 골라 담는 것이 이 기능의 쓰임새라 그 사라짐이 곧 못 쓰는
+     기능이 된다. */
+  var members = { rows: [], status: "all", grade: "all", q: "", sort: "created_desc",
+                  picked: Object.create(null) };
+
+  // 고른 사람 중 **지금 목록에 있는** 사람만. 회원이 지워지거나 필터가
+  // 바뀌어도 유령 주소로 메일을 보내지 않는다.
+  function pickedRows() {
+    return members.rows.filter(function (u) { return members.picked[u.id]; });
+  }
 
   function memberFiltered() {
     var q = members.q.trim().toLowerCase();
@@ -111,6 +123,9 @@
       : (st === "pending" ? '<button class="btn sm" data-act="approved">승인</button> ' : "") +
         (st !== "rejected" ? '<button class="btn sm ghost" data-act="rejected">거절</button>' : '<button class="btn sm" data-act="approved">승인</button>');
     return '<tr data-id="' + E(u.id) + '">' +
+      '<td class="pick"><input type="checkbox" class="m-pick" data-id="' + E(u.id) + '"' +
+      (members.picked[u.id] ? " checked" : "") +
+      ' aria-label="' + E(u.nickname || u.email || "회원") + ' 선택"></td>' +
       "<td><b>" + E(u.nickname || "(이름 없음)") + "</b>" + (u.role === "broker" ? ' <span class="badge">중개사</span>' : "") + "</td>" +
       '<td class="mono">' + E(u.email || "") + "</td>" +
       '<td><span class="st st-' + E(st) + '">' + (STATUS_LABEL[st] || E(st)) + "</span></td>" +
@@ -127,6 +142,10 @@
   function memberTable(box) {
     var rows = memberFiltered();
     var E = window.SBUtil.esc;
+    var nPick = pickedRows().length;
+    // 머리글 체크는 **보이는 것**에 대한 것이다. 안 보이는 사람까지 켜면
+    // 검색으로 좁혀 놓고 전체선택했다가 엉뚱한 사람에게 메일이 간다.
+    var allOn = rows.length > 0 && rows.every(function (u) { return members.picked[u.id]; });
     var cnt = function (s) { return members.rows.filter(function (u) { return (u.status || "pending") === s; }).length; };
     var chip = function (v, label) {
       return '<button class="chip' + (members.status === v ? " on" : "") + '" data-st="' + v + '">' + label + "</button>";
@@ -154,13 +173,23 @@
       ].map(function (o) { return '<option value="' + o[0] + '"' + (members.sort === o[0] ? " selected" : "") + ">" + o[1] + "</option>"; }).join("") + "</select>" +
       '<button class="btn sm ghost" id="m-copy" title="보이는 회원의 메일을 쉼표로 이어 복사">메일 복사</button>' +
       '<button class="btn sm ghost" id="m-csv">CSV 내려받기</button>' +
-      "</div></div>" +
+      "</div>" +
+      // 고른 사람이 없으면 단추가 없는 것이 아니라 **꺼져 있다** — 무엇을
+      // 먼저 해야 하는지가 그 자리에서 보여야 한다.
+      '<div class="mtool-row"><button class="btn sm" id="m-mail"' +
+      (nPick ? "" : " disabled") + '>선택한 ' + nPick + '명에게 메일</button>' +
+      '<span class="note-in" id="m-pick-note">' +
+      (nPick ? "받는 사람은 숨은참조(BCC)로 들어갑니다 — 서로의 주소가 안 보입니다."
+             : "메일을 보낼 회원을 체크하세요.") + "</span></div>" +
+      "</div>" +
       '<p class="note" style="margin:0 0 .5rem">회원 등급은 만료일을 적으면 그날까지, 비우면 기한 없음. 저장하면 기록이 남습니다. 손님은 로그인 없이 들어온 사람의 자리이기도 합니다.</p>' +
       '<div class="scroller"><table class="mtable"><thead><tr>' +
+      '<th class="pick"><input type="checkbox" id="m-all"' + (allOn ? " checked" : "") +
+      ' aria-label="보이는 회원 모두 선택"></th>' +
       col("name", "이름") + "<th>이메일</th>" + col("status", "상태") + col("grade", "등급") +
       col("created", "신청일") + col("approved", "가입일") + "<th>처리</th>" +
       "</tr></thead><tbody>" +
-      (rows.length ? rows.map(memberRow).join("") : '<tr><td colspan="7" class="note-in">해당하는 회원이 없습니다.</td></tr>') +
+      (rows.length ? rows.map(memberRow).join("") : '<tr><td colspan="8" class="note-in">해당하는 회원이 없습니다.</td></tr>') +
       "</tbody></table></div>";
 
     var rerender = function () { memberTable(box); };
@@ -184,6 +213,64 @@
       rerender();
       var q2 = box.querySelector("#m-q"); q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (err) { /* */ }
     });
+    /* 체크 — 한 사람 · 보이는 사람 모두.
+       고치고 나서 표를 다시 그린다. 단추의 켜짐/꺼짐과 '몇 명' 이 같은
+       자리에서 따라 움직여야 무엇이 골라졌는지 눈으로 확인할 수 있다. */
+    Array.prototype.forEach.call(box.querySelectorAll(".m-pick"), function (c) {
+      c.addEventListener("change", function () {
+        if (c.checked) members.picked[c.dataset.id] = true;
+        else delete members.picked[c.dataset.id];
+        rerender();
+      });
+    });
+    var allBox = box.querySelector("#m-all");
+    if (allBox) allBox.addEventListener("change", function () {
+      rows.forEach(function (u) {
+        if (allBox.checked) members.picked[u.id] = true;
+        else delete members.picked[u.id];
+      });
+      rerender();
+    });
+
+    /* 선택한 회원에게 메일 (지시 2026-09-17).
+
+       **받는 사람은 숨은참조(BCC)로 넣는다.** to 로 넣으면 받는 사람마다
+       다른 회원들의 메일 주소가 그대로 보인다 — 회원 명부를 회원들에게
+       뿌리는 셈이다.
+
+       보내는 것은 브라우저가 아니라 **그 컴퓨터의 메일 앱**이다(mailto).
+       우리 서버는 메일을 보내지 않으므로 발송 실패도, 스팸 신고도 우리
+       도메인이 지지 않는다. 대신 주소가 많으면 mailto 주소가 길어져
+       메일 앱이 잘라 먹는 일이 있다 — 2,000자를 넘으면 보내지 않고
+       주소를 복사하게 한다. 조용히 잘린 채 보내지는 것이 가장 나쁘다. */
+    var mailBtn = box.querySelector("#m-mail");
+    if (mailBtn) mailBtn.addEventListener("click", function () {
+      var list = pickedRows().map(function (u) { return u.email; }).filter(Boolean);
+      var note = box.querySelector("#m-pick-note");
+      if (!list.length) {
+        if (note) note.textContent = "고른 회원에게 메일 주소가 없습니다.";
+        return;
+      }
+      var href = "mailto:?bcc=" + encodeURIComponent(list.join(","));
+      if (href.length > 2000) {
+        if (note) {
+          note.textContent = list.length + "명은 한 번에 보내기에 너무 많습니다"
+            + " — 주소를 복사해 메일 앱에서 숨은참조로 붙여 넣으세요.";
+        }
+        var text = list.join(", ");
+        navigator.clipboard.writeText(text).catch(function () {
+          window.prompt("복사해 쓰세요", text);
+        });
+        return;
+      }
+      if (note) note.textContent = list.length + "명 · 메일 앱을 엽니다.";
+      // 검사가 '어디로 보냈나' 를 볼 구멍. 진짜로 메일 앱을 열어 버리면
+      // 그 뒤를 볼 수 없어, 받는 사람이 to 인지 bcc 인지를 검사로 옮길
+      // 길이 없다 — 그 구분이 이 기능에서 가장 중요한 한 가지다.
+      window.__mailto = href;
+      location.href = href;
+    });
+
     box.querySelector("#m-copy").addEventListener("click", async function () {
       var text = memberFiltered().map(function (u) { return u.email; }).filter(Boolean).join(", ");
       var btn = this;

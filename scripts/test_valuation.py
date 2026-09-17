@@ -235,6 +235,44 @@ got = V.pick_standard(subj, [dae])
 check(got[0]["penalty"] == 0.5 and got[0]["price_ratio"] is None,
       f"지목군이 다르면 가격 수준 벌점 없음 (지목군 벌점 0.5 만) — {got[0]['penalty']}")
 
+# ── 네 축이 선정에 다 들어 있는가 (지시 2026-09-17) ──────────────────
+#
+# "최대한 인근 표준지 중 (최대한 유사한 용도지역, 도로 조건, 지목, 경사도)로
+#  선정될 수 있도록 검토."
+#
+# 넷은 이미 들어 있다. **들어 있다는 것을 못 박는다** — 무게를 손보다가
+# 한 축이 조용히 빠지면, 화면은 멀쩡하고 값만 조금씩 달라져 아무도 모른다.
+# 축마다 그 축 하나만 다른 후보를 붙여, 그 차이가 실제로 점수에 뜨는지 본다.
+_base = {"pnu": "4146125025100000001", "land_use": "계획관리지역",
+         "jimok": "전", "use_situation": "전", "road_side": "세로(가)",
+         "shape": "부정형", "slope": "평지", "lat": 37.2, "lon": 127.2}
+def _axis(**kw):
+    c = dict(_base, pnu="4146125025100000009")
+    c.update(kw)
+    return V.pick_standard(_base, [c], top=1)[0]
+
+_same = _axis()
+check(_same["penalty"] == 0 and _same["why"] == "조건 일치", "네 축이 같으면 벌점 0")
+# ① 용도지역 — 벌점이 아니라 **거른다**. 아무리 가까워도 후보가 아니다.
+check(V.pick_standard(_base, [dict(_base, pnu="x", land_use="생산관리지역")]) == [],
+      "용도지역이 다르면 후보에서 뺀다 (벌점이 아니다)")
+# ② 지목 ③ 도로 ④ 경사 — 벌점. 원장 893건의 일치율이 그 크기를 정했다
+#    (지목군 85% · 지세 85% · 도로접면 56%). docs/appraisal-standard.md §2-6.
+_j = _axis(jimok="대", use_situation="주거용")
+check(_j["penalty"] == V.PEN_USE and "지목군" in _j["why"],
+      f"지목이 다르면 벌점 {V.PEN_USE} ({_j['penalty']})")
+_r = _axis(road_side="맹지")
+check(_r["penalty"] > 0 and "도로접면" in _r["why"],
+      f"도로 조건이 다르면 벌점 ({_r['why']})")
+_s = _axis(slope="급경사")
+check(_s["penalty"] == V.PEN_SLOPE and "지세" in _s["why"],
+      f"경사도가 다르면 벌점 {V.PEN_SLOPE} ({_s['penalty']})")
+# 지세 무게는 REDT_PEN_SLOPE 로 재 볼 수 있어야 한다 — 원장은 0.5 를
+# 가리키는데 판정은 value-test 가 한다. 열어 두지 않으면 잴 수가 없다.
+check(isinstance(V.PEN_SLOPE, float) and "REDT_PEN_SLOPE" in
+      (ROOT / "src" / "redt" / "valuation.py").read_text(encoding="utf-8"),
+      "지세 무게는 환경변수로 재 볼 수 있다 (REDT_PEN_SLOPE)")
+
 print()
 print("5. 시점수정")
 t = V.time_factor(dt.date(2026, 1, 1), dt.date(2026, 9, 10), monthly_rates=[0.1] * 8)
