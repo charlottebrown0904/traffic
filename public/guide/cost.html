@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="theme-color" content="#FAF7F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12100D" media="(prefers-color-scheme: dark)">
+<title>공장·창고 비용 — 항목으로 세어 본다 · 토지·건축 가이드 | 토지랩</title>
+<!-- GA4 — **초기화는 반드시 여기, head 인라인.** gtag 를 나중에(defer 스크립트에서)
+     세우면, 페이지가 뜨자마자 쏘는 첫 이벤트가 gtag 없는 상태로 dataLayer 에
+     plain object 로 들어가 구글에 끝내 도착하지 않는다. 증상이 '아무것도 안 뜬다'
+     가 아니라 '초기 이벤트만 안 뜬다' 라 찾기 어렵다.
+     측정 ID 는 공개 값이다 — 브라우저가 그것으로 구글에 보내는 것이 본래 하는 일. -->
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){ dataLayer.push(arguments); }
+gtag('js', new Date());
+/* anonymize_ip — 구글이 IP 마지막 자리를 지우고 받는다. GA4 는 기본으로
+   그렇게 하지만 명시해 둔다. 나중에 이 줄이 지워지면 눈에 띈다. */
+gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
+</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-RW6MCG84SF"></script>
+<meta name="description" content="공장·창고를 세울 때 드는 돈을 전용 부담금·원인자부담금·세금·인허가·공사비 항목으로 나눠 정리했습니다. 화면 자료로 계산되는 것과 사업자가 넣어야 하는 것을 구분합니다.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/lib/theme.css?v=20260912a">
+<script src="/lib/theme.js?v=20260912a"></script>
+<script src="/lib/adminnav.js?v=20260912a"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/guide/style.css?v=20260912a">
+<style>
+  /* 05 에서 같이 옮겨 온 줄. 표 바로 위의 ◎/○/△ 풀이다. */
+  .legend{font-size:.85rem; color:var(--muted)}
+  .legend b{color:var(--ink); margin-right:.15rem}
+</style>
+</head>
+<body>
+
+<header class="sitebar">
+  <div class="sitebar-inner">
+    <a class="sitebar-brand" href="/"><img src="/icon.svg" alt="" width="22" height="22"><span>토지랩</span></a>
+    <span class="sitebar-crumb"><a href="/guide">토지·건축 가이드</a> · 공장·창고 비용</span>
+    <nav class="sitebar-nav"><a href="/app">지도</a><a href="/admin" data-admin-link hidden>Admin</a><a href="/guide" aria-current="page">가이드</a><a href="/board">게시판</a><a href="/account">내 계정</a></nav>
+    <span data-theme-switch></span>
+  </div>
+</header>
+
+<div class="wrap">
+<header class="page">
+  <div class="eyebrow">06 · 공장·창고 비용</div>
+  <h1>얼마가 드나 — 항목으로 세어 본다</h1>
+  <p class="lede"><strong>땅값 말고 드는 돈</strong>을 전용 부담금·원인자부담금·세금·인허가·공사비로 나눠 적었습니다.
+     <strong>우리가 화면 자료로 계산해 줄 수 있는 것과 사업자가 직접 넣어야 하는 것</strong>을 항목마다 갈라 둡니다.</p>
+</header>
+
+<p>지을 수 있느냐와 얼마가 드느냐는 다른 질문입니다.
+가부와 한도는 <a href="/guide/buildable">04 · 건축 가능 조건</a>과 <a href="/guide/law">05 · 법령과 조례</a>에 있고,
+이 쪽은 <strong>가부가 난 뒤의 돈</strong>만 봅니다.
+농지보전부담금·대체산림자원조성비의 산식과 감면은 그 두 쪽에 더 자세히 적혀 있습니다.</p>
+
+<h2>항목표</h2>
+
+<p class="legend"><b>◎</b> 화면 자료로 계산됨 &nbsp; <b>○</b> 조례·고시 표 하나면 됨 &nbsp; <b>△</b> 사업자가 넣어야 함</p>
+
+<div class="scroller">
+<table>
+  <thead><tr><th>구분</th><th>항목</th><th>산식 · 기준</th><th>근거</th><th class="num"> </th></tr></thead>
+  <tbody>
+    <tr><td colspan="5" class="grp">전용</td></tr>
+    <tr><td>전용</td><th>농지보전부담금</th><td>개별공시지가 × 30% (≤ 5만원/㎡) × 전용면적</td><td>농지법 §38</td><td class="num">◎</td></tr>
+    <tr><td>전용</td><th>대체산림자원조성비</th><td>(고시단가 + 공시지가 1%) × 전용면적</td><td>산지관리법 §19</td><td class="num">◎ (단가 ○)</td></tr>
+    <tr><td>전용</td><th>산지복구비 예치</th><td>고시 단가 × 훼손면적 (준공 뒤 반환)</td><td>산지관리법 §38</td><td class="num">○</td></tr>
+    <tr><td colspan="5" class="grp">부담금</td></tr>
+    <tr><td>부담금</td><th>하수도원인자부담금</th><td>오수발생량(㎥/일) × 단가(원/㎥). 오수량은 건물 용도·연면적으로 (환경부 산정기준 고시)</td>
+        <td><a href="https://www.law.go.kr/법령/하수도법/제61조" target="_blank" rel="noopener">하수도법 §61</a> · 시 하수도 사용조례</td><td class="num">○ + △</td></tr>
+    <tr><td>부담금</td><th>상수도원인자부담금</th><td>계량기 구경별 정액 또는 급수량 × 단가</td><td>수도법 §71 · 시 수도급수조례</td><td class="num">○</td></tr>
+    <tr><td>부담금</td><th>개발부담금</th><td>(종료시점 지가 − 개시시점 지가 − 개발비용 − 정상지가상승분) × <strong>25%</strong> (계획입지 20%). 대상 면적은 비도시 1,650㎡ · 도시 990㎡ 이상 (확인)</td>
+        <td><a href="https://www.law.go.kr/법령/개발이익환수에관한법률/제5조" target="_blank" rel="noopener">개발이익환수법 §5</a> · §13</td><td class="num">◎ 판정 · △ 금액</td></tr>
+    <tr><td>부담금</td><th>기반시설설치비용</th><td>기반시설부담구역 안에서만</td><td>국토계획법 §68</td><td class="num">○</td></tr>
+    <tr><td>부담금</td><th>교통유발부담금</th><td>도시교통정비지역 안 연면적 1,000㎡ 이상</td><td>도시교통정비촉진법 §36</td><td class="num">○</td></tr>
+    <tr><td colspan="5" class="grp">세금</td></tr>
+    <tr><td>세금</td><th>취득세 (토지)</th><td>4% (농지 3%) + 농어촌특별세 0.2% + 지방교육세 0.4%</td>
+        <td><a href="https://www.law.go.kr/법령/지방세법/제11조" target="_blank" rel="noopener">지방세법 §11</a></td><td class="num">◎</td></tr>
+    <tr><td>세금</td><th>취득세 (건물 신축)</th><td>2.8% + 농특세 0.2% + 교육세 0.16%</td><td>지방세법 §11</td><td class="num">◎ (공사비 △)</td></tr>
+    <tr><td>세금</td><th>취득세 중과</th><td>과밀억제권역 안 공장 신·증설 3배. 성장관리권역(안성 등)은 해당 없음</td><td>지방세법 §13 · 수도권정비계획법</td><td class="num">◎</td></tr>
+    <tr><td>세금</td><th>재산세 (토지)</th><td>공장용지 분리과세 0.2% (비도시) · 별도합산 0.2~0.4%</td><td>지방세법 §111</td><td class="num">◎</td></tr>
+    <tr><td>세금</td><th>재산세 (건물)</th><td>0.25% (주거지역 안 공장 0.5%) + 도시지역분</td><td>지방세법 §111</td><td class="num">◎</td></tr>
+    <tr><td>세금</td><th>양도세 · 부가세</th><td>매도 시 · 건물분</td><td></td><td class="num">△</td></tr>
+    <tr><td colspan="5" class="grp">인허가</td></tr>
+    <tr><td>인허가</td><th>개발행위허가 (측량·설계·토목)</th><td>면적·지형 따라 ㎡당 수천~수만원</td><td></td><td class="num">△</td></tr>
+    <tr><td>인허가</td><th>공장설립승인</th><td>제조시설 500㎡ 이상</td><td>산업집적법 §13</td><td class="num">△</td></tr>
+    <tr><td>인허가</td><th>소규모 환경영향평가</th><td>계획관리 <strong>10,000㎡</strong> · 보전관리 5,000㎡ · 농림 7,500㎡ 이상</td><td>환경영향평가법 §43</td><td class="num">○ (면적 판정 ◎)</td></tr>
+    <tr><td>인허가</td><th>재해영향평가 등 협의</th><td>개발행위 <strong>5,000㎡</strong> 이상</td><td>자연재해대책법 §4</td><td class="num">○</td></tr>
+    <tr><td>인허가</td><th>교통영향평가</th><td>대규모 (창고 연면적 3만㎡ 등)</td><td>도시교통정비촉진법 §15</td><td class="num">○</td></tr>
+    <tr><td colspan="5" class="grp">공사</td></tr>
+    <tr><td>공사</td><th>토목 (절·성토·옹벽·배수)</th><td>경사·표고에서 나옵니다 — DEM 이 있어야 가늠</td><td></td><td class="num">△</td></tr>
+    <tr><td>공사</td><th>건축</th><td><strong>(TBD)</strong> — 창고·공장 ㎡당 단가</td><td></td><td class="num">△</td></tr>
+    <tr><td>공사</td><th>진입도로 · 전기 · 상하수 인입 · 오수처리시설</th><td>하수처리구역 밖이면 오수처리시설 필요</td><td></td><td class="num">△</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>계산 순서</h2>
+
+<ol class="steps">
+  <li><b>가부</b><span>농업진흥·보전산지·성장관리계획구역·용도지역 허용 건축물. 안 되면 여기서 끝</span></li>
+  <li><b>한도</b><span>건폐율·용적률 → 지을 수 있는 바닥·연면적. 경사·임목·표고 → 개발행위허가 문턱</span></li>
+  <li><b>전용 부담</b><span>지목에 따라 농지보전부담금 또는 대체산림자원조성비</span></li>
+  <li><b>원인자부담금</b><span>연면적·용도로 오수량 → 조례 단가</span></li>
+  <li><b>세금</b><span>토지 취득세, 건물 취득세(공사비 기준), 재산세 연간</span></li>
+  <li><b>개발부담금</b><span>준공 뒤 지가 차이. 지금은 해당 여부와 세율만</span></li>
+  <li><b>인허가·공사비</b><span>사업자 입력. 기본값은 면적당 가정치, 출처를 옆에 적습니다</span></li>
+</ol>
+
+<footer class="page">
+  <p><strong>법령은 개정됩니다.</strong> 이 문서는 이해를 돕기 위한 정리이며 법률 자문이 아닙니다.
+     실제 판단은 <a href="https://www.eum.go.kr" target="_blank" rel="noopener">토지이음</a>, 조례 원문, 담당 공무원 확인을 거쳐야 합니다.</p>
+  <p>부담금·세금 표의 세율과 면적 기준은 확인이 끝나지 않은 칸이 있습니다. 금액을 계약에 쓰기 전에 조문 링크에서 한 번 맞춰 보세요.
+     <strong>(TBD)</strong> 로 적힌 칸은 아직 출처를 못 박지 못한 자리입니다 — 어림값을 적어 두면 그것이 근거인 양 쓰이므로 비워 둡니다.</p>
+  <p style="margin-top:1rem"><a href="/guide">← 가이드 목차</a> · <a href="/guide/law">05 · 법령과 조례</a> · <a href="/app">서비스로</a> · <a href="/">홈</a></p>
+</footer>
+</div>
+
+</body>
+</html>
