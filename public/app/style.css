@@ -1941,6 +1941,17 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
    말한다 — 아무 색이나 칠하면 거짓이 된다. 산업단지 넷은 2026-09-16 에
    브이월드 그림에서 재서 채웠으므로 지금 이 칸을 쓰는 갈래는 없다.
    자료에 새 단계가 생겼을 때를 위해 남겨 둔다. */
+/* 철도역은 **점**이고 크기로도 갈린다 (2026-09-17). 칩도 지도를 닮게
+   동그라미로 그리고, 큰 갈래는 칩도 크게, 속 빈 갈래는 칩도 속을 비운다.
+   꽉 찬 네모 셋으로 두면 범례가 지도에 없는 구분을 약속하게 된다. */
+.dev-sw.is-dot { border-radius: 50%; }
+.dev-sw.is-dot.is-big { width: .92rem; height: .92rem; }
+.dev-sw.is-dot.is-hollow {
+  background: var(--surface, #fff);
+  border-width: 2px;
+  border-style: dashed;
+}
+
 .dev-sw.is-none {
   background: repeating-linear-gradient(45deg,
     rgba(120, 120, 120, .45) 0 2px, transparent 2px 4px);

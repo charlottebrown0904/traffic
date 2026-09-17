@@ -31,7 +31,7 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 <link rel="stylesheet" href="/lib/theme.css?v=20260912a">
 <script src="/lib/theme.js?v=20260912a"></script>
 <script src="/lib/adminnav.js?v=20260912a"></script>
-<link rel="stylesheet" href="/app/style.css?v=20260917b">
+<link rel="stylesheet" href="/app/style.css?v=20260917c">
 </head>
 <body>
 
@@ -282,18 +282,11 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 
            칸 자체는 app.js 가 DEV_PARTS 로 만든다. 이름을 여기 적어 두면
            둘이 갈린다. -->
+      <!-- '보일 갈래' 제목과 물음표 설명을 지웠다 (요구사항 2026-09-17).
+           지운 설명이 말하던 것은 코드에 그대로 있다 — 산업단지 색은
+           DEV_PICKS.industry(브이월드에서 잰 값), 단계별 칠하기는
+           DEV_STAGE, 완공 기본 감춤은 state.devPick 의 초기값이다. -->
       <section class="sheet-pane" data-cat="develop" hidden>
-        <h3>보일 갈래
-          <button type="button" class="info-dot" aria-expanded="false"
-                  aria-label="설명 보기">?</button></h3>
-        <div class="info-pop" hidden>
-          <p>산업단지는 브이월드 공식 색을 그대로 받고, 택지·사업지구와
-            계획도로는 <strong>사업 단계</strong>에 따라 우리가 다시
-            칠합니다 — 이른 단계일수록 진하게.</p>
-          <p>철도역은 브이월드에 없어 우리 자료(역 405곳)로 그립니다.</p>
-          <p><strong>완공된 것은 기본으로 감춥니다.</strong> 땅을 보는
-            사람에게 중요한 것은 아직 안 된 것입니다.</p>
-        </div>
         <div class="dev-parts" id="dev-parts" role="group"
              aria-label="개발 갈래"></div>
         <div class="dev-legend" id="dev-legend" hidden></div>
@@ -749,12 +742,12 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="/app/config.js?v=20260905a"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="/app/supabase.js?v=20260917b"></script>
-<script src="/lib/track.js?v=20260917b"></script>
+<script src="/app/supabase.js?v=20260917c"></script>
+<script src="/lib/track.js?v=20260917c"></script>
 <script src="/lib/supabase-init.js?v=20260905a"></script>
 <!-- 관문이 로그인을 확인한 뒤에 app.js 를 붙인다. 여기서 미리 부르면
      로그인 없이 들어온 사람에게도 지도가 한 번 보였다가 사라진다. -->
 <script src="/lib/access.js?v=20260912d"></script>
-<script src="/app/gate.js?v=20260917b"></script>
+<script src="/app/gate.js?v=20260917c"></script>
 </body>
 </html>

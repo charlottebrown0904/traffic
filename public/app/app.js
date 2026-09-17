@@ -2836,10 +2836,42 @@ const DEV_PICKS = {
     { id: '공사중', label: '공사중', color: '#1F2937' },
     { id: '준공', label: '준공', color: '#9CA3AF', done: true },
   ],
+  /* **철도역 셋은 색만으로 갈리지 않았다** (2026-09-17 지적:
+   * "철도역 색상 구분 확실히 구분 안됨").
+   *
+   * 재 보니 색보다 **그리는 코드**가 더 문제였다. drawRail 이 세 갈래를
+   * 전부 같은 연파랑(#BAE6FD)으로 채우고 2px 테두리에만 갈래색을 썼다 —
+   * 반지름 5px 짜리 점에서 테두리 한 겹은 열몇 화소다. 범례 칩은 꽉 찬
+   * 네모라 지도와 닮지도 않았다. **범례가 지도에 없는 구분을 약속하고
+   * 있었다.**
+   *
+   * 색을 더 벌리는 길은 막혀 있다. 화면에 이미 일곱 색이 같이 뜨고
+   * (택지 다섯 + 계획도로 둘), 여덟·아홉째 색 후보 다섯 쌍을 재 봤는데
+   * **하나도 통과하지 못했다** — 장미 · 자홍 · 보라 · 청록 · 남색 모두
+   * 기존 색과 ΔE 15 아래로 붙었다 (validate_palette.js --pairs all).
+   * 고속도로 때와 같은 결론이다: 색상환이 찼다.
+   *
+   * 그래서 **한 색을 밝기로 가르고, 마크를 바꾼다.** 정차 규모는 크기가
+   * 있는 양이므로 큰 값에 큰 점을 주는 것이 옳고(그 자체가 뜻이 된다),
+   * '모름' 은 값이 아니라 빈칸이므로 **속을 비운다.**
+   *
+   *   많이   8px 큰 점 · 진한 파랑을 꽉 채움
+   *   적게   5px 작은 점 · 연한 파랑을 채움
+   *   모름   5px 속 빈 점 · 흰 속 + 회색 점선 테두리
+   *
+   * 진↔연 두 걸음은 ΔE 43.7 이다 (기존 #0369A1↔#38BDF8 은 11.6 으로
+   * 문턱 15 아래였다). 게다가 크기·채움 여부까지 셋이 겹쳐 걸리므로
+   * 색약이나 작은 화면에서도 갈린다.
+   *
+   * **택지의 파랑과는 색으로 안 갈린다** (진한 파랑 ↔ 지구지정 #075985
+   * 은 ΔE 5.4). 거기까지 벌릴 색이 없다. 대신 **마크가 다르다** — 택지는
+   * 반투명 면이고 철도역은 흰 테를 두른 점이다. 면과 점은 같은 색이어도
+   * 안 헷갈린다. 색으로 못 가른 것을 모양으로 가른 셈이고, 그 사실을
+   * 여기 적어 둔다. */
   rail: [
-    { id: '많이', label: '많이 서는 역', color: '#0369A1' },
-    { id: '적게', label: '적게 서는 역', color: '#38BDF8' },
-    { id: '모름', label: '정차횟수 모름', color: '#94A3B8' },
+    { id: '많이', label: '많이 서는 역', color: '#0C4A6E', r: 8 },
+    { id: '적게', label: '적게 서는 역', color: '#7DD3FC', r: 5 },
+    { id: '모름', label: '정차횟수 모름', color: '#64748B', r: 5, hollow: true },
   ],
 };
 
@@ -3360,20 +3392,41 @@ function drawRail() {
     const size = railSize(s);
     if (!devPicked('rail', size)) return;
     const spec = DEV_PICKS.rail.find((k) => k.id === size) || {};
+    /* **채움이 갈래를 말한다** (2026-09-17). 예전에는 셋 다 같은 연파랑을
+       채우고 테두리에만 갈래색을 썼다 — 점이 작아 테두리 한 겹으로는
+       아무것도 안 갈렸다. 이제 채움·크기·속 빈 정도 셋이 함께 말한다.
+
+       테두리는 **흰색**이다. 배경 지도 위 어디에 놓여도 점이 떠 보이게
+       하는 테이지 갈래를 말하는 테가 아니다 — 갈래는 채움이 말한다.
+       (개통 예정만 예외로 보라 점선 테를 두른다. 그것은 갈래가 아니라
+       상태라, 셋 중 어느 갈래에도 붙을 수 있어야 한다.) */
     L.circleMarker([s.lat, s.lon], {
       pane: 'markerPane',
-      radius: size === '많이' ? 7 : 5,
-      color: soon ? '#7C3AED' : spec.color,
+      radius: spec.r || 5,
+      color: soon ? '#7C3AED' : (spec.hollow ? spec.color : '#FFFFFF'),
       weight: 2,
-      dashArray: soon ? '3 2' : null,
-      fillColor: soon ? '#EDE9FE' : '#BAE6FD',
-      fillOpacity: .9,
+      dashArray: (soon || spec.hollow) ? '3 2' : null,
+      // 속 빈 점은 '값이 없다' 는 뜻이다. 회색으로 채우면 '회색이라는
+      // 값' 으로 읽힌다 — 빈칸과 값은 다른 것이다.
+      fillColor: soon ? '#EDE9FE' : (spec.hollow ? '#FFFFFF' : spec.color),
+      fillOpacity: spec.hollow ? .85 : .95,
     }).bindTooltip(
       `<b>${escapeHtml(s.name)}</b>`
       + (s.trains ? `<br>하루 ${s.trains.toLocaleString()}회 정차` : '')
       + (soon ? '<br><b>개통 예정</b>' : ''),
       { direction: 'top' }).addTo(railLayer);
   });
+  /* 검사용 들여다보기 창 (window.__tradeStyles 와 같은 취지).
+     **색이 갈리는지는 그린 값을 봐야 안다** — 범례만 보면 이번처럼
+     '범례는 다른데 지도는 같은' 상태를 못 잡는다. */
+  window.__railMarks = railLayer.getLayers
+    ? railLayer.getLayers().map((l) => ({
+        r: l.options.radius,
+        fill: l.options.fillColor,
+        line: l.options.color,
+        dash: l.options.dashArray || null,
+      }))
+    : [];
 }
 
 /* 고속도로 — 계획·공사중·준공 (2026-09-16 지시).
@@ -8167,8 +8220,14 @@ function wireFind() {
         btn.setAttribute('aria-pressed', String(devPicked(pt.key, k.id)));
         if (k.done) btn.title = '끝난 것 — 기본으로 감춥니다';
         const c = devPickColor(pt.key, k);
-        btn.innerHTML = `<i class="dev-sw${c ? '' : ' is-none'}"`
-          + `${c ? ` style="background:${c}"` : ''}></i>`
+        /* **칩이 지도의 마크를 닮아야 한다.** 철도역은 점이고 크기로도
+           갈리므로 칩도 동그라미로 그리고 큰 갈래는 칩도 크게 한다.
+           속 빈 갈래(정차횟수 모름)는 칩도 속을 비운다 — 예전에는 셋 다
+           꽉 찬 네모라, 지도에 없는 구분을 범례가 약속하고 있었다. */
+        const shape = (k.r ? ' is-dot' : '') + (k.hollow ? ' is-hollow' : '')
+          + (k.r >= 8 ? ' is-big' : '');
+        btn.innerHTML = `<i class="dev-sw${c ? '' : ' is-none'}${shape}"`
+          + `${c ? ` style="${k.hollow ? 'border-color' : 'background'}:${c}"` : ''}></i>`
           + `<span>${escapeHtml(k.label)}</span>`;
         btn.addEventListener('click', () => {
           const now = !(btn.getAttribute('aria-pressed') === 'true');

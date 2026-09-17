@@ -1363,9 +1363,9 @@ async function stubCommon(pg) {
     });
     // 실거래 표시 묶음의 물음표 넷은 지웠다 (요구사항 2026-09-17:
     // "물건 종류 / 지도에 적을 것 / 거래 연도 3가지 설명 삭제" · "도로
-    // 접함 내용 전체 삭제"). 같은 날 '지역별 가격' 의 '땅값 글자' 설명도
-    // 지웠다. 남은 것은 IC 둘 · 개발 하나뿐이다.
-    check('남은 제목에는 물음표 단추가 있다', why.buttons >= 3, `${why.buttons}개`);
+    // 접함 내용 전체 삭제"). 같은 날 '지역별 가격' 의 '땅값 글자' 설명과
+    // '개발' 의 '보일 갈래' 설명도 지웠다. 남은 것은 IC 둘뿐이다.
+    check('남은 제목에는 물음표 단추가 있다', why.buttons >= 2, `${why.buttons}개`);
     check('단추가 물음표 하나다', why.labels.every((t) => t === '?'),
           why.labels.join(''));
     check('처음에는 다 접혀 있다 (필터부터 보이게)', why.openAtStart === 0,
@@ -2143,6 +2143,38 @@ async function stubCommon(pg) {
           JSON.stringify(rs));
     check('정차횟수가 없으면 0회로 치지 않고 모름으로 둔다',
           rs && rs.영 === '모름', `0회 → ${rs && rs.영}`);
+
+    /* **셋이 실제로 갈리는가** (2026-09-17 지적: "철도역 색상 구분 확실히
+       구분 안됨").
+
+       예전 코드는 세 갈래를 전부 같은 연파랑(#BAE6FD)으로 채우고 2px
+       테두리에만 갈래색을 썼다. 범례 칩은 꽉 찬 네모라 서로 달라 보였으니,
+       **범례가 지도에 없는 구분을 약속하고 있었다.** 그래서 범례가 아니라
+       그린 값을 본다 — 채움색이 갈래마다 다른지, 크기가 다른지. */
+    const rm = await page.evaluate(() => {
+      const box = document.querySelector('#dev-parts input[data-part="rail"]');
+      if (box && !box.checked) { box.checked = true; box.dispatchEvent(new Event('change')); }
+      return { marks: window.__railMarks || [],
+               chips: [...document.querySelectorAll('.dev-opt[data-part="rail"] .dev-sw')]
+                 .map((i) => ({ cls: i.className, style: i.getAttribute('style') || '' })) };
+    });
+    if (rm.marks.length) {
+      const fills = [...new Set(rm.marks.map((m) => m.fill))];
+      const radii = [...new Set(rm.marks.map((m) => m.r))];
+      check('역 갈래마다 채움색이 다르다 (테두리만으로 안 가른다)',
+            fills.length >= 2, fills.join(','));
+      check('많이 서는 역이 더 크다', radii.length >= 2, radii.join(','));
+      check('세 갈래가 같은 연파랑으로 채워지지 않는다',
+            !(fills.length === 1 && /BAE6FD/i.test(fills[0])), fills.join(','));
+    } else {
+      check('역 마크를 들여다볼 수 있다', false, '__railMarks 가 비었다');
+    }
+    // 칩도 지도를 닮아야 한다 — 점이고, 모름은 속이 비어 있다.
+    check('범례 칩이 지도의 점을 닮는다',
+          rm.chips.length === 3 && rm.chips.every((c) => /is-dot/.test(c.cls))
+          && rm.chips.filter((c) => /is-hollow/.test(c.cls)).length === 1
+          && rm.chips.filter((c) => /is-big/.test(c.cls)).length === 1,
+          rm.chips.map((c) => c.cls).join(' | '));
 
     // 층 하나를 끄면 열쇠가 좁아진다 — 산업단지를 뺀다.
     await page.evaluate(() => {
