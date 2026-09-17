@@ -4828,8 +4828,29 @@ function lpUmdChunks(group) {
 }
 
 function lpUmdReady() {
-  return lpGroups().some((g) =>
+  const groups = lpGroups();
+  // **용도지역을 하나도 안 고른 화면에서는 기다릴 땅값 조각이 없다.**
+  //
+  // 보고된 문제(2026-09-17): "용도지역 미설정 시 동/리 표시 안됨(z14~)
+  // (구가 표현됨)". 배율을 아무리 올려도 이름표가 '강남구 56만' 에서
+  // 안 내려갔다.
+  //
+  // 왜 그랬나. 이 함수가 lpGroups().some(...) 한 줄이었다. 고른 것이
+  // 없으면 빈 배열이고, 빈 배열의 some 은 늘 false 다 — 그래서
+  // lpLevel 이 '아직 조각이 오는 중' 으로 읽고 시군구로 물러났다.
+  // 하지만 값이 없는 회색 이름표는 땅값 조각에서 만들어지지 않는다.
+  // **명부**(umd-roster-NN.json)에서 만들어진다(lpEmptyUmd). 그러니
+  // 고른 용도지역이 없을 때의 준비 여부는 명부가 왔는가로 따져야 한다.
+  if (!groups.length) return lpRosterReady();
+  return groups.some((g) =>
     lpUmdChunks(g).some((c) => lpUmdCache[`${g}|${c.p}`]));
+}
+
+/* 이름만 적을 재료가 왔는가. lpEmptyUmd 가 쓰는 두 갈래와 같은 길이다 —
+ * 화면에 걸치는 명부 조각, 아니면 명부가 안 실린 배포의 검색 색인. */
+function lpRosterReady() {
+  if (lpRosterChunks().some((c) => lpRosterCache[c.p])) return true;
+  return !!findIndex;
 }
 
 /* 지금 화면에 걸치는 명부 조각들. 색인은 landprice.json 의 umd_roster. */

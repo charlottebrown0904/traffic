@@ -3068,6 +3068,36 @@ async function stubCommon(pg) {
     check('리 칸에는 인구를 안 적는다',
           !/<em>/.test(lpRi.html.find((h) => /사송리/.test(h)) || ''),
           (lpRi.html.find((h) => /사송리/.test(h)) || '없음').slice(0, 90));
+
+    /* **용도지역을 하나도 안 골라도 배율을 따라 내려간다**
+       (보고된 문제 2026-09-17: "용도지역 미설정 시 동/리 표시 안됨(z14~)
+       (구가 표현됨)").
+
+       배율 14 에서 이름표가 '강남구 56만' 에 머물렀다 — 인구다, 값이
+       아니다. 까닭은 lpUmdReady 가 `lpGroups().some(...)` 한 줄이었던
+       것이다. 고른 것이 없으면 빈 배열이고 빈 배열의 some 은 늘
+       false 라, lpLevel 이 '조각이 아직 오는 중' 으로 읽고 시군구로
+       물러났다. 그런데 값 없는 회색 이름표는 땅값 조각이 아니라
+       **명부**에서 만들어진다 — 기다릴 것이 애초에 없었다.
+
+       그래서 여기서 보는 것은 **단계**다. 태그가 남는지는 위(2026-09-15)
+       가 이미 보고 있고, 이 검사는 그 태그가 어느 단위인지를 못 박는다. */
+    await lpRail([]);
+    const lpRiOff = await lpRead();
+    check('용도지역을 다 꺼도 배율 14 에서는 리·동으로 내려간다',
+          lpRiOff.peek.level === 'ri' && (lpRiOff.peek.groups || []).length === 0,
+          `${lpRiOff.peek.level} · 용도지역 ${(lpRiOff.peek.groups || []).length}개`);
+    check('그 태그들은 값 없이 이름만 적는다',
+          lpRiOff.n > 0 && (lpRiOff.peek.withValue || 0) === 0
+          && lpRiOff.html.every((h) => !/<i>/.test(h)),
+          `${lpRiOff.n}곳 · 값 ${lpRiOff.peek.withValue}곳`);
+    // 리 이름이 실제로 서야 한다. 단계만 'ri' 이고 내용이 구 이름이면
+    // 고친 것이 아니다 — 명부에서 온 리가 이름표로 나오는지 본다.
+    check('명부에서 온 리 이름이 그대로 선다',
+          lpRiOff.html.some((h) => /<b>사송리(<em>|<\/b>)/.test(h)),
+          lpRiOff.html.map((h) => (h.match(/<b>([^<]*)/) || [])[1]).join(','));
+    await lpRail(['계획관리']);
+
     // ── 행정구역 경계 (2026-09-15) ────────────────────────────────
     // 리 태그를 눌렀는데 **면 전체**가 잡혔다. 화면이 'ri' 를 'umd' 로
     // 접어 물었기 때문이고, 그렇게 한 까닭은 "브이월드에 리 경계가 없다"
