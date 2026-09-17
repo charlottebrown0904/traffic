@@ -1092,6 +1092,10 @@ async function stubCommon(pg) {
     // 요구사항(2026-09-08): "왼쪽 필터를 큰 분류별로 묶어주세요
     // (호갱노노 참조). 실거래 표시 / IC / 실거래 가격 으로 묶어주고,
     // 선택하면 하단에 현재 필터들을 선택할 수 있도록."
+    //
+    // 셋째 이름은 2026-09-17 에 **'지역별 가격'** 으로 바꿨다 — 그 칸이
+    // 적는 것이 거래 한 건이 아니라 지역의 대푯값이라 이름이 실제와
+    // 어긋나 있었다.
     const cats = await page.evaluate(() => ({
       // 왼쪽 레일을 없앴다 — 필터가 지도 옆에 늘 펼쳐져 있으면 지도가
       // 그만큼 좁아지는데 실제로 만지는 것은 한 번에 한 묶음뿐이다.
@@ -1129,7 +1133,7 @@ async function stubCommon(pg) {
     check('큰 분류가 셋이다',
           cats.chips.join(',') === 'trade,ic,price', cats.chips.join(','));
     check('이름이 지시하신 그대로다',
-          cats.labels.join(' / ') === '실거래 표시 / IC / 실거래 가격',
+          cats.labels.join(' / ') === '실거래 표시 / IC / 지역별 가격',
           cats.labels.join(' / '));
     check('처음에는 시트가 닫혀 있다 (지도부터 보이게)', cats.sheetShut);
 
@@ -1194,7 +1198,7 @@ async function stubCommon(pg) {
     check('뺀 조작부는 화면에 남아 있지 않다', moved.gone.length === 0,
           moved.gone.join(',') || '없음');
     check('IC 묶음에 그 조작부가 다 있다', moved.ic.length === 0, moved.ic.join(','));
-    check('실거래 가격 묶음에 땅값 칩이 있다',
+    check('지역별 가격 묶음에 땅값 칩이 있다',
           moved.price.length === 0 && moved.pills === 2,
           `빠진 것 ${moved.price.join(',')} · 칩 ${moved.pills}개`);
     // 핀 유형은 **거래 쪽** 조작이다. 땅값 칩 옆에 두면 지도의 바탕색을
@@ -1351,22 +1355,36 @@ async function stubCommon(pg) {
         // 실거래 표시 묶음은 물음표를 하나도 안 갖는다 (2026-09-17).
         tradeDots: document.querySelectorAll(
           '.sheet-pane[data-cat="trade"] .info-dot').length,
+        priceDots: document.querySelectorAll(
+          '.sheet-pane[data-cat="price"] .info-dot').length,
+        priceLead: ((document.querySelector(
+          '.sheet-pane[data-cat="price"] p.hint') || {}).textContent || '').trim(),
       };
     });
     // 실거래 표시 묶음의 물음표 넷은 지웠다 (요구사항 2026-09-17:
     // "물건 종류 / 지도에 적을 것 / 거래 연도 3가지 설명 삭제" · "도로
-    // 접함 내용 전체 삭제"). 나머지 묶음(IC·실거래 가격·개발)의 설명은
-    // 그대로다 — 그쪽은 지우라는 말이 없었다.
-    check('남은 제목에는 물음표 단추가 있다', why.buttons >= 4, `${why.buttons}개`);
+    // 접함 내용 전체 삭제"). 같은 날 '지역별 가격' 의 '땅값 글자' 설명도
+    // 지웠다. 남은 것은 IC 둘 · 개발 하나뿐이다.
+    check('남은 제목에는 물음표 단추가 있다', why.buttons >= 3, `${why.buttons}개`);
     check('단추가 물음표 하나다', why.labels.every((t) => t === '?'),
           why.labels.join(''));
     check('처음에는 다 접혀 있다 (필터부터 보이게)', why.openAtStart === 0,
           `${why.openAtStart}개 펼쳐짐`);
-    check('접어도 남긴 설명은 지우지 않는다', /계획관리/.test(why.text));
+    check('남은 설명은 지우지 않는다', why.text.trim().length > 40,
+          `${why.text.trim().length}자`);
     check('실거래 표시 묶음에는 물음표가 없다', why.tradeDots === 0,
           `${why.tradeDots}개 남음`);
-    // 관리지역이 왜 따로 있는지도 여기서 답한다 (2006~2010년의 잔재).
-    check('관리지역이 왜 따로 있는지 적어 둔다', /2006~2010/.test(why.text));
+    // '땅값 글자' 자리에 들어간 한 줄 (요구사항 2026-09-17).
+    check('지역별 가격은 무엇을 켜야 하는지 한 줄로 말한다',
+          why.priceLead === '용도지역을 켜면 실거래 가를 지역마다 표시합니다.',
+          why.priceLead);
+    check('지역별 가격에도 물음표가 없다', why.priceDots === 0,
+          `${why.priceDots}개 남음`);
+    // 관리지역이 왜 따로 있는지(2006~2010년의 잔재)는 '지역별 가격' 의
+    // 설명에 있었는데 2026-09-17 지시로 그 설명을 통째로 지웠다. 화면에
+    // 그 말이 남지 않는다는 것을 **일부러 못 박는다** — 되살리려면
+    // index.html 의 주석에 문장 그대로 옮겨 두었다.
+    check('지운 설명이 화면에 남아 있지 않다', !/2006~2010/.test(why.text));
     check('접고 나면 긴 줄글이 안 남는다', why.loose === 0, `${why.loose}줄`);
     // 설명은 접되 **표본 수치는 남긴다.** 그것을 같이 접으면 사람은
     // 화면의 점 몇 개를 그 해 거래 전부로 읽는다.
