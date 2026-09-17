@@ -201,14 +201,21 @@ check("got_name = _text(c.name)" in _ps and 'spare.get("name")' in _ps,
 # 뽑고 build_why.py 를 안 돌린 날 여기서 걸린다.
 import json as _json
 
+# '왜 교통량인가' 는 2026-09-17 에 첫 화면에서 **가이드 07** 로 옮겼다
+# (지시: "홈화면의 아래 내용을 7번 항목 (여기서만) 으로"). 이 절은 그 쪽을
+# 보고, 아래 '할 수 있는 것' 절부터는 그대로 첫 화면을 본다 — 두 파일을
+# 한 이름으로 읽으면 옮기지 않은 검사까지 엉뚱한 파일을 보게 된다.
 _land = (PUBLIC / "index.html").read_text(encoding="utf-8")
+_why_page = (PUBLIC / "guide" / "traffic.html").read_text(encoding="utf-8")
 _why = _json.loads((PUBLIC / "app" / "data" / "why-traffic.json")
                    .read_text(encoding="utf-8"))
 
-check("<!-- why:start -->" in _land and "<!-- why:end -->" in _land,
-      "첫 화면에 생성 구간 표시가 있다 (build_why.py 가 갈아 끼우는 자리)")
+check("<!-- why:start -->" in _why_page and "<!-- why:end -->" in _why_page,
+      "가이드 07 에 생성 구간 표시가 있다 (build_why.py 가 갈아 끼우는 자리)")
+check("<!-- why:start -->" not in _land,
+      "첫 화면에는 그 표시가 없다 — 같은 이야기를 두 곳에 두지 않는다")
 
-_gen = _land.split("<!-- why:start -->", 1)[1].split("<!-- why:end -->", 1)[0]
+_gen = _why_page.split("<!-- why:start -->", 1)[1].split("<!-- why:end -->", 1)[0]
 
 check(_gen.count("<figure class=\"why-fig\"") == len(_why["cases"]) == 3,
       f"사례 그림이 자료와 같은 수다 — {len(_why['cases'])}개")
@@ -247,14 +254,14 @@ check(_pool["negative"] > 0 and _pool["n"] > len(_why["cases"]),
 # 상관을 인과로 말하지 않는다. 이 한 줄이 빠지면 광고가 된다.
 check("증명은 아닙니다" in _gen,
       "같이 움직였다는 것이 원인의 증명이 아니라고 적혀 있다")
-check("2~4km" in _land and "정점" in _land,
+check("2~4km" in _why_page and "정점" in _why_page,
       "가까울수록 좋다는 뜻이 아니라는 단서가 있다")
-check("58.6%" in _land and "61.6%" in _land and "국토연구원" in _land,
+check("58.6%" in _why_page and "61.6%" in _why_page and "국토연구원" in _why_page,
       "IC 10km 안 공단 입지 비율의 출처가 적혀 있다")
 
 # 계열 색은 dataviz 검산기를 통과한 값이다. 눈으로 바꾸지 못하게 못을 박는다.
 for _hex in ("#2563C9", "#C2740B", "#4A8AD0", "#B07E33"):
-    check(_hex in _land, f"검산 통과한 계열 색 {_hex} 가 그대로다")
+    check(_hex in _why_page, f"검산 통과한 계열 색 {_hex} 가 그대로다")
 
 
 # ── 첫 화면 '할 수 있는 것' — 실제 화면 캡쳐 ────────────────────────

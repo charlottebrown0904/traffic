@@ -225,14 +225,16 @@ check('os.environ["SUPABASE_SERVICE_KEY"]' in ps and "x-upsert" in ps, "올리�
 # 둘 다 **화면이 아니라 데이터베이스가** 막아야 하는 것들이다. 공개 anon
 # 키로 REST 를 직접 부르는 길이 늘 열려 있기 때문이다.
 sql16 = (ROOT / "supabase" / "migrations" / "0016_nickname_unique_notice_admin.sql").read_text(encoding="utf-8")
-check("create unique index" in sql16 and "lower(btrim(nickname))" in sql16,
-      "표시 이름은 대소문자·공백을 무시하고 유일하다")
-check("where nickname is not null and btrim(nickname) <> ''" in sql16,
-      "  아직 이름을 안 정한 계정 여럿은 겹친 것이 아니다")
-# 가입 트리거가 이 잠금에 걸려 죽으면 **가입 자체가 막힌다** — 트리거 안에서
-# 터진 예외는 auth.users 삽입까지 되돌린다. 빈 이름을 찾는 고리가 있어야 한다.
-check("while exists" in sql16 and "handle_new_user" in sql16,
-      "  가입 기본 이름이 겹쳐도 가입은 안 죽는다")
+# 0016 이 건 유일 색인은 0017 이 걷었다 (2026-09-17 지시: "가입할 때 이름이
+# 중복된다고 막으면 안됩니다"). 이름 고치기의 중복 검사만 남는다.
+sql17 = (ROOT / "supabase" / "migrations" / "0017_signup_allows_dup_nickname.sql").read_text(encoding="utf-8")
+check("create unique index" in sql16 and "drop index if exists public.profile_nickname_uniq" in sql17,
+      "가입은 이름이 겹쳐도 된다 (0016 의 유일 색인을 0017 이 걷는다)")
+check("while exists" not in sql17 and "handle_new_user" in sql17,
+      "  가입 기본 이름에 꼬리를 안 붙인다 (적은 적 없는 이름이 생기지 않는다)")
+board_dup = (ROOT / "public" / "board" / "board.js").read_text(encoding="utf-8")
+check("nickname_taken" in board_dup and "dup-name" in board_dup,
+      "겹침은 게시판이 글 쓸 때 알려 준다 (가입 문턱이 아니다)")
 check("nickname_taken" in sql16 and "grant execute on function public.nickname_taken(text) to authenticated" in sql16
       and "from public, anon" in sql16,
       "중복 확인은 로그인한 사람만 부른다")

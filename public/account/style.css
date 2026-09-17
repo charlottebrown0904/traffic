@@ -95,6 +95,10 @@
 }
 .who-card h3{margin:0 0 .6rem; font-size:1.05rem}
 .who-card .note{margin:0; font-size:.88rem; color:var(--muted)}
+/* 이름이 겹친다는 안내. 막는 것이 아니라 권하는 것이라 경고색은 안 쓴다. */
+.dup-name{margin:1rem 0; line-height:1.7}
+.dup-name em{font-style:normal; font-weight:700}
+
 .who-card .who-tip{margin:.6rem 0 0; font-size:.85rem; color:var(--muted); line-height:1.6}
 .who-mail{margin:0 0 .7rem; font-family:"IBM Plex Mono",monospace; font-size:.9rem; word-break:break-all}
 .badge{

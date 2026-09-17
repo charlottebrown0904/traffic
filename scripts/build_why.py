@@ -19,6 +19,7 @@
     하기 때문이다 (두 축 그래프는 만들지 않는다).
 
 출력: public/app/data/why-traffic.json
+      public/guide/traffic.html 의 <!-- why:start --> ~ <!-- why:end -->
 """
 import json
 import os
@@ -226,13 +227,19 @@ def block(out):
     return '\n    ' + '\n    '.join(parts) + '\n    '
 
 
+# 갈아 끼울 자리. **첫 화면이 아니라 가이드 07 이다** (지시 2026-09-17:
+# "홈화면의 아래 내용을 7번 항목 (여기서만) 으로 옮겨주세요"). 같은 이야기가
+# 두 곳에 있으면 한쪽만 낡는다 — 그래서 첫 화면에서는 표시까지 걷었다.
+TARGET = os.path.join('public', 'guide', 'traffic.html')
+
+
 def inject(out):
-    path = os.path.join(ROOT, 'public', 'index.html')
+    path = os.path.join(ROOT, TARGET)
     with open(path, encoding='utf-8') as fh:
         html = fh.read()
     a, b = '<!-- why:start -->', '<!-- why:end -->'
     if a not in html or b not in html:
-        print('첫 화면에 %s / %s 표시가 없습니다.' % (a, b), file=sys.stderr)
+        print('%s 에 %s / %s 표시가 없습니다.' % (TARGET, a, b), file=sys.stderr)
         return False
     head, rest = html.split(a, 1)
     _, tail = rest.split(b, 1)

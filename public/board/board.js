@@ -11,6 +11,38 @@
   var E = window.SBUtil.esc;
   var CATS = { free: "자유", question: "질문", notice: "공지" };
   var me = null;
+  /* 내 표시 이름이 다른 회원과 겹치는가 (지시 2026-09-17: "가입은 되고
+     게시판 들어와 작성 시 수정유도").
+
+     **가입 문턱에서 막지 않는다.** 이름이 겹친다고 가입을 되돌리면, 그
+     사람은 우리 서비스를 써 보지도 못하고 돌아간다. 겹침이 실제로 문제가
+     되는 순간은 **글에 이름이 붙을 때**다 — 그때 말한다.
+
+     한 번만 묻고 기억한다. 목록·글쓰기·댓글마다 물으면 화면을 옮길 때마다
+     왕복이 생긴다. 이름을 고치면 어차피 화면이 새로 뜬다. */
+  var nameDup = false;
+
+  async function checkNameDup() {
+    var nick = me && me.profile && me.profile.nickname;
+    if (!nick) { nameDup = false; return; }
+    try {
+      var r = await window.SB.rpc("nickname_taken", { p_nick: nick });
+      // 못 물어봤으면 **겹치지 않는 것으로 본다.** 확인 실패를 경고로
+      // 바꾸면, 서버가 잠깐 흔들릴 때 멀쩡한 사람에게 이름을 바꾸라고 한다.
+      nameDup = !r.error && r.data === true;
+    } catch (e) { nameDup = false; }
+  }
+
+  // 글쓰기·댓글 자리에 붙는 안내. 막지는 않는다 — 고치라고 권한다.
+  function dupNotice() {
+    if (!nameDup) return "";
+    var nick = (me.profile && me.profile.nickname) || "";
+    return '<div class="note block dup-name">' +
+      "<b>표시 이름 <em>" + E(nick) + "</em> 을 쓰는 회원이 또 있습니다.</b><br>" +
+      "게시판은 이름으로 글쓴이를 가리키므로, 지금 이름으로 글을 쓰면 다른 분의 글과 헷갈립니다. " +
+      '<a href="/account">내 계정에서 이름 바꾸기</a>' +
+      "</div>";
+  }
 
   function route() {
     var h = location.hash.replace(/^#/, "");
@@ -190,6 +222,7 @@
     root.innerHTML =
       '<div class="board-head"><h1 style="margin:0;font-size:1.4rem">새 글</h1>' +
       '<a class="btn ghost" href="#/">목록</a></div>' +
+      dupNotice() +
       '<div class="field"><label for="cat">분류</label><select id="cat">' +
       '<option value="free">자유</option><option value="question">질문</option>' +
       (isAdmin ? '<option value="notice">공지</option>' : "") +
@@ -254,7 +287,8 @@
       }).join("") || '<p class="empty">첫 댓글을 남겨보세요.</p>') +
       "</div>" +
       (me
-        ? '<div class="field" style="margin-top:1.25rem"><textarea id="cbody" style="min-height:5rem" placeholder="댓글"></textarea></div>' +
+        ? dupNotice() +
+          '<div class="field" style="margin-top:1.25rem"><textarea id="cbody" style="min-height:5rem" placeholder="댓글"></textarea></div>' +
           '<button class="btn" id="csave">댓글 등록</button>'
         : needLogin("댓글을 쓰려면"));
 
@@ -303,6 +337,9 @@
     /* 승인 전이면 목록이 **빈 채로** 뜬다. RLS 가 글을 안 내주기 때문에
        오류도 안 난다. 빈 게시판은 '글이 없구나' 로 읽히므로, 왜 비었는지를
        말해준다. 막는 것은 여기가 아니라 데이터베이스다. */
+    // 승인된 회원일 때만 묻는다. 승인 전에는 글을 못 쓰므로 물을 이유가 없다.
+    if (me && me.profile && me.profile.status === "approved") await checkNameDup();
+
     var status = me && me.profile && me.profile.status;
     if (me && status !== "approved") {
       root.innerHTML =

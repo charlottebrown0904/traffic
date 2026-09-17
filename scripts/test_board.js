@@ -100,7 +100,21 @@ const PORT = 8199;
       };
       return o;
     }
-    window.SB = { from: q };
+    window.SB = {
+      from: q,
+      /* 이름 겹침 확인 (지시 2026-09-17). 주소에 dup=1 이면 겹친다고 답한다 —
+         진짜 규칙은 서버의 nickname_taken() 안에 있고, 여기서 보는 것은
+         **겹칠 때 화면이 무엇을 하는가** 다. */
+      rpc(name) {
+        if (name === 'nickname_taken') {
+          return Promise.resolve({
+            data: new URLSearchParams(location.search).get('dup') === '1',
+            error: null,
+          });
+        }
+        return Promise.resolve({ data: null, error: null });
+      },
+    };
     window.SBUtil = {
       esc: s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])),
       when: () => '방금',
@@ -232,6 +246,40 @@ const PORT = 8199;
   const optsA = await page.evaluate(() =>
     [...document.querySelectorAll('#cat option')].map((o) => o.value));
   checks.push(['관리자 글쓰기 칸에는 공지가 있다', optsA.indexOf('notice') >= 0, optsA.join(',')]);
+
+  /* ── 이름이 겹치면 **가입이 아니라 글 쓸 때** 말한다 (지시 2026-09-17) ──
+
+     "혹시 가입할 때 이름이 중복된다고 막으면 안됩니다. 가입은 되고 게시판
+      들어와 작성 시 수정유도할 수 있도록 해주세요."
+
+     막는 것이 아니라 권하는 것이다. 그래서 두 가지를 같이 본다 — 안내가
+     뜨는가, 그리고 **그래도 쓸 수 있는가**. 막아 버리면 지시와 반대가 된다. */
+  await page.goto(`http://127.0.0.1:${PORT}/board/?dup=1#/write`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('save'));
+  const dupWrite = await page.evaluate(() => ({
+    notice: !!document.querySelector('.dup-name'),
+    text: (document.querySelector('.dup-name') || {}).textContent || '',
+    canSave: !!document.getElementById('save') && !document.getElementById('save').disabled,
+    link: !!document.querySelector('.dup-name a[href="/account"]'),
+  }));
+  checks.push(['겹치면 글쓰기 화면이 알려 준다', dupWrite.notice, dupWrite.text.slice(0, 40)]);
+  checks.push(['어디서 고치는지 알려 준다', dupWrite.link]);
+  checks.push(['그래도 글은 쓸 수 있다 (막지 않는다)', dupWrite.canSave]);
+
+  await page.goto(`http://127.0.0.1:${PORT}/board/?dup=1#/p/p1`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('csave'));
+  const dupCmt = await page.evaluate(() => ({
+    notice: !!document.querySelector('.dup-name'),
+    canSave: !document.getElementById('csave').disabled,
+  }));
+  checks.push(['댓글 자리에도 알려 준다', dupCmt.notice]);
+  checks.push(['댓글도 막지 않는다', dupCmt.canSave]);
+
+  // 안 겹치면 아무 말도 안 한다. 늘 떠 있으면 사람은 읽지 않게 된다.
+  await page.goto(`http://127.0.0.1:${PORT}/board/#/write`, { waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('save'));
+  checks.push(['안 겹치면 안내가 없다',
+               await page.evaluate(() => !document.querySelector('.dup-name'))]);
 
   console.log('');
   let bad = 0;
