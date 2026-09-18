@@ -297,6 +297,25 @@ def apply_all():
     return notes
 
 
+def write_csv(notes):
+    """표 편집기에서 **파일로** 올릴 CSV.
+
+    폰에서는 45만 자를 편집기에 붙여 넣는 것이 사실상 불가능하다 — 붙이는
+    동안 편집기가 멈춘다. 표 편집기의 CSV 가져오기는 **파일 고르기**라
+    손가락 세 번이면 끝난다. 그래서 같은 내용을 두 꼴로 낸다.
+
+    줄바꿈이 든 글은 따옴표로 감싸 한 칸에 담는다 (csv 표준). 표의
+    updated_at 은 기본값이 있으므로 싣지 않는다."""
+    import csv
+    out = os.path.join(ROOT, 'data', 'private', 'code_notes.csv')
+    with io.open(out, 'w', encoding='utf-8', newline='') as fh:
+        w = csv.writer(fh)
+        w.writerow(['n', 'path', 'line', 'kind', 'body'])
+        for x in notes:
+            w.writerow([x['n'], x['path'], x['line'], x['kind'], x['body']])
+    return out
+
+
 def write_sql(notes):
     """Supabase SQL 편집기에 한 번 붙여 넣을 파일을 만든다.
 
@@ -343,6 +362,10 @@ def main(argv):
                 cnt += len(hits)
                 tot += sum(b - a for a, b, _k, _r in hits)
         print('---\n합계 %d개 · %d자' % (cnt, tot))
+        return 0
+    if mode == '--csv':
+        notes = json.load(io.open(os.path.join(ROOT, NOTES_JSON), encoding='utf-8'))
+        print(write_csv(notes))
         return 0
     if mode == '--sql':
         notes = json.load(io.open(os.path.join(ROOT, NOTES_JSON), encoding='utf-8'))
