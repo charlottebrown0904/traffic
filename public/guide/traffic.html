@@ -10,17 +10,12 @@
 <meta name="theme-color" content="#FAF7F3" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#12100D" media="(prefers-color-scheme: dark)">
 <title>왜 교통량인가 — 공장이 갈 수 있는 자리부터 · 토지·건축 가이드 | 토지랩</title>
-<!-- GA4 — **초기화는 반드시 여기, head 인라인.** gtag 를 나중에(defer 스크립트에서)
-     세우면, 페이지가 뜨자마자 쏘는 첫 이벤트가 gtag 없는 상태로 dataLayer 에
-     plain object 로 들어가 구글에 끝내 도착하지 않는다. 증상이 '아무것도 안 뜬다'
-     가 아니라 '초기 이벤트만 안 뜬다' 라 찾기 어렵다.
-     측정 ID 는 공개 값이다 — 브라우저가 그것으로 구글에 보내는 것이 본래 하는 일. -->
+<!-- N0700 -->
 <script>
 window.dataLayer = window.dataLayer || [];
 function gtag(){ dataLayer.push(arguments); }
 gtag('js', new Date());
-/* anonymize_ip — 구글이 IP 마지막 자리를 지우고 받는다. GA4 는 기본으로
-   그렇게 하지만 명시해 둔다. 나중에 이 줄이 지워지면 눈에 띈다. */
+/* N0701 */
 gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 </script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-RW6MCG84SF"></script>
@@ -33,10 +28,7 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="/guide/style.css?v=20260912a">
 <style>
-/* ── 왜 교통량인가 ──
-   계열 두 색은 dataviz 검산기를 통과한 값이다 (밝은 바탕 #FAF7F3 /
-   어두운 바탕 #12100D 각각 명도대·채도·색약 분리·대비 전부 PASS).
-   눈으로 고르지 않고 scripts/validate_palette.js 로 확인했다. */
+/* N0702 */
 :root{ --why-a:#2563C9; --why-b:#C2740B }
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){ --why-a:#4A8AD0; --why-b:#B07E33 }
@@ -80,8 +72,7 @@ ul.why-legend i.b{background:var(--why-b)}
 .why-fig figcaption{margin-bottom:2px}
 .why-fig figcaption b{font-size:14.5px;font-weight:800}
 .why-fig figcaption span{display:block;font-size:12.5px;color:var(--muted)}
-/* 글자는 viewBox 와 함께 커진다 — 넓은 화면에서 본문보다 커 보이지 않게
-   그림 폭에 뚜껑을 씌운다 (좁은 화면에서는 100% 로 줄어든다). */
+/* N0703 */
 .why-svg{display:block;width:100%;max-width:420px;height:auto;overflow:visible}
 .why-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round;
   vector-effect:non-scaling-stroke;stroke:var(--why-a)}

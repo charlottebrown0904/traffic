@@ -1,19 +1,4 @@
-/* Admin 전용 화면 (2026-09-12 지시).
- *
- * "산출식과 데이터베이스 기반 내용, 판단 근거, 논문 숫자, 실거래 숫자,
- *  필지 분석 정보, 감정평가서 준비 현황 및 보완 등 모든 내용을 자세히.
- *  제목 / 간략 내용 형태로 작성 후 클릭하면 완벽히 자세한 내용."
- *
- * 두 가지를 지킨다.
- *
- *   1. **관리자만.** 화면에서 한 번 보고(여기), 자료에서 또 본다 —
- *      원장 집계는 appraisal_admin_stats() 안에서 is_admin() 을 다시
- *      확인하고, 격차율 표는 비공개 버킷(premium)이 로그인 토큰을 본다.
- *      화면 코드는 자물쇠가 아니다. 이 파일도 누구나 받아 볼 수 있다.
- *   2. **숫자를 이 파일에 적지 않는다.** 적는 순간 공개다. 숫자는 전부
- *      실행할 때 가져온다 — 공개 자료는 /app/data, 비밀은 버킷·RPC.
- *      여기 적는 것은 '무엇을 어떻게 하는가' 라는 설명뿐이다.
- */
+/* N0026 */
 (function () {
   'use strict';
 
@@ -36,14 +21,8 @@
     return isNaN(d) ? E(s) : d.toLocaleString('ko-KR');
   };
 
-  /* GA 상태 한 칸. **켜졌다고 말하려면 실제로 켜져 있어야 한다** —
-     측정 ID 가 비어 있으면 track.js 가 스크립트를 아예 안 붙인다.
-     '붙였는데 안 쌓인다' 는 가장 찾기 어려운 고장이라 여기서 갈라 적는다. */
-  /* 계단 — 도착에서 필지까지 어디서 사람이 빠지나.
-
-     GA 의 '이벤트 수' 표만 보면 어느 칸이 새는지 안 보인다. 순서대로 놓고
-     바로 앞 칸 대비 남은 비율을 적으면 **한 줄만 보면 된다.**
-     칸마다 막대는 같은 한 눈금(첫 칸)을 쓴다. */
+  /* N0027 */
+  /* N0028 */
   var FUNNEL = [
     ['landing_view', '첫 화면 도착'],
     ['cta_click', '가입 단추 누름'],
@@ -92,8 +71,7 @@
           + '<p><code>public/app/supabase.js</code> 의 <code>window.ANALYTICS.ga4</code> 가 '
           + '비어 있습니다.</p></div>');
 
-    // 어드민 연동 — 되면 숫자, 안 되면 **왜 안 되는지**. '연결 실패' 네 글자만
-    // 보여 주면 무엇을 고쳐야 하는지 아무도 모른다.
+    // N0029
     if (!g.connected) {
       return head
         + '<div class="adm-block"><b>어드민 연동은 아직입니다.</b>'
@@ -131,15 +109,7 @@
       + '곧 "왔지만 가입하지 않은 사람" 입니다.</div>';
   }
 
-  /* 일별 클릭 막대.
-
-     한 계열(클릭)이고 하는 일은 **크기 비교**라 눈금 하나면 된다. 색은
-     브랜드 강조 하나 — 계열이 하나뿐이라 서로 구별할 상대가 없다
-     (두 테마 모두 바탕 대비 3:1 을 넘는 것은 확인했다).
-
-     **막대 끝에 숫자를 전부 적지 않는다.** 가장 큰 날과 마지막 날만 적는다.
-     전부 적으면 글자끼리 겹쳐 그림이 표만도 못해진다. 나머지는 막대에 얹은
-     <title> 로 짚으면 나온다. */
+  /* N0030 */
   function barChart(rows) {
     if (!rows || !rows.length) {
       return '<div class="adm-note">아직 클릭이 없습니다. 링크를 뿌리면 여기에 날짜별로 쌓입니다.</div>';
@@ -148,16 +118,13 @@
     var maxAt = rows.reduce(function (a, r, i) { return (r.n || 0) > (rows[a].n || 0) ? i : a; }, 0);
     var last = rows.length - 1;
 
-    /* **SVG 대신 HTML 막대다.** viewBox 를 가로로 늘여 그리면 모서리가
-       타원이 되고 값 글자까지 찌그러진다 — 실제로 그려 보고 나서 바꿨다.
-       칸마다 div 하나면 늘어날 일이 없고, 밑변이 바닥에 그대로 붙는다. */
+    /* N0031 */
     var bars = rows.map(function (r, i) {
       var h = (r.n || 0) ? Math.max(((r.n || 0) / max) * 100, 2) : 0;
       var show = (i === maxAt || i === last);
       return '<div class="bc-col" title="' + E(r.day) + ' · 클릭 ' + (r.n || 0)
         + (r.mobile ? ' (모바일 ' + r.mobile + ')' : '') + '">'
-        // 이름표는 막대 **안**에 넣고 흐름 밖으로 띄운다. 흐름에 두면
-        // 이름표가 붙은 막대만 그만큼 짧아져 눈금이 하나가 아니게 된다.
+        // N0032
         + '<i style="height:' + h.toFixed(1) + '%">'
         + (show ? '<b>' + (r.n || 0) + '</b>' : '') + '</i></div>';
     }).join('');
@@ -172,9 +139,7 @@
       + '</figure>';
   }
 
-  /* 채널별 성과 — 표에 크기 막대를 얹는다. 숫자만 있으면 '11 과 3 중 어느
-     쪽이 큰가' 를 매번 읽어서 재야 한다. 막대는 그걸 눈이 대신 한다.
-     막대는 같은 한 눈금(그 표의 최대값)을 쓴다. */
+  /* N0033 */
   function compareTable(rows) {
     if (!rows || !rows.length) {
       return '<p><em class="adm-miss">아직 채널별로 셀 것이 없습니다.</em></p>';
@@ -212,8 +177,7 @@
       return '<div><b>' + it[1] + '</b><span>' + E(it[0]) + '</span></div>';
     }).join('') + '</div>';
   }
-  /* 지수표는 [열쇠, 값] 짝의 목록으로 오기도 하고(순서가 뜻을 가지는 것),
-     그냥 객체로 오기도 한다. 둘 다 받는다. */
+  /* N0034 */
   function idxTable(v, label) {
     if (!v) return '<p><em class="adm-miss">비공개 자료를 못 받았습니다.</em></p>';
     var rows = Array.isArray(v)
@@ -223,8 +187,7 @@
   }
 
 
-  /* 토지가격비준표 — 읍·면 파일이 여럿이면 지역을 열로 놓고 우리 값 옆에 나란히.
-     bijunpyo_regions 가 없는 옛 valuation.json 은 한 지역짜리 bijunpyo 로 그린다. */
+  /* N0035 */
   function ourIdx(item, target, v) {
     var t = String(target || '');
     var tbl = item === '도로접면' ? v.road_index
@@ -265,9 +228,7 @@
       }).join('');
   }
 
-  /* ── 자료 모으기 ─────────────────────────────────────────────
-     공개(/app/data)와 비밀(버킷·RPC)을 나눠 부른다. 하나가 없어도
-     나머지는 그린다 — 없는 칸은 '—' 로 둔다. */
+  /* N0036 */
   function getJSON(url) {
     return fetch(url, { cache: 'no-cache' }).then(function (r) {
       return r.ok ? r.json() : null;
@@ -290,8 +251,7 @@
     }).catch(function (e) { return { error: String(e && e.message || e) }; });
   }
 
-  /* 부족한 칸 집계 (0010). 원장 두 표는 그대로 잠겨 있고 집계만 나온다 —
-     appraisal_coverage() 안에서 is_admin() 을 다시 본다. */
+  /* N0037 */
   function getCoverage() {
     var sb = window.SB;
     if (!sb) return Promise.resolve({ error: '로그인 연결이 없습니다' });
@@ -301,8 +261,7 @@
     }).catch(function (e) { return { error: String(e && e.message || e) }; });
   }
 
-  /* 유입 경로 집계 (0012). profile 에는 전화번호와 권한이 같이 들어 있어
-     열지 않는다 — 셈한 결과만 온다. 함수 안에서 is_admin() 을 다시 본다. */
+  /* N0038 */
   function getLinks(days) {
     var sb = window.SB;
     if (!sb) return Promise.resolve({ error: '연결 없음' });
@@ -319,8 +278,7 @@
     }).catch(function (e) { return { error: String(e && e.message || e) }; });
   }
 
-  /* GA 숫자는 서버(api/ga.js)가 구글에서 받아 온다. 브라우저에서 직접
-     부르면 자격증명이 브라우저로 나가야 한다 — 그러면 안 된다. */
+  /* N0039 */
   function getGa() {
     return fetch('/api/ga').then(function (r) { return r.json(); })
       .catch(function (e) { return { connected: false, reason: String(e && e.message || e) }; });
@@ -335,20 +293,7 @@
     }).catch(function (e) { return { error: String(e && e.message || e) }; });
   }
 
-  /* ── 탭 ──────────────────────────────────────────────────────
-     2026-09-16 지시: "산출식 · 데이터베이스 · 판단 근거 · 논문 숫자 ·
-     실거래 숫자 · 필지 분석 · 감정평가서 현황 각각 탭으로 구성
-     + 대쉬보드 추가".
-
-     지금까지는 한 장에 열일곱 칸이 세로로 늘어서 있었다. 머리글이
-     '무엇이 어디 있다' 를 말해 주지 않아서, 원장 현황을 보려면 산출식
-     네 칸을 지나쳐 굴려야 했다.
-
-     탭 이름은 **지시한 일곱 개를 그대로** 쓴다. 운영은 지시에 없지만
-     이미 있던 칸이라 버리지 않고 맨 뒤에 둔다 — 지우라는 말이 아니었다.
-
-     주소에 #탭이 붙는다. 새로고침해도 보던 탭이 남고, 링크로 짚어
-     보낼 수 있다. */
+  /* N0040 */
   var TABS = [
     ['board', '대쉬보드'],
     ['formula', '산출식'],
@@ -359,23 +304,13 @@
     ['parcel', '필지 분석'],
     ['appraisal', '감정평가서 현황'],
     ['ops', '운영'],
+    ['notes', '주석'],
   ];
 
-  /* ── 카드 ────────────────────────────────────────────────────
-     [탭, 제목, 간략 내용, 자세히(ctx → HTML)] */
+  /* N0041 */
   var CARDS = [
 
-    /* ══ 0. 대쉬보드 ══
-       2026-09-16 지시: "+ 대쉬보드 추가 (포멧은 추후 확정)".
-
-       **포맷이 안 정해졌다고 빈 칸을 두지는 않는다.** 대신 이미 부르고
-       있는 세 곳(화면 자료 meta · 원장 집계 RPC · 부족한 칸 RPC)에서
-       머리 숫자만 뽑아 한 줄로 세운다. 새 숫자를 짓지 않았으므로 나중에
-       포맷이 정해져도 버릴 것이 없다.
-
-       그리고 **막힌 것을 같이 적는다.** 숫자만 늘어놓은 대쉬보드는 기분만
-       좋게 하고 할 일을 안 알려 준다. 여기서 보고 싶은 것은 '얼마나
-       모았나' 가 아니라 '무엇이 다음인가' 다. */
+    /* N0042 */
     ['board', '한눈에 — 지금 무엇이 서 있고 무엇이 막혀 있나',
       '화면 자료 · 원장 · 부족한 칸의 머리 숫자를 한 줄로. 포맷은 아직 확정 전입니다.',
       function (c) {
@@ -387,16 +322,14 @@
         var cv = c.cover || {};
         var f = st.factors || {};
 
-        // 못 받은 곳은 숨기지 않고 '못 받았다' 고 적는다. 0 으로 적으면
-        // '자료가 없다' 와 '못 불렀다' 가 한 얼굴이 된다.
+        // N0043
         var broken = [];
         if (!m.counts) broken.push('화면 자료(<code>meta.json</code>)');
         if (st.error) broken.push('원장 집계 — ' + E(st.error));
         if (cv.error) broken.push('부족한 칸 집계 — ' + E(cv.error));
         if (!c.val) broken.push('비공개 버킷(<code>premium/valuation.json</code>)');
 
-        // '부족한 칸' 탭과 **같은 자료의 같은 칸**을 본다 (v.grid / v.cells_ready).
-        // 여기서 따로 세면 두 탭이 다른 숫자를 말할 수 있다.
+        // N0044
         var grid = cv.grid || [];
 
         return '<p class="adm-stamp">화면 자료 <b>' + when(m.generated_at) + '</b>'
@@ -428,18 +361,7 @@
           + '무엇을 맨 위에 둘지 정해 주시면 그대로 맞춥니다.</div>';
       }],
 
-    /* ══ 0-b. 유입 경로(UTM) · 방문 통계(GA) ══
-       2026-09-16 지시: "admin 탭 대쉬보드에 UTM, GA 준비합시다".
-
-       **두 가지는 하는 일이 다르다.** 한 칸에 몰아 넣으면 둘 다 흐려진다.
-
-         UTM  '어디서 온 사람이 **회원이 됐나**' — 우리 자료에만 있다.
-              GA 로는 방문 수가 보이지만 가입까지는 안 이어진다.
-         GA   쪽수·머문 시간·기기처럼 **우리가 안 쌓는 것**.
-
-       첫 접점을 쓴다. 광고로 들어왔다가 며칠 뒤 검색으로 돌아와 가입하는
-       일이 흔한데, 마지막 접점만 보면 그 가입이 '자연 검색' 이 되고
-       광고비를 쓴 쪽이 공을 못 받는다. */
+    /* N0045 */
     ['board', '어디서 온 사람이 회원이 되나 — 유입 경로와 방문 통계',
       '광고 꼬리표(UTM)는 우리가 직접 쌓습니다. GA 는 측정 ID 를 넣으면 켜집니다.',
       function (c) {
@@ -447,8 +369,7 @@
         var ga = (window.ANALYTICS || {}).ga4 || '';
         var on = /^G-[A-Z0-9]+$/i.test(ga);
 
-        // 아직 표가 없는 첫 실행에서는 RPC 가 오류로 온다. 그것을
-        // 0 으로 적으면 '아무도 안 왔다' 로 읽힌다 — 갈라서 말한다.
+        // N0046
         if (u.error) {
           return '<div class="adm-block"><b>아직 집계를 못 받습니다</b>'
             + '<p>' + E(u.error) + '</p>'
@@ -508,11 +429,7 @@
           + gaBlock(ga, on, c.ga);
       }],
 
-    /* 링크를 만들고 클릭을 센다.
-
-       0012 로 '어디서 온 사람이 회원이 됐나'(분자)는 세게 됐지만
-       **'몇 명이 눌렀나'(분모)를 못 셌다.** 분모가 없으면 전환율이
-       안 나오고, 전환율이 없으면 광고 둘 중 어느 쪽이 나은지 끝내 모른다. */
+    /* N0047 */
     ['board', '링크를 만들고 성과를 본다 — UTM · 단축 링크 · 전환율',
       '채널을 여러 개 골라 한 번에 만듭니다. 기간을 바꾸면 클릭·가입이 그 기간으로 다시 셉니다.',
       function (c) {
@@ -1165,11 +1082,61 @@
           + '<p>Actions 캐시가 브랜치마다 따로여서, 복원된 DB 를 쓰는 워크플로는 <b>작업 브랜치에서</b> 돌린 뒤 main 으로 밀어야 합니다. '
           + 'main 에서 바로 돌리면 "복원된 DB 가 없습니다" 로 멈춥니다.</p>';
       }],
+
+    ['notes', '주석 — 화면에서 걷어낸 설명 원문',
+      '공개 화면의 N0123 번호가 가리키는 글. 관리자만 읽습니다.',
+      function () { return notesBody(); }],
   ];
 
-  /* ── 그리기 ───────────────────────────────────────────────
-     탭 하나만 그린다. 열일곱 칸을 한 번에 그리면 안 보는 탭의
-     표까지 다 만들고(원장 표만 수백 줄이다), 굴림자가 뜻을 잃는다. */
+  /* N0746 */
+  var notes = { rows: null, err: '', q: '' };
+
+  async function loadNotes() {
+    if (notes.rows) return;
+    var r = await window.SB.from('code_note').select('n,path,line,body').order('n');
+    if (r.error) { notes.err = r.error.message; notes.rows = []; return; }
+    notes.rows = r.data || [];
+  }
+
+  function notesBody() {
+    if (notes.err) {
+      return '<div class="adm-block">주석을 못 읽었습니다 — ' + E(notes.err)
+        + '<br>표가 아직 없으면 <code>supabase/migrations/0018_code_note.sql</code> 을 먼저 실행합니다.</div>';
+    }
+    if (!notes.rows) return '<p class="note">불러오는 중…</p>';
+    if (!notes.rows.length) {
+      return '<div class="adm-block">아직 옮겨 둔 주석이 없습니다.'
+        + ' <code>python scripts/strip_notes.py --apply</code> 뒤 <code>--sql</code> 로 만든'
+        + ' <code>data/private/code_notes.sql</code> 을 SQL 편집기에서 한 번 실행합니다.</div>';
+    }
+    var q = notes.q.trim().toLowerCase();
+    var num = q.replace(/^n0*/, '');
+    var hit = notes.rows.filter(function (x) {
+      if (!q) return true;
+      if (num && String(x.n) === num) return true;
+      return (x.path + ' ' + x.body).toLowerCase().indexOf(q) >= 0;
+    });
+    return '<div class="mtool-row" style="margin-bottom:.6rem">'
+      + '<input id="note-q" type="search" placeholder="번호(N0123) · 파일 · 글 내용으로 찾기" value="'
+      + E(notes.q) + '">'
+      + '<span class="note-in">' + hit.length + ' / ' + notes.rows.length + '개</span></div>'
+      + '<div class="notes-list">' + hit.slice(0, 200).map(function (x) {
+        return '<div class="note-row"><div class="note-h"><b>N'
+          + ('000' + x.n).slice(-4) + '</b> <span>' + E(x.path)
+          + (x.line ? ':' + x.line : '') + '</span></div>'
+          + '<pre>' + E(x.body) + '</pre></div>';
+      }).join('')
+      + (hit.length > 200 ? '<p class="note">앞의 200개만 보입니다 — 더 좁혀 주세요.</p>' : '')
+      + '</div>';
+  }
+
+  // 주석 탭을 처음 열 때 한 번만 받는다.
+  function maybeLoadNotes() {
+    if (wantedTab() !== 'notes' || notes.rows) return;
+    loadNotes().then(function () { render(null); });
+  }
+
+  /* N0048 */
 
   function tabOf(id) {
     for (var i = 0; i < TABS.length; i += 1) if (TABS[i][0] === id) return TABS[i];
@@ -1204,9 +1171,7 @@
       try { inner = card[3](ctx); } catch (e) {
         inner = '<div class="adm-block">이 칸을 그리다 막혔습니다 — ' + E(e && e.message || e) + '</div>';
       }
-      // 칸이 하나뿐인 탭은 접어 둘 이유가 없다. **대쉬보드는 칸이 여럿이어도
-      // 늘 펼친다** (2026-09-16 지시) — 매일 보는 화면에서 매번 눌러 여는 것은
-      // 한 단계가 아니라 '안 보게 되는' 이유가 된다.
+      // N0049
       var open = (mine.length === 1 || cur === 'board') ? ' open' : '';
       return '<details class="adm-card"' + open + '><summary>'
         + '<span class="adm-n">' + (i < 10 ? '0' : '') + i + '</span>'
@@ -1226,6 +1191,15 @@
       + (body || '<p class="note">이 탭에는 아직 칸이 없습니다.</p>');
     if (window.tojiThemeMount) window.tojiThemeMount();
     wireLinks(ctx);
+    var nq = document.getElementById('note-q');
+    if (nq) nq.addEventListener('input', function (e) {
+      notes.q = e.target.value;
+      var pos = e.target.selectionStart;
+      render(null);
+      var again = document.getElementById('note-q');
+      if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (err) { /* */ } }
+    });
+    maybeLoadNotes();
   }
 
   /* 링크 만들기·복사·기간. render 가 HTML 을 통째로 갈아 끼우므로 매번 다시 건다. */
@@ -1250,8 +1224,7 @@
         .map(function (el) { return chanOf(el.value); }).filter(Boolean);
     }
 
-    /* 기간 칩. 누르면 그 기간으로 **다시 세어** 온다 — 화면에서 자르지
-       않는다. 링크마다 그 기간의 클릭을 DB 가 세는 편이 정확하다. */
+    /* N0050 */
     var row = document.getElementById('pd-row');
     if (row) {
       Array.prototype.forEach.call(row.querySelectorAll('.pd'), function (b) {
@@ -1268,8 +1241,7 @@
       });
     }
 
-    /* 복사. **저장과 복사를 갈라 말한다** — 복사만 막혔는데 '저장 실패' 라고
-       하면 같은 링크를 또 만들게 된다. */
+    /* N0051 */
     Array.prototype.forEach.call(document.querySelectorAll('.lnk-copy'), function (b) {
       b.addEventListener('click', function () {
         var url = b.getAttribute('data-url');
@@ -1283,8 +1255,7 @@
       });
     });
 
-    /* QR — 눌러야 그린다. 링크가 스무 개면 스무 장을 미리 그리는 셈이라
-       열 때마다 화면이 멎는다. 그리고 대부분은 안 쓴다. */
+    /* N0052 */
     Array.prototype.forEach.call(document.querySelectorAll('.lnk-qr'), function (b) {
       b.addEventListener('click', function () {
         if (!window.QR) { window.alert('QR 부호기를 못 불렀습니다'); return; }
@@ -1316,8 +1287,7 @@
     var form = document.getElementById('lnk-form');
     if (!form || !U || !window.SB) return;
 
-    // 소재 코드를 미리 채워 준다. 하나만 골랐을 때만 — 여럿이면 채널마다
-    // 다른 코드가 붙어야 하므로 각자 제안하게 둔다.
+    // N0053
     var ct = document.getElementById('lnk-content');
     var touched = false;
     if (ct) ct.addEventListener('input', function () { touched = true; });
@@ -1390,8 +1360,7 @@
     });
   }
 
-  // 탭을 누르면 주소가 바뀌고 그때 다시 그린다. 자료는 다시 안 부른다
-  // (lastCtx 를 들고 있다) — 탭을 옮길 때마다 RPC 를 또 때리면 안 된다.
+  // N0054
   window.addEventListener('hashchange', function () {
     if (lastCtx) { render(null); window.scrollTo(0, 0); }
   });

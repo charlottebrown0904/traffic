@@ -1,95 +1,29 @@
-/* 색을 두 종류로 나눠 쓴다.
- *
- *   지면색  브라운 계열. 배경·테두리·강조. 제품의 얼굴이라 그대로 둔다.
- *   구분색  뜻이 있는 색. 거리 밴드, 분면, 물건 종류. 서로 **구별되는 것**이
- *           유일한 임무라 브라운에서 떼어내 색상환을 넓게 쓴다.
- *
- * 둘을 섞어 쓰다가 밴드 다섯 개가 전부 같은 브라운 링으로 그려져 있었다.
- * 화면에서 0-1km 와 10-20km 를 눈으로 가릴 수 없었다.
- */
+/* N0556 */
 :root{
-  /* 지면색(바탕·글자·테두리·강조)은 여기 없다 — /lib/theme.css 한 곳에서
-     온다. 예전에는 이 파일이 차가운 회색·청회색 한 벌을 따로 갖고 있어서,
-     **같은 화면 안에서 로고는 갈색인데 단추는 청회색**이었다.
-     여기 남는 것은 뜻이 있는 색과 칸 크기뿐이다. */
+  /* N0557 */
 
-  /* ── 영업소: 교통량 4단계 — 차가움 → 따뜻함 ──
-     명도만 다른 한 색상은 지도를 확대하면 구별이 안 됩니다(2026-09-03 지시).
-     그래서 색상 자체를 바꾸되, **차가운 색에서 따뜻한 색으로** 가서 순서를
-     잃지 않게 했습니다. 온도가 크기·라벨과 같은 말을 합니다.
-     네 색은 전 쌍 검사(색약 포함) 통과. */
+  /* N0558 */
   --tg-1:#3FBFB5;   /* ~1만대   민트 */
   --tg-2:#3B82D9;   /* 1~2만대  파랑 */
   --tg-3:#E2571E;   /* 2~3만대  붉은 주황 */
   --tg-4:#C2186B;   /* 3만대+   진분홍 */
 
-  /* 신설 — 그 해에 처음 교통량이 잡힌 영업소.
-     개통 효과를 보는 제품에서 가장 중요한 관측 대상이라 교통량 구간에
-     섞지 않고 따로 표시합니다. 신설은 '교통량이 적은 곳' 이 아니라
-     '이제 막 생긴 곳' 입니다.
-
-     처음에는 2~3만 구간이 주황(#F08C28)이라 노랑과 ΔE 15.9 로, 통과는
-     하지만 작은 마커에서는 헷갈렸습니다. 2~3만을 붉은 주황으로 밀어
-     ΔE 27.7 로 벌렸습니다. 링도 거의 검정으로 두껍게 둘러, 흰 링을
-     두른 네 구간과 **테두리 색만 봐도** 갈립니다. */
+  /* N0559 */
   --tg-new:#FACC15; --tg-new-ring:#1A1205;
 
-  /* 통행량 미공개 — 도로공사 TCS 에 통행량이 한 해도 없는 영업소.
-     민자 운영사가 요금을 직접 걷는 노선이라(마도·남봉담 등 수도권
-     제2순환 봉담~송산) 도로공사가 그 자료를 갖고 있지 않습니다.
-
-     **채우지 않고 테두리만 그립니다.** 네 구간과 신설은 속이 찬 점이라
-     '값이 있다' 를 뜻하고, 이것은 속이 비어 '값이 없다' 를 뜻합니다.
-     색으로 한 구간 더 만들면 '통행량이 이만큼인 곳' 처럼 읽혀, 정반대의
-     결론이 나옵니다 — 한산한 IC 가 아니라 자료가 없는 IC 입니다. */
+  /* N0560 */
   --tg-none:#4B5563;
 
-  /* ── 거리 밴드: 원색 점선 ──
-     화면에 그리는 밴드는 **영향범위 3개까지**입니다. 위약 대조(5-10km)는
-     분석 절차라 화면에서 뺐고, 그만큼 색상환에 자리가 생겨 원색을 쓸 수
-     있게 됐습니다(2026-09-03 지시).
-
-     세 색은 전 쌍 검사(색약 포함)를 통과합니다. 면은 채우지 않습니다 —
-     넓은 색면은 한국 토지이용계획도의 용도지역(주거 노랑·상업 빨강·
-     공업 보라·녹지 초록)처럼 읽히는데, 우리 밴드는 용도와 무관합니다.
-     실선도 쓰지 않습니다. 배경 지도의 행정경계·도로와 섞입니다. */
+  /* N0561 */
   --band-1:#7C3AED;   /* 0-1  */
   --band-2:#DB2777;   /* 1-3  */
   --band-3:#0891B2;   /* 3-5  */
   --band-4:#6B7280;   /* 5-10 위약 대조 — 화면에는 안 그림, 분석 전용 */
   --band-5:#4B5563;
 
-  /* ── 실거래·매물 ──
-     한국 토지이용계획도는 색이 법으로 정해져 있습니다 — 주거 노랑,
-     상업 빨강, **공업 보라**, 녹지 초록. 땅을 보는 사람은 그 색을 몸으로
-     압니다. 그래서 공장·창고에 보라를 줍니다(관행과 일치). 토지는 흙갈색
-     — 초록으로 두면 영업소 민트와 붙고, 적록색약에서 따뜻한 단계와도
-     무너집니다. 흙갈색은 그 함정이 없습니다. */
-  /* ── 실거래 — 용도지역 색으로 칠합니다 ──
-     한국 지적편집도를 읽어온 분들에게 이 색은 곧 뜻입니다. 법정
-     용도지역 색 계열을 그대로 쓰되, 지도 위 3.5px 점에서도 보이도록
-     채도를 올렸습니다 (법정 색은 넓은 면을 칠하라고 만든 옅은 색이라
-     점으로 찍으면 배경에 묻힙니다).
-
-       계획관리  살구·주황 계열 → 진한 벽돌 주황
-       생산관리  연두 계열      → 연두
-       자연녹지  초록 계열      → 진초록
-       공업      보라 계열      → 보라   ← 공장·창고가 여기 해당
-
-     계획관리를 #D97706 로 두면 영업소 2~3만(#E2571E)과 ΔE 7.0 이라
-     작은 배율에서 헷갈립니다. #92400E 로 낮춰 15.0 을 확보했습니다.
-     거래끼리는 최소 20.2, 배경과는 최소 32.7 입니다. */
-  /* 거래는 **종류 둘**로만 나눈다. 예전에는 용도지역별로 다섯 색을
-     썼는데, 화면에 영업소 6색 + 밴드 3색이 이미 있어서 점이 열 몇 가지
-     색의 원으로 뒤덮였다 — 보고된 대로 어느 것이 IC 이고 어느 것이
-     거래인지 구분이 안 됐다.
-
-     색을 고르기 전에 **모양으로 갈랐다.** 영업소는 원, 거래는 네모(토지)
-     와 마름모(공장)다. 모양이 먼저 갈라주므로 색은 두 가지면 된다.
-
-     두 색은 눈으로 고르지 않고 쟀다(OKLab ΔE). 영업소 6색·밴드 3색·
-     배경 5색 전부와 최소 16.0, 둘끼리 44.8 이다. 채도도 높다(.186/.255)
-     — 원색으로 해달라는 요구가 그것이다. */
+  /* N0562 */
+  /* N0563 */
+  /* N0564 */
   --kind-land:#00A63E;      /* 토지 — 초록. 네모 */
   --kind-factory:#1414CC;   /* 공장 — 진파랑. 마름모 */
   --kind-warehouse:#B8860B; /* 창고 — 황토. 마름모 (공장과 모양은 같고 색이 다르다) */
@@ -104,11 +38,7 @@
 
   --rail-w:16rem; --detail-w:23rem; --top-h:3.75rem;
 
-  /* ── 어두울 때의 자료색 — 값은 여기 한 번만 적는다 ──
-     예전에는 OS 설정용과 손으로 고른 테마용 두 곳에 따로 적어 두었다가
-     어긋났다. 거리 밴드가 한쪽은 보라·분홍·청록인데 다른 쪽은 **다섯 개가
-     전부 회색**이었다 — 이 파일 맨 위가 '밴드를 눈으로 못 가른다' 고
-     적어 둔 바로 그 버그가 한쪽에만 되살아나 있었다. */
+  /* N0565 */
   --d-tg-1:#4FD8CD; --d-tg-2:#6BA6F0; --d-tg-3:#F2703A; --d-tg-4:#E8558F;
   --d-tg-new:#FDE047; --d-tg-new-ring:#FEF9C3; --d-tg-none:#DCE3EC;
   --d-band-1:#A78BFA; --d-band-2:#F472B6; --d-band-3:#22D3EE;
@@ -149,24 +79,10 @@
   --traffic-3:var(--d-traffic-3); --traffic-4:var(--d-traffic-4);
 }
 
-/* ── 화면 너비의 문턱은 셋뿐이다 ──────────────────────────────
-   예전에는 24rem · 34rem · 640px · 56rem · 760px · 60rem · 64rem 일곱이
-   rem 과 px 섞여 있었다. 어느 화면에서 무엇이 바뀌는지 아무도 몰랐다.
-
-     34rem (544px)  폰       — 한 칸으로 떨어진다
-     56rem (896px)  태블릿   — 지도와 옆칸이 위아래로 쌓인다
-     64rem (1024px) 좁은 창  — 두 칸 짜리 판이 한 칸이 된다
-
-   새 규칙을 더할 때도 이 셋 밖을 쓰지 않는다. */
+/* N0566 */
 *{box-sizing:border-box}
 
-/* hidden 속성은 브라우저 기본 규칙(display:none)으로 감춰지는데, 클래스에
-   display 를 주면 그쪽이 이긴다. 그래서 .banner{display:flex} 를 단
-   #demo-banner 가 hidden 인 채로 계속 보였고, **실자료 화면에 '데모 데이터,
-   합성 데이터입니다' 배너가 떠 있었다.** 회원 가입까지 하고 들어온 사람에게
-   자기 제품을 가짜라고 말하고 있었던 셈이다.
-   .form{display:grid} 를 단 회원가입 폼, .home-link 도 같은 처지였다.
-   한 줄로 전부 막는다. */
+/* N0567 */
 [hidden]{display:none !important}
 html,body{height:100%}
 body{
@@ -195,10 +111,7 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
   background:var(--surface); border-bottom:1px solid var(--border);
 }
 .brand{display:flex; align-items:center; gap:.65rem}
-/* 아이콘 (요구사항 2026-09-10). 예전에는 accent 색 사각형 하나였고
-   쓰이지도 않는 mask 가 붙어 있었다 — 그것을 걷어내고 그림을 넣는다.
-   display:block 이 없으면 SVG 가 인라인 요소라 아래에 여백이 생겨
-   글자와 가운데가 안 맞는다. */
+/* N0568 */
 .mark{
   width:1.6rem; height:1.6rem; flex:0 0 auto; display:block;
 }
@@ -213,9 +126,7 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 .tab:hover{background:var(--surface-2); color:var(--ink)}
 .tab.is-active{background:var(--accent-soft); border-color:var(--accent); color:var(--accent)}
 .tab:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
-/* 숨긴 탭. **지운 것이 아니라 접어 둔 것이다** — 화면도 코드도 그대로
-   있고, 이 한 줄만 되돌리면 다시 선다. .tabs 가 flex 컨테이너라
-   자식이 flex item 이 되므로 못을 박아 둔다. */
+/* N0569 */
 .tab[hidden]{display:none!important}
 .guide-link{
   margin-left:auto; white-space:nowrap;
@@ -277,8 +188,7 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 .field output{font-variant-numeric:tabular-nums; font-weight:600; color:var(--ink)}
 .legend{display:grid; gap:.3rem; font-size:.78rem; color:var(--muted)}
 .legend .row{display:flex; align-items:center; gap:.5rem}
-/* 밴드마다 다른 색. 전에는 다섯 개가 전부 같은 브라운이라 범례가 범례 구실을
-   못 했다. --c 는 JS 가 밴드 순서에 맞춰 넣는다. */
+/* N0570 */
 .legend .ring{
   width:.85rem; height:.85rem; border-radius:50%; flex:0 0 auto;
   border:2px solid var(--c, var(--accent));
@@ -296,45 +206,9 @@ h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.01em}
 .map-wrap{flex:1; position:relative; min-width:0}
 #map{position:absolute; inset:0; background:var(--surface-2)}
 .leaflet-container{font:inherit; background:var(--surface-2)}
-/* 배경 지도 — **색을 손대지 않는다** (2026-09-15 지시로 되돌림).
- *
- * 길게 돌아온 자리다. 처음에 거래 점을 돋보이게 하려고 타일 판에
- * saturate(.10) 을 걸어 배경을 거의 흑백으로 만들었다. 그 바람에 OSM 이
- * 원래 갖고 있던 도로 위계 색(고속도로 분홍·국도 주황·지방도 연노랑)을
- * 우리가 지웠고, IC 주변 땅값을 보는 제품에서 고속도로가 어디인지 알
- * 수 없었다. 그래서 .62 로 올렸는데, 그것도 **원본이 아니다** — 지도를
- * 부르는 사람은 지도가 제 색으로 오기를 기대한다.
- *
- * 이제 filter 를 아예 걸지 않는다. 거래 점이 묻히지 않는 까닭은 색이
- * 아니라 **흰 테두리**로 배경과 끊기 때문이다 (app.js drawTrades).
- * 색으로 이기려 들면 배경을 계속 죽여야 하고, 그러면 지도가 지도
- * 노릇을 못 한다.
- *
- * 위성·야간에 걸어 뒀던 예외도 같이 없앤다 — 기본 손질이 사라지면
- * 그 예외는 되돌릴 것이 없어 할 일이 없다. */
-/* ── 필지 경계선의 색 (요구사항 2026-09-10) ─────────────────────────
- *
- * **래스터 타일이라 아무 색으로나 칠할 수는 없다.** 브이월드가 이미
- * 그려서 보낸 그림이므로, 우리가 할 수 있는 것은 밝기·채도를 옮기는
- * 것뿐이다. 그래서 '무슨 색' 이 아니라 '어느 쪽으로 미는가' 를 고른다.
- *
- * 밝은 배경(기본·브이월드 일반) — **짙은 먹빛**으로 민다.
- *   배경 지도의 도로는 노랑·주황, 녹지는 초록, 물은 파랑이다. 색이
- *   있는 선을 하나 더 얹으면 그 무리에 섞여 '길인가 경계인가' 가
- *   된다. 채도를 빼고 어둡게 눌러야 **우리가 그은 선**으로 읽힌다.
- *
- * 어두운 배경(위성·하이브리드·야간) — **흰 선**으로 뒤집는다.
- *   위성 사진 위에서 짙은 선은 그림자와 구별되지 않는다. 밭고랑과
- *   경계선이 같은 색이면 경계선을 켠 뜻이 사라진다.
- *
- * 투명도도 갈린다. 밝은 배경은 선이 잘 보이므로 조금 물리고, 위성은
- * 바탕이 요란하므로 더 세운다. */
-/* 필지 경계선. **벡터라 색을 그대로 정한다** — 예전에는 브이월드가
-   준 래스터 타일이라 명도·채도만 흔들 수 있었고(grayscale·invert),
-   그 꼼수가 필요 없어졌다.
-
-   밝은 배경에서는 어두운 남색 계열이 지도의 도로·지명과 안 싸운다.
-   검정은 글자와 붙어 지저분해지고, 파랑은 물길과 헷갈린다. */
+/* N0571 */
+/* N0572 */
+/* N0573 */
 .cad-line {
   stroke: #33445E;
   stroke-opacity: .5;
@@ -351,12 +225,7 @@ body[data-basemap="midnight"] .cad-line {
 .map-tools{
   position:absolute; top:.6rem; right:.6rem; z-index:500;
   display:flex; gap:.4rem; flex-wrap:wrap; justify-content:flex-end;
-  /* **폭을 좁히지 않는다.** 검색칸이 지도 위에 있던 하루 동안 여기에
-     max-width:calc(100% - 22rem) 을 걸어 뒀었다. 390px 폰에서 그 값은
-     38px 이다 — 스위치 글자가 'IC· / 영업 / 소' 로 세 줄이 되고,
-     배경 지도 칩 다섯 중 둘만 남고 나머지는 .basemap-pick 의
-     overflow:hidden 에 잘렸다. 검색칸이 머리띠로 돌아가면서 좁힐
-     이유도 함께 없어졌다. */
+  /* N0574 */
   left:.6rem;
 }
 /* 글자는 낱말 중간에서 끊기지 않는다. 끊기면 'IC· / 영업 / 소' 가 된다. */
@@ -380,13 +249,9 @@ body[data-basemap="midnight"] .cad-line {
 .map-legend .row{display:flex; align-items:center; gap:.45rem; color:var(--muted)}
 .map-legend .sw{width:.7rem; height:.7rem; border-radius:50%; flex:0 0 auto}
 .map-legend .sw.ring{background:none; border:2px solid var(--c)}
-/* 거래 스와치는 지도의 점과 같이 흰 테두리를 두른다 — 지도에서 점을
-   배경과 끊어주는 것이 바로 그 테두리라, 범례에도 있어야 짝이 맞는다. */
+/* N0575 */
 .map-legend .sw.sw-dot{box-shadow:0 0 0 1.2px #fff, 0 0 0 2px rgba(0,0,0,.18)}
-/* 매물은 지도에서 마름모다. 범례도 같은 모양이어야 눈이 잇는다.
-   클래스 이름을 'listing' 으로 두면 안 된다 — 매물 카드(.listing)가
-   display:grid 를 걸고 있어서 스와치가 카드 크기로 부푼다. 흔한
-   이름을 재사용하면 이렇게 조용히 다른 규칙을 물려받는다. */
+/* N0576 */
 .map-legend .sw.sw-listing{
   background:var(--listing); border-radius:.1rem; transform:rotate(45deg);
   width:.55rem; height:.55rem;
@@ -394,9 +259,7 @@ body[data-basemap="midnight"] .cad-line {
 .map-legend .grp{margin-top:.15rem; font-size:.68rem; color:var(--faint);
   letter-spacing:.08em; text-transform:uppercase}
 .tg-marker{border-radius:50%; border:2px solid var(--surface); box-shadow:0 0 0 1px rgba(0,0,0,.25)}
-/* 확대했을 때 뜨는 영업소 이름표. 지도 위 글자는 배경이 무엇이든 읽혀야
-   하므로 흰 테두리를 두른다. 말풍선 꼬리는 없앤다 — 442개가 한꺼번에
-   뜨면 꼬리가 화면을 어지럽힌다. */
+/* N0577 */
 .leaflet-tooltip.tg-label{
   background:none; border:none; box-shadow:none; padding:0;
   font-size:.68rem; font-weight:600; color:var(--ink);
@@ -419,8 +282,7 @@ body[data-basemap="midnight"] .cad-line {
   /* 닫기 단추를 이 칸 안에 못 박으려면 자리 기준이 있어야 한다. */
   position:relative;
 }
-/* 닫기 (요구사항 2026-09-09). 한 번 열면 닫을 길이 없었다 — 휴대폰
-   에서는 이 칸이 화면의 3분의 1을 먹는데 지도로 돌아갈 방법이 없었다. */
+/* N0578 */
 .detail-close{
   position:absolute; top:.5rem; right:.55rem; z-index:2;
   width:1.7rem; height:1.7rem; line-height:1; padding:0;
@@ -480,7 +342,7 @@ body[data-basemap="midnight"] .cad-line {
 #board-table tbody tr:hover{background:var(--surface-2)}
 .q-tag{font-size:.72rem; font-weight:600; color:var(--c); white-space:nowrap}
 
-/* ── 교통량 순위 (지시4) ── */
+/* N0579 */
 #view-rank.is-active{display:block; overflow:auto}
 .rank-wrap{max-width:76rem; margin:0 auto; padding:1.5rem 1.1rem 3rem; display:grid; gap:1.1rem}
 .rank-controls{display:flex; flex-wrap:wrap; gap:.9rem 1.4rem; align-items:flex-end}
@@ -509,10 +371,7 @@ body[data-basemap="midnight"] .cad-line {
 .delta.up{color:var(--q-rising); font-weight:600}
 .delta.down{color:var(--danger); font-weight:600}
 .rank-scroll{max-height:32rem; overflow:auto}
-/* 영업소·지역은 **줄바꿈하지 않는다.** 표 안에서 줄바꿈을 허용한 칸만
-   폭이 모자랄 때 눌리는데, 눌린 주소는 한 글자씩 세로로 쌓여 줄 높이를
-   열 배로 만든다(2026-09-17 보고). 대신 칸이 모자라면 .rank-scroll 이
-   가로로 민다 — 이미 그러라고 overflow:auto 를 달아 둔 칸이다. */
+/* N0580 */
 #rank-table thead th, #rank-table td.who, #rank-table td.reg{white-space:nowrap}
 #rank-table td.who .sub{display:none}
 .vt-table{width:100%; border-collapse:collapse; font-size:.82rem; margin-top:.4rem}
@@ -524,8 +383,7 @@ body[data-basemap="midnight"] .cad-line {
   margin-right:.4rem; background:var(--c);
 }
 
-/* 좁은 화면에서는 지역 칸을 통째로 접고 영업소 이름 밑줄로 보낸다.
-   칸 하나가 빠지면 남은 여섯이 제 폭을 찾아 가로로 미는 거리도 줄어든다. */
+/* N0581 */
 @media (max-width:56rem){
   #rank-table thead th:nth-child(3), #rank-table td.reg{display:none}
   #rank-table td.who .sub{
@@ -533,7 +391,7 @@ body[data-basemap="midnight"] .cad-line {
   }
 }
 
-/* 지가 추이 단추 · 최근 5년 YoY 막대 (지시 2026-09-13) */
+/* N0582 */
 #rank-table th.act,#rank-table td.act{white-space:nowrap; text-align:center}
 .btn-trend{
   font:inherit; font-size:.74rem; font-weight:600; padding:.25rem .55rem;
@@ -722,7 +580,7 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 
 /* ── 홈으로 / 오프라인 안내 ── */
-/* 홈은 아이콘 하나 (2026-09-12 지적). 글자를 빼고 정사각 단추로. */
+/* N0583 */
 .home-link{
   display:inline-flex; align-items:center; justify-content:center;
   width:2.1rem; height:2.1rem; flex:0 0 auto;
@@ -742,12 +600,7 @@ body.picking .leaflet-container{cursor:crosshair}
 .offline-notice h2{font-size:1.1rem; color:var(--ink); margin-bottom:.6rem}
 .offline-notice p{margin:.4rem 0}
 
-/* ══════════════════════════════════════════════════════════════
-   모바일 — 좁은 화면에서는 세로로 쌓는다.
-   기본 레이아웃은 레일(16rem)+지도+상세(23rem)를 가로로 놓아
-   최소 폭이 39rem(≈624px)이다. 390px 폰에서는 화면이 옆으로 밀린다.
-   이벤트 페이지가 카톡으로 유통되므로 유입 대부분이 모바일이다.
-   ══════════════════════════════════════════════════════════════ */
+/* N0584 */
 @media (max-width:56rem){
   :root{--top-h:auto}
 
@@ -758,17 +611,13 @@ body.picking .leaflet-container{cursor:crosshair}
   .guide-link{margin-left:auto; font-size:.76rem; padding:.28rem .55rem}
   .sitenav{order:5; margin-left:auto; flex:0 0 auto; gap:.1rem}
   .sitenav a{font-size:.78rem; padding:.3rem .45rem}
-  /* 탭이 둘로 줄었다(지도·매물). 줄을 통째로 쓰지 않고 검색칸과
-     한 줄을 나눠 쓴다 — 그래야 머리띠가 한 줄 더 두꺼워지지 않는다. */
+  /* N0585 */
   .tabs{order:3; flex:0 0 auto; gap:.3rem}
-  /* 좁은 화면은 두 줄이다. 윗줄에 로고·탭·길안내, 아랫줄 전체가 검색칸.
-     예전에는 탭과 검색이 한 줄을 나눠 써서 검색칸이 7rem 까지 눌렸다 —
-     '건업리 140-25' 를 넣는 칸으로는 너무 좁다. */
+  /* N0586 */
   .map-find{order:6; flex:1 1 100%; margin-left:0}
   #find-q{width:100%}
   .find-list{right:auto; left:auto; width:min(22rem, calc(100vw - 1.6rem))}
-  /* 단어 중간에서 끊기면 '추이 비 / 교' 처럼 읽힌다. 끊지 말고 넘치면
-     가로로 밀어 보게 한다. */
+  /* N0587 */
   .tabs{overflow-x:auto; flex-wrap:nowrap; -webkit-overflow-scrolling:touch}
   .tab{flex:0 0 auto; text-align:center; padding:.4rem .6rem;
        font-size:.82rem; white-space:nowrap}
@@ -788,8 +637,7 @@ body.picking .leaflet-container{cursor:crosshair}
   .checks{grid-auto-flow:column; grid-auto-columns:max-content; gap:.9rem; overflow-x:auto}
   .legend{grid-template-columns:1fr 1fr}
 
-  /* 필터를 접을 수 있게. 기본은 접힌 상태로 시작해(app.js) 지도가
-     화면 위쪽에 바로 오게 한다. */
+  /* N0588 */
   .rail{padding:0}
   .rail-toggle{
     display:flex; align-items:center; justify-content:space-between;
@@ -807,18 +655,12 @@ body.picking .leaflet-container{cursor:crosshair}
   .rail.is-folded .rail-body{display:none}
   .rail-body{padding:0 .9rem .8rem}
 
-  /* 지도를 키운다. 접힌 상태에서 화면 대부분을 지도가 쓴다.
-     dvh 는 주소창이 접혔다 펴져도 튀지 않는다 — vh 는 모바일에서
-     주소창 높이를 안 빼서 아래가 잘린다. */
+  /* N0589 */
   .map-wrap{flex:0 0 auto; height:74dvh; min-height:24rem}
-  /* 필지를 고르면 지도를 줄여 상세가 화면에 들어오게 한다 (2026-09-14
-     지시). min-height 를 함께 낮춰야 실제로 줄어든다 — 24rem(384px)이
-     남아 있으면 작은 폰에서 46dvh 를 눌러 이긴다. */
+  /* N0590 */
   body.has-detail .map-wrap{height:46dvh; min-height:14rem}
 
-  /* 범례를 접는다. 좁은 화면에서 12줄짜리 범례는 지도의 3분의 1을
-     덮는다 — 지도를 키워 놓고 그 위를 범례로 다시 가리는 셈이다.
-     기본은 접힌 알약 하나, 누르면 펼친다. */
+  /* N0591 */
   .map-legend{
     left:.5rem; bottom:.5rem; right:auto; max-width:calc(100% - 1rem);
     padding:0; gap:0; overflow:hidden;
@@ -831,22 +673,9 @@ body.picking .leaflet-container{cursor:crosshair}
     background:none; border:none; font-family:inherit; cursor:pointer;
   }
 
-  /* 필지 상세 — **지도를 줄이고 그 아래 흐름 안에 둔다** (2026-09-14 지시).
-
-     2026-09-12 에는 지도 위로 올라오는 고정 시트로 만들었다. 그런데 폰에서
-     필지를 골라도 상세가 안 보이고 스크롤도 안 된다는 보고가 왔다 —
-     화면 밖에 붙는 고정 칸은 주소창·툴바 높이와 dvh 계산에 따라 어긋나면
-     통째로 안 보이고, 안 보이면 손쓸 방법이 없다. 지도를 줄여 자리를
-     만들고 상세를 그냥 문서 흐름에 두면, 페이지가 평범하게 스크롤되므로
-     어긋날 여지가 없다. 지도는 46dvh 로 여전히 쓸 만하다.
-
-     닫기 단추를 누르면 body.has-detail 이 풀려 지도가 다시 커진다. */
+  /* N0592 */
   .detail{
-    /* **relative 를 유지한다 — static 으로 두면 닫기 단추가 머리띠로 올라간다.**
-       .detail-close 는 position:absolute 라 '자리 기준이 있는 가장 가까운 조상'
-       에 붙는다. 이 칸이 static 이 되는 순간 그 기준이 사라져 단추가 머리띠
-       (position:sticky) 까지 거슬러 올라가 붙었다 (2026-09-14 보고). 흐름 안에
-       두려던 것이 목적이었고, relative 도 흐름 안에 있으므로 이쪽이 맞다. */
+    /* N0593 */
     position:relative; flex:0 0 auto; width:100%;
     max-height:none; overflow:visible;
     padding:1.1rem .95rem 2.5rem;
@@ -869,41 +698,26 @@ body.picking .leaflet-container{cursor:crosshair}
   .tab{font-size:.76rem}
 }
 
-/* 누른 자리의 용도지역 말풍선.
-   지도 위에 뜨는 것이라 좁게 잡는다 — 넓으면 정작 보려던 땅을 가린다. */
+/* N0594 */
 .zone-pop { font-size: .9rem; line-height: 1.5; }
 .zone-pop b { font-size: 1rem; }
 .zone-pop .muted { color: var(--muted, #7a6a58); font-size: .82rem; }
 
 
-/* 거래 표식 — 영업소(원)와 **모양으로** 가른다.
-   색만으로 가르면 화면에 색이 열 몇 가지가 되고, 그러면 색이 뜻을
-   잃는다. 모양이 먼저 종류를 말하고 색이 토지·공장을 말한다.
-
-   흰 테두리는 그대로 둔다. 배경이 어떤 색이든 표식을 배경에서 끊어주는
-   것은 색이 아니라 테두리다. */
-/* <i> 는 기본이 inline 이라 width/height 가 무시된다 — 그러면 테두리만
-   남아 지도에 흰 막대가 선다. display:block 이 이 규칙의 핵심이다. */
+/* N0595 */
+/* N0596 */
 .trade-mark { display: block; width: 100%; height: 100%; box-sizing: border-box;
               border: 1.2px solid #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.35); }
 .trade-mark.trade-land { background: var(--kind-land); }
 .trade-mark.trade-factory { background: var(--kind-factory); transform: rotate(45deg); }
 .trade-mark.trade-warehouse { background: var(--kind-warehouse); transform: rotate(45deg); }
 .trade-mark.trade-etc { background: var(--kind-etc); transform: rotate(45deg); }
-/* 법정동 중심점 좌표는 ±1~2km 라 '그 자리' 가 아니다. 옅게 찍어 지번
-   좌표와 구별한다 — 테두리가 있어 옅어도 보인다. */
+/* N0597 */
 .trade-mark.trade-coarse { opacity: .55; }
 /* Leaflet 이 divIcon 에 주는 기본 배경·테두리를 지운다. */
 .trade-icon { background: none; border: 0; }
 
-/* ── 글자를 단 거래 핀 (요구사항 2026-09-09) ────────────────────
-   "우리는 매물을 클릭했을 때 나와서 무슨 물건인지 모릅니다."
-
-   부동산플래닛의 방식을 가져온다 — 종류 / 값 / 보조 세 줄에 꼬리 하나.
-
-   **꼬리가 좌표를 가리켜야 한다.** 카드를 점 위에 얹으면 정작 어느
-   필지인지 가린다. 그래서 카드를 좌표 위쪽으로 밀어 올리고 꼬리 끝을
-   좌표에 맞춘다 (translate 로 자리를 잡으므로 iconAnchor 는 0,0). */
+/* N0598 */
 .trade-pin-wrap { background: none; border: 0;
                   width: auto !important; height: auto !important; }
 .trade-pin {
@@ -914,8 +728,7 @@ body.picking .leaflet-container{cursor:crosshair}
   border: 1px solid rgba(255, 255, 255, .9);
   box-shadow: 0 1px 3px rgba(16, 32, 64, .35);
 }
-/* 꼬리. 카드와 같은 색을 물려받아 한 덩이로 보이게 한다 —
-   그래서 카드 **안**에 둔다. 밖에 두면 색을 못 물려받는다. */
+/* N0599 */
 .trade-pin-tail {
   position: absolute; left: 50%; bottom: -7px; transform: translateX(-50%);
   width: 0; height: 0; border-left: 5px solid transparent;
@@ -925,22 +738,16 @@ body.picking .leaflet-container{cursor:crosshair}
 .trade-pin i { font-size: 12.5px; font-weight: 800; font-style: normal; }
 .trade-pin s { font-size: 9px; font-weight: 600; opacity: .85;
                text-decoration: none; }
-/* 색은 점과 **같은 규칙**을 쓴다. 지도에서 종류를 색으로 배웠는데
-   핀에서 색이 달라지면 그 배움이 무너진다. */
+/* N0600 */
 .trade-pin.trade-land { background: var(--kind-land); color: var(--kind-land); }
 .trade-pin.trade-factory { background: var(--kind-factory); color: var(--kind-factory); }
 .trade-pin.trade-warehouse { background: var(--kind-warehouse); color: var(--kind-warehouse); }
 .trade-pin.trade-etc { background: var(--kind-etc); color: var(--kind-etc); }
 .trade-pin b, .trade-pin i, .trade-pin s { color: #fff; }
-/* 법정동 중심점 좌표(±1~2km). 점에서 옅게 찍던 것을 핀에서도 말한다 —
-   값은 정확한데 **자리가 다르다** 는 것은 큰 차이다. */
+/* N0601 */
 .trade-pin.is-coarse { opacity: .72; border-style: dashed; }
 
-/* 범례 스와치도 지도와 같은 모양이어야 한다. 지도에서는 네모인데
-   범례에서는 동그라미면 눈으로 짝을 못 맞춘다.
-
-   셀렉터를 '.map-legend .sw' 에 맞춘다. 위쪽에 .map-legend .sw{border-radius:50%}
-   가 있어서, 클래스 하나짜리 규칙으로는 그것을 못 이기고 동그라미가 된다. */
+/* N0602 */
 .map-legend .sw.sw-trade {
   width: 11px; height: 11px; border-radius: 0; display: inline-block;
   border: 1.2px solid #fff; box-shadow: 0 0 0 .5px rgba(0,0,0,.35);
@@ -956,10 +763,7 @@ body.picking .leaflet-container{cursor:crosshair}
   background: var(--kind-etc); transform: rotate(45deg) scale(.82);
 }
 
-/* ── 세 가설 판정 ──
-   판정 딱지에 색을 준다. 다만 색만으로 뜻을 말하지 않는다 — 딱지에
-   '지지'·'아직 모름' 이라는 **글자**가 그대로 들어 있다. 색약이거나
-   흑백으로 인쇄해도 뜻이 살아야 한다. */
+/* N0603 */
 #view-verdict.is-active{display:block; overflow:auto}
 .verdict-wrap{
   max-width:64rem; margin:0 auto; padding:1.5rem 1.1rem 3rem;
@@ -1000,32 +804,21 @@ body.picking .leaflet-container{cursor:crosshair}
 .verdict-flag.is-no{--c:var(--danger)}
 .verdict-flag.is-warn{--c:var(--q-over)}
 
-/* 95% 구간이 0 을 품으면 '말할 수 없다' 다. 계수 부호만 보고 읽지
-   않도록 두 경우를 눈으로 갈라 둔다. */
+/* N0604 */
 .ci-away{font-variant-numeric:tabular-nums; font-weight:600}
 .ci-null{font-variant-numeric:tabular-nums; color:var(--faint)}
 .ci-null::after{content:' (0 포함)'; font-size:.72rem}
 
-/* 인구 원의 색과 범례는 원과 함께 사라졌다 (2026-09-08).
-   인구는 이제 땅값 글자 옆의 (XX만) 이다 — .lp-card b em. */
+/* N0605 */
 
-/* 판정 '관계 있음(상관)' — 초록(지지)과 반드시 달라야 한다. 있는 것은
-   맞지만 인과가 아니라서, 같은 색을 주면 읽는 사람이 구별할 방법이 없다. */
+/* N0606 */
 .verdict-card.is-corr{--c:var(--accent)}
 .verdict-badge.is-corr{--c:var(--accent); color:var(--ink)}
 .verdict-flag.is-corr{--c:var(--accent)}
-/* 계수가 '잡을 수 있는 최소' 보다 작은 줄. 이 줄의 계수는 크기를 읽으면
-   안 된다 — 표본이 그만큼을 못 가른다.
-
-   셀렉터를 '.vt-table td' 에 맞춘다. 위에 .vt-table td{color:var(--muted)}
-   가 있어서, 클래스 하나짜리로는 그것을 못 이기고 회색으로 남는다.
-   검사가 '검정만 아니면 통과' 라 이걸 놓칠 뻔했다 — 그래서 검사도
-   --danger 와 같은 색인지 재도록 고쳤다. */
+/* N0607 */
 .vt-table td.mde-weak{color:var(--danger); font-weight:700}
 
-/* ── 거래 상세 말풍선 ──
-   지도에 점만 있으면 얼마에 팔렸는지를 알 수 없어 스크리닝에 못 쓴다.
-   눌렀을 때 값·면적·평당가·용도지역이 한 번에 보여야 한다. */
+/* N0608 */
 .trade-popup .leaflet-popup-content { margin: 12px 14px; }
 .trade-pop { font-size: 13px; line-height: 1.5; }
 .pop-kind {
@@ -1048,9 +841,7 @@ body.picking .leaflet-container{cursor:crosshair}
   color: var(--danger); font-size: 11.5px; line-height: 1.45;
 }
 
-/* ── 땅값 분위지도 막대 (2026-09-08 지시) ──
-   지도 아래에 붙인다. 연도를 밀면서 색이 어떻게 변하는지 보는 것이
-   이 화면의 전부라, 손가락이 닿는 자리에 있어야 한다. */
+/* N0609 */
 .land-price-bar {
   position: absolute; left: .5rem; right: .5rem; bottom: .5rem; z-index: 500;
   display: flex; flex-wrap: wrap; gap: .5rem .75rem; align-items: end;
@@ -1059,10 +850,7 @@ body.picking .leaflet-container{cursor:crosshair}
   box-shadow: var(--shadow); font-size: .8rem;
 }
 
-/* 호갱노노식 필터 칩 (요구사항 2026-09-08).
-   <select> 를 안 쓰는 이유 — 휴대폰의 <select> 는 굴림판이 화면 바닥에서
-   올라오고, 열기 전에는 무엇을 고를 수 있는지 안 보이며, optgroup 이
-   기기마다 다르게 그려진다. 칩은 지금 고른 값을 늘 보여준다. */
+/* N0610 */
 .lp-chips { display: flex; flex-wrap: wrap; gap: .4rem; flex-basis: 100%; }
 .lp-filter { position: relative; }
 .lp-pill {
@@ -1092,9 +880,7 @@ body.picking .leaflet-container{cursor:crosshair}
 .lp-opt.is-on { background: #3B73C4; color: #fff; font-weight: 700; }
 
 .land-price-bar .hint { flex-basis: 100%; margin: 0; }
-/* 이 화면에 더 맞는 용도지역이 있을 때 뜨는 단추.
-   서울을 계획관리로 보면 지도가 비는데, 자연녹지로 바꾸면 바로 보인다.
-   그것을 사람이 스스로 알아내게 두지 않는다. */
+/* N0611 */
 .lp-swap {
   flex-basis: 100%; text-align: left; font: inherit; font-weight: 700;
   padding: .35rem .6rem; border-radius: 8px; cursor: pointer;
@@ -1106,14 +892,7 @@ body.picking .leaflet-container{cursor:crosshair}
   .land-price-bar .field { min-width: 6rem; }
 }
 
-/* 땅값 표찰 — 호갱노노식 사각형 (요구사항 2026-09-08).
- *
- * 알약 하나에 '이름 값' 을 나란히 쓰면 이름이 길수록 표찰이 옆으로
- * 늘어나 서로 겹친다. 사각형에 **이름을 위, 값을 아래**로 두면 폭이
- * 이름 길이에만 매이고, 눈은 값만 훑을 수 있다.
- *
- * divIcon 은 기본으로 흰 네모 테두리를 갖는다. 그것을 지우고 크기도
- * 내용에 맡긴다 — 값마다 자릿수가 달라서 고정폭을 주면 잘리거나 뜬다. */
+/* N0612 */
 .lp-card-wrap { background: none; border: 0; width: auto !important; height: auto !important; }
 .lp-card {
   display: inline-flex; flex-direction: column; align-items: center;
@@ -1125,30 +904,20 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 .lp-card b { font-size: 10.5px; font-weight: 600; opacity: .95; }
 .lp-card i { font-size: 12.5px; font-weight: 800; font-style: normal; }
-/* 단위. 값만 있으면 평인지 ㎡인지 알 수 없다 — 두 글자로 그 오독을 막는다.
-   <u> 기본 밑줄은 지운다. */
+/* N0613 */
 .lp-card u { text-decoration: none; font-size: 9.5px; font-weight: 600; opacity: .85; }
-/* 거래가 없는 지자체 (요구사항 2026-09-09 — 안 보이던 것을 보이게).
-   바탕이 옅어서 흰 글자로는 안 읽힌다. 그리고 **물러나 보여야 한다** —
-   값이 있는 칸과 같은 무게면 빈 칸이 지도를 덮는다. */
+/* N0614 */
 .lp-card.is-none {
   color: #47525E;
   border-color: rgba(255, 255, 255, .75);
   box-shadow: 0 1px 2px rgba(16, 32, 64, .18);
 }
-/* 값 줄이 없으면 카드가 이름 한 줄뿐이다 (요구사항 2026-09-09 3차:
-   "없는 곳은 지명만"). 값이 있는 카드와 같은 높이로 두면 빈 자리가
-   생겨 어긋나 보이므로, 이름만 남은 카드는 위아래를 조인다. */
+/* N0615 */
 .lp-card.is-none { padding: 3px 7px; }
 .lp-card.is-none b { font-size: 10px; font-weight: 700; opacity: 1; }
 
-/* 말풍선 — 값 하나가 아니라 **읽을 거리**를 담는다.
-   같은 평당 80만원이라도 3년째 오르는 80만과 꺾여 내려온 80만은
-   다른 물건이다. 그래서 최근 추이를 함께 그린다. */
-/* 눌러서 여는 쪽(폰). 말풍선과 **같은 속을 담되** 껍데기는 Leaflet
-   팝업이다 — 꼬리·닫기 단추·autoPan 이 딸려 온다.
-   .lp-tip 의 속 규칙(.lp-tip-h 등)은 클래스 이름을 공유하므로 그대로
-   먹는다. 여기서는 껍데기만 맞춘다. */
+/* N0616 */
+/* N0617 */
 .leaflet-popup.lp-pop .leaflet-popup-content-wrapper {
   border-radius: 9px; border: 1px solid var(--border);
   background: var(--surface); color: var(--ink);
@@ -1165,18 +934,14 @@ body.picking .leaflet-container{cursor:crosshair}
   padding: 8px 10px; border-radius: 9px; border: 1px solid var(--border);
   background: var(--surface); color: var(--ink);
   box-shadow: var(--shadow); font-size: 12px; line-height: 1.45;
-  /* **width:max-content 가 없으면 세로로 무너진다.** max-width 만 두면
-     말풍선이 '줄어들 수 있는 만큼' 줄어들어, 글자 하나씩 세로로 쌓인
-     기둥이 된다 (실사용 화면 2026-09-09 — 여주시 말풍선). 먼저 글이
-     필요한 만큼 넓히고, 그 다음에 상한을 건다. */
+  /* N0618 */
   width: max-content; max-width: min(15rem, 60vw); white-space: normal;
 }
 .lp-tip-h { font-weight: 800; }
 .lp-tip-h em { font-style: normal; font-weight: 500; color: var(--muted); }
 .lp-tip-v { margin-top: 2px; }
 .lp-tip-v b { font-size: 14.5px; color: #123B7A; }
-/* ㎡ 단가는 평단가 **아랫줄**로 (요구사항 2026-09-08). 한 줄에 두 값을
-   이어 놓으면 어느 숫자가 어느 단위인지 눈이 못 잡는다. */
+/* N0619 */
 .lp-tip-v2 { color: var(--muted); font-size: 11.5px; margin-bottom: 1px; }
 .lp-tip-v em { font-style: normal; color: var(--muted); font-size: 11px; }
 .lp-tip-m { color: var(--muted); font-size: 11px; }
@@ -1190,8 +955,7 @@ body.picking .leaflet-container{cursor:crosshair}
 .lp-tip-g em { font-style: normal; color: var(--muted); }
 .lp-tip-n { margin-top: 3px; font-size: 10.5px; color: var(--muted); }
 
-/* 필지 특성. 도로접은 값을 가장 크게 가르는 칸이라(실측 +66~67%)
-   글자만 적어 두면 눈에 안 들어온다. 작은 표를 하나 붙인다. */
+/* N0620 */
 .road-tag {
   display: inline-block; margin-left: 4px; padding: 0 5px;
   border-radius: 999px; font-size: 10.5px; font-weight: 700;
@@ -1200,22 +964,13 @@ body.picking .leaflet-container{cursor:crosshair}
 .road-tag.is-ok { background: var(--q-rising); color: #fff; }
 .road-tag.is-no { background: var(--q-quiet); color: #fff; }
 
-/* '조사 안 됨' 을 경고색으로 칠하지 않는다. 잘못된 자료가 아니라
-   아직 안 받은 자료다. */
+/* N0621 */
 .pop-note {
   margin: 8px 0 0; padding-top: 7px; border-top: 1px solid var(--line);
   color: var(--muted); font-size: 11.5px; line-height: 1.45;
 }
 
-/* 물음표 원 — 설명을 접어 두는 단추 (요구사항 2026-09-08).
-   제목 옆에 붙어 있어야 '이 항목의 설명' 으로 읽힌다. 따로 떨어뜨리면
-   그것 자체가 또 하나의 못 알아볼 표시가 된다.
-
-   **이름을 .why 로 지으면 안 된다.** 그 이름은 이미 두 곳이 쓰고 있다 —
-   가설 판정 카드의 근거 문단(.verdict-card .why)과 추이 비교의 계열
-   설명(.series-opt .why). 둘 다 우리 규칙의 box 부분을 그대로 물려받아
-   16px 동그라미가 된다. 흔한 이름을 재사용하면 이렇게 조용히 다른 곳을
-   부순다 — 이 저장소에서 .listing 으로 이미 한 번 겪었다. */
+/* N0622 */
 .info-dot {
   display: inline-flex; align-items: center; justify-content: center;
   width: 16px; height: 16px; margin-left: 5px; padding: 0;
@@ -1246,20 +1001,14 @@ body.picking .leaflet-container{cursor:crosshair}
   background: var(--surface); color: var(--muted); cursor: pointer;
 }
 .mini-btn:hover { border-color: var(--border-strong); color: var(--ink); }
-/* 용도지역이 25종이라 그대로 늘어놓으면 옆판이 통째로 밀린다.
-   접어 두고 안에서 굴린다. */
+/* N0623 */
 .scroll-box { max-height: 190px; overflow-y: auto; padding-right: 4px; }
 .checks .n { color: var(--muted); font-weight: 400; font-size: 11.5px; }
 
 
-/* ── 필지 진단 카드 (2026-09-08 방향 전환) ──
-   "어떤 토지이든 나쁜 토지는 없다. 어떤 방향으로 개발할 지가 문제다."
-
-   레이더는 넓이를 점수로 읽히게 두면 안 된다 — 축 순서만 바꿔도 넓이가
-   달라진다. 그래서 면은 옅게 깔고, 축마다 백분위와 원값을 글자로 적는다. */
+/* N0624 */
 .parcel-card { font-size: 13px; }
-/* 오른쪽 위 모서리에 닫기 단추가 앉으므로 그만큼 비워 둔다 — 긴 용도지역
-   이름이 단추 밑으로 들어가지 않게. */
+/* N0625 */
 .pc-head { display: flex; align-items: baseline; gap: .5rem; padding-right: 2.4rem; }
 .pc-head b { font-size: 15px; }
 .pc-head span { color: var(--muted); font-size: 12px; }
@@ -1282,8 +1031,7 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 .pc-note { margin: .35rem 0 0; font-size: 11px; color: var(--faint); line-height: 1.5; }
 
-/* 카드 머리의 주소 (요구사항 2026-09-10). 지번이 굵고, 도로명은
-   있을 때만 그 아래 옅게 — 대개 빈 땅에는 도로명이 없다. */
+/* N0626 */
 .pc-addr { margin: .1rem 0 .35rem; line-height: 1.4; }
 .pc-addr b { font-size: 13px; font-weight: 600; display: block; }
 .pc-addr span { font-size: 11.5px; color: var(--muted); display: block; }
@@ -1302,8 +1050,7 @@ body.picking .leaflet-container{cursor:crosshair}
 .pc-facts td { padding: 3px 0; color: var(--ink); }
 .pc-facts em { font-style: normal; color: var(--muted); }
 
-/* 개발 한도 (C4). 토지 정보 표 아래, 건축 제한과 같은 제목 꼴로 늘 펼쳐
-   둔다 (지시 2026-09-11 — 접이식이었는데 있는 줄 모르게 됐다). */
+/* N0627 */
 .pc-limits { margin: .35rem 0 0; font-size: 12.5px; }
 .pc-limits .pc-sub em { font-style: normal; font-weight: 400; margin-left: .3rem; color: var(--muted); }
 .pc-limits .pc-facts { margin-top: .2rem; }
@@ -1312,11 +1059,8 @@ body.picking .leaflet-container{cursor:crosshair}
 .pc-limits-src a { color: inherit; }
 .pc-limits-note { margin: .2rem 0 0; font-size: 11px; color: var(--faint); line-height: 1.5; }
 
-/* 건축 제한 (요구사항 2026-09-10). 무엇이 걸렸고 그것이 무엇을
-   막는지를 한 덩이로 읽히게 둔다. 이름만 적으면 '개발행위허가제한
-   지역' 이 무슨 뜻인지 되묻게 된다. */
-/* 다섯 축 설명. 접어 둔다 — 늘 읽는 글이 아니라 한 번 확인하는
-   글이고, 폰에서 카드가 길어지면 정작 값이 밀려난다. */
+/* N0628 */
+/* N0629 */
 .pc-axis-help { margin: .5rem 0 0; font-size: 11.5px; }
 .pc-axis-help summary {
   cursor: pointer; color: var(--muted); padding: .2rem 0;
@@ -1333,14 +1077,7 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 .pc-axis-help strong { color: var(--muted); font-weight: 600; }
 
-/* 현재 가치 · 미래 가치 단추 (요구사항 2026-09-10).
- *
- * 축 설명 바로 아래. 이 카드에서 **가장 크게 눌릴 자리**라 다른 줄보다
- * 키우고, 둘 사이도 벌립니다 — 붙어 있으면 폰에서 옆 것을 누릅니다.
- *
- * 뱃지는 <em> 이 아니라 <span> 입니다. <em> 은 CSS 가 아직 안 붙은
- * 한순간에 기울어진 글씨로 이름 옆에 붙어 '현재 가치프리미엄' 처럼
- * 보입니다. 태그 자체로 뜻이 서게 둡니다. */
+/* N0630 */
 .pc-val-row {
   display: grid; grid-template-columns: 1fr 1fr; gap: .7rem;
   margin: .9rem 0 0;
@@ -1360,8 +1097,7 @@ body.picking .leaflet-container{cursor:crosshair}
   padding: .1rem .38rem; border-radius: 999px;
 }
 .pc-val:hover { border-color: var(--accent); }
-/* 프리미엄 잠김 (C 등급). 단추는 그대로 두고 꼬리표만 바꾼다 — 누르면
-   무엇이 필요한지 말한다. 감추면 있는 줄도 모른다. */
+/* N0631 */
 .pc-val .pcv-lock { color: var(--accent); }
 .pcv-lock-msg { margin: .4rem 0 0; font-size: 12.5px; line-height: 1.55; }
 .pcv-lock-msg a { color: var(--accent); }
@@ -1397,19 +1133,7 @@ body.picking .leaflet-container{cursor:crosshair}
 .pc-zone-note strong { color: var(--muted); font-weight: 600; }
 
 
-/* ── 큰 분류 셋 + 왼쪽 칸 (요구사항 2026-09-08) ──
-   "왼쪽 필터를 큰 분류별로 묶어주세요 (호갱노노 참조).
-    실거래 표시 / IC / 실거래 가격 으로 묶어주고,
-    선택하면 하단에 현재 필터들을 선택할 수 있도록"
-   그리고 뒤이어:
-   "왼쪽 위에 (+)(-)와 필터가 겹칩니다. 클릭 시 화면 아래로 표시되는데
-    이건 왼쪽으로 기존 처럼 옮겨주세요."
-
-   처음에는 지도 위에 칩을 띄우고 아래에서 시트를 올렸는데 둘 다
-   문제였다 — 칩이 Leaflet 의 +/- 단추와 겹쳤고, 시트는 지도의 아래쪽을
-   덮었다. 지도 **밖**의 왼쪽 칸으로 옮기면 둘 다 없어진다.
-
-   닫혀 있을 때는 칩 줄만큼만 좁다. 열면 필터 폭으로 벌어진다. */
+/* N0632 */
 .side {
   flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0;
   width: 8.2rem; background: var(--surface);
@@ -1447,9 +1171,7 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 .sheet-pane h3:first-child { margin-top: 0; }
 
-/* 연도 범위 — 좌/우 손잡이 (호갱노노 참조).
-   <input type=range> 둘을 겹쳐 놓는다. 위에 놓인 것이 누름을 다 먹으므로
-   트랙은 pointer-events 를 끄고 손잡이만 살린다. */
+/* N0633 */
 .year-range { margin-bottom: .3rem; }
 .year-range output {
   display: block; font-weight: 700; font-variant-numeric: tabular-nums;
@@ -1482,8 +1204,7 @@ body.picking .leaflet-container{cursor:crosshair}
   background: var(--surface); border: 2px solid #3B73C4; cursor: pointer;
 }
 
-/* 좁은 화면에서는 왼쪽 칸이 위로 올라가 가로로 눕는다 — 세로로 두면
-   지도가 오른쪽 조각으로 남는다. */
+/* N0634 */
 @media (max-width:56rem) {
   #view-explore.is-active { flex-direction: column; }
   .side, .side.is-open { width: 100%; border-right: none;
@@ -1491,28 +1212,10 @@ body.picking .leaflet-container{cursor:crosshair}
   .cat-bar { flex-direction: row; }
   .cat { flex: 1; text-align: center; font-size: .78rem; }
   .sheet-body { max-height: 44vh; }
-  /* **여기서 .map-wrap 의 flex 를 건드리면 안 된다.**
-   *
-   * 위 블록(.map-wrap{flex:0 0 auto; height:74dvh})이 폰에서 지도
-   * 높이를 잡는 자리다. 여기에 flex:1 1 auto 를 겹쳐 놨더니 세로
-   * 배치에서 지도가 **min-height 까지 쭈그러들었다** — 실측 390×844
-   * 에서 384px, 화면의 45%였다. '지도가 절반뿐' 이라는 말이
-   * 가리킨 것이 이것이다. 74dvh 를 적어 놓고 실제로는 45% 를 주고
-   * 있었다. 지금은 재는 검사가 있다(test_map: '폰에서 지도가 화면의
-   * 3분의 2를 넘게 쓴다'). */
+  /* N0635 */
 }
 
-/* 땅값 글자의 용도지역 칸 — **법령 구조 그대로** (요구사항 2026-09-09).
-
-     국토계획법 §36①  도시지역 / 관리지역 / 농림지역 / 자연환경보전지역
-     시행령 §30①      주거·상업·공업·녹지
-     같은 법 §38       개발제한구역은 용도구역
-
-   class="checks" 를 뺐다. 그 클래스가 좁은 화면에서
-   grid-auto-flow:column 을 걸어 두는데, 여기 grid-template-columns 와
-   만나면 칸이 **옆으로** 흐른다 — 머리글이 첫 칸에 세로로 눕고
-   상업지역이 관리지역 줄에 붙어 보였다. id 로 이겨도 auto-flow 는
-   그대로 상속되므로, 클래스를 떼는 것이 맞는 고침이다. */
+/* N0636 */
 #lp-groups { display: block; margin-bottom: .5rem; }
 
 /* 대분류는 줄을 긋는다 — 법의 네 칸이 눈에 먼저 들어와야 한다. */
@@ -1542,8 +1245,7 @@ body.picking .leaflet-container{cursor:crosshair}
 .zone-opt span {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* 켠 칸. **색만으로 알리지 않는다** — 테두리를 굵게 하고 배경을 바꾼다.
-   색약인 사람에게 켠 것과 끈 것이 같아 보이면 안 된다. */
+/* N0637 */
 .zone-opt[aria-pressed="true"] {
   border-color: var(--accent); border-width: 2px;
   padding: calc(.22rem - 1px) calc(.3rem - 1px);
@@ -1573,27 +1275,17 @@ body.picking .leaflet-container{cursor:crosshair}
   font-size: 11px; line-height: 1.45;
 }
 
-/* 이름 옆 인구. **아주 작게** (요구사항) — 값이 주인공이고 인구는
-   그 값을 읽는 맥락이다. 같은 크기로 적으면 둘이 경쟁한다. */
+/* N0638 */
 .lp-card b em {
   font-style: normal; font-weight: 500; font-size: 8.5px;
   opacity: .78; margin-left: .18em;
 }
 
 
-/* ─── 지역 검색 ──────────────────────────────────────────────────────
-   **매물 탭 옆이다** (요구사항 2026-09-10: "지도 위에 두는 것이
-   신경쓰이네요").
-
-   지도 위에 얹으면 세로 자리를 안 먹는 대신 지도의 윗줄을 가린다.
-   그 값이 거슬린다는 판단이므로 머리띠로 되돌린다. 탭이 여섯에서
-   둘로 줄어서, 이제 머리띠에 검색칸이 들어갈 자리가 남는다 —
-   좁은 화면에서도 줄을 새로 먹지 않는다(아래 미디어쿼리). */
+/* N0639 */
 .map-find { position: relative; min-width: 0; margin-left: .4rem; }
 #find-q {
-  /* 좁은 화면에서는 아래 56rem 칸이 100% 로 덮는다 — 그 규칙이 이 파일
-     앞쪽에 있어 여기 42vw 에 눌리고 있었다. 그래서 폰에서 검색칸이
-     164px 밖에 안 됐고 '지역·지번으로 찾기 (예…' 가 잘려 보였다. */
+  /* N0640 */
   width: min(20rem, 42vw); box-sizing: border-box;
   padding: .32rem .7rem; border-radius: 999px;
   border: 1px solid var(--border); background: var(--surface); color: var(--ink);
@@ -1621,11 +1313,7 @@ body.picking .leaflet-container{cursor:crosshair}
   margin-left: auto; font-style: normal; font-size: .65rem;
   color: var(--faint); white-space: nowrap;
 }
-/* 안내 줄은 **flex 가 아니다.** `.find-list li` 가 display:flex 인데
-   구체성이 더 높아(클래스+요소) 이 줄까지 flex 로 만들었고, 그러면 안내문
-   <em>(white-space:nowrap)이 폭을 다 차지해 본문이 한 글자씩 접혔다 —
-   폰에서 '찾 는 이 름 이 없 습 니 다' 로 세로로 섰다 (2026-09-14 보고).
-   그래서 li 를 함께 적어 구체성을 맞추고 블록으로 되돌린다. */
+/* N0641 */
 .find-list li.find-none {
   display: block; cursor: default; color: var(--muted);
   white-space: normal; word-break: keep-all;
@@ -1636,10 +1324,7 @@ body.picking .leaflet-container{cursor:crosshair}
   white-space: normal; line-height: 1.45;
 }
 
-/* ─── 지도 위 작은 단추 (요구사항 2026-09-10) ────────────────────
-   면책 문구(.disclaimer)와 가이드 단추가 지도 아래에 상주하며 120px 을
-   먹고 있었다. 늘 읽는 글이 아니라 한 번 확인하는 글이라, 단추 하나로
-   줄이고 그 높이를 지도에 돌려준다. */
+/* N0642 */
 .map-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.9rem; height: 1.9rem; padding: 0; cursor: pointer;
@@ -1663,10 +1348,7 @@ body.picking .leaflet-container{cursor:crosshair}
 .map-note-txt { margin: 0; font-size: .76rem; color: var(--muted); line-height: 1.5; }
 .map-note .guide-link { margin-left: 0; font-size: .8rem; }
 
-/* ─── 지도만 보기 (요구사항 2026-09-10) ──────────────────────────
-   폰에서 위 255px · 아래 120px 을 쓰고 나면 지도가 절반뿐이었다.
-   ⛶ 를 누르면 머리띠·탭·필터·상세가 접히고 지도만 남는다. 경쟁
-   서비스가 다 갖고 있고, 폰에서 땅을 보는 사람에게는 기본 동작이다. */
+/* N0643 */
 body.is-mapmax .topbar,
 body.is-mapmax .banner,
 body.is-mapmax .side,
@@ -1675,8 +1357,7 @@ body.is-mapmax .detail { display: none !important; }
 body.is-mapmax #view-explore.is-active { flex-direction: row; overflow: hidden; }
 body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 
-/* 토지이음으로 넘기는 단추. 우리가 못 주는 칸을 보러 가는 자리라,
-   카드 안의 다른 글과 성격이 다르다 — 눌러서 **나가는** 것이다. */
+/* N0644 */
 .pc-eum {
   display: grid; gap: .15rem; margin-top: .9rem;
   padding: .6rem .75rem; border-radius: .45rem;
@@ -1694,12 +1375,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 /* 상세 패널은 고를 때만. 안 고른 화면에서는 지도가 전부를 쓴다. */
 .detail[hidden] { display: none; }
 
-/* ─── 차종 고르기 (요구사항 2026-09-09) ──────────────────────────
-   드롭다운을 걷어내고 용도지역처럼 펼쳤다. 여럿 고를 수 있어야
-   화물(3·4·5종)을 한 번에 볼 수 있다.
-
-   그림은 장식이 아니다 — 축 수와 덩치가 곧 그 차종의 정의다
-   (유료도로법 시행령 별표1). */
+/* N0645 */
 .veh-head {
   display: flex; align-items: center; justify-content: space-between;
   margin: .55rem 0 .3rem; font-size: .78rem; font-weight: 700;
@@ -1730,15 +1406,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 @media (max-width:56rem) {
   .veh-opts { grid-template-columns: 1fr; }
 
-  /* ── 지도 위 도구막대가 넘쳐 흘렀다 (실사용 화면 2026-09-09) ──
-     배경 지도 칩 다섯을 더하면서 이 줄이 화면 너비를 넘겼습니다.
-     한 줄에 밀어 넣으니 왼쪽 스위치가 잘리고('C·영업'), 넘친 칸이
-     확대·축소 단추를 덮었습니다.
-
-     줄을 바꾸고 **오른쪽으로 몰아** 왼쪽 위의 +/- 자리를 비웁니다.
-
-     그 +/- 는 오른쪽 아래로 갔고(app.js), 검색칸은 머리띠로
-     돌아갔습니다. 지도 위에는 도구막대만 남으므로 맨 윗줄을 씁니다. */
+  /* N0646 */
   .map-tools{
     top:.5rem; left:.5rem; right:.5rem;
     flex-wrap:wrap; justify-content:flex-end; gap:.3rem;
@@ -1749,13 +1417,8 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   .map-btn{ width:1.75rem; height:1.75rem; font-size:.82rem; }
 }
 
-/* ─── 배경 지도 고르기 (요구사항 2026-09-09) ─────────────────────
-   지도 위 도구막대 안. 스위치들과 나란히 두되, 켜고 끄는 것이 아니라
-   **하나를 고르는** 것이라 생김새를 다르게 한다. */
-/* **바탕이 있어야 글자가 보인다.** 위성 배경 위에서는 옅은 테두리만으로
-   안 됩니다 (실사용 화면 2026-09-09 — '글이 안보입니다'). 옆의
-   IC·영업소·용도지역 스위치와 **같은 무게**로 둡니다. 지도 위에 얹히는
-   조작부는 배경이 무엇이든 읽혀야 합니다. */
+/* N0647 */
+/* N0648 */
 .basemap-pick {
   display: inline-flex; gap: 1px; border-radius: .4rem; overflow: hidden;
   background: var(--surface); border: 1px solid var(--border-strong);
@@ -1770,8 +1433,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .basemap-pick button.is-on { background: var(--accent);
                              color: var(--on-accent); font-weight: 700; }
 
-/* ─── 5분위 눈금 (요구사항 2026-09-09, 2번) ───────────────────────
-   왼쪽 아래. 오른쪽 아래는 Leaflet 출처 표시 자리다. */
+/* N0649 */
 .lp-scale {
   position: absolute; z-index: 610;
   left: .6rem; bottom: .6rem; width: 12.5rem;
@@ -1784,8 +1446,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .lps-h { font-size: 10.5px; font-weight: 700; margin-bottom: .22rem; }
 .lps-bar { display: flex; height: 8px; border-radius: 2px; overflow: hidden; }
 .lps-cell { flex: 1 1 0; }
-/* 눈금 여섯 개를 다섯 칸의 **경계**에 세운다. 칸 가운데에 놓으면
-   '이 색이 이 값' 으로 읽혀 경계값이 사라진다. */
+/* N0650 */
 .lps-ticks {
   display: flex; justify-content: space-between;
   margin-top: .12rem; font-size: 8.5px; color: var(--muted);
@@ -1802,13 +1463,8 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   .lps-ticks { font-size: 8px; }
 }
 
-/* ── 태그 셋째 줄: 지금 N / 오늘 M명 ──────────────────────────
-   요구사항(2026-09-09 2차). 값보다 **작고 흐리게** 둔다 — 이
-   화면의 주인공은 땅값이고, 조회수는 곁들이는 숫자다. 값과 같은
-   무게로 적으면 눈이 어디를 봐야 할지 모른다. */
-/* 조회 배지 (요구사항 2026-09-11): 태그 **아래에 조금 겹쳐서** 따로.
-   호갱노노의 그 알약이다. 태그의 흐름에서 빼서(absolute) 카드 크기를
-   안 바꾸고, 반투명 검정이라 어느 색 태그 위에서도 읽힌다. */
+/* N0651 */
+/* N0652 */
 .lp-card { position: relative; overflow: visible; }
 .lp-card s {
   position: absolute; left: 50%; bottom: -8px; transform: translateX(-50%);
@@ -1819,21 +1475,18 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
 }
 
-/* 24시간 누적 1등 별표 — 화면에 하나뿐이라 눈에 띄어야 하지만,
-   이름을 밀어내면 안 된다. */
+/* N0653 */
 .lp-card b mark {
   background: none; color: #FFD874;
   font-size: 10px; margin-right: .12em;
   text-shadow: 0 0 2px rgba(0, 0, 0, .45);
 }
 
-/* 현재 가치 — 감정평가서 산출표 모양 (2026-09-12 지시 "자세히").
-   평가서의 '산출근거 및 결정의견' 을 본떠, 이름·순서·격차율 표를 그대로 둔다. */
+/* N0654 */
 .pcv-sub { font-weight: 400; font-size: 11px; color: var(--muted); margin-left: .4rem; }
 .pcv-table { width: 100%; max-width: 100%; table-layout: fixed;
   border-collapse: collapse; margin: .4rem 0; font-size: 12px; }
-/* 이름 칸은 **접히게** 둔다. nowrap 으로 두면 '비교표준지 선정' 같은 긴
-   이름이 칸을 넘어 값 위에 겹쳐 찍힌다 (2026-09-12 보고, 상세 칸 23rem). */
+/* N0655 */
 .pcv-table > tbody > tr > th {
   text-align: left; vertical-align: top; white-space: normal; word-break: keep-all;
   padding: .35rem .6rem .35rem 0; color: var(--muted); font-weight: 500; width: 6.2em;
@@ -1842,8 +1495,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   word-break: keep-all; overflow-wrap: break-word; }
 .pcv-desc { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.5; margin-top: .1rem; }
 
-/* 개별요인 격차율 — 조건마다 두 줄. 좁은 칸(상세 23rem)에서도 안 넘친다.
-   윗줄: 조건 이름 + 격차율(오른쪽).  아랫줄: 대상 / 비교표준지. */
+/* N0656 */
 .pcv-items { list-style: none; margin: .4rem 0 .1rem; padding: 0; }
 .pcv-items li {
   display: grid; grid-template-columns: 1fr auto; gap: 0 .5rem;
@@ -1877,7 +1529,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .pcv-lock-msg a.pcv-cta { color: var(--on-accent); }
 .pcv-cta:hover { filter: brightness(1.08); }
 .pcv-note a { color: var(--accent); }
-/* 면책 — 미래 가치는 판단이라 책임의 경계를 분명히 적는다 (2026-09-12). */
+/* N0657 */
 .pcv-legal {
   margin: .6rem 0 0; padding: .55rem .7rem; border-radius: .4rem;
   font-size: 11.5px; line-height: 1.6; color: var(--muted);
@@ -1886,14 +1538,12 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .pcv-legal b { color: var(--ink); }
 .pcv-note { margin: .5rem 0 0; font-size: 11px; color: var(--muted); }
 
-/* 검색칸 너비는 좁은 화면에서 한 줄 전체다. 이 규칙이 #find-q 의 42vw
-   보다 뒤에 있어야 이긴다 (같은 구체성이면 나중 것이 이긴다). */
+/* N0658 */
 @media (max-width:56rem){
   #find-q{width:100%}
 }
 
-/* 개발 갈래 칸 (요구사항 2026-09-14) — '개발' 을 켜야 펼쳐진다.
-   지도 위 스위치 줄에 붙으므로 글자를 한 단계 줄이고 줄바꿈을 허용한다. */
+/* N0659 */
 .dev-parts {
   display: flex;
   flex-wrap: wrap;
@@ -1913,7 +1563,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 }
 .dev-part input { margin: 0; }
 
-/* 층 하나 = 이름 칸 + **그 아래** 세부 갈래 (2026-09-16 지시). */
+/* N0660 */
 .dev-group { display: block; }
 .dev-subs {
   display: flex;
@@ -1937,28 +1587,19 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   cursor: pointer;
   white-space: nowrap;
 }
-/* **끈 것이 기본 모습이 아니다.** 눌린 것이 진하고, 끈 것이 흐리다 —
-   반대로 두면 무엇이 보이는 중인지 한눈에 안 읽힌다. */
+/* N0661 */
 .dev-opt[aria-pressed="false"] { opacity: .45; }
 .dev-opt[aria-pressed="false"] .dev-sw { filter: grayscale(1); }
 .dev-opt:hover { border-color: var(--accent, #2563EB); }
-/* 색칩. **테두리를 늘 두른다** — 칩이 지도와 같은 투명도(0.6)로 깔리기
-   때문에, 어두운 색(국가산단 검정)은 다크모드 바탕에, 밝은 색(농공
-   연두)은 라이트모드 바탕에 묻힌다. 지도에서도 구역마다 테두리가
-   있으므로 칩에 테두리를 두는 것이 오히려 지도와 닮은 모습이다. */
+/* N0662 */
 .dev-sw {
   width: .68rem; height: .68rem; border-radius: .16rem;
   display: inline-block; flex: none;
   border: 1px solid var(--border-strong, rgba(120, 120, 120, .55));
   box-sizing: border-box;
 }
-/* 색을 아직 모르는 갈래의 자리. 빗금을 쳐서 '여기는 색을 안 정했다' 를
-   말한다 — 아무 색이나 칠하면 거짓이 된다. 산업단지 넷은 2026-09-16 에
-   브이월드 그림에서 재서 채웠으므로 지금 이 칸을 쓰는 갈래는 없다.
-   자료에 새 단계가 생겼을 때를 위해 남겨 둔다. */
-/* 철도역은 **점**이고 크기로도 갈린다 (2026-09-17). 칩도 지도를 닮게
-   동그라미로 그리고, 큰 갈래는 칩도 크게, 속 빈 갈래는 칩도 속을 비운다.
-   꽉 찬 네모 셋으로 두면 범례가 지도에 없는 구분을 약속하게 된다. */
+/* N0663 */
+/* N0664 */
 .dev-sw.is-dot { border-radius: 50%; }
 .dev-sw.is-dot.is-big { width: .92rem; height: .92rem; }
 .dev-sw.is-dot.is-hollow {
@@ -1973,10 +1614,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
   border: 1px solid rgba(120, 120, 120, .5);
 }
 
-/* 왼쪽 칸에서는 **세로로 세운다** (2026-09-15). 지도 위 막대에서는 옆으로
-   흘려야 자리를 덜 먹었지만, 왼쪽 칸은 폭이 좁고 높이가 남는다 — 다섯이
-   옆으로 흐르면 '완공 보기' 만 둘째 줄에 혼자 남는다. 같은 칸의 다른
-   목록(.checks)과 같은 모양이 되게 한다. */
+/* N0665 */
 .sheet-pane .dev-parts {
   display: grid;
   gap: .4rem;
@@ -1989,8 +1627,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .sheet-pane .dev-subs { margin-left: 1.3rem; }
 .sheet-pane .dev-legend { margin: 0 0 .4rem; }
 
-/* 고른 행정구역의 전체 이름 (2026-09-14) — 브이월드의 full_nm.
-   면 가운데에 상주하므로 값 태그를 가리지 않게 옅고 작게 둔다. */
+/* N0666 */
 .leaflet-tooltip.admin-name {
   background: rgba(29, 78, 216, .88);
   border: 0;
@@ -2003,7 +1640,7 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 }
 .leaflet-tooltip.admin-name::before { display: none; }
 
-/* 개발 층 범례 (요구사항 2026-09-14) — 색이 뜻하는 단계를 적는다. */
+/* N0667 */
 .dev-legend {
   padding: .3rem .5rem .4rem;
   margin-top: -.2rem;
@@ -2015,20 +1652,17 @@ body.is-mapmax .map-wrap { flex: 1 1 auto; height: 100dvh; min-height: 0; }
 .dev-leg-row + .dev-leg-row { margin-top: .2rem; }
 .dev-leg-row > b { margin-right: .2rem; }
 .dev-leg { display: inline-flex; align-items: center; gap: .22rem; white-space: nowrap; }
-/* 계획도로 말풍선의 '왜 미집행인가' 한 줄. 등급·기능보다 옅게 둔다 —
-   사실이 아니라 그 사실을 읽는 법이다. */
+/* N0668 */
 .dev-why { display: block; margin-top: .15rem; font-size: .72rem; opacity: .85; }
 .dev-leg > i { width: .7rem; height: .7rem; border-radius: .18rem; display: inline-block; }
 .dev-leg.is-off { opacity: .5; }
 
-/* 미래 가치 — 세 층 목록 (2026-09-15). 산출표의 다른 설명 줄과 같은 무게로
-   둔다; 여기만 카드로 띄우면 '값이 나온 것' 처럼 읽힌다. */
+/* N0669 */
 .pcv-layers { margin: .5rem 0 .6rem; display: grid; gap: .35rem .6rem; }
 .pcv-layers dt { font-weight: 600; font-size: .82rem; }
 .pcv-layers dd { margin: 0 0 .1rem; font-size: .78rem; color: var(--muted); line-height: 1.45; }
 
-/* 배율 눈금 — +/− 바로 위. 지금 몇이고 끝이 어디인지 숫자로 (2026-09-15
-   지시: "(-)(+) 위? 옆? 어디까지가 최대/최소인지 모르겠음"). */
+/* N0670 */
 .zoom-readout {
   clear: both;
   float: right;

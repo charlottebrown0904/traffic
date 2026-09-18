@@ -1,6 +1,4 @@
-/* IC 스크리닝 — 화면 로직.
-   DB 에 직접 붙지 않고 public/app/data/*.json 만 읽는다.
-   합성 데이터든 실데이터든 이 파일은 그대로다. */
+/* N0067 */
 'use strict';
 
 const QUADRANTS = {
@@ -20,31 +18,15 @@ const state = {
   rank: { year: null, vehicle: 'total', sort: 'volume', q: '', coordsOnly: false },
   trend: { id: null, scale: 'index', base: null, on: new Set(), ready: false },
   activeTiers: new Set([0, 1, 2, 3, 'new', 'none']),
-  // 용도지역 배경은 기본으로 켜 둔다 — 요청된 화면이다.
-  // 용도지역 색면은 **꺼진 채로 시작한다** (요구사항 2026-09-08).
-  // 색면이 깔리면 그 위의 땅값 글자와 거래 점이 묻힌다.
-  // 지역 태그(땅값 카드)를 끌 수 있게 (2026-09-14 지시). **켠 채로
-  // 시작한다** — 지금까지 늘 보이던 것이라 꺼진 채로 열면 고장으로 읽힌다.
+  // N0068
   placeTags: true,
   zoning: false,
-  // 개발 층 (2026-09-14 지시) — 산업단지·택지지구·계획도로·철도.
-  // 꺼진 채로 시작한다. 켜면 지도가 확 복잡해지고, 이 화면의 주인공은
-  // 값이다. 네 갈래를 따로 껐다 켤 수 있다.
+  // N0069
   develop: false,
-  /* **갈래도 전부 꺼진 채로 시작한다** (2026-09-15 지시: "개발 클릭 시
-     기본은 전부 Off 입니다"). 넷이 한꺼번에 켜지면 개발을 켠 순간 지도가
-     산업단지 색면·지구 폴리곤·계획도로 선·역 점으로 통째로 덮인다.
-     무엇을 보려고 켰는지는 누르는 사람이 안다 — 고르게 둔다. */
+  /* N0070 */
   devParts: { industry: false, housing: false, planroad: false, rail: false,
               highway: false },
-  /* 층마다 **세부 갈래**. 2026-09-16 지시: "택지, 사업지구 선택 시 바로
-   * 아래에 세부 선택 가능하도록 색상으로 표기하고 용도지역처럼 선택하면
-   * 볼 수 있도록 함 (기본 off) … 완공 보기는 삭제".
-   *
-   * 예전에는 '완공 보기' 한 칸이 모든 층의 끝난 것을 한꺼번에 여닫았다.
-   * 그러면 계획도로의 집행완료만 보고 싶어도 사업지구의 준공까지 같이
-   * 켜졌다. 층마다 나눈다. **끝난 것(준공·집행완료)은 꺼진 채로 시작**
-   * 한다 — 땅을 보는 사람에게 중요한 것은 아직 안 된 것이다. */
+  /* N0071 */
   devPick: {
     industry: { 국가: true, 일반: true, 첨단: true, 농공: true },
     housing: { 지구지정: true, 개발계획: true, 실시계획: true,
@@ -53,16 +35,13 @@ const state = {
     rail: { 많이: true, 적게: true, 모름: true },
     highway: { 계획: true, 공사중: true, 준공: false },
   },
-  // (2026-09-16) '완공 보기' 한 칸은 없앴다 — devPick 이 층마다 따로 한다.
-  // 필지 경계선 (요구사항 2026-09-10). **기본은 켬** — 땅을 보는
-  // 사람에게 경계는 배경이 아니라 본문이다. 껐다 켠 것은 기억한다.
+  // N0072
   cadastral: (() => {
     try { return localStorage.getItem('toji.cadastral') !== 'off'; }
     catch (e) { return true; }
   })(),
   tgYear: null,
-  // 고른 차종. **여럿 고를 수 있다** (요구사항 2026-09-09).
-  // 처음에는 다 켠다 — 예전 '전체 차종' 과 같은 화면으로 시작한다.
+  // N0073
   tgVehicles: new Set([1, 2, 3, 4, 5, 6]),
   dealYear: 'all', tradeCache: {}, tradesShown: null,
   activeStages: new Set(), activeLandUse: new Set(),
@@ -72,16 +51,13 @@ const state = {
   token: null, broker: null, listings: [], scope: 'public', pickMode: false,
   apiAvailable: false, verdicts: null,
   verdictSets: {}, verdictKind: 'land',
-  // 인구·영업소는 **꺼진 채로 시작한다** (요구사항 2026-09-08).
-  // 땅값이 이 화면의 주인공인데, 인구 원과 영업소 점이 함께 깔리면
-  // 처음 여는 사람은 무엇을 봐야 할지 모른다.
+  // N0074
   regions: null, popYear: null, showGates: false,
   // 거래 연도 범위 (좌/우 손잡이). yearWide 면 전 기간 표본으로 물러난 것이다.
   yearFrom: null, yearTo: null, yearWide: false,
-  // 땅값 분위지도 (2026-09-08 지시)
+  // N0075
   landPrice: null, lpStat: 'p50', lpWindow: '',
-  // 거래 핀에 무엇을 적을 것인가. 총액이 기본이다 — 땅을 보는
-  // 사람이 가장 먼저 묻는 것이 '얼마에 팔렸나' 다.
+  // N0076
   pinKind: 'price', tradeLabelled: false,
   // 배경 지도. 기본은 지금 것(OSM) — 브이월드는 고른 사람만 씁니다.
   baseMap: (() => {
@@ -96,11 +72,7 @@ let map, tollgateLayer, tradeLayer, bandLayer, listingLayer, zoningLayer, lpLaye
 let developLayer, railLayer, roadLayer, adminLayer;
 /* 고른 필지의 윤곽. 한 번에 하나만 그린다. */
 let parcelLayer = null;
-/* 필지 경계선 타일. **용도지역과 따로 논다** (요구사항 2026-09-10).
- *
- * 예전에는 zoningLayer 안에 같이 들어 있었다. 그래서 경계선만 보려면
- * 용도지역 색면까지 켜야 했고, 그 색면이 지도를 덮었다 — "필지를
- * 선택하기 전에 윤곽이 미리 보였으면" 이 안 되던 이유가 이것이다. */
+/* N0077 */
 let cadastralLayer = null;
 const markers = new Map();
 
@@ -115,15 +87,11 @@ const el = (tag, cls, text) => {
 const pct = (v) => (v == null ? '—' : (v * 100).toFixed(1) + '%');
 const num = (v) => (v == null ? '—' : Math.round(v).toLocaleString('ko-KR'));
 const quad = (key) => QUADRANTS[key] || { label: '미산출', color: 'var(--q-quiet)' };
-/* 거리 밴드는 순서대로 --band-1..5 를 쓴다. 다섯 개가 전부 같은 브라운이라
-   0-1km 와 10-20km 를 눈으로 가릴 수 없던 것을 고친 것이다. 밴드가 다섯 개를
-   넘으면 처음부터 다시 돌려 쓴다 — 색이 없어 안 그려지는 것보다 낫다. */
+/* N0078 */
 const BAND_COLORS = 5;
 const bandColor = (i) => `var(--band-${(i % BAND_COLORS) + 1})`;
 
-/* Leaflet 은 CSS 변수를 못 읽는다. 실제 색 문자열로 풀어서 넘겨야 한다.
-   거래 점마다 풀면 2,500번 계산하므로 한 번 푼 값은 담아둔다. 다만 OS 테마가
-   바뀌면 값이 달라지므로 그때 캐시를 비우고 다시 그린다. */
+/* N0079 */
 const _cssCache = new Map();
 function cssVar(name) {
   if (!_cssCache.has(name)) {
@@ -141,24 +109,8 @@ if (window.matchMedia) {
 }
 
 /* ─────────── 부팅 ─────────── */
-/* **module 첫머리에 둔다.** 2026-09-14 까지 이 넷이 boot() 안에 있었다. boot 안의
- * 열여섯 자리는 됐지만 밖의 자리 — 읍·면·동 조각(lpLoadUmd) · 명부(lpLoadRoster) ·
- * 또래 표(loadParcelStats) · 프리미엄 뒷길(premiumFetch) — 는 전부
- * `ReferenceError: fetchData is not defined` 로 죽어 catch 에 삼켜졌다. 그래서
- * 조각은 영영 안 오고(고리) · 시점수정은 '자료 없음' · 검사 54건이 빨갰다. 검사가
- * 잡아 준 것이 아니라 검사도 같이 속고 있었다 — 예외가 삼켜지면 그렇게 된다. */
-/* 자료를 어디서 받나 — **배포가 아니라 버킷에서** (2026-09-14).
- *
- * public/app/data 가 64MB 였고 그것이 Vercel 배포 하나의 98% 였다. 배포를
- * 지우지 않는 곳이라 푸시마다 그만큼 쌓여 저장 한도를 넘겼고 배포가
- * 막혔다 (docs/vercel-limits.md). 파일을 Supabase 공개 버킷으로 옮기면
- * 배포가 1.5MB 가 된다.
- *
- * 새로 열리는 자료는 없다 — 이미 toji.fyi 에서 누구나 받던 것이다.
- * 프리미엄 자료는 여기 없다 (비공개 버킷 premium).
- *
- * **못 받으면 배포 쪽으로 물러난다.** 버킷이 잠깐 흔들렸다고 화면이
- * 통째로 죽으면 안 된다. */
+/* N0080 */
+/* N0081 */
 const DATA_BUCKET = 'https://caykbxvnebpifcduqjre.supabase.co/storage/v1/object/public/appdata';
 const DATA_LOCAL = '/app/data';
 
@@ -166,8 +118,7 @@ function dataUrl(name) {
   return `${DATA_BUCKET}/${name}`;
 }
 
-/* 버킷 → 실패하면 배포. 둘 다 안 되면 마지막 응답을 그대로 돌려준다
-   (부르는 쪽이 r.ok 로 판정하고 있으므로 그 약속을 깨지 않는다). */
+/* N0082 */
 async function fetchData(name, opts) {
   try {
     const r = await fetch(`${DATA_BUCKET}/${name}`, opts);
@@ -177,11 +128,7 @@ async function fetchData(name, opts) {
 }
 
 async function boot() {
-  // 탭 배선을 **맨 먼저** 한다. 탭은 정적 HTML 이라 자료가 없어도 있다.
-  // 배선을 아래 자료 받기 뒤에 두면, 그 사이에 누른 클릭은 듣는 사람이
-  // 없어 그냥 사라진다 — 화면은 멀쩡한데 눌러도 안 넘어간다. 바깥
-  // CDN(Leaflet·폰트)이 느리거나 막히면 app.js 실행 자체가 몇 초 밀려서
-  // 이 틈이 눈에 띄게 벌어진다.
+  // N0083
   wireTabs();
   wireWhy();
   wireSheet();
@@ -199,8 +146,7 @@ async function boot() {
     return;
   }
 
-  // 요구사항(2026-09-04): "모든 실거래는 초기 기본설정은 표기 끄는 것."
-  // 거래가 2천 점이라 처음 화면이 온통 점으로 덮인다. 필요할 때 켠다.
+  // N0084
   state.activeKinds = new Set();
   state.tradesShown = state.trades;
 
@@ -247,17 +193,14 @@ async function boot() {
   } catch (err) {
     state.rail = null;
   }
-  // 고속도로 — '개발' 층의 한 갈래 (2026-09-16 지시). 계획(고시) ·
-  // 공사중 · 준공. 없으면 그 칸만 아무것도 안 그린다.
+  // N0085
   try {
     const r = await fetchData('road.json');
     if (r.ok) state.road = await r.json();
   } catch (err) {
     state.road = null;
   }
-  // 판정은 분석이 한 번이라도 돈 뒤에야 생긴다. 없으면 그 탭만 비운다.
-  // 토지와 공장을 따로 낸다 — 한 파일에 덮어쓰면 나중에 돈 쪽만 남아,
-  // 공장을 돌렸는데 화면에는 토지가 떠 있는 일이 생긴다.
+  // N0086
   state.verdictSets = {};
   await Promise.all([['land', 'verdicts'], ['factory', 'verdicts_factory']]
     .map(async ([k, name]) => {
@@ -269,22 +212,16 @@ async function boot() {
   state.verdictKind = state.verdictSets.land ? 'land' : 'factory';
   state.verdicts = state.verdictSets[state.verdictKind] || null;
 
-  // 4분위는 지도와 무관하게 미리 잡는다. buildMap 안에서 잡으면 Leaflet 이
-  // 없을 때(CDN 차단·오프라인) 계산 자체를 건너뛰고, 범례가 실제 교통량
-  // 대신 '하위 25%' 같은 맹탕 문구로 떨어진다.
-  // 기준 연도는 자료의 마지막 해. 연도 선택이 이 값에서 시작한다.
+  // N0087
   const _ty = (state.traffic || {}).years || [];
   state.tgYear = _ty.length ? _ty[_ty.length - 1] : null;
   state.tiers = buildTiers();
 
-  // 검사가 설정값을 읽을 수 있게 열어 둔다. 밴드 개수를 검사에 박아 두면
-  // 밴드를 조정할 때마다 멀쩡한 검사가 빨개진다.
+  // N0088
   window.__bands = state.meta.bands_km || [];
 
   buildFilters();
-  // buildFilters 가 기본 연도를 정한다. 그 해 파일을 여기서 받아 둔다 —
-  // 안 받으면 처음 화면이 전 기간 표본으로 그려져, 연도 칸이 가리키는
-  // 해와 지도에 찍힌 점이 서로 다른 해가 된다.
+  // N0089
   if (state.yearFrom != null) await loadTradeYears(state.yearFrom, state.yearTo);
   buildRank();
   buildTrend();
@@ -311,15 +248,7 @@ function showFatal(message) {
      </div>`;
 }
 
-/* 물음표 하나에 설명 한 덩이 (요구사항 2026-09-08:
- * "지금은 무슨 책같아서 뭘 봐야할 지 모르겠습니다").
- *
- * 설명이 틀린 것은 아니었다 — 왜 이 셋만 켜 두는지, 도로접이 왜 1.7배인지는
- * 알아야 한다. 다만 **처음 여는 사람이 조작부를 못 찾는다.** 필터가
- * 열두 줄짜리 설명 사이에 파묻혀 있으면, 읽지도 않고 만지지도 못한다.
- *
- * 지우지 않고 접는다. 지우면 '왜 계획관리만 켜져 있나' 를 물을 곳이
- * 없어진다. */
+/* N0090 */
 function wireWhy() {
   document.querySelectorAll('.info-dot').forEach((btn) => {
     // 설명은 제목 **다음 형제**다. 그래야 표시가 제목 옆에 붙는다.
@@ -334,12 +263,7 @@ function wireWhy() {
   });
 }
 
-/* 큰 분류 셋 — 실거래 표시 / IC / 지역별 가격 (요구사항 2026-09-08,
- * 이름은 2026-09-17 에 '실거래 가격' → '지역별 가격' 으로 바꿨다).
- *
- * 왼쪽 레일을 통째로 없앴다. 필터가 지도 옆에 늘 펼쳐져 있으면 지도가
- * 그만큼 좁아지는데, 실제로 만지는 것은 한 번에 한 묶음뿐이다. 칩을
- * 누르면 그 묶음만 아래에서 올라온다 (호갱노노가 하는 것이 이것이다). */
+/* N0091 */
 const SHEET_TITLE = {
   trade: '실거래 표시', ic: 'IC', price: '지역별 가격', develop: '개발',
 };
@@ -364,13 +288,11 @@ function openSheet(cat) {
   sheet.querySelectorAll('.sheet-pane').forEach((p) => {
     p.hidden = p.dataset.cat !== cat;
   });
-  // 왼쪽 칸이 벌어지면 지도 폭이 바뀐다. Leaflet 에 알려주지 않으면
-  // 새로 드러난 부분이 회색으로 남는다.
+  // N0092
   if (map) setTimeout(() => map.invalidateSize(), 220);
 }
 
-/* 왼쪽 칸 닫기. openSheet 안과 닫기 단추에 같은 코드가 두 벌 있었다 —
-   개발 스위치까지 세 벌이 되기 전에 한 곳으로 모은다. */
+/* N0093 */
 function closeSheet() {
   const sheet = document.getElementById('sheet');
   if (sheet) { sheet.hidden = true; sheet.dataset.cat = ''; }
@@ -414,14 +336,7 @@ function showView(key) {
   if (key === 'explore' && map) map.invalidateSize();
 }
 
-/* 접어 둔 화면으로 가는 길 (요구사항 2026-09-10).
- *
- * 탭 넷을 숨겼지만 **지운 것이 아니다** — 화면도 코드도 자료도 그대로
- * 있다. 다시 쓸 날이 오면 index.html 의 hidden 한 글자만 떼면 된다.
- *
- * 그때까지도 우리는 그 화면을 봐야 한다(배포가 안 깨졌는지). 주소 끝에
- * #rank · #trend · #board · #verdict 를 붙이면 열린다. 숨긴 탭도 이때는
- * 같이 보여 준다 — 화면만 열고 탭을 감추면 돌아갈 길이 없다. */
+/* N0094 */
 function showHiddenView() {
   const key = (location.hash || '').replace('#', '');
   if (!key) return;
@@ -455,9 +370,7 @@ function buildFilters() {
 
   buildVehiclePicker();
 
-  // 구간 필터 — 예전 '분면 필터'(저평가·과열 등) 자리다. 분면은 평가라
-  // 오해를 부르고, 지도 색과 뜻이 달라 혼란스러웠다. 지도 색과 필터가
-  // 같은 것을 가리키는 편이 낫다.
+  // N0095
   const tierBox = $('#tier-filters');
   trafficLabels(TRAFFIC_CUTS).forEach((label, i) => {
     const btn = el('button', 'quad-btn');
@@ -491,8 +404,7 @@ function buildFilters() {
   });
   tierBox.append(newBtn);
 
-  // 통행량 미공개 — 켜 두는 것이 기본이다. 마도처럼 실재하는 IC 가
-  // 지도에서 사라지는 것이 지금까지의 문제였다.
+  // N0096
   const noneBtn = el('button', 'quad-btn is-hollow');
   noneBtn.type = 'button';
   noneBtn.dataset.tier = 'none';
@@ -510,12 +422,7 @@ function buildFilters() {
   tierBox.append(noneBtn);
 
   const kinds = $('#kind-filters');
-  // 공장과 창고를 갈라 보여준다. 국토부 15126470 은 '공장 및 창고 등'
-  // 자료라 창고가 처음부터 같이 들어와 있었는데, 한 칸에 담아 두어
-  // 가릴 수가 없었다. (2026-09-07 지시)
-  //
-  // 칸을 자료에서 만든다. 갈리지 않은 것이 있으면 그 칸도 만들어 몇
-  // 건인지 적는다 — 안 보여주면 그만큼이 조용히 사라진다.
+  // N0097
   const mix = state.meta.usage_mix || {};
   const options = [];
   (state.meta.kinds || []).forEach((kind) => {
@@ -523,12 +430,7 @@ function buildFilters() {
       options.push({ key: kind, label: KIND_LABEL[kind] || kind });
       return;
     }
-    // 건물주용도를 **그대로** 늘어놓는다. 처음에는 공장/창고/기타 셋으로
-    // 줄였는데, 실제 자료(run 33)에서 그 '기타' 41,588건이 축사·온실
-    // (동물 및 식물 관련시설), 정비소(자동차 관련시설), 주유소(위험물
-    // 저장 및 처리시설)로 **또렷이 갈려 있었다.** 모르는 것이 아니라
-    // 아는 것들을 한 칸에 뭉쳐 놓고 '미상' 이라고 부르고 있었던 셈이다.
-    // 값이 7종뿐이라 뭉갤 이유가 없다.
+    // N0098
     Object.keys(mix)
       .sort((a, b) => (mix[b] || 0) - (mix[a] || 0))
       .forEach((name) => {
@@ -556,41 +458,17 @@ function buildFilters() {
     kinds.append(label);
   });
 
-  // 개발단계 칸은 뺐다 (요구사항 2026-09-09: "토지-개발단계는 선택
-  // 제외"). state.hasStageFilter 가 false 로 남으므로 visibleTrades 가
-  // 이 조건을 통째로 건너뛴다 — **필터가 없는 것**이지 전부 끈 것이
-  // 아니다. 그 둘은 다르고, 그 구분을 검사가 이미 못 박아 두었다.
+  // N0099
   state.hasStageFilter = false;
 
-  // 도로 접함 칸도 뺐다 (요구사항 2026-09-17: "도로 접함 내용 전체
-  // 삭제"). #road-filter · #land-box 는 이제 화면에 없다 — 토지 하위
-  // 필터가 하나도 안 남았으므로 그 필터가 켜졌을 때 '토지'를 대신 켜
-  // 주던 ensureLandOn() 도 같이 지웠다. 남기면 아무도 안 부르는 죽은
-  // 함수였다.
+  // N0100
 
-  // 용도지역 칸은 뺐다 (요구사항 2026-09-10: "실거래 표시에서 용지역은
-  // 삭제합니다. 항상 전체 표기 함").
-  //
-  // 스물다섯 종이 세로로 늘어서 왼쪽 칸의 절반을 먹었고, 처음에 셋만
-  // 켜져 있어서 나머지 스물둘이 지도에서 빠진 채로 시작했다.
-  //
-  // **개발단계 때와 같은 방식으로 뺀다** — hasLandUseFilter 를 false 로
-  // 두면 visibleTrades 가 이 조건을 통째로 건너뛴다. 집합을 비우는
-  // 것과는 다르다. 비우면 '전부 끈 것' 이 되어 토지가 하나도 안 보인다.
+  // N0101
   state.hasLandUseFilter = false;
   state.activeLandUse.clear();
-  // 여전히 뒤에서 쓴다 — 땅값 글자의 용도지역 고르기(lp-groups)는
-  // 그대로다. 그쪽은 지도에 적히는 중앙값을 정하는 것이라 성격이
-  // 다르고, 분석 표본의 기준(CORE_LAND_USE)도 손대지 않는다.
+  // N0102
 
-  // ── 실거래 연도 — 좌/우 손잡이로 범위 ──
-  //
-  // 요구사항(2026-09-08): "실거래 연도는 좌/우로 선택해서 범위를 정할
-  // 수 있도록 (호갱노노 참조)".
-  //
-  // **범위는 공짜가 아니다.** 해마다 파일이 따로 있고 한 해가 약 950KB 다.
-  // 넓게 잡으면 그만큼 받는다. 그래서 MAX_YEAR_FILES 까지만 받고, 그보다
-  // 넓히면 전 기간 표본으로 물러난다 — 어느 쪽인지 아래 줄이 말한다.
+  // N0103
   const dealYears = (state.meta.trade_years || []).map((r) => r.year);
   if (dealYears.length) {
     const from = $('#year-from');
@@ -598,12 +476,7 @@ function buildFilters() {
     const lo = dealYears[0];
     const hi = dealYears[dealYears.length - 1];
     [from, to].forEach((el) => { el.min = String(lo); el.max = String(hi); el.step = '1'; });
-    // 기본은 **최근 두 해** (요구사항 2026-09-09: "거래 연도는
-    // 2024~2025년 기본 세팅").
-    //
-    // 한 해로 두면 처음 보는 화면이 성겨서 '거래가 이것뿐인가' 로
-    // 읽히고, 전 기간으로 두면 파일을 다섯 개씩 받는다. 두 해가
-    // 그 사이다 — 자료가 한 해뿐이면 자연히 한 해로 줄어든다.
+    // N0104
     const lo2 = Math.max(lo, hi - 1);
     from.value = String(lo2);
     to.value = String(hi);
@@ -626,8 +499,7 @@ function buildFilters() {
     };
 
     const pull = async () => {
-      // 두 손잡이가 엇갈리면 서로 밀어낸다. 안 그러면 '2020~2015' 같은
-      // 뒤집힌 범위가 만들어지고 아무것도 안 보인다.
+      // N0105
       let f = Number(from.value);
       let t = Number(to.value);
       if (f > t) { const m = f; f = t; t = m; }
@@ -642,19 +514,13 @@ function buildFilters() {
     paint();
   }
 
-  // #parcel-only 토글은 없앴다 (요구사항 2026-09-17). geocode_level 이
-  // parcel 이 아닌 거래는 visibleTrades() 가 항상 거른다 — 아래 참조.
+  // N0106
 
   // 처음 그릴 때도 개수를 채운다. 안 하면 전부 0 으로 보인다.
   updateTierCounts();
 }
 
-/* 거리 밴드 범례만 남긴다 (왼쪽 필터 안).
- *
- * 요구사항(2026-09-08): "좌측 범례 삭제". 지도 위 왼쪽 아래에 있던
- * 12줄짜리 범례를 없앤다. 지도를 키워 놓고 그 위를 범례로 다시 덮으면
- * 뜻이 없고, 담고 있던 것(거래 색·영업소 단·밴드)은 왼쪽 필터와
- * 말풍선에 이미 있다. */
+/* N0107 */
 function buildLegend() {
   const box = $('#band-legend');
   if (!box) return;
@@ -665,15 +531,7 @@ function buildLegend() {
     .join('');
 }
 
-/* ─────────── 교통량 순위 (지시4) ───────────
-   traffic.json 하나만 읽는다. 구조는 자리를 아끼려고 접혀 있다.
-
-     years  [2018 … 2025]
-     types  [1 … 6]                       ← 차종 코드
-     rows[].v[연도인덱스][차종인덱스]      ← 일평균 통행량 (대/일)
-
-   값이 **일평균**인 것이 중요하다. 연 합계로 순위를 매기면 연중 개통한
-   영업소가 다른 곳의 몇 분의 일로 찍혀 순위표가 통째로 틀어진다.        */
+/* N0108 */
 
 function trafficDisabled(message) {
   const tab = document.querySelector('.tab[data-view="rank"]');
@@ -728,9 +586,7 @@ function buildRank() {
   renderRank();
 }
 
-/* 검색 색인 (지시 2026-09-13). 영업소 이름과 지역(시·도, 시·군·구)을 목록으로
-   내려 준다 — 적어도 되고 목록에서 골라도 된다. 검색은 여전히 부분 일치라
-   '경기도' 를 고르면 경기도 영업소가 전부 남는다. */
+/* N0109 */
 function buildRankIndex() {
   const list = $('#rank-index');
   if (!list) return;
@@ -748,8 +604,7 @@ function buildRankIndex() {
     regionList.map((n) => `<option value="${escapeHtml(n)}" label="지역">`).join('');
 }
 
-/* 최근 5년의 전년 대비 증감률 (지시 2026-09-13: '전년 대비' 한 칸 대신
-   '최근 5년 YoY'). 왼쪽이 오래된 해. 값이 없는 해는 null 로 둔다 — 0 이 아니다. */
+/* N0110 */
 function rankYoy(row, yearIdx, codes, typeIdx, years) {
   const out = [];
   for (let k = 4; k >= 0; k -= 1) {
@@ -764,8 +619,7 @@ function rankYoy(row, yearIdx, codes, typeIdx, years) {
   return out;
 }
 
-/* 다섯 막대 하나로. 위로 뻗으면 증가, 아래면 감소. ±15% 에서 자른다 —
-   한 해의 개통 효과(수백 %)가 나머지 넷을 납작하게 만들지 않게. */
+/* N0111 */
 function yoyBars(yoy) {
   const W = 46; const H = 20; const mid = H / 2; const bw = 6; const gap = 4; const cap = 0.15;
   const bars = yoy.map((p, i) => {
@@ -784,29 +638,7 @@ function yoyBars(yoy) {
     + `<line x1="0" x2="${W}" y1="${mid}" y2="${mid}" class="base"/>${bars}</svg>${lastTxt}</span>`;
 }
 
-/* ── 차종 고르기 (요구사항 2026-09-09) ──────────────────────────
- *
- * "차종 선택을 여러개를 선택 할 수 있게 펼쳐 주시고 (용도지역처럼)
- *  1종, 2종 등 차종에 따른 이미지 및 간략 설명 넣어주세요."
- *
- * 드롭다운이라 **하나만** 고를 수 있었습니다. 그런데 이 제품이 보는
- * 것은 화물(2·3·4·5종)이라, 그것을 보려면 네 번 나눠 보고 머릿속에서
- * 더해야 했습니다. 펼쳐 놓고 여럿 고르게 합니다.
- *
- * ## 그림은 장식이 아닙니다
- *
- * 한국도로공사 차종은 **축 수와 크기**로 갈립니다(유료도로법 시행령
- * 별표1). '4종 대형화물' 이라는 이름만으로는 그것이 3축 10~20톤이라는
- * 것을 알 수 없습니다. 그래서 축 수와 덩치를 그대로 그립니다 — 그림이
- * 곧 그 차종의 정의입니다.
- *
- *   6종 경차      작은 몸통 · 2축
- *   1종 승용      승용차 · 2축
- *   2종 중형      조금 큼 · 2축
- *   3종 대형      큼 · 2축
- *   4종 대형화물  길고 · **3축**
- *   5종 특수화물  가장 길고 · **4축**
- */
+/* N0112 */
 const VEHICLE_ART = {
   6: { w: 26, h: 11, axles: 2, box: false },
   1: { w: 30, h: 11, axles: 2, box: false },
@@ -854,8 +686,7 @@ function vehicleIcon(code) {
 function vehicleCodes() {
   const all = ((state.traffic || {}).vehicle_types || []).map((v) => v.code);
   const on = all.filter((c) => state.tgVehicles.has(c));
-  // 하나도 안 고르면 전체로 읽는다. 빈 지도를 보여 주는 것보다 낫다 —
-  // 아래 안내가 '전체' 라고 말한다.
+  // N0113
   return on.length ? on : all;
 }
 
@@ -895,8 +726,7 @@ function buildVehiclePicker() {
   syncVehiclePicker();
 }
 
-/* 칸에 적을 한 줄. 자료의 desc 는 두세 문장이라 칸에 안 들어간다 —
-   **첫 마디만** 적고 나머지는 마우스를 올렸을 때 보인다. */
+/* N0114 */
 function vehicleShort(v) {
   const d = String(v.desc || '');
   const cut = d.split('.')[0];
@@ -917,9 +747,7 @@ function syncVehiclePicker() {
   window.__veh = [...state.tgVehicles].sort((a, b) => a - b);
 }
 
-/* 선택한 차종(또는 묶음)의 합계를 낸다. 값이 하나도 없으면 0 이 아니라 null 을
-   돌려준다 — '통행량이 0' 과 '그 해 자료가 없음' 은 다른 말이라 순위표에서
-   섞이면 안 된다. */
+/* N0115 */
 function rankValue(row, yearIdx, codes, typeIdx) {
   const grid = row.v[yearIdx];
   if (!grid) return null;
@@ -965,10 +793,7 @@ function renderRank() {
     rows.push({
       ...r,
       value,
-      // 정렬 열쇠. **화면에 보이는 맨 끝 막대의 숫자와 같은 값이다** —
-      // 위에서 value <= 0 인 행을 이미 뺐으므로 rankYoy 의 마지막 칸
-      // (cur > 0 을 더 보는 것뿐)과 늘 일치한다. 그래서 '증가율 높은 순'
-      // 이 맞는지 화면의 숫자로 확인할 수 있다 (test_rank.js).
+      // N0116
       growth: prev && prev > 0 ? value / prev - 1 : null,
       share: all && all > 0 ? value / all : null,
       yoy: rankYoy(r, yearIdx, codes, typeIdx, data.years),
@@ -992,16 +817,7 @@ function renderRank() {
       : '<button type="button" class="btn-trend" disabled title="이 영업소는 추이 자료가 없습니다">지가 추이</button>';
     const region = [r.sido, r.sigungu].filter(Boolean).join(' ') ||
                    '<span class="hint">미상</span>';
-    /* **지역은 두 자리에 적는다** (보고된 문제 2026-09-17: "지역(주소)로 인해
-       하나의 칸들이 너무 높음 (모바일에서)").
-
-       좁은 화면에서 '경기도 성남시 분당구' 가 한 글자씩 줄바꿈해 한 줄이
-       열두 줄이 됐다. 표의 다른 칸은 줄바꿈을 안 하니(막대·단추·숫자) 폭이
-       모자랄 때 눌리는 것은 이름과 지역뿐이기 때문이다.
-
-       그래서 좁으면 지역 칸을 통째로 접고 영업소 이름 **밑줄**로 보낸다.
-       칸이 하나 줄어 남은 칸들이 제 폭을 찾는다. 넓은 화면에서는 예전처럼
-       따로 선다 — 그쪽은 눌릴 일이 없다. 어느 쪽이든 자료는 화면에 있다. */
+    /* N0117 */
     return `<tr>
       <td class="rank">${i + 1}</td>
       <td class="who"><span class="nm">${escapeHtml(r.name)}</span><span class="sub">${region}</span></td>
@@ -1013,7 +829,7 @@ function renderRank() {
     </tr>`;
   }).join('');
 
-  // 부가 설명은 뺐다 (지시 2026-09-13). 한 줄 요약은 표 제목 옆 툴팁으로만 남긴다.
+  // N0118
   const missing = data.rows.length - rows.length;
   const h2 = document.querySelector('#view-rank h2');
   if (h2) {
@@ -1032,15 +848,7 @@ function renderVehicleTables() {
     `<tr><th>${escapeHtml(g.label)}</th><td>${escapeHtml(g.desc)}</td></tr>`).join('');
 }
 
-/* ─────────── 추이 비교 (교통량 × 지가 × 공시지가 × 반경) ───────────
-
-   단위가 제각각이다. 교통량은 대/일(십만 단위), 지가는 원/㎡(백만 단위).
-   그대로 한 축에 겹치면 지가 선이 화면 꼭대기에 붙고 교통량은 바닥에
-   깔린 직선이 된다. 그래서 기본은 **지수**다 — 각 계열의 기준연도를
-   100으로 두고 그린다. 주식 비교차트가 하는 것과 같다.
-
-   '원값' 을 고르면 축이 하나뿐이라 비교가 깨진다는 것을 화면에 적어 둔다.
-   숨기지 않고 고를 수 있게 두되, 무슨 일이 벌어지는지는 말해 준다.       */
+/* N0119 */
 
 const TREND_KIND_LABEL = { land: '토지', factory: '공장·창고' };
 
@@ -1051,9 +859,7 @@ function trendDisabled(message) {
   if (note) note.textContent = message;
 }
 
-/* 그릴 수 있는 계열을 모두 모은다. 각 계열은 {key,label,group,color,dash,points}.
-   points 는 {연도: 값}. 값이 없는 해는 아예 넣지 않는다 — 0 으로 채우면
-   '거래가 없던 해' 가 '값이 0 인 해' 로 둔갑한다. */
+/* N0120 */
 function trendSeriesFor(id) {
   const out = [];
   const chart = state.chart || {};
@@ -1086,16 +892,7 @@ function trendSeriesFor(id) {
   const bands = chart.bands || [];
   Object.entries(row.band || {}).forEach(([band, pts]) => {
     const i = Math.max(0, bands.indexOf(band));
-    // 대조 밴드는 점선으로 끊는다. 두 가지 이유가 겹친다.
-    //   뜻   영향범위 바깥의 기준선이라 '자료 계열' 과 성격이 다르다.
-    //   색약 중립 회색과 승용(자홍)이 적록색약에서 ΔE 5.9 로 붙는다.
-    //        색만으로는 구별이 안 되므로 모양이 그 몫을 대신한다.
-    // **지가 계열은 전부 점선.** 교통량 계열은 실선이다.
-    //
-    // 한 그래프에 교통량 4계열 + 지가 3밴드까지 들어가는데, 일곱 색이
-    // 서로 다 구별되게 만드는 것은 색상환 안에서 불가능하다. 선 모양으로
-    // 무리를 갈라두면 색은 무리 안에서만 달라도 된다. 지도에서 밴드가
-    // 점선인 것과도 말이 맞는다.
+    // N0121
     out.push({
       key: `band:${band}`,
       label: `지가 · ${band} km`,
@@ -1134,8 +931,7 @@ function trendSeriesFor(id) {
   return out;
 }
 
-// 밴드색과 겹치지 않는 색만 쓴다. --q-under 를 쓰다가 지가 5-10km(--band-4)와
-// 똑같은 파랑이 나와 한 그래프에서 두 선을 구별할 수 없었다.
+// N0122
 const TRAFFIC_COLORS = ['var(--traffic-1)', 'var(--traffic-2)',
                         'var(--traffic-3)', 'var(--traffic-4)'];
 const USE_COLORS = ['var(--band-3)', 'var(--band-5)', 'var(--q-over)', 'var(--band-2)'];
@@ -1192,11 +988,7 @@ function buildTrend() {
   initTrendDialog();
 }
 
-/* ── 추이 비교 팝업 (지시 2026-09-13, 슬라이드 3) ──
-   IC 교통량 표의 '지가 추이' 단추가 연다. #view-trend 의 내용물(.trend-wrap)을
-   <dialog> 안으로 옮겨 띄우고 닫으면 제자리로 돌려 놓는다 — 화면을 복제하지
-   않으므로 리스너·상태가 하나다. <dialog> 를 모르는 브라우저에서는 예전처럼
-   #trend 화면으로 간다. */
+/* N0123 */
 function initTrendDialog() {
   const dlg = $('#trend-dialog');
   if (!dlg) return;
@@ -1229,8 +1021,7 @@ function openTrendPopup(id) {
     `추이 비교 — ${info ? info.name : id}${info && info.region ? ' · ' + info.region : ''}`;
 }
 
-/* 영업소를 바꾸면 계열 구성이 달라진다. 켜둔 계열 중 남아 있는 것은 유지하고,
-   처음 고른 영업소에서는 기본 조합(교통량 전체 + 영향범위 대표 지가)을 켠다. */
+/* N0124 */
 function selectTrend(id) {
   const first = state.trend.id == null;
   state.trend.id = id;
@@ -1335,8 +1126,7 @@ function renderTrend() {
   const indexed = state.trend.scale === 'index';
   const base = years.includes(state.trend.base) ? state.trend.base : years[0];
 
-  // 지수화: 기준연도 값이 없는 계열은 **그 계열이 가진 가장 이른 해**를 쓰고,
-  // 그 사실을 범례에 적는다. 조용히 다른 기준을 쓰면 비교가 거짓말이 된다.
+  // N0125
   const prepared = picked.map((s) => {
     const has = Object.keys(s.points).map(Number).sort((a, b) => a - b);
     const anchor = s.points[base] != null ? base : has[0];
@@ -1451,42 +1241,14 @@ function wireTrendHover(svg, prepared, years, sx, indexed) {
 }
 
 /* ─────────── 영업소 교통량 4분위 ─────────── */
-/* 지도의 영업소 색은 **교통량이 많은 순서**다. 잘한 곳/못한 곳을 매기는
- * 것이 아니다. 예전에는 분면(저평가·과열 등) 색을 썼는데, 그것은 평가라
- * 오해를 부르고 무엇보다 442곳 중 83곳만 값이 있어 나머지가 전부 같은
- * 색으로 찍혔다.
- *
- * 교통량은 traffic.json 에 484곳이 다 있다. 4분위는 순서형이므로 한 색상의
- * 명도 단계로 그린다 — 진할수록 교통량이 많다. */
-/* 영업소 교통량 구간 — **고정 경계**다.
- *
- * 4분위(전국 상위 25%)로 나눴더니 수도권을 확대하면 거의 전부가 최상위로
- * 떨어졌다. 전국 기준 분위는 수도권 안에서 아무것도 안 가른다.
- * 1만대 단위 고정 경계로 바꾸면 같은 화면에서 네 단계가 다 나온다.
- *
- *   ~1만    232곳      1~2만  106곳
- *   2~3만    53곳      3만+    84곳
- */
+/* N0126 */
+/* N0127 */
 const TRAFFIC_CUTS = [10000, 20000, 30000];
 const TRAFFIC_TIERS = TRAFFIC_CUTS.length + 1;
 
-/* **차종을 골라 보면 경계가 따라 내려간다** (요구사항 2026-09-10).
- *
- * 보고: "차량 종류 선택 시 일평균 통행량이 줄어드는데 기준이 최소
- * 1만대라서 분별이 안됩니다."
- *
- * 맞습니다. 5종만 켜면 대부분 영업소가 수백~수천 대라 1만대 경계
- * 아래로 다 몰려 **지도가 한 색**이 됩니다. 고정 경계는 '전체' 를
- * 볼 때만 뜻이 있습니다.
- *
- * 그래서 전체를 볼 때는 지금 경계를 그대로 두고, 일부만 골랐을 때는
- * **그 선택에서 가장 많은 곳**을 기준으로 네 단계를 새로 끊습니다.
- * 해마다·차종마다 경계가 달라지므로 범례에 숫자를 적어 둡니다 —
- * 안 적으면 어제 본 색과 오늘 본 색이 다른 뜻이 됩니다.
- */
+/* N0128 */
 function niceStep(v) {
-  // 1·2·5 × 10^n 으로 올린다. 사람이 읽는 눈금이다.
-  // 백 단위 아래로는 안 내려간다 — 요구사항의 "최소 백단위".
+  // N0129
   if (!(v > 0)) return 100;
   const pow = Math.pow(10, Math.floor(Math.log10(v)));
   const head = v / pow;
@@ -1517,15 +1279,13 @@ function trafficCuts(vol) {
   if (!all.length || picked.length >= all.length) return TRAFFIC_CUTS;
   let max = 0;
   vol.forEach((v) => { if (v > max) max = v; });
-  // 네 단계로 나누므로 한 칸은 최대값의 1/4 이다. 그것을 사람이 읽는
-  // 눈금으로 올린다. 최대값이 1만을 넘으면 고정 경계가 이미 맞는다.
+  // N0130
   const step = niceStep(max / 4);
   if (step * 3 >= TRAFFIC_CUTS[2]) return TRAFFIC_CUTS;
   return [step, step * 2, step * 3];
 }
 
-/* 선택한 연도·차종의 영업소별 교통량. 둘 다 사용자가 고른다 —
- * 2003년 화물만 보고 싶을 수도 있고, 올해 전체를 보고 싶을 수도 있다. */
+/* N0131 */
 function tollgateVolumes(year, vehicle) {
   const tr = state.traffic || {};
   const years = tr.years || [];
@@ -1545,12 +1305,7 @@ function tollgateVolumes(year, vehicle) {
   return out;
 }
 
-/* 그 해에 **처음** 교통량이 잡힌 영업소 = 신설.
- *
- * 이전 해에 값이 없다가 그 해에 생겼다는 뜻이다. 개통 효과를 보는
- * 이 제품에서 신설 IC 는 가장 중요한 관측 대상이라, 교통량 구간에
- * 섞지 않고 따로 표시한다 — 신설은 '교통량이 적은 곳' 이 아니라
- * '이제 막 생긴 곳' 이다. */
+/* N0132 */
 function newTollgates(year) {
   const tr = state.traffic || {};
   const years = tr.years || [];
@@ -1569,8 +1324,7 @@ function newTollgates(year) {
   return out;
 }
 
-/* 값 → 0..3. 경계는 고정이라 해마다 흔들리지 않는다 — 작년과 올해 지도를
- * 나란히 놓고 비교할 수 있다는 뜻이다. */
+/* N0133 */
 function buildTiers() {
   const year = state.tgYear;
   const vol = tollgateVolumes(year, vehicleCodes());
@@ -1583,18 +1337,14 @@ function buildTiers() {
     while (q < cuts.length && v >= cuts[q]) q++;
     tier.set(id, q);
   });
-  // 통행량 미공개 — 도로공사 TCS 에 한 해도 값이 없는 영업소. 민자
-  // 운영사가 요금을 직접 걷는 노선이라 도로공사가 자료를 갖고 있지
-  // 않다(마도 등). 0 으로 두면 '가장 한산한 IC' 로 줄을 서서 정반대의
-  // 결론이 나오므로, 구간이 아니라 별도 상태로 둔다.
+  // N0134
   (state.tollgates || []).forEach((t) => {
     if (t.no_traffic) tier.set(String(t.tollgate_id), 'none');
   });
   return { rank: tier, vol, cut: cuts, fresh };
 }
 
-/* 연도·차종을 바꾸면 마커 색·크기를 다시 칠한다. 지도를 새로 만들지
- * 않는다 — 442개를 다시 그리면 화면이 한 번 껌뻑인다. */
+/* N0135 */
 function recolorTollgates() {
   state.tiers = buildTiers();
   const { rank, vol } = state.tiers;
@@ -1606,8 +1356,7 @@ function recolorTollgates() {
   });
   updateTierCounts();
   refreshMap();
-  // 인구도 같은 해를 본다. 교통량은 2026년인데 인구는 2025년이면
-  // 화면 두 곳이 다른 해를 말하게 된다.
+  // N0136
   drawLandPrice();
   buildLegend();
 }
@@ -1617,8 +1366,7 @@ function updateTierCounts() {
   (state.tiers ? state.tiers.rank : new Map()).forEach((q) => {
     counts[q] = (counts[q] || 0) + 1;
   });
-  // **글자도 같이 간다.** 차종을 고르면 경계가 내려가는데 범례가
-  // '1만대 미만' 인 채로 있으면 같은 색이 어제와 다른 뜻이 된다.
+  // N0137
   const labels = trafficLabels(((state.tiers || {}).cut) || TRAFFIC_CUTS);
   document.querySelectorAll('#tier-filters .quad-btn').forEach((btn) => {
     const t = btn.dataset.tier;
@@ -1631,24 +1379,14 @@ function updateTierCounts() {
   });
 }
 
-/* 지도가 갈 수 있는 배율의 끝 (docs/map-zoom-levels.md 가 기준이다).
- *
- * 아래끝 7 — 그보다 멀면 우리가 그리는 것이 하나도 없다. 위끝 19 —
- * 배경 타일이 거기까지만 있다. */
+/* N0138 */
 const MAP_MIN_ZOOM = 7;
 const MAP_MAX_ZOOM = 19;
 
-/* 마커 한 개의 색·크기·툴팁. 지도를 만들 때와 연도·차종을 바꿀 때
- * 같은 함수를 쓴다 — 두 군데에 따로 쓰면 한쪽만 고치게 된다. */
+/* N0139 */
 const LABEL_ZOOM = 10;
 
-/* 화면에 그리는 밴드는 **영향범위까지**다.
- *
- * 가장 바깥(5-10km)은 위약 대조 밴드로, 분석이 '여기서도 효과가 나오면
- * IC 때문이 아니다' 를 판정하는 데 쓴다. 그것은 통계 절차이지 사용자가
- * 볼 것이 아니다 — 화면에 '위약 대조' 라고 적어두면 무슨 말인지 모르는
- * 채로 지도만 복잡해진다. 분석에서는 그대로 쓴다.
- */
+/* N0140 */
 const shownBands = () => (state.meta.bands_km || []).slice(0, -1);      // 이 배율부터 이름을 띄운다
 
 function styleTollgate(marker, t, tier, vol) {
@@ -1657,15 +1395,9 @@ function styleTollgate(marker, t, tier, vol) {
   const isNone = tier === 'none';
   const q = (isNew || isNone) ? 0 : tier;
   marker.setStyle({
-    // 미공개는 **가장 작게** 그린다. 크게 그리면 눈이 먼저 가는데,
-    // 이것은 값이 큰 곳이 아니라 값을 모르는 곳이다. 크기는 교통량을
-    // 말하는 자리라 '모른다' 가 그 자리를 차지하면 안 된다.
-    // 1만대 이하(q=0)와 같은 4.5 를 쓴다.
+    // N0141
     radius: isNew ? 7 : isNone ? 4.5 : (known ? 4.5 + q * 1.4 : 3.5),
-    // 신설은 링이 굵고 거의 검정이다. 네 구간은 흰 링이라 **테두리
-    // 색만 봐도** 갈린다 — 채움 색이 비슷해 보이는 작은 배율에서도.
-    // 미공개는 **속이 비어 있다** — 색을 하나 더 만들지 않은 이유는,
-    // 색 구간에 끼워 넣는 순간 '통행량이 이만큼' 으로 읽히기 때문이다.
+    // N0142
     weight: isNew ? 3 : isNone ? 2.2 : 1.6,
     color: isNew ? cssVar('--tg-new-ring')
       : isNone ? cssVar('--tg-none') : '#fff',
@@ -1715,51 +1447,15 @@ function buildMap() {
     return;
   }
   const withCoords = state.tollgates.filter((t) => t.lat && t.lon);
-  // **+/- 는 오른쪽 아래다** (요구사항 2026-09-10).
-  //
-  // Leaflet 의 기본 자리는 왼쪽 위인데, 그 자리를 지역 검색칸에
-  // 내줬다. 검색은 지도 조작이지 페이지 요소가 아니라서 지도 위에
-  // 얹었고(머리띠에서 65px 이 돌아왔다), 두 개를 같은 자리에 놓을
-  // 수는 없다. 오른쪽 아래는 폰에서 엄지가 닿는 자리이기도 하다.
-  // **캔버스를 안 쓴다.** 보고된 문제(2026-09-10): "IC/영업소 하나
-  // 클릭 후 지자체 태그에 마우스 올리면 팝업 정보가 안 나와요."
-  //
-  // preferCanvas 를 켜면 Leaflet 이 원(circleMarker·circle)을 그리려고
-  // **지도 전체를 덮는 <canvas> 한 장**을 overlayPane(z 400)에 깝니다.
-  // 그 캔버스는 자기 위에서 일어난 마우스 사건을 전부 받아 스스로
-  // 판정하고, 못 맞히면 그냥 버립니다 — 아래로 안 흘려보냅니다.
-  //
-  // 땅값 글자는 lpPane(375), 거래 핀은 tradePane(380) 이라 **둘 다
-  // 그 캔버스 아래**입니다. 그래서 캔버스가 생기는 순간(=원이 하나라도
-  // 그려지는 순간, 즉 IC·영업소를 켜거나 밴드를 그린 뒤) 글자에 마우스가
-  // 안 닿습니다. 켜기 전에는 캔버스가 없어서 되던 것이 이것 때문입니다.
-  //
-  // SVG 로 그리면 **그려진 선만** 사건을 받습니다(leaflet.css 가
-  // path 에 pointer-events:none 을 걸고 .leaflet-interactive 에만
-  // auto 를 줍니다). 층 순서는 그대로 두고 가로채기만 없앱니다.
-  // 값은 원 561개 + 밴드 몇 개뿐이고, 이것들은 화면을 옮겨도 다시
-  // 그리지 않습니다 — SVG 로 감당이 됩니다.
-  /* **배율 아래끝을 7 로 못박는다** (2026-09-16 지시: "z0 ~ z6 삭제").
-   *
-   * 여태 지도에 minZoom 을 안 줘서 Leaflet 이 배경 타일의 기본값 0 을
-   * 썼다. 그래서 눈금이 'z 7 / 0~19' 로 떴고, 손가락을 한 번 더 오므리면
-   * 한반도가 점이 되는 자리까지 내려갔다. **그 여섯 배율에는 우리가
-   * 그리는 것이 하나도 없다** — 땅값 분위도 태그도 z7 부터다. 갈 수는
-   * 있는데 아무것도 없는 자리는 고장으로 읽힌다. */
+  // N0143
+  /* N0144 */
   map = L.map('map', { zoomControl: false, preferCanvas: false,
                        minZoom: MAP_MIN_ZOOM, maxZoom: MAP_MAX_ZOOM })
     .setView([36.5, 127.8], MAP_MIN_ZOOM);
   L.control.zoom({ position: 'bottomright' }).addTo(map);
-  // **지금 몇 배율인지, 끝이 어디인지를 숫자로 보인다** (2026-09-15 지시:
-  // "(-)(+) 위? 옆? 어디까지가 최대/최소인지 모르겠음"). +/− 만으로는
-  // 더 눌러도 되는지 알 수 없다. 끝에 닿으면 그 쪽을 흐리게도 한다.
-  // **꾸밈 하나가 지도를 죽이지 않게 감싼다.** 첫 판에서 이것이 던져
-  // 배경 지도 고르기까지 통째로 안 만들어졌다 (검사가 잡았다).
+  // N0145
   try { addZoomReadout(); } catch (e) { /* 눈금은 없어도 지도는 돈다 */ }
-  // 보이는 영역만 그리므로, 움직이면 다시 그려야 한다. moveend 는
-  // 확대·축소 뒤에도 온다.
-  // 누름과 끌기를 가른다. 순서는 pointerdown → dragstart → click 이라,
-  // 누를 때 지우고 끌면 세우면 click 시점에 답이 나와 있다.
+  // N0146
   const holder = map.getContainer();
   const clearDrag = () => { lpDragged = false; };
   ['pointerdown', 'mousedown', 'touchstart'].forEach((ev) => {
@@ -1770,15 +1466,9 @@ function buildMap() {
 
   map.on('moveend', () => {
     drawTrades();
-    // 경계선은 칸 단위라 움직일 때마다 새 칸만 부른다. 말풍선이
-    // 열려 있어도 상관없다 — 이 층은 말풍선을 안 건드린다.
+    // N0147
     drawCadastral();
-    // 땅값 글자는 **보이는 곳만** 그린다. 움직이면 다시 그려야 하고,
-    // 색도 다시 끊어야 한다 — 화면 안에서의 5분위이기 때문이다.
-    // 조회수는 drawLandPrice 가 '지금 화면에 있는 태그' 를 넘겨 준다.
-    //
-    // 말풍선이 열려 있으면 헛일을 안 한다. **진짜 잠금은 여기가 아니라
-    // drawLandPrice 안에 있다** — 부르는 자리가 열여섯 곳이다.
+    // N0148
     if (lpOpenPk != null) return;
     drawLandPrice();
   });
@@ -1791,52 +1481,28 @@ function buildMap() {
     const cls = ((e.popup || {}).options || {}).className;
     if (cls !== 'lp-pop') return;
     lpOpenPk = null;
-    // 말풍선을 닫으면 행정구역도 걷는다 — 남겨 두면 어느 태그의
-    // 구역인지가 끊긴다.
+    // N0149
     clearAdminShape();
-    // 다시 그리는 도중에 닫힌 것이면 여기서 또 그리면 안 된다 —
-    // clearLayers 가 popupclose 를 부르므로 끝없이 돈다.
+    // N0150
     if (!lpDrawing) drawLandPrice();
   });
-  // 배율이 바뀌면 인구를 묶는 단위가 바뀐다 (시도 → 시군 → 구).
-  // 다시 그리지 않으면 확대해 들어가도 전국 원 17개가 그대로 남는다.
+  // N0151
   map.on('zoomend', () => {
     if (state.develop) drawDevVec();
     drawLandPrice();
-    // 범례의 원 크기와 '몇 만 이하' 도 단위에 맞춰 다시 그린다.
-    // 자료가 오기 전이면 그릴 것이 없다.
+    // N0152
     if (state.meta) buildLegend();
   });
-  // 거래·매물은 **영업소 아래**에 깐다.
-  //
-  // Leaflet 은 divIcon 마커를 markerPane(z-index 600)에, 원(circleMarker)을
-  // overlayPane(400)에 그린다. 그래서 무리를 어떤 순서로 지도에 붙이든
-  // 거래 네모가 영업소 원을 덮었다 — 거래가 2천 개, 영업소가 4백 개라
-  // 화면이 온통 초록 네모가 됐다. 순서로는 못 고치고 **판을 따로 파야**
-  // 한다. 380 은 배경 타일(200)보다 위, 밴드·영업소(400)보다 아래다.
+  // N0153
   map.createPane('tradePane').style.zIndex = 380;
-  // 배경 지도는 물러나야 한다. OSM 기본 타일은 도로가 노랑·주황, 녹지가
-  // 초록, 물이 파랑이라 그 위에 얹은 밴드 색과 경쟁한다 — 밴드 파랑이
-  // 강물 파랑과 겹치면 색을 아무리 잘 골라도 안 보인다.
-  //
-  // 무채색 타일 서비스(CARTO·Stadia 등)는 이제 API 키를 요구한다. 키를
-  // 하나 더 늘리는 대신 **CSS 로 채도를 낮춘다**(style.css 의
-  // .leaflet-tile-pane). 키도 계정도 없이 같은 결과를 얻고, 남의 서비스
-  // 정책이 바뀌어도 지도가 안 깨진다.
-  // 배경 지도는 **wireBaseMap() 이 깐다.** 여기서도 깔면 층이 둘이
-  // 되는데, 겹쳐 놓으면 눈에는 안 보이고 타일만 두 번 받는다.
+  // N0154
   addZoningLayer();
 
-  // 필지 경계선. 배경 타일(200) 바로 위, 용도지역 색면보다 아래에 둔다.
-  // **판을 따로 파는 이유는 색이다** — 배경 타일 판에는 이미 채도를
-  // 낮추는 손질이 걸려 있어서(.leaflet-tile-pane), 같은 판에 두면 그
-  // 손질이 경계선에도 겹쳐 걸린다.
+  // N0155
   map.createPane('cadastralPane').style.zIndex = 250;
   addCadastralLayer();
 
-  // 고른 필지의 윤곽 (요구사항 2026-09-10 — 부동산플래닛처럼).
-  // 용도지역 색면(타일 200)보다 위, 땅값 글자(375)보다 아래에 둔다 —
-  // 윤곽이 글자를 덮으면 값을 못 읽는다.
+  // N0156
   map.createPane('parcelPane').style.zIndex = 370;
   parcelLayer = L.layerGroup().addTo(map);
 
@@ -1849,8 +1515,7 @@ function buildMap() {
   tradeLayer = L.layerGroup().addTo(map);
   tollgateLayer = L.layerGroup().addTo(map);
 
-  // 색은 교통량 4분위다. 값이 없는 곳은 회색 테두리만 남겨 '모른다' 를
-  // 색으로 말한다 — 값이 있는 것처럼 아무 색이나 칠하면 안 된다.
+  // N0157
   const { rank, vol } = state.tiers || buildTiers();
   withCoords.forEach((t) => {
     const marker = L.circleMarker([t.lat, t.lon], { radius: 5, weight: 1.6 });
@@ -1860,21 +1525,15 @@ function buildMap() {
     markers.set(t.tollgate_id, marker);
   });
 
-  // 확대하면 이름을 띄운다. 축소 상태에서 442개 이름을 다 띄우면
-  // 글자가 서로 덮여 아무것도 못 읽는다.
+  // N0158
   map.on('zoomend', syncTollgateLabels);
 
   map.on('click', (e) => {
     if (state.pickMode) { endPick(e.latlng); return; }
-    // 영업소·거래 점을 누른 것이면 그쪽이 할 일을 한다. Leaflet 은 레이어
-    // 클릭을 지도까지 올려보내므로, 막지 않으면 영업소를 누를 때마다
-    // 상세 패널과 용도지역 말풍선이 함께 뜬다.
+    // N0159
     const t = e.originalEvent && e.originalEvent.target;
     if (t && t.closest && t.closest('.leaflet-interactive')) return;
-    // 용도지역을 켜 놓았을 때만. 꺼 놓았으면 색면이 없으니 누를 이유도
-    // 없고, 누를 때마다 브이월드를 부르는 것은 한도를 태우는 일이다.
-    // 필지 진단(레이더)을 연다. 배율이 낮으면 어느 필지를 누른 것인지
-    // 알 수 없으므로 그때는 예전처럼 용도지역만 말한다.
+    // N0160
     if (map.getZoom() >= ZONING_MIN_ZOOM) askParcel(e.latlng);
     else if (state.zoning) askZoning(e.latlng);
   });
@@ -1885,13 +1544,7 @@ function buildMap() {
   refreshMap();
 }
 
-/* 밴드 하나. 선 + 옅은 음영으로 그린다.
- *
- * 선만 그으면 '어디까지가 그 밴드인지' 를 눈으로 채워 넣어야 한다. 음영이
- * 있으면 면적이 바로 읽힌다. 다만 원이 겹쳐 쌓이므로 아주 옅게 깔고,
- * **큰 원부터 그려** 작은 원이 위에 오게 한다. 순서를 뒤집으면 가까운
- * 밴드가 먼 밴드에 덮여 안 보인다.
- */
+/* N0161 */
 function bandRing(lat, lon, hi, i, isControl, faint) {
   const color = cssVar(`--band-${(i % BAND_COLORS) + 1}`);
   return L.circle([lat, lon], {
@@ -1899,40 +1552,18 @@ function bandRing(lat, lon, hi, i, isControl, faint) {
     color,
     weight: faint ? 1.2 : (isControl ? 2 : 2.5),
     opacity: faint ? .55 : (isControl ? .85 : 1),
-    // **모든 밴드를 점선으로** 긋는다(2026-09-03 지시). 실선은 행정경계나
-    // 도로처럼 보여 배경 지도의 선과 섞인다. 점선은 '우리가 그은 선' 이라고
-    // 말한다. 대조 밴드만 더 성기게 끊어 성격이 다르다는 것을 보탠다.
+    // N0162
     dashArray: isControl ? '2 8' : '7 5',
-    // 대조 밴드는 채우지 않는다. 영향범위 바깥이라 면적을 강조할 이유가
-    // 없고, 가장 큰 원이라 채우면 화면 전체가 물든다.
-    // 면을 채우지 않는다. 넓은 색면은 한국 토지이용계획도의 용도지역
-    // (주거 노랑·상업 빨강·공업 보라·녹지 초록)처럼 읽힌다 — 우리 밴드는
-    // 용도와 아무 상관이 없는데 그렇게 오해된다. 점선만 남긴다.
+    // N0163
     fill: false,
-    // 밴드는 **누를 수 없어야 한다.** 보고된 문제(2026-09-04):
-    // "IC 선택 후 범위가 표시되면 범위 내로 들어가는 인근 IC가 클릭 불가."
-    //
-    // fill:false 로 그려도 소용없다. 지도가 canvas 방식이라(preferCanvas)
-    // Leaflet 은 원을 누를 수 있는지 판정할 때 **중심에서의 거리만** 본다
-    // (Circle._containsPoint: 거리 ≤ 반지름). 채웠는지 안 채웠는지는 안
-    // 본다. 그래서 5km 밴드는 속이 빈 것처럼 보여도 그 원판 전체가
-    // 누름을 가로챈다.
-    //
-    // 게다가 캔버스는 겹칠 때 **나중에 그린 것**을 누른 것으로 친다.
-    // 영업소는 처음 한 번 그리고 밴드는 IC 를 고를 때마다 다시 그리므로,
-    // 밴드가 항상 나중이 된다 — 즉 밴드가 늘 이긴다. 그리는 순서로는
-    // 못 고치고, 판정 대상에서 빼야 한다. 밴드에 붙은 동작은 없다.
+    // N0164
     interactive: false,
   });
 }
 
 
-/* 고른 해의 거래를 받아 온다. 한 번 받은 해는 다시 안 받는다.
- *
- * 실패해도 화면은 살려 둔다 — 거래가 안 보이는 것과 화면이 죽는 것은
- * 사용자에게 전혀 다른 일이다. */
-/* 한 해가 약 950KB 다. 이보다 넓게 잡으면 전 기간 표본으로 물러난다 —
- * 20년치를 다 받으면 19MB 이고, 그 중 화면에 그리는 것은 수천 점뿐이다. */
+/* N0165 */
+/* N0166 */
 const MAX_YEAR_FILES = 5;
 
 async function loadTradeYear(year) {
@@ -1948,17 +1579,13 @@ async function loadTradeYear(year) {
   state.tradesShown = state.tradeCache[year];
 }
 
-/* 범위만큼 받아서 잇는다. 받은 해는 다시 안 받는다(브라우저 캐시와
- * 별개로 우리도 들고 있는다) — 손잡이를 조금씩 미는 동안 같은 파일을
- * 몇 번씩 받으면 그게 더 느리다. */
+/* N0167 */
 async function loadTradeYears(from, to) {
   const years = [];
   for (let y = from; y <= to; y += 1) years.push(y);
   state.yearWide = years.length > MAX_YEAR_FILES;
   if (state.yearWide) {
-    // **넓게 잡으면 전 기간 표본으로 물러난다.** 그 표본은 20년에
-    // 흩어져 있어 성기다. 그것을 안 밝히면 '2015~2025 거래가 이것뿐' 으로
-    // 읽힌다 — updateYearNote 가 말한다.
+    // N0168
     state.tradesShown = state.trades.filter(
       (t) => t.deal_year >= from && t.deal_year <= to);
     return;
@@ -1969,43 +1596,17 @@ async function loadTradeYears(from, to) {
   state.tradesShown = out;
 }
 
-/* 지금 이 배율에서 실거래를 그려도 되는가.
- *
- * 요구사항(2026-09-17): "거래 연도 설정 시 지금 보이는 화면의 물건만
- * 로딩(무작위 표본이 아님), 무작위면 내가 보고 싶은 곳이 아님 …
- * 로딩 부하때문에 무작위면 배율을 올릴 때만 나타나게 하기로 변경."
- *
- * **진짜 바람은 '화면에 보이는 지역의 실제 자료' 지 표본이 아니다.**
- * 그런데 trades-{year}.json 은 해마다 전국 파일이라 지역으로 쪼개져
- * 있지 않다 — 좌표로 미리 나눈 조각이 없다(땅값 분위지도의 umd_index
- * 같은 bbox 색인이 실거래에는 없다). 그 조각을 새로 만드는 일은 이
- * 자리에서 손볼 수 있는 크기가 아니라, 사용자가 정한 절충안을 그대로
- * 옮긴다 — 무작위 표본(yearWide) 은 **그대로 두되**, 그 표본이 나타나는
- * 배율을 평소(z14, TRADE_MIN_ZOOM)보다 올린다. 화면에 걸치는 면적이
- * 작아질수록 그 안에 든 무작위 표본이 실제와 어긋나는 정도도 줄고,
- * 좌표당 그리기 비용(로딩 부하)도 준다.
- *
- * TRADE_LABEL_ZOOM(연속지적도 필지 경계가 뜨는 배율)을 그대로 빌린다 —
- * 새 상수를 하나 더 늘리지 않고, 이미 근거가 있는 문턱에 얹는다. */
+/* N0169 */
 function tradeMinZoomNow() {
   return state.yearWide ? TRADE_LABEL_ZOOM : TRADE_MIN_ZOOM;
 }
 
-/* 표본이라는 사실을 화면에 적는다.
- *
- * 이 한 줄이 없으면 '2019년 계획관리 거래는 이 열 점이 전부' 로 읽힌다.
- * 스크리닝 도구에서 그 오해는 곧바로 투자 판단으로 이어진다. */
+/* N0170 */
 function updateYearNote() {
   const node = document.getElementById('deal-year-note');
   if (!node) return;
   const n = (v) => v.toLocaleString('ko-KR');
-  // **하나도 안 켜져 있으면 그 사실을 먼저 말한다.**
-  //
-  // 처음 화면은 물건 종류가 전부 꺼져 있다(2026-09-04 지시 — "모든
-  // 실거래는 초기 기본설정은 표기 끄는 것"). 그래서 지도에 거래가 한
-  // 점도 안 찍히는데, 예전에는 '보이는 영역 0건' 만 적었다. 끈 것과
-  // 고장 난 것을 화면이 구별해 주지 않으면 사람은 고장으로 읽는다
-  // (2026-09-13 지적: "실거래 물건이 지도에서 표시가 안 되는 것 같습니다").
+  // N0171
   if (!state.activeKinds.size) {
     node.innerHTML = '실거래가 <strong>꺼져 있습니다</strong> — 바로 위 '
       + '<strong>물건 종류</strong>에서 토지·공장을 켜면 지도에 찍힙니다.'
@@ -2024,14 +1625,12 @@ function updateYearNote() {
   let text = `${label} 좌표 있는 거래 <strong>${n(total)}건</strong>`;
   if (held < total) text += ` 중 무작위 표본 ${n(held)}건을 받았습니다`;
   else text += ` 전부를 받았습니다`;
-  // **넓게 잡으면 성긴 표본으로 물러난다.** 그것을 안 밝히면 범위를
-  // 넓혔는데 점이 줄어드는 것을 고장으로 읽는다.
+  // N0172
   if (state.yearWide) {
     text += ` <em>(${MAX_YEAR_FILES}년이 넘어 전 기간 표본에서 골랐습니다 —`
       + ` 좁히면 그 해 자료를 통째로 받습니다)</em>`;
   }
-  // **아직 안 보여줄 배율이면 그렇다고 말한다** (지시 2026-09-14).
-  // 아무 말도 없으면 '이 동네에 거래가 없다' 로 읽힌다 — 전혀 다른 뜻이다.
+  // N0173
   if (map && map.getZoom() < TRADE_MIN_ZOOM) {
     node.innerHTML = text
       + ' · <em>실거래는 더 당겨야 나옵니다 — 지금 배율에서는 점 하나가'
@@ -2039,10 +1638,7 @@ function updateYearNote() {
       + ' 땅값을 색으로 보여주고 있습니다.</em>';
     return;
   }
-  // **무작위 표본(yearWide)은 한 번 더 당겨야 나타난다** (요구사항
-  // 2026-09-17 — tradeMinZoomNow() 주석 참조). 일반 실거래는 이미
-  // 그려질 배율인데 표본만 안 보이면 '이 동네만 없다' 로 읽힌다 — 이유를
-  // 짚어 준다.
+  // N0174
   if (state.yearWide && map && map.getZoom() < TRADE_LABEL_ZOOM) {
     node.innerHTML = text
       + ' · <em>선택한 기간이 넓어 전 기간 표본으로 보여드리는 중입니다 —'
@@ -2055,9 +1651,7 @@ function updateYearNote() {
   if (typeof state.tradeInView === 'number') {
     text += ` · 지금 보이는 영역 ${n(state.tradeInView)}건`;
     if (state.tradeDrawn < state.tradeInView) {
-      // **핀일 때는 '확대하면 다 보인다' 가 거짓이다.** 핀은 더 당겨도
-      // 60개에서 끊긴다. 왜 끊었고 무엇을 남겼는지를 그대로 적는다 —
-      // 안 적으면 '이 동네 거래는 이것뿐' 으로 읽힌다.
+      // N0175
       text += state.tradeLabelled
         ? ` <em>(핀은 겹치지 않게 ${n(state.tradeDrawn)}건만 —`
           + ' 최근 거래부터입니다)</em>'
@@ -2071,11 +1665,7 @@ function updateYearNote() {
   node.innerHTML = text + '.';
 }
 
-/* 필터 칸의 열쇠. 공장 자료는 공장·창고·그 밖으로 갈린다.
- *
- * usage 가 비어 있는(가를 칸이 없던) 거래도 '그 밖' 으로 보낸다 —
- * 어디에도 안 넣으면 켜 놓은 칸이 하나도 그것을 안 집어서 지도에서
- * 통째로 사라지고, 사라진 줄도 모른다. */
+/* N0176 */
 function tradeFilterKey(t) {
   if (t.kind !== 'factory') return t.kind;
   return `factory:${t.usage || '구분 없음'}`;
@@ -2086,25 +1676,9 @@ function visibleTrades() {
   // 연도는 파일을 고를 때 이미 갈렸다. 여기서 또 자르지 않는다.
   return rows.filter((t) => {
     if (!state.activeKinds.has(tradeFilterKey(t))) return false;
-    // 정확한 지번 좌표가 없는 거래(법정동 중심점)는 **항상** 뺀다
-    // (요구사항 2026-09-17: "정확한 주소가 안찍힌 물건은 일단 모두 숨김
-    // 처리"). 예전에는 #parcel-only 를 체크해야만 걸리는 토글이었다 —
-    // 이제 고정값이다. tradeLatLng()·tradeMarker() 의 coarse 흩뿌리기·
-    // is-coarse 스타일·pop-warn 문구는 그대로 남아 있지만 이 필터를
-    // 통과한 거래가 없으니 지금은 부르지 않는다 — 나중에 다시 보여주기로
-    // 하면 이 한 줄만 지우면 된다.
+    // N0177
     if (t.geocode_level !== 'parcel') return false;
-    // 개발단계·용도지역은 **토지에만** 건다. 공장·창고에 걸면
-    // 토지 칸을 만질 때마다 공장이 같이 사라진다.
-    //
-    // 그리고 **칸이 만들어졌을 때만** 건다. meta 에 stage_mix 가 없으면
-    // (수집이 아직 새 코드로 안 돈 상태) 집합이 비는데, 그것을 그대로
-    // 거르면 토지가 통째로 사라진다. 필터가 없는 것과 전부 끈 것은
-    // 다른 상황이다 — 검사가 이것을 잡았다.
-    //
-    // 도로 접함 필터는 뺐다 (요구사항 2026-09-17: "도로 접함 내용 전체
-    // 삭제"). car_ok 값 자체는 자료에 그대로 남아 있다 — 거르는 조건만
-    // 없앴다.
+    // N0178
     if (t.kind === 'land') {
       if (state.hasStageFilter
           && !state.activeStages.has(t.stage || '지목 미상')) return false;
@@ -2115,43 +1689,15 @@ function visibleTrades() {
   });
 }
 
-/* 실거래를 그리기 시작하는 배율. **docs/map-zoom-levels.md 가 기준이다.**
- *
- * 지시(2026-09-14): "전국, 시/도, 구 단위의 축척에서는 실거래 표기를 하지
- * 않습니다. 결국엔 확대(동/리 정도의 배율)에서는 해당 조건의 실거래가
- * 전부 표시 되었으면 좋겠습니다."
- *
- * z13 이하에서 점 하나는 6~20km 를 가리킨다. 찍어 봐야 어느 땅인지 못 짚고,
- * 점이 몰린 곳이 '거래가 많은 곳' 이 아니라 '우리가 좌표를 잘 붙인 곳' 으로
- * 읽힌다. 그 자리에는 읍면동 땅값 분위지도가 이미 있고 그쪽이 더 정직하다.
- *
- * z14 는 휴대폰에서 3km — 읍·면·동 하나가 화면에 들어오는 배율이다. */
+/* N0179 */
 const TRADE_MIN_ZOOM = 14;
-/* **상한을 되돌린다** (2026-09-14, 사이트가 멈춘 뒤).
- *
- * 지시는 '확대하면 전부' 였고 그래서 상한을 없앴다. 그런데 표식 하나가
- * DOM 요소 하나이고 그것을 **한 번에 동기로** 만든다 — 화면 안 건수가
- * 크면 그 반복문이 주 스레드를 통째로 막고, 브라우저가 '응답 없는
- * 페이지' 를 띄운다. 실제로 그렇게 됐다.
- *
- * 그러므로 '전부' 는 **그리는 방식을 바꾼 뒤에** 지킬 약속이다
- * (캔버스나 나눠 그리기). 그때까지는 상한을 두되, 잘랐다는 사실을
- * 화면이 말한다 — 말 없이 자르는 것만은 안 한다.
- *
- * 3,000 은 예전 1,500 의 두 배다. 지시 쪽으로 한 걸음 가되 멈추지 않는
- * 선이다. */
+/* N0180 */
 const TRADE_DRAW_CAP = 3000;
 
 function drawTrades() {
   if (!map || !tradeLayer) return;
   tradeLayer.clearLayers();
-  // **배율이 낮으면 아예 안 그린다** (지시 2026-09-14).
-  // 0 으로 두지 않고 null 로 둔다 — 0 건은 '이 동네에 거래가 없다' 는
-  // 뜻이고, 여기서는 '아직 안 보여줄 배율' 이라 뜻이 다르다. 안내 문구가
-  // 그 둘을 갈라 말해야 한다.
-  //
-  // 문턱은 tradeMinZoomNow() 가 정한다 — 무작위 표본(yearWide)일 때는
-  // 한 칸 더 높다 (요구사항 2026-09-17).
+  // N0181
   if (map.getZoom() < tradeMinZoomNow()) {
     state.tradeInView = null;
     state.tradeDrawn = 0;
@@ -2159,25 +1705,20 @@ function drawTrades() {
     window.__tradeStyles = [];
     window.__pins = { kind: state.pinKind, labelled: false, drawn: 0,
                       inView: null, belowMinZoom: true };
-    // **되돌아가기 전에 안내를 고친다.** 안 고치면 '더 당겨야 나옵니다'
-    // 가 영영 안 뜨고, 앞 배율에서 적힌 건수가 그대로 남아 거짓말을 한다.
+    // N0182
     updateYearNote();
     return;
   }
   const rows = visibleTrades();
   const bounds = map.getBounds();
   const inView = rows.filter((t) => bounds.contains([t.lat, t.lon]));
-  // 한 화면에 1,500개가 넘으면 앞에서 자른다. 자를 때는 반드시 말한다 —
-  // 말 안 하면 '이 동네 거래는 이것뿐' 으로 읽힌다.
+  // N0183
   state.tradeInView = inView.length;
-  // **당겨 보면 글자를 단다** (요구사항 2026-09-09 — 눌러야만 알 수
-  // 있는 것을 고친다). 멀리서는 점 그대로다: 전국에 1,500개 글자를 달면
-  // 서로 덮여 하나도 못 읽는다.
+  // N0184
   const labelled = map.getZoom() >= TRADE_LABEL_ZOOM;
   let rowsToDraw = inView;
   if (labelled && inView.length > TRADE_LABEL_CAP) {
-    // 자를 때는 **최근 거래부터** 남긴다. 앞에서 그냥 자르면 파일에
-    // 실린 순서가 곧 '보여줄 거래' 가 되는데, 그것은 아무 뜻도 없다.
+    // N0185
     rowsToDraw = inView.slice().sort(
       (a, b) => (b.deal_year - a.deal_year)
                 || ((b.deal_month || 0) - (a.deal_month || 0)));
@@ -2188,28 +1729,19 @@ function drawTrades() {
   for (let i = 0; i < state.tradeDrawn; i++) {
     tradeLayer.addLayer(tradeMarker(rowsToDraw[i], labelled));
   }
-  // **여기서 내놓는다.** 예전에는 refreshMap() 이 내놓았는데, 핀 유형만
-  // 바꿀 때는 refreshMap 을 안 거치므로 들여다보기 창이 옛 그림을
-  // 가리켰다 — 검사가 초록인데 화면은 바뀌어 있는 상태가 된다.
-  // 검사용 들여다보기 창. window.__bands 와 같은 취지다 — 지도는 CDN
-  // 의 Leaflet 이 있어야 그려져서, 그리는 값 자체를 밖에서 볼 길이
-  // 없으면 '색이 안 보인다' 같은 지적을 검사로 못 옮긴다.
+  // N0186
   window.__tradeStyles = tradeLayer.getLayers
     ? tradeLayer.getLayers().map((l) => ({
         kind: l.options.kind,
         geocodeLevel: l.options.geocodeLevel,
-        // 어느 판에 그렸는가. 판이 곧 위아래 순서다 — 영업소를 덮는지
-        // 아닌지가 여기서 갈린다.
+        // N0187
         pane: l.options.pane,
-        // 모양과 색은 CSS 클래스가 정한다. 무엇이 붙었는지를 그대로
-        // 내보내야 검사가 '네모인가 마름모인가' 를 볼 수 있다.
+        // N0188
         html: (l.options.icon && l.options.icon.options
                && l.options.icon.options.html) || '',
-        // 누를 수 있는지와, 눌렀을 때 무엇이 뜨는지. 이 둘이 없으면
-        // '눌러도 아무것도 안 나온다' 를 검사로 옮길 수 없다.
+        // N0189
         interactive: l.options.interactive === true,
-        // 그린 자리. 법정동 중심점 거래를 흩는 규칙(tradeLatLng)이 실제로
-        // 도는지 검사가 보려면 좌표가 나와 있어야 한다.
+        // N0190
         at: (l.getLatLng && l.getLatLng()) ? [l.getLatLng().lat, l.getLatLng().lng]
           : (Array.isArray(l.__latlng) ? l.__latlng : null),
         srcAt: l.options.srcAt || null,
@@ -2223,8 +1755,7 @@ function drawTrades() {
 }
 
 function refreshMap() {
-  // 지도가 없어도(CDN 차단) 개수 안내는 갱신한다. 그 한 줄이 표본이라는
-  // 사실을 말하는 유일한 자리다.
+  // N0191
   updateYearNote();
   if (!map) return;
   tollgateLayer.clearLayers();
@@ -2236,8 +1767,7 @@ function refreshMap() {
     const marker = markers.get(t.tollgate_id);
     if (!marker) return;
     const tier = rank.get(String(t.tollgate_id));
-    // 교통량을 모르는 영업소는 필터와 무관하게 늘 보여준다 — 걸러버리면
-    // '그 자리에 영업소가 없다' 로 읽힌다.
+    // N0192
     if (tier === undefined || state.activeTiers.has(tier)) {
       tollgateLayer.addLayer(marker);
     }
@@ -2245,76 +1775,16 @@ function refreshMap() {
   syncTollgateLabels();
 
   drawTrades();
-  // **땅값 글자는 여기서 다시 그리지 않는다.** 거래 점 필터와 따로 놀기로
-  // 했다(요구사항 2026-09-08) — 점을 걸러 볼 때마다 바탕의 중앙값이
-  // 함께 흔들리면 견줄 수가 없다. 배율·이동과 자기 칸에서만 다시 그린다.
+  // N0193
 }
 
-/* 용도지역 폴리곤 배경 — 네이버 지적편집도의 그 화면.
- *
- * 한국 **법정** 용도지역(계획관리·생산관리·자연녹지…)은 OSM 에 없다.
- * 국토교통부 자료이고 브이월드에서만 온다.
- *
- * **인증키를 여기 적지 않는다.** 우리 서버(api/tile.js)가 대신 받아온다.
- * 그 키는 실거래 지오코딩에 쓰는 하루 3만 건짜리 자원이고, 이 프로젝트에서
- * 가장 자주 병목이 되는 것이다 — 오늘도 그것 때문에 수집이 한 번 멈췄다.
- * 페이지에 적어두면 누가 대신 써버릴 수 있고, 그러면 수집이 선다.
- *
- * 배율이 낮을 때는 켜지 않는다. 전국이 보이는 배율에서 용도지역을 깔면
- * 색면이 지도를 통째로 덮어 거래 점도 영업소도 안 보인다 — 지적편집도는
- * 원래 필지를 들여다볼 때 쓰는 것이다.
- */
+/* N0194 */
 const ZONING_MIN_ZOOM = 12;
-// 필지 경계선은 더 깊이 들어가야 뜻이 있다. 12배율에서 필지선을 깔면
-// 실선 뭉치가 되어 용도지역 색을 오히려 가린다.
-//
-// 벡터로 받으므로 브이월드의 z18 문턱에 안 묶인다. 대신 다른 벽이
-// 있다 — 얕을수록 한 화면에 든 필지가 기하급수로 는다. 실측(안성,
-// 폰 화면 하나 기준, 속성 버리고 좌표 여섯 자리):
-//
-//   z14~16  1,000개 상한에 걸림   390~420KB
-//   z17       378개              166KB
-//
-// z16 이 상한에 걸리는 것은 **화면 통째로 부를 때** 다. 칸으로 나눠
-// 부르면 한 칸이 그 1/8 이라 z16 도 선다. 그보다 얕으면 칸마다 상한에
-// 걸려 선이 군데군데 빠진다 — 빠진 선은 없는 선보다 나쁘다.
+// N0195
 const CADASTRAL_MIN_ZOOM = 16;
 
-/* ── 배경 지도 (요구사항 2026-09-09) ────────────────────────────
- *
- * "배경 지도를 시인성 좋은 카카오맵이나 네이버맵을 받아올 수 있나요?"
- * → "현재 것, 브이월드, 위성, 일반 등 선택할 수 있도록 해두면 좋을 것
- *    같으나, 캐쉬 여유가 되는 지 확인하고 진행해 주세요."
- *
- * 카카오·네이버는 **타일이 아니라 자바스크립트 지도 SDK** 라 Leaflet 에
- * 못 꽂힙니다. 타일 주소를 뜯어 쓰는 것은 양쪽 약관이 금지하고, 상업적
- * 이용이 전제인 서비스에서 갈 길이 아닙니다.
- *
- * 브이월드는 래스터 타일이라 그대로 꽂힙니다. 재보고 넷을 남겼습니다
- * (점검 6-C: gray 만 그림 대신 XML 이 왔습니다).
- *
- * **기본은 지금 것(OSM)** 입니다. 이유가 둘입니다.
- *
- *   · OSM 은 브라우저가 직접 받아 우리 함수를 안 거칩니다. 브이월드는
- *     거칩니다 — 배경은 화면마다 스무 장씩이라 그 차이가 큽니다.
- *   · 고른 사람만 그 값을 쓰면 됩니다. 다들 쓰게 만들 이유가 없습니다.
- *
- * 같은 타일은 CDN 이 이레(s-maxage=604800) 붙들어 둡니다 — 점검에서
- * 두 번째 호출이 x-vercel-cache: HIT 로 왔습니다. 그래서 실제 함수 호출은
- * 그 동네를 **처음 여는 사람** 몫뿐입니다.
- */
-/**
- * 브이월드 배경 타일 주소.
- *
- * 기본은 우리 서버(/api/tile)를 거친다. 그런데 그 함수 호출이 곧 비용이다
- * — Vercel Hobby 는 월 100만 회이고, 배경 타일은 한 번 움직임에 열 장 남짓
- * 나간다. config.js 에 **지도 전용** 브이월드 키(`vworldMapKey`)를 두면
- * 브라우저가 브이월드를 바로 부르고 우리 함수는 한 번도 안 돈다.
- *
- * 그 키는 페이지에 그대로 실린다. 그래서 **지오코딩에 쓰는 키와 다른
- * 키**여야 한다 — 새는 것은 지도 키의 하루 한도뿐이고, 수집은 안 선다.
- * 브이월드 키는 서비스 주소(toji.fyi)에 묶여 Referer 를 본다.
- */
+/* N0196 */
+/* N0197 */
 const VWORLD_WMTS = { base: ['Base', 'png'], satellite: ['Satellite', 'jpeg'],
                       hybrid: ['Hybrid', 'png'], midnight: ['midnight', 'png'] };
 function vworldTileUrl(key) {
@@ -2335,11 +1805,7 @@ const BASEMAPS = [
   { key: 'satellite', label: '위성',
     url: vworldTileUrl('satellite'),
     attribution: '위성영상 © 국토교통부 브이월드' },
-  /* **위성+지명은 한 장이 아니다** (2026-09-15 지시로 확인).
-     브이월드의 Hybrid 층은 위성 사진이 든 배경이 아니라 **경계·지명만
-     그린 투명 그림**이다. 위성 위에 얹으라고 만든 것인데 그것만 깔아
-     두었으니, 화면에는 흰 바탕에 옅은 글자만 남았다 — 위성을 켠 뜻이
-     통째로 사라진 상태였다. 위성을 깔고 그 위에 글자를 얹는다. */
+  /* N0198 */
   { key: 'hybrid', label: '위성+지명',
     url: vworldTileUrl('satellite'),
     overlay: vworldTileUrl('hybrid'),
@@ -2349,15 +1815,7 @@ const BASEMAPS = [
     attribution: '배경지도 © 국토교통부 브이월드' },
 ];
 
-/**
- * 우리 서버를 거치는 타일 층의 공통 옵션 — 요청 수를 줄인다.
- *
- *   updateWhenZooming: false  손가락으로 배율을 바꾸는 동안 Leaflet 은
- *                             정수 배율마다 타일을 새로 받는다 (z10→16 이면
- *                             여섯 벌). 끝난 뒤 한 벌만 받게 한다.
- *   updateWhenIdle: true      움직이는 동안이 아니라 멈춘 뒤에 받는다.
- *   keepBuffer: 4             화면 밖 네 줄까지 들고 있어 되돌아오면 안 받는다.
- */
+/* N0199 */
 const TILE_OPTS = { updateWhenZooming: false, updateWhenIdle: true, keepBuffer: 4 };
 
 let baseLayer = null;
@@ -2374,11 +1832,9 @@ function setBaseMap(key, first) {
       // OSM 은 남의 서버라 그대로 두고, 브이월드는 우리 함수를 아낀다.
       ...(spec.key === 'osm' ? {} : TILE_OPTS),
     }).addTo(map);
-    // **맨 아래로 내린다.** 갈아 끼운 층은 나중에 붙은 것이라 위에
-    // 얹히는데, 그러면 용도지역 색면과 거래 점을 덮는다.
+    // N0200
     if (baseLayer.bringToBack) baseLayer.bringToBack();
-    // 지명 층은 위성 **바로 위**에 둔다. 배경 다음이므로 뒤로 한 번 내리면
-    // 위성 위·우리 도형 아래에 앉는다.
+    // N0201
     if (spec.overlay) {
       baseOverlay = L.tileLayer(spec.overlay, {
         maxZoom: 19, ...TILE_OPTS,
@@ -2387,31 +1843,19 @@ function setBaseMap(key, first) {
       if (baseLayer.bringToBack) baseLayer.bringToBack();
     }
   }
-  // 위성 위에서는 흰 글자가, 일반 지도 위에서는 검은 글자가 읽힌다.
-  // 그 판단을 CSS 에 맡기려고 몸통에 표를 남긴다.
+  // N0202
   document.body.dataset.basemap = spec.key;
   document.querySelectorAll('#basemap-pick button').forEach((b) => {
     b.classList.toggle('is-on', b.dataset.key === spec.key);
     b.setAttribute('aria-pressed', String(b.dataset.key === spec.key));
   });
-  // 고른 것은 그 사람 브라우저에만 남긴다. 다음에 열 때 다시 고르게
-  // 하면 매번 같은 수고를 시킨다. 못 써도(사생활 보호 창 등) 그만이다.
+  // N0203
   if (!first) { try { localStorage.setItem('toji.basemap', spec.key); } catch (e) { /* 무시 */ } }
   window.__basemap = spec.key;
   window.__baseOverlay = spec.overlay || null;
 }
 
-/* 지도 위 작은 단추 둘 (요구사항 2026-09-10).
- *
- * 폰에서 지도가 쓰는 높이를 재 보면 위에 255px, 아래에 120px 이
- * 붙어 있었다. 지도가 쓸 수 있는 것이 절반뿐이었다는 뜻이다.
- *
- *   ⓘ   면책 문구와 가이드. 지도 아래에 상주하던 120px 을 단추
- *        하나로 줄인다. 늘 읽는 글이 아니라 한 번 확인하는 글이다.
- *   ⛶   지도만 보기. 머리띠·탭·필터·상세가 접힌다.
- *
- * **빠져나갈 길을 둘 준다** — 같은 단추를 다시 누르는 것과 Esc.
- * 전체화면에서 나가는 법을 못 찾으면 그것은 갇힌 것이다. */
+/* N0204 */
 function wireMapChrome() {
   const note = $('#map-note');
   const noteBtn = $('#map-note-btn');
@@ -2431,25 +1875,17 @@ function wireMapChrome() {
 
   const full = $('#map-full');
   if (full) {
-    // 뒤로 가기가 앱을 떠나 버렸다 (보고된 문제 2026-09-10:
-    // "전체 화면 전환 후 뒤로 가기 누르면 로그인 화면으로 갑니다").
-    //
-    // 전체화면은 주소를 안 바꾸므로 방문 기록에 아무것도 안 남았다.
-    // 그래서 안드로이드 뒤로 가기가 **그 앞 기록** — 관문(/account) —
-    // 으로 갔다. 사용자에게는 지도를 크게 켠 것이 '화면 하나' 이므로,
-    // 켤 때 기록을 한 칸 넣고 뒤로 가기로 그것만 닫는다.
+    // N0205
     let pushed = false;
     const paint = (on) => {
       document.body.classList.toggle('is-mapmax', on);
       full.setAttribute('aria-pressed', on ? 'true' : 'false');
       full.title = on ? '원래대로' : '지도만 보기';
       full.textContent = on ? '✕' : '⛶';
-      // **크기가 바뀐 것을 Leaflet 에 알려야 한다.** 안 알리면 타일이
-      // 예전 크기 그대로 남아 오른쪽·아래가 회색으로 빈다.
+      // N0206
       if (map) setTimeout(() => map.invalidateSize(), 60);
     };
-    // fromPop: 뒤로 가기가 부른 것. 그때 다시 history 를 건드리면
-    // 한 번 더 뒤로 가서 앱을 떠난다.
+    // N0207
     const setFull = (on, fromPop) => {
       paint(on);
       if (on && !fromPop) {
@@ -2496,15 +1932,12 @@ function wireBaseMap() {
 
 function addZoningLayer() {
   zoningLayer = L.layerGroup();
-  // 색면 — 용도지역 네 장을 서버가 한 요청에 겹쳐 받아온다
-  // (api/tile.js 의 LAYERS.zoning). 브이월드 공식 색이라 지적편집도를
-  // 읽어온 분들에게는 설명이 필요 없다.
+  // N0208
   L.tileLayer('/api/tile?layer=zoning&z={z}&y={y}&x={x}', {
     ...TILE_OPTS,
     maxZoom: 19,
     minZoom: ZONING_MIN_ZOOM,
-    // 위에 거래 점과 영업소가 얹히므로 반투명해야 한다. 불투명하면
-    // 배경 지도의 도로까지 같이 가린다.
+    // N0209
     opacity: .42,
     attribution: '용도지역 © 국토교통부 브이월드',
   }).addTo(zoningLayer);
@@ -2512,40 +1945,14 @@ function addZoningLayer() {
   if (state.zoning) zoningLayer.addTo(map);
 }
 
-/* 필지 경계선 — 지적편집도의 그 선.
- *
- * **그림이 아니라 도형으로 받는다.** 처음에는 브이월드 WMS 타일을
- * 깔았는데, 라이브에서 재 보니 z14~17 이 전부 '완전히 투명' 한 PNG
- * 였다 (2026-09-10, scripts/cadastral_tile_probe.py):
- *
- *   z=16  1:6,812  칠해진 화소 0개
- *   z=17  1:3,406  칠해진 화소 0개
- *   z=18  1:1,703  칠해진 화소 65,536개 (100%)
- *
- * 문턱이 z18 이고, 그리기 시작하면 화면을 100% 덮는다 — 선이 아니라
- * 면이다. 배경으로 쓸 수가 없다.
- *
- * 그래서 같은 자료를 WFS 로 받아 여기서 선으로 그린다. 얕은 배율에서
- * 나오고, 색도 CSS 필터 꼼수 없이 그대로 정한다.
- *
- * **칸을 나눠 받는다.** 화면을 통째로 부르면 조금만 움직여도 다시
- * 받는다. 타일 격자로 자르면 겹치는 칸은 엣지 캐시가 받아내고 새 칸만
- * 나간다. 받은 칸은 여기서도 들고 있어 되돌아올 때 다시 안 부른다.
- */
+/* N0210 */
 const cadTiles = new Map();      // 'z/x/y' → L.GeoJSON (그린 것)
 const cadAsked = new Set();      // 부르는 중인 칸
 const cadFailed = new Map();     // 'z/x/y' → 실패 시각. 잠시 뒤 다시 묻는다.
 const CAD_RETRY_MS = 30_000;
-// **동시에** 이보다 많은 칸은 안 부른다. 화면이 넓어도 폰이 버티게.
-//
-// 한 칸이 오면 다음 칸을 부른다 (fetchCadTile 의 finally). 전에는 한 번
-// 부르고 끝이라 **넓은 화면의 오른쪽 절반이 비었다** — PC 에서 z16 은
-// 칸이 서른 개 남짓인데 열두 개만 받고 다음 movend 까지 멈춰 있었다.
-// 폰은 열두 개 안이라 안 보였다 (2026-09-11 지시).
+// N0211
 const CAD_MAX_TILES = 12;
-// 화면 하나가 이보다 많은 칸이면 아예 안 그린다 — 창이 아직 안 잡혔거나
-// 지도가 세계 전체를 내놓는 순간을 걸러내는 값이다. 큰 모니터(2560px)
-// 의 z16 이 일흔 칸쯤이라 그 위로 잡는다.
+// N0212
 const CAD_MAX_VIEW = 120;
 
 function addCadastralLayer() {
@@ -2568,9 +1975,7 @@ function cadTileList() {
   };
   const x1 = xOf(b.getWest()); const x2 = xOf(b.getEast());
   const y1 = yOf(b.getNorth()); const y2 = yOf(b.getSouth());
-  // **넓으면 통째로 그만둔다.** 화면 하나는 배율과 무관하게 칸 몇 개다.
-  // 그보다 넓은 경계가 오면(창이 아직 안 잡혔거나 지도가 세계 전체를
-  // 내놓는 순간) 두 겹 반복이 수십억 바퀴를 돈다 — 화면이 멎는다.
+  // N0213
   if ((x2 - x1 + 1) * (y2 - y1 + 1) > CAD_MAX_VIEW) return [];
   const out = [];
   for (let x = x1; x <= x2; x += 1) {
@@ -2579,8 +1984,7 @@ function cadTileList() {
       out.push([z, x, y]);
     }
   }
-  // 가운데부터. 열두 개씩 받으므로 왼쪽 위부터 채우면 사람이 보는
-  // 한복판이 마지막에 온다.
+  // N0214
   const cx = (x1 + x2) / 2; const cy = (y1 + y2) / 2;
   out.sort((a, b) => (Math.abs(a[1] - cx) + Math.abs(a[2] - cy))
                    - (Math.abs(b[1] - cx) + Math.abs(b[2] - cy)));
@@ -2589,8 +1993,7 @@ function cadTileList() {
 
 function drawCadastral() {
   if (!map || !cadastralLayer) return;
-  // 꺼져 있거나 너무 멀면 걷어낸다. 들고 있던 칸도 버린다 — 배율이
-  // 바뀌면 칸 좌표 자체가 달라져 쓸 수 없다.
+  // N0215
   if (!state.cadastral || map.getZoom() < CADASTRAL_MIN_ZOOM) {
     cadastralLayer.clearLayers();
     cadTiles.clear();
@@ -2612,16 +2015,13 @@ function drawCadastral() {
   }
 }
 
-// 서버가 '너무 잦다' 고 하면 잠시 쉰다. 계속 두드리면 창이 안 비어
-// 더 오래 막힌다. 지도를 움직이는 것 자체는 그대로 된다 — 선만 잠깐
-// 안 깔린다.
+// N0216
 let cadPausedUntil = 0;
 let cadResumeTimer = null;
 
 function fetchCadTile(z, x, y, key) {
   if (Date.now() < cadPausedUntil) {
-    // 쉬는 동안은 '부르는 중' 으로 남기지 않는다 — 남기면 그 칸은 배율을
-    // 바꾸기 전까지 영영 안 온다. 쉬는 시간이 끝나면 한 번 다시 돈다.
+    // N0217
     cadAsked.delete(key);
     if (!cadResumeTimer) {
       cadResumeTimer = setTimeout(() => { cadResumeTimer = null; drawCadastral(); },
@@ -2652,12 +2052,9 @@ function fetchCadTile(z, x, y, key) {
           features: geoms.map((g) => ({ type: 'Feature', properties: {}, geometry: g })) },
         {
           pane: 'cadastralPane',
-          // 누름을 가로채면 안 된다 — 필지를 눌러 카드를 여는 것은
-          // 지도 자신의 click 이 받는다.
+          // N0218
           interactive: false,
-          // 색은 CSS 가 정한다(.cad-line). 배경 지도에 따라 달라야
-          // 하는데, 그 판단을 여기 흩어 놓으면 배경을 바꿀 때마다
-          // 다시 그려야 한다.
+          // N0219
           className: 'cad-line',
           style: { weight: 1, fill: false },
         });
@@ -2668,8 +2065,7 @@ function fetchCadTile(z, x, y, key) {
     .finally(() => {
       cadAsked.delete(key);
       if (!ok) cadFailed.set(key, Date.now());
-      // 자리가 났다 — 남은 칸을 이어서 부른다. 이것이 없으면 열두 칸
-      // 뒤가 다음 움직임까지 빈다.
+      // N0220
       if (state.cadastral && cadastralLayer) drawCadastral();
     });
 }
@@ -2684,15 +2080,7 @@ function toggleCadastral(on) {
   drawCadastral();
 }
 
-/* 눌러서 이름을 본다.
- *
- * 색면만 깔면 지적편집도가 아니라 색칠이다. 색이 스무 가지인데 그것을
- * 외우게 하는 것보다, 궁금한 자리를 눌러 이름을 보여주는 편이 낫다 —
- * 특히 휴대폰에서는 범례를 띄우면 지도를 가린다.
- *
- * 이름은 서버가 브이월드에 물어서 준다(api/tile.js 의 mode=info).
- * 브라우저가 직접 부르면 인증키를 페이지에 적어야 한다.
- */
+/* N0221 */
 async function askZoning(latlng) {
   const lat = latlng.lat.toFixed(6);
   const lon = latlng.lng.toFixed(6);
@@ -2735,31 +2123,14 @@ async function askZoning(latlng) {
     + '</div>');
 }
 
-/* 끌 수 있어야 한다. 용도지역을 깔면 지도가 확 복잡해지는데, 거래 점
- * 위치만 보고 싶은 순간이 있다. */
+/* N0222 */
 function toggleZoning(on) {
   state.zoning = on;
   if (!map || !zoningLayer) return;
   on ? zoningLayer.addTo(map) : zoningLayer.remove();
 }
 
-/* ── 개발 층 (요구사항 2026-09-14) ──────────────────────────────────
- *
- * "산업단지 택지 지구 및 신규, 확장 도로 기차 노선은 지도에 색상 구분해서
- *  표기하면 좋을 것 같습니다 ('개발' 선택 시 표시)"
- *
- * 넷을 한 층으로 묶되 갈래마다 끌 수 있다. 색은 **브이월드 공식 스타일**을
- * 그대로 받는다 — 용도지역 층에서 이미 그렇게 했고, 우리가 색을 새로
- * 정하면 지적편집도를 읽어온 사람이 다시 배워야 한다.
- *
- * 켜진 갈래만 골라 **한 요청**으로 부른다. 갈래마다 따로 부르면 타일 한
- * 칸에 함수가 셋씩 도는데, 그 호출 수가 곧 비용이다 (2026-09-12 에 한 번
- * 겪었다). 다 켜져 있으면 develop 한 장이다.
- *
- * 철도는 브이월드에 **없다** — WFS 목록 177개를 두 번 훑어도 안 걸렸다.
- * 대신 우리 자료로 그린다: rail_station 405곳과 rail_open 82건. 역은
- * 점으로, 개통 예정(오늘 이후)은 점선으로 구분한다.
- */
+/* N0223 */
 const DEV_PARTS = [
   { key: 'industry', label: '산업단지', tile: 'industry', vec: null,
     note: '국가·일반·첨단·농공 — 갈래가 곧 층이다' },
@@ -2769,43 +2140,15 @@ const DEV_PARTS = [
     note: '색은 집행 단계: 미집행·부분집행·집행완료' },
   { key: 'rail', label: '철도역', tile: null, vec: null,
     note: '우리 자료. 종류 칸이 반만 차 있어 정차 규모로 가른다' },
-  /* 2026-09-16 지시: "개발에 고속도로 항목이 신설되는 것이 목표입니다."
-     계획(고시) · 공사중 · 준공. 우리 자료(road.json)라 타일도 도형도
-     안 부른다. */
+  /* N0224 */
   { key: 'highway', label: '고속도로', tile: null, vec: null,
     note: '계획·공사중·준공 — 구간의 시작과 끝을 이은 선이다' },
 ];
 
-/* 층마다 고를 수 있는 **세부 갈래**와 그 색.
- *
- * 산업단지의 색은 **지어내지 않고 잰 값**이다 — 브이월드가 이미 칠해서
- * 주는 그림이라 우리가 정하는 색이 아니기 때문이다. 아래 표를 보라.
- */
+/* N0225 */
 const DEV_PICKS = {
-  /* 개수는 브이월드 WFS 를 직접 세어 적은 것이다 (vworld-render run 8,
-     2026-09-16). 적어 두는 까닭: **도시첨단은 전국에 아홉 곳뿐**이라
-     켜 놓고 아무것도 안 보이는 것이 정상이다. 그 사실을 화면이 말하지
-     않으면 '층이 고장났나' 로 읽는다. */
-  /* **산업단지 색은 브이월드가 칠한 것을 재서 적었다** (2026-09-16 지시:
-     "현재 반영된 색상으로 표현 (현재는 전부 회색 빗금)").
-   *
-   * 이 네 층은 그림(WMS)이라 우리가 색을 정하지 않는다. 그러니 범례를
-   * 채우려면 지도에서 실제로 재는 수밖에 없다. 아침에 한 번 실패했는데,
-   * '가장 많이 쓰인 **불투명** 화소' 를 세었기 때문이다 — 면은 반투명이고
-   * 불투명한 것은 글자와 테두리뿐이라 국가산단이 #000000 9화소로 나왔다.
-   * 거꾸로(알파가 0도 255도 아닌 화소) 재니 답이 나왔다.
-   *
-   *   국가      #000000  반월 37,686화소 · 반투명 중 90%
-   *   일반      #FF8F00  탕정 5,971 (83%) · 향남 613 (74%) — 두 자리 일치
-   *   도시첨단  #A81194  동탄 165화소 · 51%
-   *   농공      #CFFC00  탕정 79화소 · 41%
-   *
-   * 알파는 넷 다 **0.60** 이다. 색칩도 같은 0.6 으로 깔아야 지도와 같은
-   * 색으로 보인다 — 진하게 칠하면 범례와 지도가 어긋난다.
-   * (재는 자는 scripts/vworld_render_probe.py · vworld-render run 11.)
-   *
-   * 국가산단이 검정인 것은 이상해 보이지만 화소 수와 비중이 가장 튼튼한
-   * 값이다. 짐작으로 딴 색을 적느니 잰 값을 적는다. */
+  /* N0226 */
+  /* N0227 */
   industry: [
     { id: '국가', label: '국가 68곳', tile: 'industry_gug',
       color: 'rgba(0,0,0,.6)' },
@@ -2825,59 +2168,13 @@ const DEV_PICKS = {
     { id: '미집행', label: '미집행' }, { id: '부분집행', label: '부분집행' },
     { id: '집행완료', label: '집행완료', done: true },
   ],
-  /* **고속도로는 색이 아니라 밝기로 가른다.**
-   *
-   * 화면에 이미 일곱 색이 같이 뜬다(택지 넷 + 계획도로 둘 + 철도 셋).
-   * 여덟째 색을 짜내려고 후보 일곱을 재 봤는데 **하나도 통과하지
-   * 못했다** — 색상환이 이미 찼다. 억지로 넣으면 어느 짝이든 서로
-   * 못 가르게 된다.
-   *
-   * 그래서 색을 더하지 않는다. 고속도로는 **굵은 선**(casing 8px)이라
-   * 마크 자체가 다른 층과 이미 갈리고, 단계는 심의 밝기로 나눈다:
-   *
-   *   계획    흰 심 + 점선   아직 삽을 안 떴다
-   *   공사중  검은 심 + 실선 지금 파고 있다
-   *   준공    회색 심        끝났다 (기본 꺼짐)
-   *
-   * 밝기 순서가 곧 진행 순서라 범례를 안 봐도 읽힌다. 그리고 채도가
-   * 없으니 어떤 색과도 부딪히지 않는다. */
+  /* N0228 */
   highway: [
     { id: '계획', label: '계획', color: '#FFFFFF' },
     { id: '공사중', label: '공사중', color: '#1F2937' },
     { id: '준공', label: '준공', color: '#9CA3AF', done: true },
   ],
-  /* **철도역 셋은 색만으로 갈리지 않았다** (2026-09-17 지적:
-   * "철도역 색상 구분 확실히 구분 안됨").
-   *
-   * 재 보니 색보다 **그리는 코드**가 더 문제였다. drawRail 이 세 갈래를
-   * 전부 같은 연파랑(#BAE6FD)으로 채우고 2px 테두리에만 갈래색을 썼다 —
-   * 반지름 5px 짜리 점에서 테두리 한 겹은 열몇 화소다. 범례 칩은 꽉 찬
-   * 네모라 지도와 닮지도 않았다. **범례가 지도에 없는 구분을 약속하고
-   * 있었다.**
-   *
-   * 색을 더 벌리는 길은 막혀 있다. 화면에 이미 일곱 색이 같이 뜨고
-   * (택지 다섯 + 계획도로 둘), 여덟·아홉째 색 후보 다섯 쌍을 재 봤는데
-   * **하나도 통과하지 못했다** — 장미 · 자홍 · 보라 · 청록 · 남색 모두
-   * 기존 색과 ΔE 15 아래로 붙었다 (validate_palette.js --pairs all).
-   * 고속도로 때와 같은 결론이다: 색상환이 찼다.
-   *
-   * 그래서 **한 색을 밝기로 가르고, 마크를 바꾼다.** 정차 규모는 크기가
-   * 있는 양이므로 큰 값에 큰 점을 주는 것이 옳고(그 자체가 뜻이 된다),
-   * '모름' 은 값이 아니라 빈칸이므로 **속을 비운다.**
-   *
-   *   많이   8px 큰 점 · 진한 파랑을 꽉 채움
-   *   적게   5px 작은 점 · 연한 파랑을 채움
-   *   모름   5px 속 빈 점 · 흰 속 + 회색 점선 테두리
-   *
-   * 진↔연 두 걸음은 ΔE 43.7 이다 (기존 #0369A1↔#38BDF8 은 11.6 으로
-   * 문턱 15 아래였다). 게다가 크기·채움 여부까지 셋이 겹쳐 걸리므로
-   * 색약이나 작은 화면에서도 갈린다.
-   *
-   * **택지의 파랑과는 색으로 안 갈린다** (진한 파랑 ↔ 지구지정 #075985
-   * 은 ΔE 5.4). 거기까지 벌릴 색이 없다. 대신 **마크가 다르다** — 택지는
-   * 반투명 면이고 철도역은 흰 테를 두른 점이다. 면과 점은 같은 색이어도
-   * 안 헷갈린다. 색으로 못 가른 것을 모양으로 가른 셈이고, 그 사실을
-   * 여기 적어 둔다. */
+  /* N0229 */
   rail: [
     { id: '많이', label: '많이 서는 역', color: '#0C4A6E', r: 8 },
     { id: '적게', label: '적게 서는 역', color: '#7DD3FC', r: 5 },
@@ -2885,8 +2182,7 @@ const DEV_PICKS = {
   ],
 };
 
-/** 그 층의 이 갈래를 켜 두었나. 모르는 갈래는 켠 것으로 본다 —
- *  자료에 새 단계가 생겼을 때 조용히 사라지는 것보다 보이는 쪽이 낫다. */
+/* N0230 */
 function devPicked(part, id) {
   const m = (state.devPick || {})[part];
   if (!m || !(id in m)) return true;
@@ -2894,70 +2190,21 @@ function devPicked(part, id) {
 }
 window.__devPicked = devPicked;
 
-/* 단계별 색 (2026-09-14 지시: "산업단지 택지사업지구의 색상은 의미가
- * 있나요?").
- *
- * 브이월드 색은 **단계**를 뜻한다 — 확인했다(vworld-render run 4).
- *   사업지구  cat_nam  지구지정 · 개발계획 · 실시계획 · 부분준공 · 준공
- *   계획도로  exc_nam  미집행 · 부분집행 · 집행완료
- *
- * 그런데 브이월드 색은 **무엇이 이른 단계인지**를 말해 주지 않는다. 땅을
- * 보는 사람에게 중요한 것은 '아직 안 된 것' 이므로, 이른 단계일수록 진하게
- * 우리가 다시 칠한다. 완공(준공·집행완료)은 기본으로 감춘다.
- *
- * ※ 계획도로에 **신설/확장을 가르는 칸은 없다.** 도시계획도로는 '계획선'
- *   이라 그 구분을 안 담는다 — 지어내지 않는다. 대신 집행 단계가 그 자리를
- *   대신한다: 미집행이 아직 안 난 길이다.
- */
-/* 2026-09-16 지시: "택지·사업지구는 색상 구분이 잘되도록 구분할 것".
- *
- * 옛 다섯 색(#7C3AED·#2563EB·#0891B2·#65A30D·#9CA3AF)은 **쟀더니 실제로
- * 못 가르는 색이었다.** 지구지정과 개발계획이 보통 시력에서도 ΔE 12.4 —
- * 15 아래면 색만으로는 못 가른다. 게다가 회색(준공)은 채도가 0.019 라
- * '색이 아니라 회색' 으로 읽힌다.
- *
- * 새 다섯 색은 **화면에 같이 뜨는 여섯 색을 한꺼번에 넣고** 골랐다 —
- * 계획도로의 빨강·호박까지 포함해서다. 택지만 놓고 고르면 계획도로와
- * 부딪힌다(그렇게 고른 주황 #C77700 은 부분집행 #F59E0B 과 ΔE 12.9 로
- * 떨어졌다). 모든 짝에 대해 재서 통과한 값이다:
- *
- *   색약(deutan/protan/tritan) 최악 짝  ΔE 9.4   (8 이상이면 통과)
- *   보통 시력 최악 짝                    ΔE 17.6  (15 이상이면 통과)
- *
- * 재는 자와 기준은 dataviz 스킬의 validate_palette.js 다. 색을 바꿀 때는
- * 눈으로 고르지 말고 여섯을 다시 넣고 돌린다.
- *
- * ※ 준공만 회색으로 남긴다. 그것은 '한 갈래' 가 아니라 **끝난 것**이고,
- *   기본으로 꺼져 있다. 끝난 것이 눈에 띄면 안 된다. */
+/* N0231 */
+/* N0232 */
 const DEV_STAGE = {
   '지구지정': { color: '#075985', rank: 1 },
   '개발계획': { color: '#0EA5E9', rank: 2 },
   '실시계획': { color: '#009E73', rank: 3 },
   '부분준공': { color: '#7C3AED', rank: 4 },
   '준공': { color: '#9CA3AF', rank: 5, done: true },
-  // 2026-09-16 지시: "미집행과 부분집행 색상 구분이 어려움 (비슷)".
-  // #DC2626(빨강)과 #EA580C(주황)는 색상각이 25도밖에 안 떨어져 있었다.
-  // 호박색(38도)으로 벌리고, **점선까지 달아 둘째 단서를 준다** — 색만으로
-  // 가르면 색약인 사람에게는 여전히 한 색이다.
+  // N0233
   '미집행': { color: '#DC2626', rank: 1 },
   '부분집행': { color: '#F59E0B', rank: 2, dash: '7 4' },
   '집행완료': { color: '#6B7280', rank: 3, done: true, dash: '2 5' },
 };
 
-/* **얼마나 채울까 — 배율이 아니라 층이 정한다.** (2026-09-16 지시 2차)
- *
- * 아침에는 배율로 갈랐다(z17부터 0.12). 실제로 보고 나서 바뀐 지시는
- * 이렇다:
- *   "확대해도 색상 채우지 않도록 수정 (선으로만 구분 잘 됨)"   ← 계획도로
- *   "항상 색상 채움 반투명(투명도 80%)"                        ← 택지·사업지구
- *
- * 갈라야 하는 까닭이 층마다 다르다. **계획도로는 길이다** — 폭이 몇십
- * 미터인 띠라, 채우면 띠 전체가 색판이 되어 밑의 땅이 안 보인다. 선 두
- * 줄이면 어디를 지나는지 다 읽힌다. **택지는 구역이다** — 안과 밖을
- * 가르는 것이 요점이라 테두리만으로는 '이 필지가 안에 드는가' 를 못
- * 짚는다. 그래서 늘 채우되 아주 옅게 둔다.
- *
- * 투명도 80% = 불투명도 0.2 다. */
+/* N0234 */
 const DEV_FILL = { housing: 0.2, planroad: 0 };
 function devFillOpacity(part) {
   return DEV_FILL[part] != null ? DEV_FILL[part] : 0;
@@ -2969,35 +2216,15 @@ function devStage(p) {
 }
 const DEVELOP_MIN_ZOOM = 10;
 
-/* **문턱은 층마다 다르다.** (2026-09-16 지시 두 번)
- *
- *   "z 12부터 계획도로 보여서 너무 느려진다 — 계획도로는 14부터"
- *   "택지,사업지구는 z12부터 표기 함"
- *
- * 같은 배율인데 무게가 다르기 때문이다. **계획도로는 도시계획선이라 한
- * 시·군에 수천 줄**이 깔린다 — z12 로 원주 언저리를 한 번 펼치면 선 수천
- * 개를 그리느라 화면이 멎는다. **택지·사업지구는 구역이라 한 시·군에
- * 몇십 개**다. 같은 화면에서 도형 수가 두 자릿수 대 네 자릿수로 갈린다.
- *
- * 그래서 하나의 숫자로 묶지 않는다. 느린 쪽만 z14 로 올리고, 가벼운 쪽은
- * 시·군이 한눈에 드는 z12 에 둔다 — 택지는 멀리서 봐야 쓸모가 있다.
- *
- * DEVVEC_MIN_ZOOM 은 **둘 중 낮은 쪽**이다. '여기부터 뭔가 나온다' 를
- * 말하는 자리(배율 눈금)에만 쓰고, 부를지 말지는 층별 값으로 가른다. */
+/* N0235 */
 const DEV_VEC_ZOOM = { zone: 12, planroad: 14 };
 const DEVVEC_MIN_ZOOM = Math.min(...Object.values(DEV_VEC_ZOOM));
 
-/** 지금 켜진 타일 갈래를 하나의 layer 열쇠로 접는다.
- *
- * 계획도로와 택지·사업지구는 **그림이 아니라 도형**으로 받는다 — 브이월드가
- * 이미 칠해서 주는 그림으로는 완공된 것을 걸러 낼 수 없기 때문이다. 그래서
- * 타일로 남은 것은 산업단지뿐이다. */
+/* N0236 */
 function devTileKey() {
   const on = DEV_PARTS.filter((p) => p.tile && state.devParts[p.key]);
   if (!on.length) return null;
-  // 산업단지는 **갈래가 곧 층**이다. 골라 켰으면 그 층만 부른다 — 그림을
-  // 받아 놓고 거를 수는 없으니 거르기는 부를 때 해야 한다. 넷을 다 켰으면
-  // 합친 층 하나로 부른다 (타일 한 칸에 함수 호출 한 번).
+  // N0237
   const keys = on.flatMap((p) => {
     if (p.key !== 'industry') return [p.tile];
     const picks = DEV_PICKS.industry.filter((k) => devPicked('industry', k.id));
@@ -3048,19 +2275,8 @@ function drawDevelop() {
                                planroad: devFillOpacity('planroad') } };
 }
 
-/* ── 계획도로·택지지구를 도형으로 (2026-09-14 지시) ───────────────────
- *
- * 연속지적도와 같은 길이다 — 화면에 걸치는 타일 칸마다 따로 받아 두면
- * 조금 움직여도 겹치는 칸은 다시 안 부른다. 문턱 아래에서는 안 부른다
- * (택지 z12 · 계획도로 z14 — DEV_VEC_ZOOM): 얕을수록 한 칸에 든 도형이
- * 기하급수로 늘어 상한에 걸리고, 그러면 선이 군데군데 빠진다 — 빠진 선은
- * 없는 선보다 나쁘다.
- */
-/* 배율 눈금 — +/− 바로 위에 'z 14 / 7~19' 를 적는다.
- *
- * 무엇이 언제 보이는지도 같이 적는다. 층마다 켜지는 배율이 다른데(계획도로
- * z12, 개발 z10, 필지경계 z16) 화면이 그것을 말해 주지 않으면 "왜 안
- * 보이지" 가 된다. */
+/* N0238 */
+/* N0239 */
 const ZOOM_GATES = [
   [DEVELOP_MIN_ZOOM, '개발'],
   [DEV_VEC_ZOOM.zone, '택지·사업지구'],
@@ -3106,24 +2322,11 @@ function addZoomReadout() {
   };
   map.on('zoomend', paint);
   map.on('zoomlevelschange', paint);
-  // **첫 그리기는 미룬다.** 이 함수는 지도를 만드는 길에서 불리는데, 그때는
-  // ZOOM_GATES 가 아직 초기화 전(TDZ)이라 바로 그리면 던진다 — const 는
-  // typeof 로도 못 피한다. 모듈이 다 읽힌 뒤에 그리면 값이 서 있다.
+  // N0240
   setTimeout(() => { try { paint(); } catch (e) { /* 눈금뿐이다 */ } }, 0);
 }
 
-/* **한 번에 새로 물어 오는 칸 수**다. 이미 받아 둔 칸은 이 한도와 무관하게
- * 다 그린다 — 2026-09-15 지시: "확대/축소 또는 좌/우 이동 시 계획도로가
- * 사라졌다. 생겼다 자기 마음대로입니다."
- *
- * 그 원인이 여기였다. 전에는 화면 안 칸 목록을 통째로 10개로 **잘라서**
- * 그것만 그렸다. z12 화면 하나는 스무 칸이 넘으므로 늘 대부분이 잘려 나갔고,
- * 어느 열 칸이 살아남는지는 북서쪽부터 세는 순서에 달려 있었다. 조금만
- * 움직여도 살아남는 칸이 바뀌니 길이 나타났다 사라졌다 한 것이다.
- *
- * 고친 방식: 자르는 것은 **새로 물어 오는 일**에만 적용하고, 그리는 것은
- * 받아 둔 칸 전부에 한다. 화면을 옮기면 덮개가 쌓이기만 하고 줄지 않는다.
- * 물어 오는 차례는 **화면 한가운데부터** — 보고 있는 곳이 먼저 채워진다. */
+/* N0241 */
 const DEVVEC_FETCH_PER_PASS = 12;
 const devVecCache = new Map();      // 'kind/z/x/y' → {items}
 const devVecAsked = new Set();
@@ -3144,17 +2347,7 @@ function devVecTiles(kind) {
   ];
   const [x0, y0] = xy(b.getNorth(), b.getWest());
   const [x1, y1] = xy(b.getSouth(), b.getEast());
-  // **넓으면 통째로 그만둔다.** cadTileList 가 이미 하고 있는 것을 여기만
-  // 안 하고 있었다. 화면 하나는 배율과 무관하게 칸 몇 개다. 그보다 넓은
-  // 경계가 오면 — 창이 아직 안 잡혔거나 지도가 세계 전체를 내놓는 순간 —
-  // 이 두 겹 반복이 배율의 제곱만큼 돈다. z16 에서 세계 경계면
-  // 65,536 × 65,536 = **43억 바퀴**이고, 뒤의 slice(0,10) 은 그것이 다
-  // 끝난 다음에야 온다. 주 스레드가 몇 분씩 멎는다.
-  //
-  // 겪은 일이다 (2026-09-14): 지도 검사가 z16 을 처음 쓰게 되자 검사판
-  // 렌더러가 CPU 133% 로 13분을 돌고도 안 끝났다. 검사의 가짜 지도가
-  // 세계 경계를 내놓기 때문인데, 진짜 화면에서도 지도 통의 크기가 아직
-  // 0 인 순간에 같은 일이 난다.
+  // N0242
   if ((x1 - x0 + 1) * (y1 - y0 + 1) > CAD_MAX_VIEW) return [];
   const out = [];
   for (let x = x0; x <= x1; x += 1) {
@@ -3162,8 +2355,7 @@ function devVecTiles(kind) {
       if (x >= 0 && y >= 0 && x < n && y < n) out.push([z, x, y]);
     }
   }
-  // **가운데부터** 차례를 매긴다. 물어 오는 수를 줄일 때 잘려 나가는 것이
-  // 화면 가장자리가 되도록 — 보고 있는 곳이 먼저 채워져야 한다.
+  // N0243
   const cx = (x0 + x1) / 2;
   const cy = (y0 + y1) / 2;
   out.sort((a, b) => ((a[1] - cx) ** 2 + (a[2] - cy) ** 2)
@@ -3189,29 +2381,16 @@ function drawDevVec() {
   let asked = 0;
   let missing = 0;
   let tiles = 0;
-  /* **같은 도형을 두 번 그리지 않는다** (2026-09-16 보고: "같은 부분준공인데
-     투명도 차이가 발생하는 이유?").
-   *
-   * 브이월드 WFS 는 칸에 **걸치는** 도형을 전부 준다. 동탄2 처럼 큰
-   * 사업지구는 칸 대여섯 개에 걸쳐 있어서 칸마다 한 번씩 온다. 그것을
-   * 그대로 그리면 같은 면이 여러 겹 쌓이고, 반투명이라 **겹친 수만큼
-   * 진해진다**: 0.2 를 두 겹이면 0.36, 세 겹이면 0.49. 화면에는 같은
-   * '부분준공' 인데 색이 다른 것으로 나타난다 — 단계를 잘못 읽게 된다.
-   *
-   * 한 판에 하나씩만 그린다. 판마다 새로 만드는 것이 요점이다 — 층을
-   * 껐다 켜거나 화면을 옮기면 다시 그려야 하니까. */
+  /* N0244 */
   const seen = new Set();
-  // **칸 목록을 층마다 따로 뽑는다.** 문턱이 달라졌으므로(택지 z12 ·
-  // 계획도로 z14) 하나의 목록을 나눠 쓸 수 없다. z12~13 에서는 택지만
-  // 칸이 나오고 계획도로는 빈 목록이 온다.
+  // N0245
   kinds.forEach((kind) => {
     const kindTiles = devVecTiles(kind);
     tiles += kindTiles.length;
     kindTiles.forEach(([z, x, y]) => {
       const key = `${kind}/${z}/${x}/${y}`;
       const got = devVecCache.get(key);
-      // **받아 둔 칸은 무조건 그린다.** 한도는 그리는 데가 아니라
-      // 물어 오는 데에만 건다.
+      // N0246
       if (got) { drawn += paintDevVec(kind, got, seen); return; }
       missing += 1;
       if (devVecAsked.has(key)) return;
@@ -3233,8 +2412,7 @@ function drawDevVec() {
                       unique: seen.size, cached: devVecCache.size };
 }
 
-/** 검사가 배율·화면을 바꾼 뒤 다시 그리게 하는 손잡이. 가짜 지도는
- *  moveend 를 안 쏘므로 부를 길이 따로 있어야 한다. */
+/* N0247 */
 window.__redrawDevVec = function () {
   devVecCache.clear();
   devVecAsked.clear();
@@ -3246,9 +2424,7 @@ function paintDevVec(kind, items, seen) {
   const part = kind === 'planroad' ? 'planroad' : 'housing';
   const fill = devFillOpacity(part);
   items.forEach((it) => {
-    // 이 판에서 이미 그린 도형이면 건너뛴다. 이름표가 없는 옛 칸
-    // (캐시에 남아 있을 수 있다)은 거르지 않고 그대로 그린다 —
-    // 안 그리는 것보다 겹쳐 그리는 쪽이 덜 나쁘다.
+    // N0248
     if (seen && it.k) {
       const id = `${kind}/${it.k}`;
       if (seen.has(id)) return;
@@ -3256,8 +2432,7 @@ function paintDevVec(kind, items, seen) {
     }
     const stage = devStage(it.p || {});
     const spec = DEV_STAGE[stage];
-    // 세부 갈래로 걸러 낸다 (2026-09-16). 예전 '완공 보기' 한 칸이 하던
-    // 일을 층마다 나눠 가졌다.
+    // N0249
     if (stage && !devPicked(part, stage)) return;
     const color = (spec && spec.color) || '#6B7280';
     const road = kind === 'planroad';
@@ -3268,8 +2443,7 @@ function paintDevVec(kind, items, seen) {
         opacity: .9,
         dashArray: (spec && spec.dash) || null,
         fillColor: color,
-        // 계획도로는 0 — 띠를 채우면 밑의 땅이 통째로 가려진다.
-        // 택지는 0.2 — 안과 밖을 갈라야 하므로 늘 채우되 아주 옅게.
+        // N0250
         fillOpacity: fill,
       },
     }).bindTooltip(devVecTip(kind, it.p || {}, stage),
@@ -3280,30 +2454,14 @@ function paintDevVec(kind, items, seen) {
   return n;
 }
 
-/* '미집행' 이 무슨 뜻인지 한 줄로 적는다 (2026-09-15 물음: "이미 도로가
-   확인되는데 이것이 미집행인 이유가 있나요?").
-
-   이 층은 도시·군계획시설(도로)의 **계획선**이고, exc_nam 은 그 결정대로
-   집행됐는가다. 결정에는 폭 등급(atr_nam: 광로·대로·중로·소로)이 붙어
-   있으므로, **6m 농로 위에 중로(12~20m)가 결정돼 있으면 길이 이미 있어도
-   미집행**이다 — 결정된 폭으로 넓히는 일이 아직 안 됐다는 뜻이다.
-   장기미집행 도시계획시설이 흔한 것도 이 까닭이다. */
+/* N0251 */
 const PLANROAD_STAGE_WHY = {
   '미집행': '결정된 폭으로는 아직 안 났습니다 (길이 있어도 넓히는 일이 안 됨)',
   '부분집행': '일부 구간만 결정된 폭으로 났습니다',
   '집행완료': '결정된 폭으로 다 났습니다',
 };
 
-/* **결정 폭을 숫자로 적는다** (2026-09-15 재확인 요청: "위성 지도를 보시면
-   이미 지도엔 도로가 완공 상태입니다").
-
-   말로 '결정된 폭' 이라고만 하면 확인할 길이 없다. 등급마다 폭이 정해져
-   있으므로(도시·군계획시설의 결정·구조 및 설치기준에 관한 규칙 제9조)
-   그 숫자를 같이 보이면, 위성에 보이는 길과 견줘 볼 수 있다 —
-   6m 길 위에 '중로 12~20m' 가 결정돼 있으면 미집행이 맞다.
-
-   화면에 그리는 빨간 띠는 **결정된 폭의 자리**다. 그 띠가 지금 아스팔트보다
-   넓게 걸쳐 있으면 그 차이가 곧 아직 안 난 몫이다. */
+/* N0252 */
 const PLANROAD_WIDTH = {
   '광로': '40~70m 이상', '대로': '25~40m', '중로': '12~25m', '소로': '8~12m',
 };
@@ -3332,16 +2490,7 @@ function devVecTip(kind, p, stage) {
 }
 window.__devVecTip = devVecTip;   // 검사(test_map.js)가 부른다
 
-/* 세부 갈래 칸 — **층 바로 아래**에 편다 (2026-09-16 지시).
- *
- * 예전에는 색 범례가 칸 목록 **아래 따로** 있었고 끄고 켤 수가 없었다.
- * 색이 무엇을 뜻하는지는 알려 주지만 '준공만 빼고 보기' 는 못 했다.
- * 이제 용도지역 칸과 같은 모양이다 — 색칩이 붙은 누름 칸이고, 누르면
- * 그 갈래만 사라진다. 층을 끄면 그 아래 칸도 같이 접힌다.
- *
- * 산업단지 색칩은 **비어 있다** — 브이월드가 칠해서 주는 그림이라 우리가
- * 정하는 색이 아니다. 지어낸 색을 적으면 지도와 범례가 서로 다른 색을
- * 말하게 된다. */
+/* N0253 */
 function devPickColor(part, k) {
   if (k.color) return k.color;
   const spec = DEV_STAGE[k.id];
@@ -3360,8 +2509,7 @@ function updateDevSubs() {
 
 function updateDevLegend() {
   updateDevSubs();
-  // 계획도로의 '미집행' 이 무슨 뜻인지는 색칩만으로 안 된다. 켜 두었을
-  // 때만 한 줄 적는다.
+  // N0254
   const box = document.getElementById('dev-legend');
   if (!box) return;
   const on = state.develop && state.devParts.planroad
@@ -3374,15 +2522,7 @@ function updateDevLegend() {
     : '';
 }
 
-/** 역을 **정차 규모**로 가른다.
- *
- * 2026-09-16 물음: "철도역도 종류가 나눌 수 있는 지 확인". 자료를 열어
- * 봤더니 종류를 가를 칸(역등급·관련노선)이 **416줄 중 215줄만** 차 있다.
- * 반이 빈 칸으로 갈래를 만들면 '모름' 이 절반이 되어 갈래 구실을 못 한다.
- * 게다가 화면이 받는 rail.json 에는 그 칸이 실려 있지도 않다.
- *
- * 대신 **정차횟수**로 가른다 — 이미 싣고 있고, 역의 크기를 말해 준다.
- * 없는 것은 '모름' 으로 따로 둔다 (0회로 치면 거짓이 된다). */
+/* N0255 */
 function railSize(s) {
   if (!(typeof s.trains === 'number' && s.trains > 0)) return '모름';
   return s.trains >= 100 ? '많이' : '적게';
@@ -3402,22 +2542,14 @@ function drawRail() {
     const size = railSize(s);
     if (!devPicked('rail', size)) return;
     const spec = DEV_PICKS.rail.find((k) => k.id === size) || {};
-    /* **채움이 갈래를 말한다** (2026-09-17). 예전에는 셋 다 같은 연파랑을
-       채우고 테두리에만 갈래색을 썼다 — 점이 작아 테두리 한 겹으로는
-       아무것도 안 갈렸다. 이제 채움·크기·속 빈 정도 셋이 함께 말한다.
-
-       테두리는 **흰색**이다. 배경 지도 위 어디에 놓여도 점이 떠 보이게
-       하는 테이지 갈래를 말하는 테가 아니다 — 갈래는 채움이 말한다.
-       (개통 예정만 예외로 보라 점선 테를 두른다. 그것은 갈래가 아니라
-       상태라, 셋 중 어느 갈래에도 붙을 수 있어야 한다.) */
+    /* N0256 */
     L.circleMarker([s.lat, s.lon], {
       pane: 'markerPane',
       radius: spec.r || 5,
       color: soon ? '#7C3AED' : (spec.hollow ? spec.color : '#FFFFFF'),
       weight: 2,
       dashArray: (soon || spec.hollow) ? '3 2' : null,
-      // 속 빈 점은 '값이 없다' 는 뜻이다. 회색으로 채우면 '회색이라는
-      // 값' 으로 읽힌다 — 빈칸과 값은 다른 것이다.
+      // N0257
       fillColor: soon ? '#EDE9FE' : (spec.hollow ? '#FFFFFF' : spec.color),
       fillOpacity: spec.hollow ? .85 : .95,
     }).bindTooltip(
@@ -3426,9 +2558,7 @@ function drawRail() {
       + (soon ? '<br><b>개통 예정</b>' : ''),
       { direction: 'top' }).addTo(railLayer);
   });
-  /* 검사용 들여다보기 창 (window.__tradeStyles 와 같은 취지).
-     **색이 갈리는지는 그린 값을 봐야 안다** — 범례만 보면 이번처럼
-     '범례는 다른데 지도는 같은' 상태를 못 잡는다. */
+  /* N0258 */
   window.__railMarks = railLayer.getLayers
     ? railLayer.getLayers().map((l) => ({
         r: l.options.radius,
@@ -3439,17 +2569,7 @@ function drawRail() {
     : [];
 }
 
-/* 고속도로 — 계획·공사중·준공 (2026-09-16 지시).
- *
- * **이것은 노선이 아니다.** 자료가 주는 것은 구간의 시작과 끝, 이름 둘
- * 뿐이다(고시는 '안성JCT-동탄JCT', 공사현황은 시점·종점 주소). 그 사이를
- * 어떻게 지나가는지는 어디에도 없다. 직선으로 이으면 산을 뚫는 그림이
- * 되므로, **두 끝에 점을 찍고 그 사이를 흐리게 잇고 화면이 그렇다고
- * 말한다.** 실거래의 trade-coarse 와 같은 원칙이다.
- *
- * 굵은 선에 흰 테(casing)를 두른다 — 지도에서 고속도로를 그리는 방식이고,
- * 무엇보다 **다른 층과 마크가 달라야** 색을 안 늘리고도 갈린다.
- */
+/* N0259 */
 function roadStageColor(stage) {
   const k = (DEV_PICKS.highway || []).find((x) => x.id === stage);
   return (k && k.color) || '#6B7280';
@@ -3464,14 +2584,10 @@ function roadTip(it) {
     + (it.lanes ? `<br>왕복 ${escapeHtml(it.lanes)}차로` : '')
     + (it.cost_eok ? `<br>총사업비 ${won(it.cost_eok)}` : '')
     + (it.term ? `<br>공사기간 ${escapeHtml(it.term)}` : '')
-    // 준공 줄은 날짜가 가장 쓸모 있는 칸인데 여태 안 보였다 — 계획만
-    // 화면에 있었던 탓에 이 칸이 한 번도 안 그려졌다.
+    // N0260
     + (it.done_on ? `<br>준공 ${escapeHtml(String(it.done_on))}` : '')
     + (it.axis ? `<br>${escapeHtml(it.axis)}${it.line ? ' · ' + escapeHtml(it.line) : ''}` : '')
-    /* **출처를 선형마다 따로 적는다.** 준공은 관 자료(브이월드 표준
-       노드링크), 공사중은 아직 안 만든 길이라 관 자료에 없어 OSM 이다.
-       둘을 한 문구로 뭉뚱그리면 ODbL 이 안 걸린 것에까지 ODbL 을 적거나
-       그 반대가 된다. */
+    /* N0261 */
     + (it.path
       ? '<br><span class="dev-why">실제 노선 선형입니다 · 선형 '
         + (it.path_src === '관'
@@ -3481,19 +2597,7 @@ function roadTip(it) {
         + ' 실제 노선 모양이 아닙니다</span>');
 }
 
-/* 고속도로를 **필지로** 그린다 (2026-09-16 지시).
- *
- *   "계획은 살려 놓고 실제로 표시는 계획 도로처럼 필지 기준으로 선택될
- *    수 있도록 방법을 전환바랍니다."
- *
- * 선은 아무리 잘 맞춰도 필지와 무관하다. 그래서 가까이서는 **선 둘레
- * 30m 안의 필지**를 받아 면으로 그린다. 30m 는 고른 값이 아니라 잰
- * 값이다 (scripts/road_parcel_probe.py: 30m 안 7~14개 · 50m 12~48개).
- *
- * 두 갈래로 나눠 칠한다. 지목이 '도' 면 이미 도로가 된 땅이고, 아니면
- * **아직 편입 전인 땅**이다. 안성 신설 구간이 실제로 임야·공장용지였다.
- * 땅 주인에게 중요한 것은 뒤쪽이므로 그것을 눈에 띄게 그린다.
- */
+/* N0262 */
 const ROADP_MIN_ZOOM = 15;
 const ROADP_TILE_ZOOM = 17;        // 이보다 잘게 쪼개 부르지 않는다
 const ROADP_MAX_TILES = 8;
@@ -3532,8 +2636,7 @@ function rpTileList() {
 
 function rpTip(p) {
   const road = p.r === 1;
-  /* **이제 '30m 안' 이 아니라 도로구역이다.** 토지이음이 그 필지에 붙여
-     놓은 것을 그대로 옮긴다 — 근사가 아니라 관이 정한 경계다. */
+  /* N0263 */
   return `<b>${escapeHtml(p.b || '')}</b>`
     + (p.s ? `<br>${escapeHtml(p.s)}` : '')
     + (p.t ? ` · ${escapeHtml(p.t)}` : '')
@@ -3594,8 +2697,7 @@ function fetchRoadParcelTile(z, x, y, key) {
           style: {
             color: core,
             weight: road ? 1 : 2,
-            // 편입 전인 땅은 테를 끊어 그린다 — 아직 정해지지 않았다는
-            // 뜻을 색 하나 더 쓰지 않고 말한다.
+            // N0264
             dashArray: road ? null : '5 4',
             fillColor: core,
             fillOpacity: road ? 0.35 : 0.2,
@@ -3629,19 +2731,12 @@ function drawRoad() {
     if (!Array.isArray(a) || !Array.isArray(b)) return;
     const core = roadStageColor(it.stage);
     const plan = it.stage === '계획';
-    /* **선형이 있으면 그것을 그린다** (2026-09-16 지시: "저희가 넣은 것은
-       직선이라 맞지 않아요"). path 는 OSM 의 실제 노선에 스냅한 결과고,
-       없으면 두 끝을 잇는 직선으로 되돌아간다 — 신설 계획은 OSM 에도
-       없으므로(proposed 0건) 끝까지 직선이다. */
+    /* N0265 */
     const line = (Array.isArray(it.path) && it.path.length >= 2)
       ? it.path : [a, b];
-    /* **가까이서는 선이 주인공이 아니다.** 배율 15부터는 필지를 면으로
-       그리므로(drawRoadParcels), 선은 '이 띠를 따라 고른 것' 이라는 안내로
-       만 남긴다. 선을 통째로 지우지는 않는다 — 면이 아직 안 왔을 때 화면이
-       비어 버린다. */
+    /* N0266 */
     const close = map.getZoom() >= ROADP_MIN_ZOOM;
-    // 테를 먼저 깔고 그 위에 심을 얹는다 — 두 겹이라야 어느 바탕에서도
-    // 선이 보인다. 흰 심(계획)은 테가 없으면 밝은 지도에서 사라진다.
+    // N0267
     if (!close) {
       L.polyline(line, {
         pane: 'overlayPane', color: '#1F2937', weight: 8, opacity: .55,
@@ -3655,8 +2750,7 @@ function drawRoad() {
     }).bindTooltip(roadTip(it), { direction: 'top', sticky: true })
       .addTo(roadLayer);
     if (!n) window.__roadTipSample = roadTip(it);   // 검사가 본다
-    /* 두 끝의 점은 **직선일 때만** 찍는다. 그 점의 뜻이 '자료가 여기까지만
-       말해 준다' 라서, 선형을 따라 그린 구간에 찍으면 거짓말이 된다. */
+    /* N0268 */
     ((it.path || close) ? [] : [a, b]).forEach((pt) => {
       L.circleMarker(pt, {
         pane: 'markerPane', radius: 4, color: '#1F2937', weight: 2,
@@ -3693,17 +2787,7 @@ function toggleDevelop(on) {
   drawDevelop();
 }
 
-/* ── 지역 태그를 누르면 그 행정구역이 드러난다 (요구사항 2026-09-14) ──
- *
- * "지역 태그 선택시 행정구역을 표시해 줄 수 있나요?"
- *
- * **코드로 묻지 않는다.** 브이월드 WFS 의 속성 이름을 모르는데 틀린
- * 이름으로 거르면 0건이 오고, 그것은 '그런 구역이 없다' 와 구별되지
- * 않는다. 태그가 앉은 자리를 서버에 주면 서버가 그 자리를 감싸는
- * 폴리곤을 찾아 준다 (api/tile.js 의 mode=admin).
- *
- * 같은 태그를 다시 누르면 다시 안 부른다 — 경계는 안 움직인다.
- */
+/* N0269 */
 const adminCache = new Map();      // 'level|lat|lon' → geom | null
 let adminAsked = null;
 
@@ -3720,14 +2804,12 @@ function drawAdminShape(geom, fullName) {
   if (!adminLayer || !geom) return;
   adminLayer.clearLayers();
   const shape = L.geoJSON(geom, {
-    // 면을 옅게 깔고 테두리를 굵게. 값 태그가 위에 앉으므로 채움은
-    // 아주 옅어야 한다 — 진하면 읽던 숫자가 묻힌다.
+    // N0270
     style: { color: '#1D4ED8', weight: 3, opacity: .9,
              fillColor: '#3B82F6', fillOpacity: .12 },
     interactive: false,
   }).addTo(adminLayer);
-  // 전체 이름은 브이월드가 준다 ('경기도 평택시 안중읍'). 태그에는
-  // 짧은 이름만 적혀 있어서, 어느 시도의 어느 구인지가 여기서 붙는다.
+  // N0271
   if (fullName) {
     shape.bindTooltip(String(fullName), {
       permanent: true, direction: 'center', className: 'admin-name',
@@ -3735,17 +2817,7 @@ function drawAdminShape(geom, fullName) {
   }
 }
 
-/* 브이월드가 주는 이름. 셋 다 full_nm 이 통째로 온다 — 시군구·읍면동은
-   vworld-render run 1, **리는 배포된 사이트에 직접 물어 확인했다**
-   (2026-09-15, 덕봉리):
-
-     li_cd 4155036035 · li_kor_nm 덕봉리 · li_eng_nm Deokbong-ri
-     cat_nam 리경계 · full_nm '경기도 안성시 양성면 덕봉리'
-
-   리 칸이 `ri_*` 일 것이라 짐작했는데 실제로는 **`li_*`** 였다. full_nm 이
-   있어 화면에는 티가 안 났겠지만, 짐작으로 적어 둔 대비책은 한 칸도 안
-   맞았을 것이다 — 본 이름으로 고친다. 대비책을 두는 까닭은 이름이 없다고
-   경계까지 안 그리면 안 되기 때문이다. */
+/* N0272 */
 function adminName(props) {
   const p = props || {};
   if (p.full_nm) return String(p.full_nm);
@@ -3758,18 +2830,14 @@ function adminName(props) {
 async function showAdminShape(at, levelKey) {
   const lat = Number(at[0]).toFixed(6);
   const lon = Number(at[1]).toFixed(6);
-  // **리는 리로 묻는다** (2026-09-15). 예전에는 여기서 'ri' 를 'umd' 로
-  // 접어 버려서, 덕봉리를 눌러도 양성면 전체가 잡혔다. 서버에 리 경계가
-  // 없는 줄 알고 그랬는데 실제로는 있었다(lt_c_adri). 시의 동처럼 리가
-  // 없는 자리는 서버가 읍면동으로 물러나 답한다.
+  // N0273
   const level = levelKey === 'ri' ? 'ri'
     : (levelKey === 'umd' ? 'umd'
       : (levelKey === 'sido' ? 'sido' : 'sigungu'));
   const key = `${level}|${lat}|${lon}`;
   adminAsked = key;
   if (adminCache.has(key)) {
-    // 예전에는 여기서 이름을 안 넘겨, 같은 자리를 두 번째 누르면 경계만
-    // 그려지고 이름표가 사라졌다. 이름도 같이 담아 둔다.
+    // N0274
     const hit = adminCache.get(key) || {};
     drawAdminShape(hit.geom, hit.name);
     return;
@@ -3787,25 +2855,7 @@ async function showAdminShape(at, levelKey) {
   } catch (err) { /* 경계가 안 와도 값은 그대로 보인다 */ }
 }
 
-/* 거래 표식 — 영업소와 **모양으로** 가른다.
- *
- * 예전에는 거래도 원이었고 색을 용도지역별로 다섯 가지 썼다. 화면에는
- * 영업소 6색 + 밴드 3색이 이미 있어서, 전국을 보면 열 몇 가지 색의
- * 원이 뒤덮여 어느 것이 IC 이고 어느 것이 거래인지 구분이 안 됐다
- * (2026-09-04 지적).
- *
- * 색을 더 늘려 푸는 문제가 아니다. **모양이 먼저 종류를 말해야 한다.**
- *
- *   영업소   원
- *   토지     네모   초록  #00A63E
- *   공장     마름모 진파랑 #1414CC
- *
- * 두 색은 눈으로 고르지 않고 쟀다. 영업소 6색·밴드 3색·배경 5색
- * 전부와 최소 ΔE 16.0, 둘끼리 44.8 이다 (scripts/test_palette.js 3절).
- *
- * 용도지역은 이제 색이 아니라 **배경 색면과 눌러서 뜨는 이름**으로
- * 본다(askZoning). 같은 것을 두 군데서 말하면 화면만 복잡해진다.
- */
+/* N0275 */
 const TRADE_PX = 9;              // 표식 한 변(px). 원 반경 3.6 과 비슷한 무게.
 
 const PYEONG_M2 = 3.305785;          // 1평
@@ -3820,18 +2870,12 @@ function won(v) {
   return `${Math.round(v / 1e4).toLocaleString('ko-KR')}만원`;
 }
 
-// 위쪽 num() 은 없으면 '—' 을 준다. 말풍선에서는 없는 칸을 아예 빼야
-// 하므로 null 을 주는 것이 따로 필요하다.
+// N0276
 const popNum = (v, digits = 0) =>
   (typeof v === 'number' && isFinite(v))
     ? v.toLocaleString('ko-KR', { maximumFractionDigits: digits }) : null;
 
-/* 거래 한 건의 상세. 요구사항(2026-09-07): "클릭 시 주요 거래 정보를
- * 상세히." 지도에 점만 있으면 얼마에 팔렸는지를 알 수 없어 스크리닝에
- * 쓸 수가 없다.
- *
- * 평(坪)을 함께 적는다. 토지·공장 거래를 실제로 하는 자리에서는 ㎡ 보다
- * 평으로 값을 셈한다. */
+/* N0277 */
 function tradePopup(t) {
   const factory = t.kind === 'factory';
   const addr = [t.sido, t.sigungu, t.umd, t.jibun].filter(Boolean).join(' ');
@@ -3849,43 +2893,32 @@ function tradePopup(t) {
 
   const per = won(t.price_per_m2);
   const perPy = won(t.price_per_m2 * PYEONG_M2);
-  // won() 이 이미 '원' 을 붙여 준다 ('165만원'). 여기서 또 붙이면
-  // '165만원원/평' 이 된다.
+  // N0278
   if (per) add('단가', `${perPy}/평 <span class="mut">· ${per}/㎡</span>`);
 
-  // 지번·지목·용도지역·거래유형은 자료에서 그대로 온다. HTML 에
-  // 넣기 전에 막는다.
-  // 지목 옆에 개발단계를 적는다. '답' 이라는 두 글자만으로는 그 땅이
-  // 왜 싼지가 안 보인다.
+  // N0279
   add('지목', t.jimok && (escapeHtml(t.jimok)
       + (t.stage ? ` <span class="mut">(${escapeHtml(t.stage)})</span>` : '')));
   add('용도지역', t.land_use && escapeHtml(t.land_use));
 
-  /* ── 필지 특성 ──
-   * 실거래 API 에는 없는 값이다. 브이월드 토지특성(dt_d194)에서 따로
-   * 받아 점-다각형으로 맞춰 붙였다. 요구사항(2026-09-07):
-   * "실거래 내용에 도로접하거나 토지의 모양등을 알 수 있는 지". */
+  /* N0280 */
   if (t.road_side) {
     const ok = t.car_ok === 'Y';
     add('도로접', escapeHtml(t.road_side)
         + ` <span class="road-tag ${ok ? 'is-ok' : 'is-no'}">`
         + `${ok ? '차 진입 가능' : '진입 어려움'}</span>`);
   }
-  // 형상은 등급이 아니다. 요구사항(2026-09-07): "부정형이 무조건
-  // 좋지 않은 건 아닙니다." 그래서 좋고 나쁨을 붙이지 않고 그대로 적는다.
+  // N0281
   add('형상', t.parcel_shape && escapeHtml(t.parcel_shape));
   add('지세', t.parcel_slope && escapeHtml(t.parcel_slope));
   if (t.official_price) {
-    // 공시지가 대비 배수. 스크리닝에서 '비싸게 샀나' 를 가장 빨리
-    // 가늠하는 값이라 함께 적는다.
+    // N0282
     const mult = t.price_per_m2 ? t.price_per_m2 / t.official_price : null;
     add('공시지가', `${won(t.official_price)}/㎡`
         + (mult && isFinite(mult)
            ? ` <span class="mut">(실거래가 ${mult.toFixed(1)}배)</span>` : ''));
   }
-  // 토지인데 필지 특성이 하나도 없으면 그 사실을 말한다. 비어 있는
-  // 것과 '맹지·부정형' 인 것은 전혀 다른데, 아무 말도 없으면 읽는
-  // 사람은 둘을 못 가른다.
+  // N0283
   const noParcel = !factory && !t.road_side && !t.parcel_shape;
 
   if (t.building_area_m2) {
@@ -3899,18 +2932,14 @@ function tradePopup(t) {
   }
   add('거래유형', t.deal_type && escapeHtml(t.deal_type));
 
-  // **좌표가 지번 좌표가 아니면 반드시 말한다.**
-  // 법정동 중심점은 오차가 ±1~2km 다. 지번을 적어 놓고 점을 그 자리에
-  // 찍어 두면, 보는 사람은 그 점이 그 필지라고 읽는다. 땅을 보러 가는
-  // 사람에게 2km 는 다른 동네다.
+  // N0284
   const coarse = t.geocode_level !== 'parcel';
   const warn = coarse
     ? '<p class="pop-warn">이 점은 <strong>법정동 중심점</strong>입니다 —'
       + ' 실제 필지 위치가 아닙니다 (오차 ±1~2km).</p>'
     : '';
 
-  // 말풍선 머리말은 건물주용도를 그대로 적는다. '공장·창고' 로 뭉치면
-  // 축사인지 주유소인지가 사라진다.
+  // N0285
   const shape = tradeShape(t);
   const head = !factory ? { cls: 'is-land', text: '토지' }
     : { cls: shape === 'trade-warehouse' ? 'is-warehouse'
@@ -3927,35 +2956,8 @@ function tradePopup(t) {
     + nochar + warn + `</div>`;
 }
 
-/* 색은 셋으로 묶는다 — 공장 계열 / 창고 계열 / 그 밖.
- *
- * 필터는 7종을 다 갈라 놓지만 색까지 7가지로 나누면 지도에서 서로
- * 구별이 안 된다. 사람 눈이 점 색을 대여섯 개까지밖에 못 가른다. */
-/* ── 거래 핀에 글자를 얹는다 (요구사항 2026-09-09) ────────────
- *
- * "우리는 매물을 클릭했을 때 나와서 무슨 물건인지 모릅니다."
- *
- * 맞습니다. 지금 거래는 **9px 짜리 점**입니다. 색으로 종류만 겨우 갈리고,
- * 얼마에 팔렸는지·언제인지·얼마나 큰지는 하나하나 눌러 봐야 압니다.
- * 스무 건을 견주려면 스무 번 눌러야 하는데, 그러면 지도를 쓰는 뜻이
- * 없습니다 — 지도는 **한눈에 견주라고** 있는 것입니다.
- *
- * 부동산플래닛(map.bdsplanet.com)을 보고 그 방식을 가져옵니다.
- *
- *     ┌─────────┐
- *     │ 토지    │   종류
- *     │ 2.2억   │   고른 유형의 값
- *     │ 2020·202평│ 보조
- *     └────┬────┘
- *          ▼        꼬리가 **실제 좌표**를 가리킨다
- *
- * 그리고 그 값을 무엇으로 볼지 고르게 합니다. 사는 사람마다 먼저 보는
- * 것이 다릅니다 — 총액을 보는 사람, 평단가를 보는 사람, 언제 거래인지를
- * 보는 사람.
- *
- * **없는 칸은 고르게 두지 않습니다.** 부동산플래닛에는 건물단가·준공연도·
- * 세대수도 있지만 우리 토지 자료에는 그 칸이 없습니다. 목록에 올려 두고
- * 눌렀을 때 비면, 그것은 자료가 없다는 말이 아니라 고장으로 읽힙니다. */
+/* N0286 */
+/* N0287 */
 const PIN_KINDS = [
   { key: 'price', label: '거래금액', of: (t) => pinMoney(t.price_krw) },
   { key: 'unit', label: '평단가',
@@ -3967,26 +2969,13 @@ const PIN_KINDS = [
   { key: 'zone', label: '용도지역', of: (t) => pinZone(t.land_use) },
 ];
 
-/* 핀에 글자를 붙이는 배율.
- *
- * **낮은 배율에서 붙이면 안 됩니다.** 전국을 보면서 1,500개에 글자를
- * 달면 서로 덮여 하나도 못 읽고, 그리는 데도 한참 걸립니다. 지금 점을
- * 그대로 두는 배율과 글자를 다는 배율을 가릅니다.
- *
- * 처음에는 15 였는데 **너무 당겨야 보였습니다** (2026-09-14 지시). 15 는
- * 한 화면이 동네 하나라, 시군구를 훑으며 값을 견주는 데는 쓸 수 없습니다.
- * 13(시군구 하나쯤)으로 내립니다 — 글자 수는 아래 CAP 이 막고 있으므로
- * 배율을 내려도 화면이 덮이지는 않습니다. */
-/* **16 으로 올립니다** (지시 2026-09-14 · docs/map-zoom-levels.md).
- * 필지 경계(연속지적도)가 z16 에 뜹니다. 경계가 있어야 글자가 어느 땅의
- * 값인지 짚입니다 — 그 전에는 글자끼리 덮여 하나도 못 읽습니다. */
+/* N0288 */
+/* N0289 */
 const TRADE_LABEL_ZOOM = 16;
-/* 글자는 더 무겁습니다(핀 하나가 여러 요소). z16 은 화면폭이 0.75~2.5km
- * 라 보통은 적지만, 도심에서는 한 화면에 수천 건이 들 수 있습니다. */
+/* N0290 */
 const TRADE_LABEL_CAP = 400;
 
-/* won() 은 '2.2억원' 을 줍니다. 핀은 좁아서 '원' 을 뗍니다 — 억/만이
- * 이미 돈이라고 말하고 있습니다. */
+/* N0291 */
 function pinMoney(v) {
   const got = won(v);
   return got ? got.replace(/원$/, '') : null;
@@ -3997,9 +2986,7 @@ function pinPyeong(m2) {
   return `${Math.round(m2 / PYEONG_M2).toLocaleString('ko-KR')}평`;
 }
 
-/* '제1종일반주거지역' → '제1종일반주거'. 핀 너비가 이름 길이를 못 견딥니다.
- * **자르지 않고 꼬리말만 뗍니다** — 가운데를 자르면 다른 용도지역과
- * 구별이 안 됩니다. */
+/* N0292 */
 function pinZone(name) {
   const v = String(name || '').trim();
   if (!v) return null;
@@ -4019,8 +3006,7 @@ function pinTitle(t) {
   return '공장·창고';
 }
 
-/* 셋째 줄. **고른 유형과 겹치는 것은 뺍니다** — 같은 값을 두 번 적으면
- * 그 줄이 아무 말도 안 하게 됩니다. */
+/* N0293 */
 function pinSub(t) {
   const now = state.pinKind;
   const bits = [];
@@ -4041,18 +3027,7 @@ function tradeShape(t) {
   return 'trade-etc';
 }
 
-/* 법정동 중심점 거래를 **결정적으로** 흩는다 (2026-09-14 지시).
- *
- * "위치를 특정하지 못한 실거래 물건 태그가 지역 태그와 겹칩니다."
- *
- * 지번 좌표를 못 얻은 거래는 법정동 중심점에 찍힌다. 그런데 **지역 태그도
- * 같은 중심점**에 앉는다 — 그래서 단가 태그가 거래 태그에 통째로 가렸다.
- * 같은 동네의 그런 거래끼리도 한 점에 쌓여 맨 위 하나만 보였다.
- *
- * 흩는 자리는 trade_id 로 만든 해시에서 나온다 — 다시 그려도 같은 자리에
- * 앉으므로 지도를 움직일 때마다 점이 춤추지 않는다. 반경은 300m 안쪽이라
- * 이 점의 오차(±1~2km)보다 훨씬 작다. 즉 **정확도를 더 낮추지 않는다.**
- * 말풍선은 여전히 '법정동 중심점 — 실제 필지 위치가 아닙니다' 라고 말한다. */
+/* N0294 */
 const COARSE_SPREAD_M = 300;
 
 function tradeLatLng(t, coarse) {
@@ -4065,8 +3040,7 @@ function tradeLatLng(t, coarse) {
   }
   h >>>= 0;
   const angle = (h % 3600) / 3600 * Math.PI * 2;
-  // 안쪽만 쓰면 가운데가 비고 바깥만 쓰면 고리가 된다. 넓이에 고르게
-  // 퍼지도록 제곱근을 쓴다.
+  // N0295
   const r = COARSE_SPREAD_M * Math.sqrt(((h >>> 12) & 1023) / 1023);
   const dLat = (r * Math.cos(angle)) / 111320;
   const dLon = (r * Math.sin(angle))
@@ -4079,8 +3053,7 @@ function tradeMarker(t, labelled) {
   const coarse = t.geocode_level !== 'parcel';
   if (labelled) return tradePin(t, coarse);
   return L.marker(tradeLatLng(t, coarse), {
-    // divIcon 을 쓰는 이유는 하나다 — Leaflet 의 circleMarker 는 원밖에
-    // 못 그린다. 모양으로 가르려면 이 길뿐이다.
+    // N0296
     icon: L.divIcon({
       className: 'trade-icon',
       html: '<i class="trade-mark ' + tradeShape(t)
@@ -4089,10 +3062,7 @@ function tradeMarker(t, labelled) {
       iconAnchor: [TRADE_PX / 2, TRADE_PX / 2],
     }),
     pane: 'tradePane',
-    // 전에는 interactive:false 였다. 표식을 눌러도 밑의 용도지역
-    // 말풍선이 뜨게 하려던 것인데, 그러면 **거래 자체는 눌러도 아무
-    // 것도 안 나온다.** 지시(2026-09-07)에 따라 거래 상세를 띄우고,
-    // 용도지역은 그 말풍선 안에 같이 적어 잃는 것이 없게 했다.
+    // N0297
     interactive: true,
     keyboard: false,
     // 검사와 화면 양쪽이 같은 값을 본다.
@@ -4103,10 +3073,7 @@ function tradeMarker(t, labelled) {
   }).bindPopup(tradePopup(t), { className: 'trade-popup', maxWidth: 320 });
 }
 
-/* 글자를 단 핀. 점과 **같은 자리**를 가리켜야 한다 — 꼬리 끝이 좌표다.
- *
- * iconAnchor 를 카드 아래 꼭짓점에 둔다. 가운데에 두면 카드가 점 위에
- * 얹혀, 정작 어느 필지인지 가린다. */
+/* N0298 */
 function tradePin(t, coarse) {
   const k = pinKind();
   const val = k.of(t);
@@ -4115,15 +3082,12 @@ function tradePin(t, coarse) {
     icon: L.divIcon({
       className: 'trade-pin-wrap',
       html: `<span class="trade-pin ${tradeShape(t)}`
-        // 좌표가 필지가 아니라 법정동 중심점인 거래. 점일 때는 테두리를
-        // 흐리게 해서 말했는데, 핀에서도 같은 말을 해야 한다 — 값은
-        // 정확한데 **자리가 ±1~2km** 라는 것은 큰 차이다.
+        // N0299
         + (coarse ? ' is-coarse' : '') + '">'
         + `<b>${escapeHtml(pinTitle(t))}</b>`
         + `<i>${escapeHtml(val || '—')}</i>`
         + (sub ? `<s>${escapeHtml(sub)}</s>` : '')
-        // 꼬리는 **카드 안**에 둔다. 밖에 두면 카드의 색을 못 물려받아
-        // (currentColor) 검은 세모가 된다.
+        // N0300
         + '<u class="trade-pin-tail"></u></span>',
       iconSize: null,
       iconAnchor: [0, 0],
@@ -4184,19 +3148,9 @@ function renderDetail(t) {
   box.append(el('div', 'sub',
     [t.sido, t.sigungu, t.route_no ? `노선 ${t.route_no}` : null].filter(Boolean).join(' · ')));
 
-  // **사분면 배지와 통계 카드 넷은 뺐다** (요구사항 2026-09-09:
-  // "IC 근처 분석내용은 이제 필지 선택 시 스파이더 차트 형태로 제공될
-  //  예정이라 내용 삭제").
-  //
-  // '동반 상승 · 교통량 증가율 0.0% · 신뢰도 보통' 은 IC 하나를 통째로
-  // 한 낱말로 요약한 것이다. 그 자리를 필지 레이더가 대신한다 — 요약은
-  // 필지마다 달라야 쓸모가 있다.
+  // N0301
 
-  // **여기 가격이 지도 필터와 다르다는 것을 밝힌다** (요구사항).
-  // 지도의 땅값 글자는 켜 놓은 용도지역을 따르지만, 이 추이는
-  // 분석용 세 지역으로 고정돼 있다(config/settings.yaml 의
-  // land_use_filter). 같은 화면에 두 값이 있는데 기준이 다르면,
-  // 안 밝히는 순간 둘 중 하나는 틀린 값으로 읽힌다.
+  // N0302
   const coreUses = ((state.meta || {}).land_use_filter || []);
   if (coreUses.length) {
     box.append(el('p', 'hint',
@@ -4219,24 +3173,8 @@ function renderDetail(t) {
   }
 }
 
-/* 상세 패널은 **고를 때만** 연다 (요구사항 2026-09-09).
- *
- * "IC 주변 분석내용은 IC를 선택 시 활성화. 기본 세팅은 나타나 있지 않음
- *  (지도 영역 최대화)"
- *
- * 빈 칸이 휴대폰 화면의 4분의 1을 먹고 있었다. 아무것도 안 알려주면서
- * 자리만 차지하는 칸이다. 여닫는 자리를 한 곳으로 모아 둔다 — 여는 곳과
- * 닫는 곳이 흩어지면 한쪽만 고쳐 놓고 '왜 안 닫히지' 를 하게 된다. */
-/* 오른쪽 칸의 닫기 단추 (요구사항 2026-09-09).
- *
- * "필지 자료 창 닫기 버튼 추가해 주세요."
- *
- * 한 번 열면 닫을 길이 없었습니다. 휴대폰에서는 이 칸이 화면의 3분의
- * 1을 먹는데, 지도로 돌아가려면 다른 필지를 눌러 내용을 바꾸는 수밖에
- * 없었습니다.
- *
- * **내용을 넣을 때마다 다시 붙입니다.** 이 칸은 innerHTML 을 통째로
- * 갈아 끼우는 자리라, 한 번 심어 두면 다음 내용에 지워집니다. */
+/* N0303 */
+/* N0304 */
 function detailClose() {
   const b = document.createElement('button');
   b.type = 'button';
@@ -4261,14 +3199,10 @@ function showDetail(on) {
   const box = document.getElementById('detail');
   if (!box) return;
   box.hidden = !on;
-  // 폰에서는 이 표시로 지도를 줄여 상세 자리를 만든다 (style.css 의
-  // body.has-detail). 고정 시트로 띄웠더니 필지를 골라도 상세가 안 보이고
-  // 스크롤도 안 된다는 보고가 있었다 (2026-09-14) — 흐름 안에 두고
-  // 페이지가 평범하게 스크롤되게 한다.
+  // N0305
   document.body.classList.toggle('has-detail', !!on);
   if (on) {
-    // 줄어든 지도 아래에 있으니 눈에 들어오도록 데려간다. 좁은 화면에서만
-    // 한다 — 넓은 화면은 옆 칸이라 움직일 까닭이 없다.
+    // N0306
     if (window.matchMedia && window.matchMedia('(max-width:56rem)').matches) {
       setTimeout(() => {
         try { box.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
@@ -4278,30 +3212,18 @@ function showDetail(on) {
   }
   if (!on) {
     box.innerHTML = '';
-    // 칸을 닫으면 윤곽도 지운다. 카드가 없는데 파란 테두리만 남아
-    // 있으면 무엇을 고른 것인지 알 길이 없다.
+    // N0307
     drawParcelShape(null);
-    /* **반경 원도 같이 지운다** (보고된 문제 2026-09-17: "ic클릭 후 x눌러
-       닫기해도 범위는 안 사라짐").
-
-       바로 위 줄이 필지 윤곽에 대해 하던 말이 반경 원에도 그대로 맞는데,
-       원만 빠져 있었다. 지우는 자리가 딱 한 곳 있었고(IC 층을 통째로 끌
-       때) 닫기 단추는 그 길로 안 갔다. 고른 것을 푸는 곳이 두 군데가
-       되면 한 곳은 반드시 빠진다 — 이제 **닫기가 곧 선택 해제**다.
-
-       영업소 표식의 굵은 테두리도 함께 되돌린다. 원은 사라졌는데 표식만
-       굵게 남으면 '아직 뭔가 골라져 있다' 로 읽힌다. */
+    /* N0308 */
     if (bandLayer) bandLayer.clearLayers();
     if (state.selected) {
       state.selected = null;
       markers.forEach((m) => m.setStyle({ weight: 2 }));
     }
   }
-  // 지도가 넓어졌다 좁아졌다 하므로 Leaflet 에 알려야 한다. 안 알리면
-  // 타일이 회색으로 남고 클릭 좌표가 어긋난다.
+  // N0309
   if (map) setTimeout(() => map.invalidateSize(), 0);
-  // 검사가 '카드는 닫혔는데 원은 남았나' 를 밖에서 볼 구멍. 둘을 따로
-  // 내놓지 않으면 그 어긋남을 검사로 옮길 수가 없다.
+  // N0310
   window.__detail = {
     on: !!on,
     selected: state.selected || null,
@@ -4410,26 +3332,8 @@ function buildBoardTable() {
 
 
 /* ─────────── 행정구역 인구 ─────────── */
-/* 시군구 대표점에 인구만큼 원을 그린다.
- *
- * 크기는 **넓이에 비례**시킨다(반지름은 √인구). 반지름을 인구에 그대로
- * 비례시키면 인구가 4배인 곳이 넓이로는 16배로 보여, 큰 도시가 화면을
- * 통째로 덮고 작은 군은 점이 된다. 사람은 원을 넓이로 읽는다.
- *
- * 대표점은 행정구역의 기하학적 중심이 아니다 — 우리가 이미 가진 법정동
- * 중심점의 중앙값이다(webexport._regions). 몇 km 어긋날 수 있어서
- * 말풍선에도 그렇게 적는다.
- */
-/* 크기를 **네 단**으로 끊는다 (2026-09-04 요구사항: "간단하게").
- *
- * 원 넓이를 인구에 그대로 비례시키면 크기가 235가지가 된다. 그러면 두 원을
- * 나란히 놓고도 어느 쪽이 큰지 눈으로 못 가른다 — 크기는 순서를 말할 때는
- * 좋지만 값을 읽는 데는 나쁘다. 몇 단이면 한눈에 갈린다.
- *
- * **단은 묶음 단위마다 다르다.** 시군구 기준으로 잡은 5만·20만·50만을
- * 시도에 그대로 쓰면 17곳이 전부 맨 위 칸에 들어가 원이 다 같아진다
- * (가장 작은 세종이 39만, 가장 큰 경기가 1,360만이다). 단위가 바뀌면
- * 자르는 자리도 같이 바뀌어야 한다. */
+/* N0311 */
+/* N0312 */
 const POP_LEVELS = [
   { key: 'sido', label: '시·도', minZoom: 0,
     hint: '도 · 광역시 단위',
@@ -4457,20 +3361,14 @@ const POP_LEVELS = [
     ] },
 ];
 
-/* 지금 배율에서 어느 단위로 묶을 것인가.
- *
- * 요구사항(2026-09-07): "지도 화면 축적/크기에 따라 도/광역시 기준,
- * 시(광역시 포함)/군 기준, 구 기준으로." 전국을 볼 때 247개 원이 서로
- * 겹쳐 있으면 아무것도 안 읽힌다 — 그때 필요한 것은 17개다. */
+/* N0313 */
 function popLevel(zoom) {
   let out = POP_LEVELS[0];
   POP_LEVELS.forEach((lv) => { if (zoom >= lv.minZoom) out = lv; });
   return out;
 }
 
-/* 특별시·광역시·특별자치시. '시·군' 단위에서 이들은 **하나로 묶는다** —
- * 요구사항의 "시(광역시 포함)" 가 그 뜻이다. 서울을 25개 구로 흩어
- * 놓으면 부산·대구와 나란히 못 본다. */
+/* N0314 */
 const METRO = /(특별시|광역시|특별자치시)$/;
 
 /* 화면에 적을 이름. */
@@ -4484,40 +3382,8 @@ function popGroupName(r, levelKey) {
   return r.name;
 }
 
-/* 묶는 열쇠. **이름만으로는 안 된다.**
- *
- * 보고된 문제(2026-09-09): "서울 강서구가 안성에 있습니다."
- *
- * 그랬습니다. 열쇠가 이름뿐이라 서울 강서구(11500)와 부산 강서구(26440)가
- * 한 칸으로 묶였고, 대표점이 둘의 인구가중 평균 —
- *
- *   서울 37.5647,126.8182 (55만) + 부산 35.1304,128.8863 (15만)
- *   → 37.0420, 127.2622   ← 안성·평택 언저리
- *
- * 인구도 70만으로 합쳐졌습니다. 지도 한복판에 있지도 않은 구가 하나
- * 생긴 셈입니다.
- *
- * 겹치는 이름이 일곱, 걸린 구·군이 스물다섯입니다.
- *
- *   동구 5 · 중구 4 · 서구 4 · 남구 4 · 북구 4 · 강서구 2 · 고성군 2
- *
- * 시·도를 앞에 붙여 가릅니다. 이미 조회수 열쇠(placeKey)는 그렇게 하고
- * 있었는데 — "'고성군' 은 강원과 경남에 둘이고, '중구' 는 여섯이다" —
- * 정작 **묶는 열쇠에는 그 규칙이 안 들어가 있었습니다.**
- *
- * 시·군 단계도 같습니다. 광역시의 구는 시·도로 묶이니 무사한데, 도
- * 아래의 고성군 둘은 여기서도 겹칩니다. */
-/* **구 단위에서는 건너뛰는 줄**이 있다 (2026-09-15 지시: "화성시 인구가
- * 안붙어 있습니다").
- *
- * 화성시는 2025 에 네 구로 쪼개졌는데 KOSIS 가 아직 그 구 코드로 인구를
- * 안 준다. 그래서 네 구가 다 빈 pop 이고, 시·군으로 묶어도 합이 0 이라
- * 인구가 안 붙었다. 내보내기가 **옛 시 코드의 시 전체 인구**를 한 줄로
- * 실어 주는데(pop_level='si'), 그 줄은 구별로 나눌 수 없으므로 **구 단위
- * 화면에서는 안 그린다.** 구별 인구를 모르는 채로 그리면 그것이 거짓이다.
- *
- * 시·군, 시·도 단위에서는 그 한 줄이 그 시를 대신한다 — 네 구가 0 이라
- * 이중으로 세지 않는다. */
+/* N0315 */
+/* N0316 */
 function popSkip(r, levelKey) {
   return r && r.pop_level === 'si' && levelKey === 'gu';
 }
@@ -4539,19 +3405,7 @@ function popYear() {
   return years.has(want) ? want : sorted[sorted.length - 1];
 }
 
-/* 묶은 단위 하나의 중심 — 그 단위의 **관청**.
- *
- * 요구사항(2026-09-07): "인구 표시 원의 중심은 도청/시청/구청/군청
- * 소재지가 중심이 되도록." 브이월드 장소검색에서 받아 두었다
- * (redt.cli offices → office 표).
- *
- *   구 단위   regions.json 의 각 행이 office_lat/office_lon 을 들고 온다
- *   시·시도   meta.region_offices[단위][이름] = [lat, lon]
- *
- * 못 받은 곳은 **인구로 가중한 평균**으로 물러난다. 시군구 대표점을
- * 그냥 평균내면 인구 3만인 군과 60만인 시가 같은 무게로 잡아당겨, 도의
- * 중심이 사람이 안 사는 산으로 간다. 물러났다는 사실은 말풍선이 적는다 —
- * 관청 위에 찍힌 원과 그렇지 않은 원이 화면에서 같아 보이면 안 된다. */
+/* N0317 */
 function popCenter(group, levelKey, year) {
   const members = group.members;
   // ① 묶은 단위 자체의 관청 (시·도, 시·군)
@@ -4577,42 +3431,18 @@ function popCenter(group, levelKey, year) {
   };
 }
 
-/* 인구 원은 사라졌다 (요구사항 2026-09-08).
-
-   "화면 상단 인구 및 IC범위 체크는 삭제합니다."
-
-   원을 지우면서 인구를 버리지는 않는다 — **땅값 글자 옆으로 옮겼다**
-   (lpItemsRegion 의 pop). 원은 크기가 곧 값이라 서로 겹쳐 가렸고,
-   정작 옆에 적힌 땅값과 견주려면 눈이 두 번 오갔다. 같은 자리에
-   나란히 적으면 한 번에 읽힌다. */
+/* N0318 */
 
 /* ─────────── 땅값 지도 ─────────── */
-/* 요구사항(2026-09-08, 넷째 묶음):
- *   "좌측 범례 삭제 / 호갱노노처럼 사각형으로 변경 후 동, 리 이름만 표시
- *    가격 아래로 / 마우스 오버랩시 정보와 실거래가격 트랜드 표시 /
- *    용도지역 선택 시 선택된 용도지역의 중간값으로 가격 변환"
- *
- * 마지막 것이 구조를 바꾼다. **용도지역 고르기가 두 군데 있었다** —
- * 왼쪽 필터(거래 점용)와 이 막대의 칩(땅값용). 같은 것을 두 번 고르게
- * 하면 둘이 어긋난 채로 보게 되고, 그러면 지도의 점과 글자가 서로 다른
- * 땅을 말한다. 그래서 칩을 없애고 **왼쪽 필터 하나를 따른다.**
- * 그 기본값이 이미 계획관리·생산관리·자연녹지 셋이다. */
+/* N0319 */
 
-/* 파란 계열 다섯 칸 (요구사항). 밝을수록 싸고 짙을수록 비싸다. */
+/* N0320 */
 const LP_COLORS = ['#7FB3E0', '#5B93D6', '#3B73C4', '#2454A6', '#123B7A'];
 const LP_LABELS = ['가장 싼 20%', '', '가운데', '', '가장 비싼 20%'];
-/* 거래가 없는 지자체. **파란 칸에 안 넣는다** — 값이 없는 것을 '가장 싼
- * 20%' 로 칠하면 그 지역이 싸다고 말하는 것이 된다. 회색은 '모른다' 다.
- *
- * 옅게 두는 것도 뜻이 있다. 값이 있는 칸과 같은 무게로 칠하면 빈 칸이
- * 지도를 덮어, 정작 읽을 숫자가 그 사이에 묻힌다. 없는 것은 물러나야
- * 한다. 대신 바탕이 옅으므로 글자는 어둡게 쓴다(.lp-card.is-none). */
+/* N0321 */
 const LP_NONE_COLOR = '#E4E8ED';
 
-/*   11 이하   시·도 / 시·군 / 구
- *   12        읍·면·동  — 리를 면으로 묶는다 ('백곡면')
- *   13 이상    리·동     — 그대로 ('백곡면 사송리')
- * 도시의 법정동은 애초에 한 마디('정자동')라 두 단계가 같아진다. */
+/* N0322 */
 const LP_UMD_ZOOM = 12;
 const LP_RI_ZOOM = 13;
 /* 한 화면에 글자를 몇 개까지. 넘으면 거래가 많은 곳부터 남긴다. */
@@ -4620,27 +3450,14 @@ const LP_MAX_LABELS = 90;
 /* 내보내기(webexport.LANDPRICE_MIN_N)와 같은 값. 안내문에 쓴다. */
 const LP_MIN_LABEL = 5;
 
-let lpUmdCache = {};      // "용도지역|시도두자리" → cells
+let lpUmdCache = {};      // N0323
 const lpUmdPending = new Set();
 
-/* 전국 법정동 명부 조각. 땅값 조각과 달리 **용도지역이 없다** — 거래와
- * 무관한 원부라 시·도 하나에 파일 하나다. 열쇠는 시도 두 자리. */
+/* N0324 */
 let lpRosterCache = {};
 const lpRosterPending = new Set();
 
-/* **못 받은 조각을 기억한다.** 이것이 없으면 조각 하나가 404 일 때
- * 화면이 통째로 멎는다 (2026-09-14, 실제 화면에서 났다).
- *
- * 까닭은 이렇다. 받아 오는 함수는 끝에서 다시 그리기를 부르고, 다시
- * 그리기는 z12 이상이면 또 받아 오기를 부른다. 성공하면 캐시에 들어가
- * 두 번째에는 '받을 것 없음' 으로 끝나지만, **실패하면 캐시에도 대기에도
- * 안 남아** 같은 조각을 영원히 다시 부른다. 실패가 빠를수록(404) 더
- * 빨리 돈다 — 주 스레드가 그 고리에 갇혀 타이머 하나 못 돌고,
- * 브라우저가 '응답 없는 페이지' 를 띄운다.
- *
- * 그래서 두 가지를 같이 둔다. 못 받은 것은 한동안 다시 안 부르고,
- * **하나도 새로 못 받았으면 다시 그리지 않는다.** 둘 중 하나만 있어도
- * 고리는 끊기지만, 둘 다 두어야 '잠시 뒤 다시' 도 안전해진다. */
+/* N0325 */
 const LP_RETRY_MS = 60000;
 const lpFailed = new Map();          // 조각 열쇠 → 마지막으로 못 받은 때
 const lpFresh = (k) => Date.now() - (lpFailed.get(k) || 0) >= LP_RETRY_MS;
@@ -4649,49 +3466,16 @@ window.__lpState = () => ({ failed: [...lpFailed.keys()], pending: [...lpUmdPend
                             rosterPending: [...lpRosterPending],
                             cached: Object.keys(lpUmdCache), roster: Object.keys(lpRosterCache) });
 
-/* 지금 열려 있는 말풍선의 태그 열쇠. 없으면 null.
- *
- * 보고된 문제(2026-09-10): "태그 클릭 시 정보가 나오는데 너무 민감한
- * 것 같습니다. 조심히 누르지 않거나 가장자리 태그 클릭 시 지도가
- * 옮겨지면서 계속 사라집니다."
- *
- * 손가락이 조금 미끄러지거나 가장자리 태그에서 지도가 스스로 밀리면
- * (autoPan) moveend 가 오고, 그때 태그를 **전부 지우고 다시 만듭니다**
- * (drawLandPrice 의 clearLayers). 방금 열린 말풍선은 그 마커에 붙어
- * 있었으므로 함께 사라집니다. 즉 말풍선을 보여주려고 켠 autoPan 이
- * 그 말풍선을 스스로 죽이고 있었습니다.
- *
- * 그래서 **말풍선이 열려 있는 동안에는 화면을 옮겨도 태그를 다시
- * 그리지 않습니다.** 읽는 중인 사람에게 태그 갱신은 필요 없고, 닫으면
- * 그때 한 번 다시 그립니다. */
+/* N0326 */
 let lpOpenPk = null;
 let lpDrawing = false;
-/* 손가락을 끌었는가. 끌었다면 그 끝의 '누름' 은 누른 것이 아니다.
- *
- * Leaflet 은 마커 위에서 시작한 끌기를 **누름으로도** 셉니다 —
- * 마커가 지도와 함께 움직여서 손가락이 계속 그 위에 있기 때문입니다.
- * 그래서 지도를 옮기려고 태그 위에서 끌면 말풍선이 딸려 열립니다.
- * 끌기가 있었으면 열지 않습니다. */
+/* N0327 */
 let lpDragged = false;
 /* 말풍선이 열려 있는 동안 미뤄 둔 다시 그리기가 있는가. */
 let lpPending = false;
 
-/* ㎡ 단가를 **평당**으로 바꿔 짧게 쓴다. ㎡당 30만원은 감이 안 오지만
- * 평당 100만원은 바로 온다. */
-/* ─── 값을 적는 규칙 ───────────────────────────────────────────────
- *
- * 보고된 문제(2026-09-09): "값의 단위가 화면마다 다릅니다. 지도 카드는
- * 86.9만/평, 말풍선은 592,441원/평, 필지 카드는 250,000원/㎡."
- *
- * 규칙은 둘이고, 여기서만 정한다.
- *
- *   훑는 자리(지도 카드·요약·눈금)   → 평당, 만/억으로 줄여서   lpMoney()
- *   짚는 자리(말풍선·상세)           → 평당 원 그대로, ㎡ 는 아랫줄
- *                                      perPy() / perM2()
- *
- * **㎡ 를 먼저 적지 않는다.** 토지·공장을 실제로 사고파는 자리에서는
- * 평으로 값을 셈한다. ㎡ 는 공부(公簿)의 단위라 확인용으로 뒤에 붙인다.
- */
+/* N0328 */
+/* N0329 */
 const perPy = (perM2) => Math.round(perM2 * PYEONG_M2).toLocaleString('ko-KR');
 const perM2Str = (perM2) => Math.round(perM2).toLocaleString('ko-KR');
 
@@ -4713,38 +3497,8 @@ function lpWindow() {
   return ws.find((w) => w.key === state.lpWindow) || ws[0] || null;
 }
 
-/* **땅값 글자의 용도지역은 거래 점 필터와 따로 논다.**
- *
- * 요구사항(2026-09-08): "실거래 표시에 용도지역과 실거래 가격의
- * 용도지역을 구분하여, 지도에 표시된 중앙값은 실거래 표시와 무관하게
- * 나타낼 수 있도록 수정해주세요."
- *
- * 앞서 하나로 합쳤던 것을 다시 가른다. 합쳐 두면 거래 점을 걸러 볼
- * 때마다 지도의 중앙값이 함께 흔들린다 — **바탕이 움직이면 견줄 수가
- * 없다.** 점은 찾는 도구이고 중앙값은 자로 삼는 것이라, 자가 손을
- * 따라 움직이면 안 된다. */
-/* 용도지역 범례 — 색과 무늬.
- *
- * 요구사항(2026-09-08): "용도 지역 선택하면 체크가 아니라 용도 지역
- * 범례 표시 (색상과 패턴)이 들어 가도록 해주세요."
- *
- * 체크상자 스물다섯 개는 목록이지 범례가 아니다. 무엇을 켰는지는
- * 알려주지만 **그것이 무슨 땅인지**는 안 알려준다. 색을 칸에 직접
- * 칠하면 목록이 곧 범례가 된다.
- *
- * 색만으로는 모자란 이유가 둘이다.
- *   · 주거 다섯, 상업 넷, 공업 셋은 같은 계열이라 색만으로 못 가른다.
- *     한 계열 안에서 진하기로 서열을 주고, **무늬로 갈래를 표시**한다.
- *   · 남성 스무 명 중 한 명은 적록색약이다. 초록 계열 여섯이 색상만
- *     다르면 그 사람에게는 전부 같은 칸이다. 무늬는 색을 안 탄다.
- *
- * 무늬는 셋만 쓴다 — 없음 / 사선 / 점. 넷을 넘기면 12px 칸에서 서로
- * 구별이 안 되어 무늬가 오히려 잡음이 된다.
- *
- * **브이월드 지적편집도와 같은 색이 아니다.** 색면은 브이월드가 서버에서
- * 칠해 보내주므로 우리에게 팔레트가 없다. 여기 색은 우리 것이고,
- * 국토계획법 관례(주거 노랑·상업 분홍·공업 보라·녹지 초록)만 따른다.
- */
+/* N0330 */
+/* N0331 */
 const ZONE_STYLE = {
   // 비도시지역 — 흙빛·연녹
   '계획관리':       { c: '#E4D9A6', p: '' },
@@ -4781,8 +3535,7 @@ const ZONE_STYLE = {
 
 const ZONE_FALLBACK = { c: '#C9CDD4', p: '' };
 
-/* 칸 하나의 배경. 무늬는 색 위에 얹는 겹배경으로 그린다 —
-   따로 요소를 두면 12px 칸 안에서 자리가 안 나온다. */
+/* N0332 */
 function zoneSwatch(g) {
   const st = ZONE_STYLE[g] || ZONE_FALLBACK;
   if (st.p === 'd') {
@@ -4796,13 +3549,7 @@ function zoneSwatch(g) {
   return st.c;
 }
 
-/* 인구를 **만명** 단위로 (요구사항 2026-09-08).
-
-   "이름 옆에 인구를 아주 작게 표시해 주세요. (XX만) 단위는 만명"
-
-   10만 위는 소수점을 뗀다 — '136.0만' 의 .0 은 자리만 먹고 알려주는
-   것이 없다. 10만 아래는 한 자리를 남긴다. 안 남기면 안성(19만)과
-   울릉(0.9만)이 둘 다 '0만' 이 된다. */
+/* N0333 */
 function popMan(v) {
   if (!(typeof v === 'number' && v > 0)) return '';
   const man = v / 10000;
@@ -4823,11 +3570,7 @@ function lpOne(cell) {
   return { v, n: w[0], from: w[3], s: cell.s || null };
 }
 
-/* **여러 용도지역을 하나로 섞는다.** 거래 건수로 가중한다.
- *
- * 평균끼리 섞으면 그 결과는 정확한 전체 평균이다. 중앙값끼리 섞는 것은
- * 근사다 — 진짜 합동 중앙값이 아니다. 두 용도지역의 분포가 많이 다르면
- * 조금 어긋난다. 그래서 **여럿을 섞었을 때는 말풍선에 그렇게 적는다.** */
+/* N0334 */
 function lpMix(cells) {
   let wsum = 0; let vsum = 0; let n = 0; let from = Infinity;
   const parts = [];
@@ -4864,25 +3607,13 @@ function lpUmdChunks(group) {
 
 function lpUmdReady() {
   const groups = lpGroups();
-  // **용도지역을 하나도 안 고른 화면에서는 기다릴 땅값 조각이 없다.**
-  //
-  // 보고된 문제(2026-09-17): "용도지역 미설정 시 동/리 표시 안됨(z14~)
-  // (구가 표현됨)". 배율을 아무리 올려도 이름표가 '강남구 56만' 에서
-  // 안 내려갔다.
-  //
-  // 왜 그랬나. 이 함수가 lpGroups().some(...) 한 줄이었다. 고른 것이
-  // 없으면 빈 배열이고, 빈 배열의 some 은 늘 false 다 — 그래서
-  // lpLevel 이 '아직 조각이 오는 중' 으로 읽고 시군구로 물러났다.
-  // 하지만 값이 없는 회색 이름표는 땅값 조각에서 만들어지지 않는다.
-  // **명부**(umd-roster-NN.json)에서 만들어진다(lpEmptyUmd). 그러니
-  // 고른 용도지역이 없을 때의 준비 여부는 명부가 왔는가로 따져야 한다.
+  // N0335
   if (!groups.length) return lpRosterReady();
   return groups.some((g) =>
     lpUmdChunks(g).some((c) => lpUmdCache[`${g}|${c.p}`]));
 }
 
-/* 이름만 적을 재료가 왔는가. lpEmptyUmd 가 쓰는 두 갈래와 같은 길이다 —
- * 화면에 걸치는 명부 조각, 아니면 명부가 안 실린 배포의 검색 색인. */
+/* N0336 */
 function lpRosterReady() {
   if (lpRosterChunks().some((c) => lpRosterCache[c.p])) return true;
   return !!findIndex;
@@ -4926,8 +3657,7 @@ async function lpLoadRoster() {
   if (got) drawLandPrice();
 }
 
-/* 아직 오는 중이면 시군구로 물러난다 — 빈 화면을 보여주느니 덜 자세한
- * 것이 낫다. 사용자는 '고장' 과 '로딩 중' 을 구별하지 못한다. */
+/* N0337 */
 function lpLevel(zoom) {
   if (zoom >= LP_UMD_ZOOM && lpUmdReady()) {
     return zoom >= LP_RI_ZOOM
@@ -4965,18 +3695,10 @@ function lpItemsRegion(levelKey) {
                      from: Infinity, years: new Map(), parts: new Map() });
     }
     const g = bag.get(key);
-    // **값이 없어도 지자체는 담는다** (요구사항 2026-09-09).
-    //
-    // 예전에는 여기서 그냥 돌아섰다. 그러면 그 용도지역 거래가 없는
-    // 지자체는 지도에서 **통째로 사라졌다** — 대전에서 유성구와 대덕구만
-    // 남고 동구·중구·서구가 안 보인 것이 그것이었다. 지도에 지자체가
-    // 없으면 사람은 '자료가 없다' 가 아니라 '이 지도가 고장났다' 로
-    // 읽는다. 이름은 늘 있고, 값이 없다는 사실을 값 자리에 적는다.
+    // N0338
     g.members.push(r);
     if (!got) {
-      // 왜 값이 없는지는 둘로 갈린다. 거래가 0건인 곳과, 있었지만
-      // 다섯 건이 안 돼 값으로 안 쓴 곳. 뒤엣것에 '0' 을 적으면 거짓이
-      // 되므로 건수를 세어 둔다.
+      // N0339
       cells.forEach(({ cell }) => {
         g.few += ((cell && cell.few) || {})[state.lpWindow] || 0;
       });
@@ -4996,14 +3718,7 @@ function lpItemsRegion(levelKey) {
     });
   });
   const year = String(popYear() || '');
-  // 인구 원이 사라진 자리를 이 숫자가 대신한다 (요구사항 2026-09-08).
-  //
-  // **거래가 있는 시군구만 더하면 안 된다.** g.members 에는 켠 용도지역의
-  // 값이 있는 시군구만 들어 있다. 경기도는 47곳인데 계획관리 거래가 있는
-  // 곳만 세면 도시 쪽 구가 통째로 빠진다 — 검사 fixture 에서 경기도가
-  // 110만이 아니라 65만으로 나온 것이 그것이었다. 인구는 행정구역의
-  // 인구지 '거래가 있는 곳의 인구' 가 아니다. 그러니 **묶음 열쇠가 같은
-  // 시군구를 전부** 더한다.
+  // N0340
   const popByKey = new Map();
   (state.regions || []).forEach((r) => {
     if (popSkip(r, levelKey)) return;   // 구별 인구를 모르는 시 합계 줄
@@ -5014,17 +3729,12 @@ function lpItemsRegion(levelKey) {
   });
   return [...bag.values()].map((g) => ({
     name: g.name,
-    // 거래가 없으면 값도 없다. 0 을 넣으면 '평당 0원' 이라는 뜻이 되고
-    // 분위 눈금까지 그쪽으로 끌린다. **없는 것은 null 이다.**
+    // N0341
     few: g.few,
-    // 조회수를 셀 열쇠. **이름만으로는 안 된다** — '고성군' 은 강원과
-    // 경남에 둘이고, '중구' 는 여섯이다. 시·도 자리를 함께 적는다.
+    // N0342
     pk: placeKey(levelKey, g.members[0], g.name),
     sg: String((g.members[0] || {}).sigungu_cd || ''),
-    // **열쇠로 찾는다.** 이름으로 찾으면 안 된다 — 열쇠에는 시·도가
-    // 붙어 있어서('경기도|용인시') 이름과 다르다. 강서구를 가르면서
-    // 열쇠를 바꿔 놓고 이 줄을 안 고쳐, 시·군·구 태그의 인구가 통째로
-    // 사라졌다 (보고된 문제 2026-09-09 — "인구 표시가 안됩니다").
+    // N0343
     pop: popByKey.get(g.key) || 0,
     v: g.wsum ? g.vsum / g.wsum : null,
     n: g.n,
@@ -5068,9 +3778,7 @@ function lpItemsUmd(levelKey) {
       out.push({
         name: info.nm, sub: info.sgnm, full: info.nm,
         pk: `u:${info.sg}:${info.nm}`, sg: String(info.sg),
-        // 읍·면·동 인구 (요구사항 2026-09-09). **없으면 안 적는다** —
-        // KOSIS 는 행정동이고 우리는 법정동이라 이름이 안 맞는 곳이
-        // 있다. 그 자리에 시군구 인구를 넣으면 리 하나가 20만이 된다.
+        // N0344
         pop: info.pop || 0,
         v: got.v, n: got.n, from: got.from, parts: 1,
         at: [info.lat, info.lon],
@@ -5089,10 +3797,7 @@ function lpItemsUmd(levelKey) {
     g.wsum += got.n; g.vsum += got.v * got.n; g.n += got.n;
     g.from = Math.min(g.from, got.from);
     g.lat += info.lat; g.lon += info.lon; g.parts += 1;
-    // **리 인구를 합치는 것이 아니다.** 우리는 리 인구를 갖고 있지
-    // 않다 — KOSIS 가 주는 것은 면·동 단위다. 그래서 면 하나의 값을
-    // 그대로 쓴다 (조각이 head_pop 에 실어 준다). 리 값을 합치면
-    // 인구가 붙은 리만 더해져 면 인구가 실제보다 작아진다.
+    // N0345
     if (!g.pop) g.pop = info.headPop || 0;
     got.parts.forEach((pt) => {
       const cur = g.byGroup.get(pt.group) || { w: 0, v: 0 };
@@ -5119,26 +3824,7 @@ function lpItemsUmd(levelKey) {
   return out.concat(lpEmptyUmd(levelKey, out));
 }
 
-/* 거래가 없는 읍·면·동도 이름은 남긴다 (요구사항 2026-09-09).
- *
- * "거래가 없는 동 이름이 다 안나오네요. 모두 나오도록 해주세요."
- *
- * 왜 안 나왔나. 읍·면·동 태그는 **땅값 조각(landprice-umd-*.json)에서만**
- * 만들어집니다. 그 조각에는 거래가 다섯 건 넘는 칸만 실려 있습니다
- * (webexport.UMD_MIN_TRADES). 그러니 고른 용도지역에 거래가 없는 동은
- * 애초에 재료가 없어 그려질 수가 없었습니다 — 서울에서 여덟 개만 뜬
- * 것이 그것입니다.
- *
- * 첫 손질은 검색 색인(places.json)으로 메우는 것이었습니다. 그런데 그
- * 색인도 **거래에서 나온 목록**이라(거래 세 건 넘은 곳 17,430) 거래가
- * 한 번도 없던 법정동은 여전히 빠졌습니다. 시골의 리가 그렇습니다.
- *
- * 이제는 **명부**를 씁니다 — 행정표준코드에서 받아 좌표를 붙인
- * region_umd 를, 시·도 조각(umd-roster-NN.json)으로 내보낸 것입니다.
- * 거래와 무관한 원부라 빠지는 곳이 없습니다.
- *
- * 명부가 아직 안 실린 배포에서는 예전처럼 검색 색인으로 물러납니다 —
- * 덜 채워지는 것과 아무것도 안 나오는 것은 다른 일입니다. */
+/* N0346 */
 function lpEmptyUmd(levelKey, have) {
   if (!map) return [];
   const seen = new Set(have.map((it) => it.pk));
@@ -5154,8 +3840,7 @@ function lpEmptyUmd(levelKey, have) {
     }
     const g = bag.get(pk);
     g.lat += lat; g.lon += lon; g.n += 1;
-    // 리 여럿이 한 면으로 접힐 때 인구를 더하면 안 된다 — 실려 오는
-    // 값은 이미 '면 하나의 인구' 이지 리들의 합이 아니다.
+    // N0347
     if (!g.pop && pop) g.pop = pop;
   };
 
@@ -5168,8 +3853,7 @@ function lpEmptyUmd(levelKey, have) {
       (chunk.rows || []).forEach((row) => {
         const [nm, sg, lat, lon, pop] = row;
         if (!b.contains([lat, lon])) return;
-        // 면 단계에서는 면 인구를, 리 단계에서는 그 리의 인구만.
-        // 리 자리에 면 인구를 넣으면 리 하나가 면 전체 인구가 된다.
+        // N0348
         const head = String(nm).split(' ')[0];
         const use = levelKey === 'ri'
           ? pop : (headPop[`${sg}|${head}`] || pop);
@@ -5190,17 +3874,14 @@ function lpEmptyUmd(levelKey, have) {
     name: g.name, sub: g.sub, full: g.name,
     pk: `u:${g.sg}:${g.name}`, sg: g.sg,
     pop: g.pop || 0,
-    // 값이 없다. few 도 모른다 — 조각에 없는 칸이라 건수를 셀 자료가
-    // 없다. 말풍선은 '거래 5건 미만' 이라고만 말한다.
+    // N0349
     v: null, few: 0, n: 0, from: null, parts: g.n,
     at: [g.lat / g.n, g.lon / g.n],
     byGroup: [], trend: [],
   }));
 }
 
-/* 값 → 색. **지역이 적을 때가 함정이다.** 분위수로 끊으면 다섯 곳
- * 미만일 때 경계가 안 만들어져 모두 '가장 싼 20%' 색을 뒤집어쓴다.
- * 그래서 적으면 순위로 편다. 한 곳뿐이면 가운데 색이다. */
+/* N0350 */
 function lpScale(values) {
   const v = values.slice().sort((a, b) => a - b);
   if (v.length >= 5) {
@@ -5238,14 +3919,11 @@ async function lpLoadUmd() {
   let got = 0;
   await Promise.all(want.map(async (w) => {
     try {
-      // **절대 경로여야 한다.** 상대 경로는 …/app 에서 404 가 나고,
-      // 그러면 조각이 영영 안 와서 지도가 조용히 시·군으로 물러난다.
+      // N0351
       const r = await fetchData(`${w.f}`, { cache: 'no-cache' });
       if (r.ok) {
         const payload = await r.json();
-        // **면 인구는 칸 목록과 따로 온다** (head_pop). 리 값을 합친
-        // 것이 아니라 면 하나의 값이다 — 우리는 리 인구를 갖고 있지
-        // 않다. 배열만 저장하던 것을 통째로 담게 바꾼다.
+        // N0352
         const cells = payload.cells || [];
         cells.headPop = payload.head_pop || {};
         lpUmdCache[w.key] = cells;
@@ -5263,11 +3941,7 @@ async function lpLoadUmd() {
   if (got) drawLandPrice();
 }
 
-/* 최근 추이 꺾은선. 말풍선 안에 들어가는 작은 그림이다.
- *
- * 값 하나만 보면 그것이 오르는 중인지 내리는 중인지 알 수 없다. 같은
- * 평당 80만원이라도 3년째 오르는 80만과 꺾여 내려온 80만은 다른
- * 물건이다. 거래가 세 건 미만인 해는 내보내기에서 이미 빠져 있다. */
+/* N0353 */
 function lpSpark(trend) {
   if (!trend || trend.length < 2) return '';
   const W = 132; const H = 34; const P = 3;
@@ -5285,37 +3959,14 @@ function lpSpark(trend) {
     + `</svg><em>${first[0]}→${last[0]} ${chg >= 0 ? '+' : ''}${(chg * 100).toFixed(0)}%</em></span>`;
 }
 
-/* 값이 없는 칸은 **이름만 남긴다.**
- *
- * 요구사항이 세 번에 걸쳐 여기로 왔다.
- *
- *   1차  "거래 0만/평으로 표기하고 지자체는 보이도록"
- *   2차  "5건 미만이라 표시가 안되는 곳은 -만/평으로"
- *   3차  "없는 곳은 지명만 나오고 거래 있는 곳은 색상으로 구분"
- *
- * 3차가 맞다. 0 이든 줄표든 **값 자리를 채우면 값처럼 읽힌다.** 값이
- * 없다는 것은 값 자리를 비워서 말하는 편이 정확하고, 그 자리에 아무것도
- * 없으면 태그가 짧아져 거래가 있는 곳이 눈에 먼저 든다 — 그것이 지도를
- * 훑는 목적이다.
- *
- * 0건과 '적다' 의 구별은 없앤 것이 아니라 **말풍선으로 옮겼다.** 태그는
- * 훑는 자리고 말풍선은 짚는 자리다. */
+/* N0354 */
 function lpNoneText() {
   return '';
 }
 
 function lpTip(it, level, w) {
   if (it.v == null) {
-    // 요구사항(2026-09-09): "그냥 간단하게 표시합니다. - 거래 5건 미만-"
-    //
-    // 앞서 '이 용도지역 거래가 없습니다' 라는 문장을 넣었는데, 말풍선이
-    // 세로로 길게 늘어졌습니다(실사용 화면). 값이 없는 칸에 설명을 길게
-    // 붙일 이유가 없습니다 — 왜 비었는지는 **한 마디면 됩니다.**
-    //
-    // 0건과 1~4건을 굳이 가르지 않습니다. 둘 다 '다섯 건이 안 된다' 가
-    // 참이고, 그것이 값을 안 쓰는 이유 전부입니다.
-    // 용도지역을 하나도 안 골랐으면 '거래 5건 미만' 은 거짓이다 —
-    // 세어 본 적이 없다. 값이 없는 까닭을 있는 그대로 적는다.
+    // N0355
     const on = lpGroups();
     if (!on.length) {
       return `<div class="lp-tip-h">${escapeHtml(it.full || it.name)}</div>`
@@ -5332,18 +3983,12 @@ function lpTip(it, level, w) {
   const stat = state.lpStat === 'avg' ? '평균' : '중앙값';
   let html = `<div class="lp-tip-h">${escapeHtml(it.full || it.name)}`
     + `${it.sub ? ` <em>${escapeHtml(it.sub)}</em>` : ''}</div>`
-    // 요구사항(2026-09-08): "xx원/평, xx원/㎡ 으로 수정해 주시고
-    // 미터당 가격은 평단가 아랫줄로 내려주세요."
-    //
-    // '평당 592,441원 ㎡당 179,213원' 처럼 한 줄에 두 값을 이어 놓으면
-    // 어느 숫자가 어느 단위인지 눈이 못 잡는다. 값과 단위를 붙여 쓰고
-    // 줄을 나눈다.
+    // N0356
     + `<div class="lp-tip-v"><b>${py}원/평</b></div>`
     + `<div class="lp-tip-v2">${per}원/㎡ · ${stat}</div>`
     + `<div class="lp-tip-m">${escapeHtml(w ? w.label : '')}`
     + ` · 거래 ${it.n.toLocaleString('ko-KR')}건`
-    // 건수 기준은 시점이 지역마다 다르다. 몇 년치인지 안 밝히면
-    // '최근' 이라는 말이 거짓이 된다.
+    // N0357
     + (w && w.kind === 'count' ? ` · ${it.from}년부터` : '')
     + (it.parts > 1
        ? ` · ${it.parts}개 ${level.key === 'umd' ? '리·동' : '시군구'} 합침` : '')
@@ -5369,23 +4014,7 @@ function drawLandPrice() {
   const have = !!(state.landPrice && (state.landPrice.windows || []).length);
   if (bar) bar.hidden = !have;
   if (!map || !lpLayer) return;
-  /* **잠금은 여기 있어야 한다.** 부르는 자리를 세어 보면 열여섯 곳이고,
-   * 그중에는 우리가 부르지 않은 것들이 섞여 있다 —
-   *
-   *   · 조회수 RPC(bump_place_view) 응답
-   *   · 실시간 접속(presence) 알림
-   *   · 읍면동·명부 조각이 도착했을 때
-   *   · 필터·배율·연도 변경
-   *
-   * 자리마다 막으면 하나는 반드시 빠뜨린다. 실제로 두 번 빠뜨렸다 —
-   * moveend 만 막았더니 조회수 RPC 응답이 말풍선을 죽였다. 진짜
-   * Leaflet 으로 재현해서 확인한 순서가 이것이다:
-   *
-   *   click → popupopen → moveend(건너뜀) → 조회수 RPC → draw() → 사망
-   *
-   * 다시 그리면 clearLayers 가 마커를 지우고, 말풍선은 그 마커에
-   * 붙어 있으므로 함께 닫힌다. 그래서 **열려 있으면 안 그린다.**
-   * 미룬 것은 잊지 않고, 닫을 때 갚는다(map 의 popupclose). */
+  /* N0358 */
   if (lpOpenPk != null) { lpPending = true; return; }
   lpPending = false;
   lpDrawing = true;
@@ -5396,26 +4025,20 @@ function drawLandPrice() {
   }
 }
 
-// 검사가 '우리가 부르지 않은 자리' 를 흉내낼 수 있게 내놓는다. 조회수
-// RPC 응답도 presence 알림도 밖에서는 이 함수 하나로 보인다.
+// N0359
 window.__drawLandPrice = () => drawLandPrice();
-// 경계선은 화면을 움직여야 도는데, 검사에서는 그것을 흉내내기가
-// 번거롭다. 부를 구멍을 하나 낸다.
+// N0360
 window.__drawCadastral = () => drawCadastral();
 window.__cadTileList = () => cadTileList();
 // 조회 배지·별표 검사가 안을 들여다볼 구멍.
 window.__viewersPeek = () => ({ star: viewers.star, open: lpOpenPk, pending: lpPending,
   stat: [...viewers.stat].map(([k, v]) => [k, v.n24]),
-  // 가운데 둔 태그와 이미 올린 것들. 이 둘이 없으면 '왜 안 올렸나' 를
-  // 밖에서 못 가른다 — 못 골랐는가(pk 가 빔), 아니면 이미 올렸는가(seen).
+  // N0361
   pk: viewers.pk, seen: [...viewers.seen],
   items: (viewers.items || []).map((x) => ({ pk: x.pk, at: x.at || null })) });
-/* 검사가 '여기서부터' 를 세울 수 있게. 올린 것은 한 방문에 한 번만
-   세므로(viewers.seen), 로그만 비우고 다시 재면 이미 올린 태그는 영영
-   안 잡힌다 — 켜고 끈 것이 아니라 **이미 지나간 것**이기 때문이다. */
+/* N0362 */
 window.__viewersReset = () => { viewers.seen.clear(); viewers.pk = ''; };
-// 차종을 바꾸면 경계가 따라 내려가는지 검사가 볼 수 있게. 화면에서는
-// 차종 칸을 눌러 도는 길과 같은 함수다.
+// N0363
 window.state = state;
 window.__rebuildTiers = () => { recolorTollgates(); updateTierCounts(); };
 
@@ -5423,30 +4046,19 @@ function drawLandPriceInner(have) {
   lpLayer.clearLayers();
   const groups = lpGroups();
   window.__lp = { on: false, n: 0, groups, level: null };
-  // 꺼 두었으면 한 장도 안 그린다. 고른 행정구역도 같이 걷는다 —
-  // 태그가 없는데 그 태그의 경계만 남으면 '이게 뭔가' 가 된다.
+  // N0364
   if (!state.placeTags) { clearAdminShape(); updateLpNote(null); return; }
-  // **용도지역을 전부 끄면 지역 태그가 통째로 사라졌다** (보고된 문제
-  // 2026-09-15: "실거래 가격에서 용도지역을 전부 해제하면 지역 테그들이
-  // 전부 사라집니다. 회색으로 처리해 주세요.").
-  //
-  // 지도에서 이름이 사라지면 사람은 '고를 것을 안 골랐다' 가 아니라
-  // '이 지도가 고장났다' 로 읽는다. 거래가 없는 지자체를 이미 회색
-  // 이름표로 남기고 있으니(2026-09-09), 하나도 안 골랐을 때도 같은 길로
-  // 간다 — 이름과 인구는 그대로, 값 줄은 없고, 칸은 회색이다. 값이 없는
-  // 것은 null 이라 lpColor 가 알아서 회색을 준다.
+  // N0365
   if (!have) { updateLpNote(null); return; }
 
   const zoom = map.getZoom();
   if (zoom >= LP_UMD_ZOOM) {
     lpLoadUmd();
-    // 거래가 없는 동의 이름은 **명부 조각**에서 온다. 보이는 시·도만
-    // 받으므로 100KB 안팎이다.
+    // N0366
     if (((state.landPrice || {}).umd_roster || []).length) {
       lpLoadRoster();
     } else if (!findIndex && !findLoading) {
-      // 명부가 아직 안 실린 배포에서는 예전대로 검색 색인으로 메운다.
-      // 2MB 라 첫 화면에 얹지 않고 **여기서 처음 받는다**.
+      // N0367
       findLoad().then(() => drawLandPrice());
     }
   }
@@ -5455,20 +4067,16 @@ function drawLandPriceInner(have) {
     ? lpItemsUmd(level.key) : lpItemsRegion(level.key);
   if (!all.length) { updateLpNote({ n: 0, level: level.label }); return; }
 
-  // **색은 화면에 보이는 것끼리 끊는다.** 전국 분위로 칠하면 경기도만
-  // 봐도 전부 짙은 파랑이 되어 그 안에서 어디가 비싼지 안 보인다.
+  // N0368
   const shown = lpVisible(all);
-  // **값이 없는 칸은 눈금에서 뺀다.** 넣으면 '가장 싼 20%' 칸이 거래
-  // 없는 곳으로 채워져, 실제로 싼 곳이 가운데 칸으로 밀린다.
+  // N0369
   const withValue = shown.filter((it) => it.v != null);
   const scale = lpScale(withValue.map((it) => it.v));
   const w = lpWindow();
 
   shown.forEach((it) => {
     const fill = lpColor(it.v, scale);
-    // **이름만 위에, 값은 아래에** (요구사항). 리 단계에서는 앞의
-    // 면 이름을 뗀다 — '목천읍 신계리' 가 아니라 '신계리'. 어느 읍인지는
-    // 지도 바탕에 이미 적혀 있고, 말풍선이 전체 이름을 말한다.
+    // N0370
     const short = level.key === 'ri'
       ? String(it.name).split(' ').pop() : it.name;
     const marker = L.marker(it.at, {
@@ -5478,33 +4086,21 @@ function drawLandPriceInner(have) {
         className: 'lp-card-wrap',
         html: `<span class="lp-card${it.v == null ? ' is-none' : ''}"`
           + ` style="background:${fill}">`
-          // 주간 1등 별표는 **시·군 안에서** 뽑는다 (요구사항:
-          // 전국 제외). 이름 앞에 붙는다.
+          // N0371
           + `<b>${viewerStar(it)}${escapeHtml(short)}`
-          // 읍·면·동과 리에는 인구가 **없다**. 우리가 가진 인구는 KOSIS
-          // 시군구 단위가 전부다. 그 자리에 시군구 인구를 적으면 리 하나가
-          // 20만인 것처럼 읽히므로, 없으면 아무것도 안 적는다.
+          // N0372
           + (it.pop ? `<em>${popMan(it.pop)}</em>` : '')
           + `</b>`
-          // 값이 없으면 이 줄 자체가 없다 (요구사항 2026-09-09 3차).
+          // N0373
           + (it.v == null ? ''
             : `<i>${escapeHtml(lpMoney(it.v))}<u>/평</u></i>`)
-          // 셋째 줄 — 지금 보는 사람 / 오늘 본 사람 (요구사항
-          // 2026-09-09 2차). 둘 다 0이면 줄 자체가 없다.
+          // N0374
           + viewerLine(it.pk)
           + '</span>',
         iconSize: null,
       }),
     });
-    // 마우스를 올리면(PC) 그리고 **눌러도**(폰) 나온다.
-    //
-    // 보고된 문제(2026-09-10): "모바일에서는 이 팝업 정보를 볼 수가
-    // 없어요." 터치 화면에는 hover 가 없으므로 말풍선만으로는 영영
-    // 못 봅니다. 같은 내용을 누름에도 답니다.
-    //
-    // **화면 가운데가 아니라 그 태그 자리에** 띄웁니다. 가운데로
-    // 옮기면 어느 동네 값인지가 끊깁니다. 대신 autoPan 을 켜서, 태그가
-    // 화면 끝에 있으면 지도가 스스로 밀려 말풍선이 다 보이게 합니다.
+    // N0375
     const tip = lpTip(it, level, w);
     marker.bindTooltip(tip,
       { direction: 'top', className: 'lp-tip', opacity: 1 });
@@ -5518,7 +4114,7 @@ function drawLandPriceInner(have) {
       if (lpDragged) { marker.closePopup(); return; }
       marker.closeTooltip();
       lpOpenPk = it.pk;
-      // 고른 행정구역을 드러낸다 (요구사항 2026-09-14).
+      // N0376
       showAdminShape(it.at, level.key);
     });
     lpLayer.addLayer(marker);
@@ -5527,12 +4123,10 @@ function drawLandPriceInner(have) {
   window.__lp = {
     on: true, n: shown.length, withValue: withValue.length, total: all.length,
     groups, level: level.key, window: state.lpWindow, scale: scale.kind,
-    // 검사용 — 지금 화면이 어느 조각을 원하고 무엇을 들고 있는지.
-    // 이것이 없으면 '안 받았다' 와 '받을 것이 없다' 를 밖에서 못 가른다.
+    // N0377
     chunks: groups.flatMap((g) => lpUmdChunks(g).map((c) => `${g}|${c.p}`)),
     cached: Object.keys(lpUmdCache),
-    // 조회수 열쇠도 내놓는다. 이것이 없으면 '별표가 시·군 안에서
-    // 뽑혔는가' 를 밖에서 셀 수가 없다.
+    // N0378
     items: shown.map((it) => ({ pk: it.pk, sg: it.sg, name: it.name,
                                  v: it.v, pop: it.pop || 0 })),
   };
@@ -5542,19 +4136,7 @@ function drawLandPriceInner(have) {
   viewersOnMove(shown);
 }
 
-/* 5분위 눈금 (요구사항 2026-09-09, 2번).
- *
- * "왜 이 색인가 가 지도에 안 적혀 있습니다. 경기도를 보다 충북으로
- *  넘어가면 같은 평당 80만원이 짙은 파랑에서 옅은 파랑으로 바뀝니다."
- *
- * 맞다. 색은 **화면 안에서** 끊는다 — 그래야 그 지역 안에서 어디가 비싼지
- * 보인다. 전국 분위로 칠하면 경기도만 봤을 때 전부 짙은 파랑이 된다.
- * 다만 그 설계를 화면이 말하지 않으면 고장으로 읽힌다. 끊는 자리를
- * 숫자로 적고, **'이 화면 안에서' 라는 말을 함께 적는다.**
- *
- * 곳이 다섯도 안 되면 분위를 못 낸다. 그때는 순위로 색을 펴는데, 그것도
- * 그렇다고 말한다 — 눈금 없이 색만 있으면 없는 정밀도를 있는 것처럼
- * 보이게 한다. */
+/* N0379 */
 function drawLpScale(info) {
   const el = document.getElementById('lp-scale');
   if (!el) return;
@@ -5564,8 +4146,7 @@ function drawLpScale(info) {
     window.__lpScale = null;
     return;
   }
-  // 값이 있는 칸이 하나도 없으면 끊을 것이 없다. 그때 '0곳뿐이라
-  // 5분위를 못 냅니다' 를 띄우면 눈금 자리가 오류처럼 보인다.
+  // N0380
   if (info.withValue === 0) { el.hidden = true; window.__lpScale = null; return; }
   const sc = info.scale;
   if (sc.kind !== 'quantile') {
@@ -5576,8 +4157,7 @@ function drawLpScale(info) {
     window.__lpScale = { kind: 'rank', n: sc.sorted.length };
     return;
   }
-  // 칸 다섯의 경계. 맨 아래와 맨 위는 실제 최소·최대를 적는다 —
-  // '0원부터' 라고 적으면 없는 칸을 있는 것처럼 보이게 한다.
+  // N0381
   const lo = sc.sorted[0];
   const hi = sc.sorted[sc.sorted.length - 1];
   const edges = [lo, ...sc.breaks, hi];
@@ -5603,19 +4183,13 @@ function updateLpNote(info) {
   if (!el) return;
   const groups = lpGroups();
   if (!info || !groups.length) {
-    // 태그는 그대로 있고 값만 없는 상태다. 몇 곳이 회색으로 남았는지
-    // 말해 주지 않으면 '아무것도 안 나온다' 로 읽힌다.
-    //
-    // **'용도지역을 켜면 …' 한 줄은 뺐다** (요구사항 2026-09-17). 같은
-    // 말을 이 묶음 맨 위가 늘 적고 있어(index.html) 한 화면에 두 번
-    // 나왔다. 여기 남기는 것은 **지금 화면의 상태**뿐이다.
+    // N0382
     el.textContent = (info && info.n)
       ? `지금은 ${info.n}곳의 이름만 회색으로 적었습니다.` : '';
     lpSuggest(null);
     return;
   }
-  // 값이 있는 칸을 센다. 태그 수가 아니다 — 이제 거래가 없는 지자체도
-  // 태그를 갖기 때문에, 태그 수로 세면 '거래가 있다' 고 말하게 된다.
+  // N0383
   const got = info.withValue == null ? info.n : info.withValue;
   if (!got) {
     el.textContent = `이 화면에는 ${groups.join('·')} 거래가 없습니다`
@@ -5637,14 +4211,7 @@ function updateLpNote(info) {
   lpSuggest(info);
 }
 
-/* **이 화면에서 용도지역마다 몇 곳이 잡히는가.**
- *
- * 도시는 계획관리가 없다 — 인구 15만에서 자연녹지 비중이 6%→65% 로
- * 뒤집힌다(docs 7장 실측). 계획관리로 서울을 보면 지도가 텅 비는데,
- * 화면이 '자료가 없다' 와 '그런 땅이 여기 없다' 를 구별해 주지 않으면
- * 사람은 빈 화면을 고장으로 읽는다.
- *
- * 시군구 칸으로만 센다 — 늘 받아 둔 자료라 공짜다. */
+/* N0384 */
 function lpCoverage() {
   const lp = state.landPrice || {};
   const b = map && map.getBounds();
@@ -5675,8 +4242,7 @@ function lpSuggest(info) {
   const mine = cov.filter((c) => on.indexOf(c.group) >= 0)
     .reduce((a, c) => a + c.n, 0);
   const best = cov.find((c) => on.indexOf(c.group) < 0);
-  // 비어 있으면 무조건 길을 알려준다. 값이 이미 나오는 중이면 두 배는
-  // 벌어져야 권한다 — 12곳과 14곳 사이에서 권하면 잔소리가 된다.
+  // N0385
   const enough = best && best.n
     && (mine === 0 ? best.n >= 1 : best.n >= Math.max(3, mine * 2));
   if (!enough) { btn.hidden = true; return; }
@@ -5686,8 +4252,7 @@ function lpSuggest(info) {
   btn.dataset.group = best.group;
 }
 
-/* 칩 세 개가 같은 뼈대를 쓴다. 앞의 둘은 땅값 글자용이고 'pin' 은
- * 거래 핀용이다 — 생김새와 조작이 같아야 사용자가 두 번 배우지 않는다. */
+/* N0386 */
 const LP_FILTER_STATE = {
   window: () => state.lpWindow,
   stat: () => state.lpStat,
@@ -5709,8 +4274,7 @@ function lpPickFilter(kind, value) {
   else if (kind === 'pin') state.pinKind = value;
   else state.lpStat = value;
   lpSyncChips();
-  // 핀은 거래 층이다. 땅값 글자를 다시 그릴 이유가 없다 — 그 둘은
-  // 일부러 따로 논다(2026-09-08 지시).
+  // N0387
   if (kind === 'pin') { drawTrades(); return; }
   drawLandPrice();
 }
@@ -5770,23 +4334,13 @@ function wireLandPrice() {
     if (!e.target.closest('.lp-filter')) lpCloseMenus(null);
   });
 
-  // 땅값 글자의 용도지역 칸. **거래 점 필터와 따로 놓는다.**
-  //
-  // 분류는 **내보내기가 준 나무를 그대로 그린다** (zone_tree).
-  // 요구사항(2026-09-09): "분류는 법령기준으로 정확히 합니다."
-  //
-  //   국토계획법 §36①  도시지역 / 관리지역 / 농림지역 / 자연환경보전지역
-  //   시행령 §30①      주거·상업·공업·녹지의 세분
-  //   같은 법 §38       개발제한구역은 용도구역 (용도지역이 아니다)
-  //
-  // 여기서 다시 분류하지 않는다. 두 곳에 적어 두면 언젠가 어긋나고,
-  // 그때 어느 쪽이 맞는지 아무도 모른다.
+  // N0388
   const gbox = document.getElementById('lp-groups');
   if (gbox) {
     const have = Object.keys((lp && lp.groups) || {});
     const notes = (lp && lp.zone_notes) || {};
     const tree = (lp && lp.zone_tree) || [];
-    // 처음에는 분석이 쓰는 셋. 요구사항도 처음부터 그 셋이었다.
+    // N0389
     ['계획관리', '생산관리', '자연녹지'].forEach((g) => {
       if (have.includes(g)) state.lpGroupSet.add(g);
     });
@@ -5811,17 +4365,14 @@ function wireLandPrice() {
       const row = document.createElement('div');
       row.className = 'zone-row';
       names.forEach((g) => {
-        // 체크상자가 아니라 **범례 칸**이다 (요구사항 2026-09-08).
-        // aria-pressed 로 눌림을 알린다 — 색만으로는 화면낭독기가 못
-        // 읽고, 색약인 사람에게는 켠 것과 끈 것이 같아 보인다.
+        // N0390
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'zone-opt';
         btn.dataset.group = g;
         const on = state.lpGroupSet.has(g);
         btn.setAttribute('aria-pressed', String(on));
-        // 왜 이 칸에 있는지. '기타' 는 사유를 밝혀야 한다 —
-        // 요구사항: "정말 분류 못하는 것은 기타로하고 사유 표기".
+        // N0391
         if (notes[g]) btn.title = notes[g];
         btn.innerHTML = `<i class="zone-sw" style="background:${zoneSwatch(g)}"></i>`
           + `<span>${escapeHtml(g)}</span>`
@@ -5870,25 +4421,9 @@ function wireLandPrice() {
 
 
 /* ─────────── 필지 진단 (레이더) ─────────── */
-/* 요구사항(2026-09-08):
- *   "해당 필지를 클릭하면 스파이더 차트를 통해 여러가지 인자들을 분석하여
- *    어떤 방향이 좋을 지 판단할 수 있도록 보여주는 방향으로 변경하겠습니다.
- *    (어떤 토지이든 나쁜 토지는 없다. 어떤 방향으로 개발할 지가 문제다)"
- *
- * **점수를 만들지 않는다.** 땅에 0~100 점 하나를 매기면 가짜 정밀도가
- * 된다 — 같은 필지가 물류창고에는 A급이고 전원주택에는 C급인데, 하나의
- * 숫자로 뭉개면 그 사실이 사라진다. 레이더는 "무엇이 강하고 무엇이
- * 약한가" 만 말한다.
- *
- * 그래서 축을 전부 **또래 안의 백분위**로 통일한다 (다섯, 주변 이용이 검증되면 여섯). 단위가 같아지고
- * (전부 %), 넓이를 점수로 안 쓰므로 축 순서도 해롭지 않다. 또래는
- * 같은 시군구·같은 용도지역에서 실제로 거래된 땅이다 — 전국 대비로 재면
- * 시골 땅은 전부 찌그러진 별이 되어 아무것도 못 읽는다. */
+/* N0392 */
 
-/* 두 점 사이 거리(km). 교통 축이 이것으로 중력을 계산한다.
- * 내보내기 쪽은 조인 표의 distance_km 를 쓰는데, 그것도 같은 하버사인
- * 으로 만든 값이다 (transform/link). 두 자가 달라지면 백분위가 딴 것을
- * 가리킨다. */
+/* N0393 */
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371.0088;
   const rad = Math.PI / 180;
@@ -5907,9 +4442,7 @@ const PARCEL_STATS_RETRY_MS = 60000;
 async function loadParcelStats() {
   if (parcelStats) return parcelStats;
   if (parcelStatsLoading) return parcelStatsLoading;
-  // 예전에는 한 번 실패하면 **영영** 안 받았다(parcelStatsTried). 버킷이 잠깐
-  // 흔들린 첫 요청 하나로 그 뒤 모든 산출표의 시점수정이 '자료 없음' 이
-  // 됐다 (2026-09-14 화면). 실패는 기억하되 한동안 뒤에는 다시 받는다.
+  // N0394
   if (Date.now() - parcelStatsAt < PARCEL_STATS_RETRY_MS) return null;
   parcelStatsAt = Date.now();
   parcelStatsLoading = (async () => {
@@ -5923,15 +4456,7 @@ async function loadParcelStats() {
   return parcelStatsLoading;
 }
 
-/* 값 → 또래 안 백분위. 분위 경계 사이를 선형으로 읽는다.
- *
- * **음수도 값이다.** 2026-09-15 까지 이 줄이 `!(v >= 0)` 이었다. '숫자인가'
- * 를 묻자고 쓴 것인데 0보다 작은 것까지 같이 걸렀다 — 땅값이 내린 동네의
- * 시장 동향이 전부 '조사 안 됨' 으로 찍혔다. 추세가 있는 3,073묶음 중
- * 1,019(33%)이 음수이고, 전국 분포(trend_q)의 하한도 -0.84 라 분포 자체가
- * 음수를 품고 있다. 즉 견줄 자리가 멀쩡히 있는데 버리고 있었다.
- *
- * 묻고 싶었던 것은 '유한한 숫자인가' 다. 그것만 묻는다. */
+/* N0395 */
 function pctFromQuantiles(v, breaks) {
   if (!Array.isArray(breaks) || breaks.length < 2 || !Number.isFinite(v)) return null;
   if (v <= breaks[0]) return 0;
@@ -5955,22 +4480,8 @@ function parcelGroup(landUse) {
   return groups.find((g) => String(landUse || '').indexOf(g) >= 0) || null;
 }
 
-/* 또래를 고른다. 시군구 → 시도 → 전국으로 물러나고, **어디까지
- * 물러났는지 함께 돌려준다** — 그것을 안 밝히면 '전국 상위 10%' 를
- * '우리 동네 상위 10%' 로 읽는다. */
-/* 추세만 따로 물러난다 (요구사항 2026-09-10).
- *
- * 또래는 도로·형상 분포가 두터운 단계에서 고릅니다. 그런데 그 단계에
- * **추세가 없을 수 있습니다** — 거래가 해마다 다섯 건은 있어야 그 해를
- * 쓰는데, 시군구 단위에서 그것이 안 서는 조합이 있습니다.
- *
- * 실측(2026-09-10): 화면이 고르는 또래에 추세가 있는 조합이 95.2%
- * (6,794/7,140). 없는 346 조합은 **전부** 위 단계에 값이 있었습니다.
- * 그래서 추세만 따로 물러나면 100% 가 됩니다.
- *
- * 다만 **어디서 온 값인지 말합니다.** 시·도 값을 그 동네 값인 척
- * 적으면, 읽는 사람은 옆 동네와 견주는 데 그것을 씁니다.
- */
+/* N0396 */
+/* N0397 */
 function pickTrend(sigunguCd, group) {
   const st = parcelStats;
   if (!st || !group) return null;
@@ -5988,9 +4499,7 @@ function pickTrend(sigunguCd, group) {
   return null;
 }
 
-/* 지목군 — 또래 열쇠의 앞 단 (요구사항 2026-09-10). 평가서는 같은
- * 용도지역 안에서도 임야·농지·대지의 표준지를 따로 고른다. 규칙은
- * valuation.use_group 과 같아야 한다 — 어긋나면 화면이 딴 또래를 찾는다. */
+/* N0398 */
 function useGroupOf(jimok, use) {
   const j = String(jimok || '').trim();
   if (j === '임야') return '임야';
@@ -6032,12 +4541,7 @@ function pickPeer(sigunguCd, group, ug) {
   return last ? { ...last, level: '전국', group } : null;
 }
 
-/* 교통 축 — 10km 안 영업소의 화물 통행량을 거리 제곱으로 나눠 더한다.
- * 김진유(2011)의 대도시접근성지수와 같은 꼴(질량/거리)이고, 우리는
- * 인구 대신 **실제로 지나가는 화물 대수**를 쓴다.
- *
- * 내보내기(parcelscore.build)와 **같은 식·같은 반경**이어야 한다.
- * 어긋나면 백분위가 딴 자를 대는 셈이 된다. */
+/* N0399 */
 function trafficGravity(lat, lon) {
   const cfg = (parcelStats || {}).traffic || { radius_km: 10, min_km: 0.5 };
   let sum = 0;
@@ -6052,8 +4556,7 @@ function trafficGravity(lat, lon) {
   return { grav: sum, near };
 }
 
-/* 필지 하나 → 축들. 값이 없는 축은 **비워 둔다** (0 이 아니다) —
- * 조사가 안 된 것과 나쁜 것은 다르다. */
+/* N0400 */
 function parcelAxes(parcel, at, zones) {
   const st = parcelStats;
   if (!st) return null;
@@ -6088,13 +4591,9 @@ function parcelAxes(parcel, at, zones) {
       : '10km 안에 영업소 없음',
   });
 
-  // 3) 개발 여지 — **또래가 아니라 시군구 안에서** 잰다. 또래는 용도지역
-  //    으로 묶여 있어서 그 안에서 재면 늘 같은 값이 나온다.
+  // N0401
   let zg = grade(st.zone_ladder, parcel.land_use);
-  // 농업진흥구역·개발제한구역이 겹치면 한 단 아래 (요구사항 2026-09-10,
-  // docs/radar-and-current-value.md §2-5). 평가서도 표준지를 그 구역
-  // 안에서 따로 고른다. 사다리의 분모(시군구 거래)는 용도지역만 알아서
-  // 이 한 단은 대상 필지에만 적용된다 — 그 사실을 raw 에 적는다.
+  // N0402
   const tight = ['농업진흥구역', '개발제한구역'].find((n) =>
     zoneNames.some((z) => z.indexOf(n) >= 0)
     || String(parcel.land_use2 || '').indexOf(n) >= 0);
@@ -6106,17 +4605,7 @@ function parcelAxes(parcel, at, zones) {
     raw: (parcel.land_use || '용도 미상') + (tight ? ` · ${tight} (한 단 아래)` : ''),
   });
 
-  // 4) 가격 추세 (요구사항 2026-09-10 — '가격 수준' 을 바꿉니다).
-  //
-  // 지금 비싼 땅이 좋은 땅은 아닙니다. 토지에서는 **오르는 중인지**가
-  // 사는 사람에게 더 쓸모 있는 정보입니다.
-  //
-  // 필지 하나에는 올해 공시지가 한 값뿐이라 그 땅만으로는 추세를 못
-  // 냅니다. 그 땅이 속한 **동네·용도지역의 실거래 단가**가 최근 몇 해
-  // 어떻게 움직였는지를 씁니다. 견주는 상대도 달라집니다 — 같은 또래
-  // 안에서 재면 모두 같은 값이 되므로, **전국의 다른 동네·용도들**과
-  // 견줍니다.
-  // 이름을 tg 로 두면 위의 교통 축(trafficGravity)과 부딪힌다.
+  // N0403
   const mo = pickTrend(code, group);
   const moNote = [mo && mo.span ? `최근 ${mo.span}년` : null,
                   mo && mo.from ? mo.from : null].filter(Boolean).join(' · ');
@@ -6130,9 +4619,7 @@ function parcelAxes(parcel, at, zones) {
       : '거래가 얇아 추세를 못 냅니다',
   });
 
-  // 5) 모양·지세
-  // 임야는 지세만 (parcelscore.land_grade 와 같은 규칙) — 평가서의
-  // 임야지대 항목표에 형상이 없다.
+  // N0404
   const sg = ug === '임야' ? null : grade(st.shape_grade, parcel.shape);
   const lg = grade(st.slope_grade, parcel.slope);
   const got = [sg, lg].filter((g) => g !== null);
@@ -6144,10 +4631,7 @@ function parcelAxes(parcel, at, zones) {
       .filter(Boolean).join(' · ') || '조사 안 됨',
   });
 
-  // 6) 주변 이용 — **검증을 통과했을 때만** 내보내기가 st.urban 을 싣는다
-  //    (analyze/urban.py). 없으면 다섯 축이다. 값은 법정동리(PNU 앞
-  //    10자리)의 도시용지 면적 비율이고, 같은 시군 안 동리들의 분위로
-  //    읽는다 — 토지적성평가가 하는 방식 그대로다.
+  // N0405
   if (st.urban && st.urban.umd) {
     const umd = String(parcel.pnu || '').slice(0, 10);
     const v = st.urban.umd[umd];
@@ -6164,8 +4648,7 @@ function parcelAxes(parcel, at, zones) {
   return out;
 }
 
-/* 도로접 사다리. usage.road_grade 와 **같은 규칙**이다 — 둘이 어긋나면
- * 화면과 분석이 다른 땅을 말한다. */
+/* N0406 */
 function roadGradeOf(text) {
   if (!text || typeof text !== 'string') return null;
   const t = text.trim();
@@ -6180,9 +4663,7 @@ function roadGradeOf(text) {
   return null;
 }
 
-/* 레이더 그림. **넓이를 점수로 쓰지 않는다** — 축 순서만 바꿔도 넓이가
- * 달라지므로 그것을 값처럼 읽게 두면 안 된다. 그래서 색을 옅게 깔고
- * 축마다 백분위 숫자를 따로 적는다. */
+/* N0407 */
 function radarSvg(axes) {
   const R = 62; const CX = 84; const CY = 78;
   const n = axes.length;
@@ -6194,8 +4675,7 @@ function radarSvg(axes) {
   const spokes = axes.map((_, i) =>
     `<line x1="${CX}" y1="${CY}" x2="${at(i, R)[0].toFixed(1)}" y2="${at(i, R)[1].toFixed(1)}"
       stroke="var(--border)" stroke-width="1"/>`).join('');
-  // 값이 없는 축은 가운데로 끌어당기지 않는다. 그러면 '나쁜 땅' 으로
-  // 보이는데 실제로는 **조사가 안 된 것**이다. 점선으로 끊어 둔다.
+  // N0408
   const known = axes.filter((a) => a.pct !== null && a.pct !== undefined);
   const poly = known.length >= 3
     ? `<polygon points="${axes.map((a, i) =>
@@ -6215,15 +4695,7 @@ function radarSvg(axes) {
     role="img" aria-label="필지 진단 레이더">${rings}${spokes}${poly}${dots}${labels}</svg>`;
 }
 
-/* 필지의 기본 정보를 표로 (요구사항 2026-09-10 — 부동산플래닛 참조).
- *
- * **없는 칸은 아예 안 세운다.** 빈 줄이 늘어서면 '조회가 반쯤
- * 실패했다' 로 읽힌다. 값이 있는 것만 적고, 우리가 못 주는 것
- * (소유·토지이동사유·지역지구 전체)은 아래 토지이음 단추로 넘긴다.
- *
- * '지정되지않음' 은 값이 아니라 빈칸이다. 브이월드가 그렇게 적어
- * 보내는데, 그대로 두면 사람이 무슨 뜻인지 되묻게 된다.
- */
+/* N0409 */
 function parcelFacts(parcel, zones) {
   const won = (v) => Math.round(v).toLocaleString('ko-KR');
   const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
@@ -6245,13 +4717,10 @@ function parcelFacts(parcel, zones) {
     ['형상', parcel.shape],
     ['도로조건', parcel.road_side],
     ['공시지가', price],
-    // 임야대장은 지번 앞에 '산' 이 붙는 땅이다. 대장이 다르면 등본을
-    // 뗄 곳도 다르므로 적어 준다.
+    // N0410
     ['대장', parcel.register === '2' ? '임야대장'
       : parcel.register === '1' ? '토지대장' : null],
-    // 요구사항(2026-09-10): "하단 토지정보 리스트에 지구, 구역에
-    // 대해 자세히 표시". 세부 이름까지 적습니다 — '가축사육제한구역'
-    // 만으로는 '절대제한(전 축종)' 인지 '일부 축종' 인지 모릅니다.
+    // N0411
     ['지구·구역', (zones || []).length
       ? zones.map((z) => escapeHtml(z.label)
           + (z.detail ? ` <em>${escapeHtml(String(z.detail))}</em>` : ''))
@@ -6264,17 +4733,7 @@ function parcelFacts(parcel, zones) {
     + '</tbody></table>';
 }
 
-/* 개발 한도 (docs/dev-constraints-and-costs.md §6 (1) · C2·C4).
- *
- * '토지 정보' 바로 아래. 용도지역·지목·구역이 바로 위에 있고 이 표는
- * 그것들의 **결과**다. 값 옆에 근거(조례·조문)를 적어 '왜 40%냐' 를
- * 화면이 답하게 한다.
- *
- * 두 층이다. 법(시행령)은 상한 **범위**, 조례는 그 안의 **값**. 조례 값이
- * 있으면 그것을 크게, 없으면 시행령 상한을 '≤' 로 적고 조례 미확인이라
- * 말한다. 경사·표고·임목은 조례의 **문턱**만 적는다 — 필지의 경사·표고는
- * 아직 못 잰다(DEM 없음). 문턱만 있고 잰 값이 없으면 '통과' 라고 쓰지
- * 않는다. */
+/* N0412 */
 function parcelLimits(parcel, Z) {
   if (!Z || !Z.law) return '';
   const e = escapeHtml;
@@ -6320,7 +4779,7 @@ function parcelLimits(parcel, Z) {
       + (ord.eff ? ` <em>(시행 ${e(String(ord.eff).replace(/(\d{4})(\d{2})(\d{2})/, '$1-$2-$3'))})</em>` : '')
       + (ref[1] === 'sido' ? ' <em>· 자치구·행정시는 광역시·도 조례를 따릅니다</em>' : '')
     : '<em>이 시군구 조례는 아직 못 받았습니다 — 시행령 상한만 적었습니다</em>';
-  // 건축 제한처럼 **늘 펼쳐 둔다** (지시 2026-09-11). 접어 두면 있는 줄 모른다.
+  // N0413
   return '<section class="pc-limits"><h4 class="pc-sub">개발 한도 <em>건폐율·용적률·개발행위 문턱</em></h4>'
     + '<table class="pc-facts"><tbody>'
     + rows.map(([k, v]) => `<tr><th>${k}</th><td>${v}</td></tr>`).join('')
@@ -6332,13 +4791,7 @@ function parcelLimits(parcel, Z) {
     + '</section>';
 }
 
-/* 카드 머리의 주소 (요구사항 2026-09-10).
- *
- * **지번이 주인공이다.** 도로명주소는 건물이 있는 곳에만 붙는데,
- * 이 화면이 다루는 것은 대개 빈 땅이다 — 실측한 두 곳 모두
- * 도로명이 없었다(광주 지월리 답, 안성 승두리 대). 없는 것을
- * '조회 실패' 로 보여주면 고장으로 읽히므로, 있을 때만 덧붙인다.
- */
+/* N0414 */
 function parcelAddr(addr, parcel) {
   const a = addr || {};
   const jibun = a.jibun
@@ -6351,19 +4804,7 @@ function parcelAddr(addr, parcel) {
     + '</div>';
 }
 
-/* 겹친 지구·구역 (요구사항 2026-09-10).
- *
- * 보고: "단순히 용도 지역으로만 토지를 평가하니 오류가 발생됩니다."
- * 무엇을 지을 수 있는지는 용도지역 위에 겹친 것들이 정합니다.
- *
- * **레이더는 안 건드립니다.** 규제의 무게를 숫자 하나로 환산하면
- * 그 환산율 자체가 근거 없는 점수가 됩니다. 대신 아래에 따로,
- * 무엇이 걸렸고 그것이 무엇을 막는지 글로 적습니다.
- *
- * **이것이 전부가 아니라고 적습니다.** 준보전산지·접도구역은
- * 브이월드에 아예 없습니다(목록을 훑어 확인). 다 보여준 척하는 것이
- * 안 보여주는 것보다 위험합니다.
- */
+/* N0415 */
 function parcelZones(zones) {
   const list = (zones || []).filter((z) => z && z.label);
   const rows = list.map((z) => '<li><b>' + escapeHtml(z.label) + '</b>'
@@ -6379,23 +4820,8 @@ function parcelZones(zones) {
     + '없습니다. 실제 건축 전에는 토지이음에서 확인하세요.</p>';
 }
 
-/* 축이 각각 무엇을 재는지 (요구사항 2026-09-10).
- *
- * "5개 항목이 어떤 의미인지 간략하게 도표 아래에 주석으로 표기".
- * 축 이름만으로는 '개발 여지' 가 무엇을 견준 것인지 알 수 없습니다.
- * 무엇과 견줬고 무엇이 높은 쪽인지를 한 줄씩 적습니다.
- *
- * '가격 수준' 만 방향을 따로 적습니다 — 나머지 넷은 높을수록 좋지만
- * 가격은 높다고 좋은 것도 낮다고 좋은 것도 아닙니다. 그것을 안 적으면
- * 다섯 축을 같은 방향으로 읽게 됩니다.
- */
-/* 축 설명 — **무엇을 재는지만** 적는다 (2026-09-12 지시).
- *
- * 예전에는 재는 방법을 그대로 적어 두었습니다 — 몇 km 안의 어느 차종을
- * 어떻게 거리로 나눠 더하는지, 또래를 무슨 열쇠로 묶고 얇으면 어디로
- * 물러나는지까지. 그 문장이 곧 이 서비스의 만드는 법이라, 화면에 두면
- * 누구나 베낄 수 있습니다. 뜻과 주의만 남기고 방법은 뺍니다.
- */
+/* N0416 */
+/* N0417 */
 const AXIS_NOTES = {
   road: ['도로', '차가 들어올 수 있는가. <strong>지적상 접면</strong>이라 현황 진입로와 다를 수 있습니다.'],
   traffic: ['물류 교통', '주변 고속도로의 화물 통행이 얼마나 되는가. 물류·공장 적성이지, 그래서 오른다는 뜻이 아닙니다.'],
@@ -6414,36 +4840,16 @@ function axisNotes(axes) {
     + '<p>모두 <strong>비슷한 조건의 거래</strong>와 견준 자리입니다.</p></details>';
 }
 
-/* 현재 가치 · 미래 가치 (요구사항 2026-09-10).
- *
- * 레이더 아래 단추 둘. **지금은 이름과 '곧 공개' 뿐입니다.**
- *
- * 처음에는 무엇을 근거로 값을 내는지까지 적어 두었는데, 걷어냈습니다.
- * 그 설명이 곧 유료 전환의 열쇠라서, 정작 값이 없는 지금 미리 풀어
- * 놓으면 두 번 손해입니다 — 살 이유를 먼저 소비해 버리고, 그때 가서
- * 근거가 조금이라도 달라지면 앞말과 어긋납니다. 근거를 실제로 손에
- * 쥔 뒤에 정확히 적습니다.
- *
- *   현재 가치  감정평가서에서 배운 배율을 이 필지에 대입 → 지금 얼마인가
- *   미래 가치  주변 개발 사건 중 **아직 값에 안 들어간 몫** → 그 뒤에 얼마가 되는가
- *              (전후 상승폭 전부가 아니다 — 뚫린 IC 는 이미 현재 가치에 들어 있다)
- *
- * 미래는 현재 위에 서므로 순서가 있습니다. */
+/* N0418 */
 const VALUE_SERVICES = {
   now: { label: '현재 가치' },
   future: { label: '미래 가치' },
 };
 
-/* 현재 가치·미래 가치는 **프리미엄**이다 (2026-09-11 지시). 등급은
- * public/lib/access.js 가 판단하고, 프로필은 관문(gate.js)이 window.ME 에
- * 둔다. 여기서 가리는 것은 편의다 — 자물쇠는 데이터베이스 쪽
- * (supabase/migrations/0003_grade.sql) 이고, 숫자 원천을 API 뒤로 옮기는
- * 일이 남아 있다 (docs/membership-grades.md). */
+/* N0419 */
 function myAccess() {
   const me = window.ME;
-  /* 손님 = **로그인 없이 들어온 사람** (2026-09-12 지시). 지금은 가입이
-     필수라 이 자리가 비지만, 나중에 로그인 없이 들어올 수 있게 풀면 그
-     사람이 여기로 온다. 이름도 그때 '손님' 으로 서야 한다. */
+  /* N0420 */
   const guest = !(me && me.user);
   const prof = me && me.profile;
   const base = (typeof window.accessOf === 'function')
@@ -6454,7 +4860,7 @@ function myAccess() {
 
 function valueButtons() {
   const acc = myAccess();
-  const tag = '회원 전용';          // 둘 다 회원에게만 엽니다 (2026-09-12 지시)
+  const tag = '회원 전용';          // N0421
   return `<div class="pc-val-row${acc.premium ? '' : ' is-locked'}">`
     + Object.entries(VALUE_SERVICES).map(([k, s]) =>
       `<button type="button" class="pc-val" data-val="${k}" aria-expanded="false">`
@@ -6462,11 +4868,7 @@ function valueButtons() {
     + '</div><div class="pc-val-box" id="pc-val-box" hidden></div>';
 }
 
-/* 잠긴 단추를 눌렀을 때. 두 경우를 가른다 (2026-09-12 지시).
- *
- *   손님(로그인 안 한 사람)  → 가입을 권한다. 값이 있다는 것만 보인다.
- *   등급이 모자란 회원        → 등급 안내. 결제 문구는 아직 확정이 아니다.
- */
+/* N0422 */
 function premiumNotice(key, acc) {
   const s = VALUE_SERVICES[key] || { label: '' };
   const head = `<h4>${s.label} <span class="pcv-sub">회원 전용</span></h4>`;
@@ -6476,9 +4878,7 @@ function premiumNotice(key, acc) {
       + '<p class="pcv-lock-msg"><a class="pcv-cta" href="/account?next=%2Fapp">무료 회원 가입</a></p>'
       + '<p class="pcv-lock-msg">구글·카카오 계정으로 가입하시면 됩니다.</p>';
   }
-  /* 2026-09-12 방향 전환으로 등급 문턱이 없어졌다. 로그인한 사람이 여기
-     오는 경우는 **아직 승인 전**이거나(가입 직후), 나중에 다시 잠갔을
-     때뿐이다. 그러니 '등급을 올려 달라' 가 아니라 승인을 말해야 한다. */
+  /* N0423 */
   if (!acc.approved) {
     return head
       + `<p class="pcv-lock-msg">가입 승인을 기다리고 있습니다. 승인되면 ${s.label}가 바로 열립니다.</p>`
@@ -6494,11 +4894,7 @@ function premiumNotice(key, acc) {
     + '<a href="/account">내 계정</a>에서 문의해 주세요.</p>';
 }
 
-/* 미래 가치는 **판단**이다 (2026-09-12 회의). 현재 가치는 규칙이 정한
- * 순서를 따라가는 계산이지만, 미래 가치는 '이 땅이 앞으로 오를 것인가' 를
- * 우리가 판단해 내놓는 숫자다. 그 숫자를 보고 산 사람이 손해를 보면 책임을
- * 묻는 일이 생긴다. 그래서 값을 내기 전에 면책을 붙여 둔다 — 값이 나온
- * 뒤에 붙이면 앞말과 어긋난다. */
+/* N0424 */
 const FUTURE_DISCLAIMER =
   '<p class="pcv-legal"><b>미래 가치는 예측이 아니라 참고 지표입니다.</b> '
   + '과거 실거래·교통량·개발 사건 자료로 만든 통계이며, 앞으로의 가격을 '
@@ -6506,9 +4902,7 @@ const FUTURE_DISCLAIMER =
   + '것이고, 저희는 그 결과에 책임지지 않습니다. 감정평가·투자자문이 '
   + '아닙니다.</p>';
 
-/* 미래 가치의 세 층 (docs/future-value.md §3). **여기 적는 것은 방법이지
-   진척이 아니다** — 진척을 코드에 박으면 반드시 낡는다. 층이 서면 그때
-   숫자를 내는 코드가 이 자리를 대신한다. */
+/* N0425 */
 const FUTURE_LAYERS = [
   ['시장 층', '전국이 어느 쪽으로 가는가 — 금리·물가·성장률이 지가변동률을 옮기는 폭'],
   ['지역 사건 층', '이 동네에 예정된 것 — IC·산업단지·철도·택지가 아직 값에 안 들어간 몫'],
@@ -6518,9 +4912,7 @@ const FUTURE_LAYERS = [
 function valuePanel(key) {
   const s = VALUE_SERVICES[key];
   if (!s) return '';
-  /* '곧 공개합니다' 한 줄이었다. 현재 가치는 못 낼 때 **왜** 못 내는지를
-     적는데(산출 보류 — …) 미래 가치만 그 말이 없었다 (2026-09-15 지시).
-     같은 기준으로 맞춘다: 무엇을 낼 것이고 왜 아직 안 내는지 적는다. */
+  /* N0426 */
   if (key === 'future') {
     return `<h4>${s.label}</h4>`
       + '<p class="pcv-hold">산출 보류 — 미래 가치는 세 층이 다 서야 냅니다.</p>'
@@ -6536,26 +4928,12 @@ function valuePanel(key) {
     + '<p class="pcv-soon">곧 공개합니다.</p>';
 }
 
-/* ─────────── 현재 가치 — 공시지가기준법 2판 (표준지 방식) ───────────
- *
- * 감정평가에 관한 규칙 §14 의 순서 그대로다 (docs/radar-and-current-value.md):
- *
- *   토지단가 = 표준지공시지가 × 시점수정 × 지역요인 × 개별요인 × 그 밖의 요인
- *
- * 숫자는 여기 없다. 격차율 표·그 밖의 요인·특례는 valuation.json 이고
- * 그 원본은 src/redt/valuation.py 다 — 표가 두 곳에 있으면 어긋난다.
- * 여기는 산식과 표준지 고르기만 옮겼다.
- *
- * 표준지는 시군구 조각(stdland-NNNNN.json)으로 받는다. 조각이 없으면
- * (아직 적재 전) 예전처럼 '곧 공개합니다' 만 보인다 — 값이 없는데
- * 있는 척하지 않는다. 마디가 하나라도 비면 산출을 **보류**한다. */
+/* N0427 */
 let valuationTables = null;
 const stdlandCache = {};
 let zoningLimits = null;
 
-/* 개발 한도 표 (C1). 시행령 상한(법) + 시군구 조례 값. 원본은
- * config/zoning_limits.yaml (python -m redt.cli zoning-limits 가 만든다).
- * 없으면 카드는 그 칸을 건너뛴다 — 값이 없는데 있는 척하지 않는다. */
+/* N0428 */
 async function loadZoningLimits() {
   if (zoningLimits) return zoningLimits;
   try {
@@ -6565,13 +4943,8 @@ async function loadZoningLimits() {
   return zoningLimits;
 }
 
-/* 실패는 **기억하지 않는다.** 처음 누를 때 조각이 없었다고 그 세션 내내
- * '곧 공개' 로 굳으면, 잠깐의 망 오류가 기능 하나를 통째로 끈다.
- * 404 는 싸다. 성공만 담아 둔다. */
-/* 프리미엄 자료 (격차율 표 · 표준지 조각) — Supabase 비공개 버킷 'premium' 에서
- * 로그인 토큰으로 받는다. 버킷 정책이 premium_ok() 를 묻는다 — 이것이 자물쇠다.
- * 로그인 클라이언트가 없을 때(로컬 개발·검사)만 같은 자리의 파일로 물러난다.
- * 실패는 기억하지 않는다 — 잠깐의 망 오류가 세션 내내 기능을 끄면 안 된다. */
+/* N0429 */
+/* N0430 */
 async function premiumFetch(name) {
   const sb = window.SB;
   if (sb && sb.storage && typeof sb.storage.from === 'function') {
@@ -6595,8 +4968,7 @@ async function loadValuationTables() {
   return valuationTables;
 }
 
-/* 표준지 조각도 프리미엄 버킷에서. (2026-09-11 낮에 잠깐 CDN 을 썼다 — 배포
- * 크기 때문이었는데, 공개 CDN 은 자물쇠가 아니라서 버킷으로 옮겼다.) */
+/* N0431 */
 async function loadStdland(code) {
   if (stdlandCache[code]) return stdlandCache[code];
   const chunk = await premiumFetch(`stdland-${code}.json`);
@@ -6644,8 +5016,7 @@ function stdAsParcel(r) {
            lon: r.lon, lat: r.lat };
 }
 
-/* 받침에 맞는 조사. 화면에 '이(가)' 를 그대로 내보내면 글이 아니라
-   자리표시자로 읽힌다. 한글 음절의 받침은 코드에서 바로 나온다. */
+/* N0432 */
 function josa(word, withBat, without) {
   const w = String(word || '');
   const last = w.charCodeAt(w.length - 1);
@@ -6719,14 +5090,7 @@ function individualFactor(subject, std, T) {
   return { kind, items, factor: Math.round(factor * 1000) / 1000, warnings, special: null };
 }
 
-/* 비교표준지 — 실무기준의 순서. 용도지역(세분까지)·구역은 거르고, 나머지는
- * 벌점(거리 km 로 환산)이다. 좌표는 아직 없어 같은 법정동리(PNU 앞 10자리)
- * 가 거리를 대신한다.
- * 가격 수준: 표준지 공시지가 ÷ 대상 개별공시지가 가 띠 밖이면 벗어난
- * 정도의 로그에 비례해 벌점. 띠는 넓다 — 고치려는 것은 3.6배짜리 표준지가
- * 뽑히는 사고이지 1.3배와 1.5배를 가리는 일이 아니다 (좁은 띠로 재 보니
- * 멀쩡한 선정까지 흔들렸다). 원장 376건에서 평가사가 고른 표준지는 89%가
- * 이 띠 안이다. 좌표 없이 위치 차이를 잡는 자리다. */
+/* N0433 */
 const PRICE_BAND = [0.5, 2.0];
 const PRICE_PEN_PER_LOG = 4.0;
 function priceLevelPenalty(subjectPrice, stdPrice) {
@@ -6771,17 +5135,7 @@ function pickStandard(subject, cands, T, top) {
   return rows.slice(0, top || 3);
 }
 
-/* 시점수정 — 표준지 공시기준일(그해 1월 1일) → 오늘 (고시 [610-1.5.2.3.1]).
- *
- * 1) **지가변동률**(부동산원 월별 · T.time_rates). 비교표준지가 있는 시·군·구의
- *    같은 용도지역 칸이 먼저고, 없으면 그 시·군·구 전체 → 시·도 순이다.
- *    공시기준일이 든 달부터 직전 달까지를 누계로 곱하고, 기준시점이 든
- *    달은 최근 고시 월의 값 × 경과일수/그 달 일수. 고시가 아직 없는 달은
- *    최근 고시 월로 추정하고 그렇게 했다고 적는다. (src/redt/valuation.py
- *    time_factor 와 같은 규칙 — 두 곳이 같은 수를 내야 한다.)
- * 2) 그것이 없으면 또래 실거래 추세로 대신하고 평가서 관측 범위(0.98~1.03)로
- *    누른다 — 고시가 허락한 방법이 아니므로 그렇게 적는다.
- * 3) 추세도 없으면 비운다 — 1.00 이 아니다. */
+/* N0434 */
 const RONE_CLASS_DEFAULT = [['계획관리', '계획관리지역'], ['보전관리', '보전관리지역'],
   ['생산관리', '생산관리지역'], ['관리', '관리지역'], ['녹지', '녹지지역'], ['주거', '주거지역'],
   ['상업', '상업지역'], ['공업', '공업지역'], ['농림', '농림지역'], ['자연환경', '자연환경보전지역']];
@@ -6865,22 +5219,14 @@ function timeFactorOf(stdYear, trend, T, ctx) {
 }
 window.__timeFactorOf = (stdYear, trend, T, ctx) => timeFactorOf(stdYear, trend, T, ctx);
 
-/* 두 갈래를 섞는 저울 — src/redt/valuation.py 의 OTHER_WEIGHTS 와 **같아야 한다**.
-   저 쪽을 바꾸면 이 쪽도 같이 바꾼다 (검사가 캡처의 칸으로 견준다).
-
-     무게 = f(min(건수, 상한)) × 갈래 계수 × 층 계수      f = n 또는 √n
-     층 계수: 시군구 1 · 시·도 0.5 · 전국 0.25
-
-   2026-09-15 지시로 갈래 계수를 두었다. 그전에는 상한만 있어서(거래사례
-   100 · 평가선례 30) 평가선례 4건이 거래사례 278건을 이길 길이 없었다. */
+/* N0435 */
 const OTHER_WEIGHTS = {
   '현행': { cap: { 거래사례: 100, 평가선례: 30 }, src: { 거래사례: 1, 평가선례: 1 }, root: false },
   '선례2배': { cap: { 거래사례: 30, 평가선례: 30 }, src: { 거래사례: 1, 평가선례: 2 }, root: false },
   '선례3배': { cap: { 거래사례: 30, 평가선례: 30 }, src: { 거래사례: 1, 평가선례: 3 }, root: false },
   '선례3배√': { cap: { 거래사례: 30, 평가선례: 30 }, src: { 거래사례: 1, 평가선례: 3 }, root: true },
 };
-// 지금 쓰는 저울. **valuation.OTHER_WEIGHT 와 같은 이름이어야 한다.**
-// 2026-09-15 전국 1,302건 실측에서 이겼다 (중앙 1.23 · ±30% 368 — 현행은 1.24 · 352).
+// N0436
 const OTHER_WEIGHT = '선례3배√';
 
 function otherWeightOf(o, prof) {
@@ -6893,21 +5239,8 @@ function otherWeightOf(o, prof) {
   return Math.max(n * mult * (w.src[src] == null ? 1 : w.src[src]), 0.5);
 }
 
-/* 섞는 법을 글로. '건수 가중' 이라고만 적으면 4건이 278건을 어떻게 이겼는지
-   읽는 사람이 알 길이 없다 (valuation._other_basis 와 같은 말). */
-/* 두 갈래를 섞는다 (valuation.decide_other 와 같은 규칙).
- *
- * **따로 떼어 둔 까닭.** 예전에는 이 셈이 otherFactorOf 안에 묻혀 있어
- * 검사가 저울(otherWeightOf)만 따로 불러 볼 수 있었고, 정작 **섞은 결과**는
- * 아무도 안 봤다. 그래서 2026-09-15 에 아래 버그가 화면까지 나갔다:
- *
- *     const w = have.map(otherWeightOf);      // ← 틀림
- *
- * Array.map 은 (값, 자리, 배열) 셋을 넘긴다. 그래서 둘째 갈래에는
- * prof=1 이 들어가 OTHER_WEIGHTS[1] → undefined → '현행' 으로 떨어졌다.
- * 첫 갈래는 prof=0 이 거짓이라 제 저울을 썼으니, **한 저울에서 두 규칙**이
- * 섞였다. 글은 '평가선례 3배 가중' 이라 적으면서 값은 1.33(현행)이었다.
- * 이제 이 함수를 검사가 직접 부른다. */
+/* N0437 */
+/* N0438 */
 function blendOther(have, prof) {
   const w = have.map((o) => otherWeightOf(o, prof));
   const lg = have.reduce((acc, o, i) => acc + w[i] * Math.log(o.median), 0)
@@ -6929,19 +5262,7 @@ function otherBasisWord(prof) {
 }
 window.__otherWeightOf = otherWeightOf;      // 검사가 파이썬 쪽과 견준다
 
-/* 그 밖의 요인 — 두 갈래를 합친다 (src/redt/valuation.py decide_other 와 같은 규칙).
- *
- *   평가선례  T.other['용도지역군|지목군'][시도 코드 | '*']   (비공개 원장의 집계)
- *   거래사례  T.trade['시군구|용도지역군|지목군' | '…|*']     (실거래 ÷ 개별공시지가, 3년)
- *
- * 칸의 지목군은 **표준지의** 지목군이다 (2026-09-11 안성 검증의 교훈: 구거 대상에
- * 대 표준지를 골라 놓고 전·답 배율을 곱하면 틀린다 — 배율은 표준지에 곱하는
- * 것이므로 표준지가 무엇인지가 칸을 정한다). 표준지 칸이 없으면 대상의 지목군,
- * 그다음 지목군 합친 칸.
- *
- * 둘 다 있으면 건수로 가중한 기하평균(건수는 30에서 자른다) — 거래사례가 수십 건이면
- * 그쪽이 이기고 평가선례 셋뿐이면 거의 안 움직인다. 범위는 있는 쪽의 사분위 중
- * 넓은 쪽. */
+/* N0439 */
 function otherFactorOf(subject, std, T) {
   const zg = zoneGroupOf(subject.land_use, T);
   if (!zg) return { factor: null, sources: [],
@@ -6957,8 +5278,7 @@ function otherFactorOf(subject, std, T) {
     const o = cell && (cell[sido] || cell['*']);
     if (o && o.median) { ledger = { ...o, ug }; break; }
   }
-  // 시군구 → 시·도 → 전국 순 (valuation.trade_cell 과 같은 순서). 거래가
-  // 얇은 군에서 칸이 비어 평가선례 전국 칸까지 물러나던 것을 막는다.
+  // N0440
   let trade = null;
   outer: for (const area of [code, sido, '*']) {
     for (const key of [...ugs.map((ug) => `${area}|${zg}|${ug}`), `${area}|${zg}|*`]) {
@@ -6968,13 +5288,7 @@ function otherFactorOf(subject, std, T) {
   }
   const have = [ledger, trade].filter(Boolean);
   if (!have.length) {
-    /* **왜 비는지를 이름으로 적는다.** 예전에는 '자료 없음' 한 마디였고,
-       화면은 그마저 버리고 '자료 없음' 만 보였다. 그러면 한계인지 고장인지
-       읽는 사람이 가를 수 없다 — 오늘 같은 것을 두 번 겪었다.
-
-       가장 흔한 까닭은 **지목이 우리 넷(임야·전·답·대·공장·도로) 밖**인
-       경우다. 하천·구거·제방·유지 같은 땅이 그렇다. 그런 땅은 거래도
-       평가선례도 사실상 없어서 견줄 자리가 만들어지지 않는다. */
+    /* N0441 */
     const jimok = String(subject.jimok || '').trim();
     const basis = subjUg
       ? `${zg}·${subjUg} 조건의 거래·평가선례가 아직 없습니다`
@@ -6998,17 +5312,11 @@ function roundDecided(x) {
   return Math.round(x / unit) * unit;
 }
 
-/* 지역요인 — 개별공시지가로 추정한다 (valuation.region_factor 와 같은 규칙).
- * 평가서 414건 전부 1.000 인 것은 평가사가 같은 인근지역에서 표준지를 고르기
- * 때문이다. 우리는 좌표가 없어 그렇게 못 고르므로, 군이 비준표로 만든
- * 개별공시지가에 든 위치로 그 차이를 읽는다. 같은 지목군일 때만, 그리고
- * 울타리 안에서만 — 개별공시지가가 시세를 못 따라간 필지에서 값이 무너지지
- * 않게. 표준지 좌표가 들어오면 이 줄은 1.000 으로 돌아간다. */
-// 전국 254건 실측(2026-09-13): 위로도 열어 두면 적중이 준다 — 내리는 쪽만.
+/* N0442 */
+// N0443
 const REGION_MIN = 0.5;
 const REGION_MAX = 1.0;
-// 전국 254건 실측(2026-09-13)에서 ±30% 적중이 켠 채 78 · 끈 채 83 — 기본은 끈다.
-// valuation.REGION_ENABLED 와 같은 값이어야 한다.
+// N0444
 const REGION_ENABLED = false;
 function regionFactorOf(subject, std, indFactor) {
   const same = { factor: 1.0, ratio: null,
@@ -7027,8 +5335,7 @@ function regionFactorOf(subject, std, indFactor) {
 }
 
 function appraiseNow(subject, std, T, trend) {
-  // 고시: 비교표준지가 있는 시·군·구의 같은 용도지역. 표준지 조각이 시군구를
-  // 들고 있고(nowResults 가 붙인다), 없으면 대상의 PNU 앞 다섯 자리.
+  // N0445
   const t = timeFactorOf(std.year, trend, T, {
     sigungu: std.sigungu || String(subject.pnu || '').slice(0, 5),
     landUse: std.land_use || subject.land_use,
@@ -7053,21 +5360,7 @@ function appraiseNow(subject, std, T, trend) {
            range, total_krw: total, warnings: ind.warnings };
 }
 
-/* 산출표 — 감정평가서의 '감정평가액의 산출근거 및 결정의견' 을 본뜬다
- * (2026-09-12 지시 "감정평가사가 작성한 것처럼 보이게 자세히").
- *
- * 감정평가에 관한 규칙 §14 의 순서를 그대로 따른다. 평가서를 본 사람이
- * 어디를 봐야 하는지 바로 알도록 이름도 평가서의 말(비교표준지 선정 ·
- * 시점수정 · 지역요인 비교 · 개별요인 비교 · 그 밖의 요인 보정 · 산출단가 ·
- * 결정단가)을 쓴다.
- *
- * 개별요인은 평가서의 격차율 표처럼 **조건 · 대상 · 비교표준지 · 격차율**
- * 네 칸으로 낸다. 어느 조건에서 얼마를 깎였는지가 그 표의 요점이다.
- *
- * '다른 표준지를 쓰면' 은 빼 두었다 (2026-09-12 지시). 평가서는 표준지를
- * 하나 고르고 그 근거를 적는다 — 여러 안을 나란히 두는 것은 평가서의
- * 모양이 아니다.
- */
+/* N0446 */
 function renderValuation(res) {
   const won = (v) => (v == null ? '—' : Math.round(v).toLocaleString('ko-KR'));
   const e = escapeHtml;
@@ -7076,8 +5369,7 @@ function renderValuation(res) {
   const f3 = (v) => (v == null ? '—' : Number(v).toFixed(3));
   const desc = (o) => [o.land_use, o.jimok || o.use_situation, o.road_side, o.shape, o.slope]
     .filter(Boolean).join(' · ');
-  // 동리 이름에 지번이 이미 붙어 오는 자료가 있다 — 그대로 이으면
-  // '상삼리 888-7 888-7' 이 된다.
+  // N0447
   const ldn = String(s.ld_name || '').trim();
   const jb = String(s.jibun || '').trim();
   const stdLabel = (ldn && jb && (ldn === jb || ldn.endsWith(' ' + jb)) ? ldn
@@ -7105,9 +5397,7 @@ function renderValuation(res) {
   const reg = res.region || { factor: 1.0, why: '' };
   rows.push(['지역요인 비교', `<b>${f3(reg.factor)}</b><span class="pcv-desc">${e(reg.why || '')}</span>`]);
 
-  /* 격차율은 평가서처럼 조건마다 '대상 / 비교표준지 × 격차율' 을 적는다.
-     네 칸 표로 그렸더니 상세 칸(23rem)보다 넓어져 글자가 옆으로 넘쳤다
-     (2026-09-12 보고). 조건마다 두 줄로 접어 칸 안에 들어오게 한다. */
+  /* N0448 */
   const ind = res.individual;
   const itemRows = ind.items.map((it) =>
     '<li><span class="pcv-i-cond">' + e(it.cond) + '</span>'
@@ -7118,15 +5408,12 @@ function renderValuation(res) {
   rows.push(['개별요인 비교', `<b>${f3(ind.factor)}</b><span class="pcv-desc">[${e(ind.kind)}] 조건별 격차율의 곱`
     + ' — 대상 / 비교표준지</span>'
     + '<ul class="pcv-items">' + itemRows + '</ul>']);
-  // 비었을 때야말로 까닭이 필요하다. 예전에는 factor 가 null 이면 basis 를
-  // 통째로 버리고 '자료 없음' 만 찍었다 — 화면이 아는 것을 안 말한 셈이다.
+  // N0449
   rows.push(['그 밖의 요인 보정', res.other.factor == null
     ? `<em>자료 없음</em><span class="pcv-desc">${e(res.other.basis || '')}</span>`
     : `<b>${res.other.factor}</b><span class="pcv-desc">${e(res.other.basis)}</span>`]);
 
-  /* 보류한 까닭. '비어 있는 마디: 그 밖의 요인' 은 우리끼리 쓰는 말이고,
-     읽는 사람에게는 '왜 못 냈나' 가 답이다 (2026-09-15 지시). 마디마다
-     산출이 이미 들고 있는 까닭을 그대로 꺼내 쓴다 — 없으면 마디 이름. */
+  /* N0450 */
   const holdWhy = (name) => {
     if (name === '그 밖의 요인') return (res.other || {}).basis;
     if (name === '시점수정') {
@@ -7163,26 +5450,19 @@ function renderValuation(res) {
   return '<table class="pcv-table"><tbody>'
     + rows.map(([k, v]) => `<tr><th>${e(k)}</th><td>${v}</td></tr>`).join('')
     + '</tbody></table>' + bottom + warn
-    /* 이 두 줄은 법이 걸리는 자리다 (docs/legal-notes.md §2).
-     * '감정평가가 아닙니다' 는 이름을, '담보·소송·과세·보상 목적으로 쓸 수
-     * 없습니다' 는 용도를 좁힌다. 감정평가사협회가 프롭테크 시세 산정을
-     * 걸고 넘어진 지점이 '감정평가서처럼 보이는 것' 이어서, 스스로 용도를
-     * 좁혀 놓은 문장이 실제 사건에서 가장 잘 먹힌다. **지우지 말 것.** */
+    /* N0451 */
     + '<p class="pcv-note">공시지가기준법의 다섯 마디를 데이터베이스로 산출한 <strong>예상값</strong>입니다. '
     + '감정평가가 아니며, 담보·소송·과세·보상 목적으로 쓸 수 없습니다. '
     + '<a href="/guide/law">산출 방법</a></p>';
 }
 
-/* 단추를 누르면 여기로 온다. 조각이 없으면 예전 글(곧 공개)로 둔다.
-   산출은 nowResults() 한 곳에서 한다 — 검사(test_map.js)도 같은 것을 불러
-   다섯 마디를 견준다. 화면은 값만 내지만 마디가 틀리면 검사가 잡는다. */
+/* N0452 */
 async function nowResults() {
   const ctx = window.__parcel;
   if (!ctx || !ctx.parcel) return null;
   const parcel = ctx.parcel;
   const code = String(parcel.pnu || '').slice(0, 5);
-  // 또래 표(추세)는 시점수정의 뒷길이다 — 지가변동률이 없을 때만 쓴다.
-  // 그래도 여기서 기다린다: 안 기다리면 첫 산출이 늘 '자료 없음' 이 된다.
+  // N0453
   const [T, chunk] = await Promise.all([loadValuationTables(), loadStdland(code),
                                         loadParcelStats()]);
   if (!T || !chunk || !chunk.rows || !chunk.rows.length) return null;
@@ -7213,8 +5493,7 @@ async function fillNowValue(box) {
   box.innerHTML = `<h4>${VALUE_SERVICES.now.label}</h4>` + renderValuation(got.results[0]);
 }
 
-/* 카드는 누를 때마다 통째로 다시 그려진다. 그래서 단추에 직접 듣지
- * 않고 문서에 한 번만 건다 — 안 그러면 두 번째 필지부터 안 눌린다. */
+/* N0454 */
 function wireValueButtons() {
   document.addEventListener('click', (e) => {
     const btn = e.target.closest && e.target.closest('.pc-val');
@@ -7243,9 +5522,7 @@ function wireValueButtons() {
 function parcelCard(parcel, diag, at, addr, zones, limits) {
   const won = (v) => Math.round(v).toLocaleString('ko-KR');
   const py = parcel.area_m2 ? (parcel.area_m2 / PYEONG_M2) : null;
-  /* 백분위를 '상위 N%' 로 적는다. 백분위가 100 이면 N 이 0 이 되어
-     **'상위 0%'** 가 찍혔다 — 뜻은 '또래 전부보다 낫다' 인데 읽는 사람에게는
-     고장처럼 보인다. 그 칸만 말로 적는다. */
+  /* N0455 */
   const pctText = (pct) => {
     if (pct == null) return '<em>조사 안 됨</em>';
     const top = 100 - pct;
@@ -7277,9 +5554,7 @@ function parcelCard(parcel, diag, at, addr, zones, limits) {
        ? `<p class="pc-peer">${escapeHtml(peer.level)}의 `
          + `${escapeHtml(peer.group)} 거래 ${peer.n.toLocaleString('ko-KR')}건과 견줬습니다.</p>`
        : '<p class="pc-peer">견줄 또래를 못 찾았습니다.</p>')
-    // **합산하지 않는다**는 것을 화면에도 적는다. 이것이 이 제품이
-    // 땅박사와 갈리는 지점이고, 적어 두지 않으면 사람은 넓이를 점수로
-    // 읽는다.
+    // N0456
     + '<p class="pc-note">축을 더해 하나의 점수로 만들지 않습니다. '
     + '같은 땅이 창고에는 좋고 주택에는 나쁠 수 있어서, 그 차이가 '
     + '점수 하나로 뭉개지면 사라집니다.</p>'
@@ -7287,29 +5562,7 @@ function parcelCard(parcel, diag, at, addr, zones, limits) {
     + '</div>';
 }
 
-/* 토지이음으로 넘기는 단추 (요구사항 2026-09-10).
- *
- * 우리가 못 주는 것 — 소유 정보, 토지이동(변동) 사유, 지역지구 지정여부
- * 전체 — 은 여기서 봅니다. 브이월드 WFS 응답에 없는 칸들입니다.
- *
- * ## 왜 '열람' 을 한 번 더 눌러야 하는가
- *
- * 주소 세 가지를 실제로 눌러 보고 고른 것입니다 (2026-09-10).
- *
- *   luLandDet.jsp?pnu=            검색칸이 그 필지로 채워진다.
- *                                 '열람' 을 눌러야 표가 나온다.      ← 이것
- *   luLandDetR.jsp?pnu=           시스템 에러 안내
- *   luLandDet.jsp?mode=search&…   표가 바로 나오는데 **값이 섞인다**
- *
- * 마지막 것이 겉보기에는 가장 좋았습니다. 그런데 실측 화면에서 검색칸은
- * 우리 필지(경기 안성시 봉산동 31-3)인데 소재지는 경남 거제시 연초면
- * 송정리 887, 지목·면적도 남의 것이었습니다. 공시지가와 용도지역만
- * 우리 것과 같았습니다 — 앞서 열람한 기록이 섞여 나온 것으로 보입니다.
- *
- * **값이 섞여 나오는 링크는 없느니만 못합니다.** 안성 땅을 보러 들어가서
- * 거제 임야를 읽게 됩니다. 한 번 더 누르는 대신 맞는 것을 보여 줍니다.
- * 그 한 번을 단추 글에 미리 적어 두어, 빈 표를 보고 고장으로 읽지
- * 않게 합니다. */
+/* N0457 */
 const EUM_BASE = 'https://www.eum.go.kr/web/ar/lu/luLandDet.jsp';
 function eumLink(parcel) {
   const pnu = String((parcel || {}).pnu || '');
@@ -7320,16 +5573,7 @@ function eumLink(parcel) {
     + '<em>소유·지역지구·토지이동 — 열람 단추를 한 번 누르세요</em></a>';
 }
 
-/* 고른 필지의 윤곽을 그린다 (요구사항 2026-09-10).
- *
- * **한 번에 하나만.** 누를 때마다 쌓이면 지도가 파란 그물이 된다.
- *
- * 채우기를 옅게 두는 이유. 이 화면의 주인공은 값(땅값 글자·거래 핀)
- * 이고, 윤곽은 '어디까지가 이 땅인가' 만 말하면 된다. 진하게 채우면
- * 그 위의 글자를 덮어 값을 못 읽는다.
- *
- * 도형이 없으면 지우기만 한다 — 바다를 눌렀을 때 앞에 고른 필지가
- * 그대로 남아 있으면 그것을 고른 줄로 읽는다. */
+/* N0458 */
 function drawParcelShape(geom) {
   if (!parcelLayer) return;
   parcelLayer.clearLayers();
@@ -7337,8 +5581,7 @@ function drawParcelShape(geom) {
   if (!geom) return;
   const shape = L.geoJSON(geom, {
     pane: 'parcelPane',
-    // 누름을 가로채면 안 된다. 윤곽 위를 다시 눌러 옆 필지로 가는 것이
-    // 막히고, 그 위에 걸친 땅값 글자도 안 눌린다.
+    // N0459
     interactive: false,
     style: {
       color: '#1B4F9C', weight: 2.5, opacity: .95,
@@ -7366,9 +5609,7 @@ async function askParcel(latlng) {
       .catch(() => null),
     loadZoningLimits(),
   ]);
-  // **막힌 것과 자료가 없는 것을 구분해 적는다.** 둘을 같은 글로
-  // 보여주면 '이 땅은 정보가 없다' 로 읽히는데, 사실은 잠시 뒤 다시
-  // 누르면 나온다.
+  // N0460
   if (res && res.tooMany) {
     drawParcelShape(null);
     detailBody('<div class="detail-empty"><p>잠깐만요 — 요청이 너무 잦습니다.</p>'
@@ -7388,9 +5629,7 @@ async function askParcel(latlng) {
   }
   drawParcelShape(res.geom);
   const diag = stats ? parcelAxes(parcel, [latlng.lat, latlng.lng], res.zones || []) : null;
-  // 계단의 마지막 칸 — 도구를 실제로 쓴 순간. 가입만 하고 안 쓰는 사람과
-  // 갈라 보려면 이것이 있어야 한다. **매번** 센다(1회가 아니다) — 몇 필지를
-  // 보는지가 곧 얼마나 쓰는지다. 지번·좌표는 넣지 않는다.
+  // N0461
   if (window.TRACK) window.TRACK.event('parcel_view', { zone: (res.zones && res.zones[0]) || '(unknown)' });
   detailBody(parcelCard(parcel, diag, [latlng.lat, latlng.lng],
                         res.addr, res.zones || [], limits));
@@ -7399,10 +5638,7 @@ async function askParcel(latlng) {
 }
 
 /* ─────────── 세 가설 판정 ─────────── */
-/* 이 화면은 숫자를 하나 더 보여주는 곳이 아니다. **그 숫자로 무엇을 주장할
-   수 있는가** 를 적는 곳이다. 계수가 유의해도 위약 밴드가 같이 유의하면
-   IC 효과가 아니고, 표본이 모자라면 '효과 없음' 이 아니라 '아직 모름' 이다.
-   이 구분이 화면에서 사라지면 사람은 스스로 결론을 채워 넣는다. */
+/* N0462 */
 const VERDICT_TONE = {
   '지지': 'ok',
   '기각': 'no',
@@ -7410,8 +5646,7 @@ const VERDICT_TONE = {
 function verdictTone(v) {
   const t = String(v || '');
   if (VERDICT_TONE[t]) return VERDICT_TONE[t];
-  // '관계 있음 (상관 · 인과 아님)' — 있는 것은 맞지만 인과가 아니다.
-  // '지지' 와 같은 초록을 주면 읽는 사람이 구별할 방법이 없다.
+  // N0463
   if (t.startsWith('관계 있음')) return 'corr';
   return t.startsWith('교란') ? 'warn' : 'unknown';
 }
@@ -7462,12 +5697,9 @@ function buildVerdict() {
     (data.generated_at || '').slice(0, 10) +
     (data.primary === false ? ' · 탐색(참고용)' : '');
 
-  // 경고를 카드 위에 둔다. 표를 먼저 읽고 나서 '사실은 통제가 없었습니다'
-  // 를 만나면 이미 늦다 — 사람은 먼저 본 숫자를 기억한다.
+  // N0464
   const notes = [];
-  // 계수를 여럿 던지면 그중 몇은 우연히 유의하다. 그래서 판정은 미리 정한
-  // 한 조합에서만 하고, 나머지는 참고로만 본다. 화면이 이 구분을 안 보이면
-  // 탐색에서 우연히 나온 것을 결론으로 읽게 된다.
+  // N0465
   if (data.primary === false) {
     notes.push(['warn',
       '<b>이 표는 탐색입니다 — 판정이 아닙니다.</b> 판정은 ' +
@@ -7498,8 +5730,7 @@ function buildVerdict() {
   cards.innerHTML = data.hypotheses.map((h) => {
     const tone = verdictTone(h.verdict);
     const rows = (h.rows || []).map((r) => {
-      // 95% 구간이 0 을 품으면 '말할 수 없다' 이다. 계수 부호만 보고
-      // 읽지 않도록 그 사실을 글자로 적는다.
+      // N0466
       const has = r.ci_lo != null;
       const crosses = has && r.ci_lo <= 0 && r.ci_hi >= 0;
       const ci = has
@@ -7507,8 +5738,7 @@ function buildVerdict() {
           `${r.ci_lo >= 0 ? '+' : ''}${fixed(r.ci_lo)} ~ ` +
           `${r.ci_hi >= 0 ? '+' : ''}${fixed(r.ci_hi)}</span>`
         : '—';
-      // 최소 탐지 가능 효과. 계수가 0 근처일 때 '효과가 없다' 와
-      // '작아서 못 봤다' 를 가르는 유일한 단서다.
+      // N0467
       const weak = r.mde != null && r.beta != null
         && Math.abs(r.beta) < r.mde;
       return `<tr>
@@ -7847,25 +6077,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && state.pickMode) endPick(null);
 });
 
-/* 레일 접기 로직은 레일과 함께 사라졌다 (2026-09-08). 필터는 이제
-   아래 시트에 있고, 시트는 닫혀서 시작하므로 접을 것이 없다. */
+/* N0468 */
 
-/* ─── 지역 검색 ───────────────────────────────────────────────────
- *
- * 요구사항(2026-09-09, 3번): "첫 화면이 전국인데, 정작 쓸 사람은
- * 자기 지역부터 봅니다."
- *
- * **필지로는 못 간다.** 실거래 지번이 마스킹돼 있어(1**) 어느 필지인지
- * 특정할 수가 없다(scripts/cadastral_probe.py 1절). 갈 수 있는 가장
- * 아래가 읍·면·동이고, 안내문이 그것을 밝힌다.
- *
- * 색인(places.json)은 **누르기 전까지 안 받는다.** 첫 화면에 5천 줄을
- * 얹으면 지도가 그만큼 늦게 뜨는데, 검색은 대부분의 방문에서 안 쓰인다.
- */
+/* N0469 */
 const FIND_MAX = 8;
 const FIND_ZOOM = { sido: 9, sigungu: 11, umd: 13, addr: 18 };
-// 지번이 붙어 있는가 — '건업리 140-25', '산 12', '140번지'. 끝에 숫자가
-// 오면 지번으로 본다 (요구사항 2026-09-11: 주소를 치면 그 필지로).
+// N0470
 const FIND_JIBUN_RE = /(^|\s)(산\s?)?\d{1,4}(-\d{1,4})?(번지)?$/;
 let findIndex = null;
 let findLoading = null;
@@ -7875,8 +6092,7 @@ async function findLoad() {
   if (findLoading) return findLoading;
   findLoading = (async () => {
     const rows = [];
-    // 시·도와 시·군·구는 이미 받아 둔 regions.json 에 있다. 같은 것을
-    // 두 번 받지 않는다.
+    // N0471
     const sido = new Map();
     (state.regions || []).forEach((r) => {
       rows.push({ k: 'sigungu', n: r.name, p: r.sido || '',
@@ -7903,8 +6119,7 @@ async function findLoad() {
   return findLoading;
 }
 
-/* 앞에서 맞는 것을 먼저. '동' 을 쳤을 때 '공도읍' 보다 '동면' 이
-   위로 와야 한다 — 사람은 자기가 친 글자로 시작하는 것을 먼저 찾는다. */
+/* N0472 */
 function findMatch(rows, q) {
   const s2 = q.trim();
   if (s2.length < 1) return [];
@@ -7923,10 +6138,7 @@ function findMatch(rows, q) {
   return starts.sort(by).concat(inside.sort(by)).slice(0, FIND_MAX);
 }
 
-/* 지번 검색의 주소 보완. '곤지암읍 건업리 140-25' 라고만 치면 지오코더가
-   어느 광주인지 모른다. 색인에서 읍·면·동을 찾아 시·도와 시·군·구를 앞에
-   붙인다 — '경기도 광주시 곤지암읍 건업리 140-25'. 이미 시·군·구가 들어
-   있으면 시·도만 채운다. 못 찾으면 친 그대로 보낸다. */
+/* N0473 */
 // 시·군·구 코드 앞 두 자리 → 시·도. 지역 표(regions.json)에 없을 때의 뒷받침이다.
 const SIDO_BY_PREFIX = {
   11: '서울특별시', 26: '부산광역시', 27: '대구광역시', 28: '인천광역시', 29: '광주광역시',
@@ -7942,9 +6154,7 @@ function findJibun(q) {
            head: q.trim().slice(0, m.index).trim() };
 }
 
-/* 법정동코드(10자리). 명부 조각(umd-roster-NN.json)의 일곱째 칸이다 —
-   내보내기(webexport._umd_roster)가 2026-09-11 부터 싣는다. 이름과
-   시군구 코드가 같은 줄을 찾는다. 없으면 '' (지오코더로 물러난다). */
+/* N0474 */
 async function findLdCode(sg, name) {
   const idx = (state.landPrice || {}).umd_roster || [];
   const c = idx.find((x) => String(x.p) === String(sg || '').slice(0, 2));
@@ -7962,14 +6172,8 @@ async function findLdCode(sg, name) {
   return /^\d{10}$/.test(ld) ? ld : '';
 }
 
-/* 검색어를 주소로 푼다: 완성한 주소 글(text)과, PNU 를 만들 재료(색인에서
-   찾은 읍·면·동 이름 name · 시군구 코드 sg · 지번). */
-/* **'북구' 는 네 곳, '중구' 도 네 곳이다** (2026-09-16 지시: "주소 검색이
-   이상합니다 (대구)"). regions 에서 이름만으로 첫 줄을 집으면 '대구광역시
-   북구' 를 쳤는데 광주 북구가 잡히고, 그 시·도가 앞에 붙어
-   '전남광역시… 대구광역시 북구' 가 된다. '중구' 는 서울이 앞에 붙었다.
-
-   그래서 **친 글에 시·도가 있으면 그 안에서만 고른다.** */
+/* N0475 */
+/* N0476 */
 function findSido(words, regions) {
   const names = [...new Set((regions || []).map((r) => r.sido).filter(Boolean))];
   for (const sd of names) {
@@ -7985,10 +6189,7 @@ window.__findSido = findSido;          // 검사가 본다
 function findSigungu(words, regions, sido) {
   const pool = sido ? (regions || []).filter((r) => r.sido === sido)
     : (regions || []);
-  /* **이름이 두 낱말인 시·군·구가 있다** — regions 에 '성남시 분당구',
-     '수원시 영통구' 처럼 들어 있다. 낱말을 하나씩만 견주면 이런 곳은
-     영영 안 맞아서 시·도가 안 붙는다. 긴 것부터 본다 — '성남시 분당구'
-     가 '분당구' 보다 먼저 걸려야 한다. */
+  /* N0477 */
   for (let n = 2; n >= 1; n -= 1) {
     for (let i = 0; i + n <= words.length; i += 1) {
       const chunk = words.slice(i, i + n).join(' ');
@@ -7996,9 +6197,7 @@ function findSigungu(words, regions, sido) {
       if (hit) return hit;
     }
   }
-  /* 꼬리만 쳐도 알아본다 — '분당구' 는 regions 에 '성남시 분당구' 로만
-     있다. **딱 맞는 것을 다 본 뒤에** 오므로, '북구' 처럼 이름 그대로
-     있는 곳을 가로채지 않는다. */
+  /* N0478 */
   for (const w of words) {
     const hit = pool.find((r) => r.name.endsWith(' ' + w));
     if (hit) return hit;
@@ -8040,8 +6239,7 @@ function findAddressText(q, rows) {
     const byCode = regions.find((r) => String(r.sigungu_cd || '').slice(0, 2) === c.slice(0, 2));
     return (byCode && byCode.sido) || SIDO_BY_PREFIX[c.slice(0, 2)] || '';
   };
-  // 이미 시·군·구가 들어 있나 (시·도도 함께면 그대로).
-  // **친 글의 시·도를 먼저 본다** — 안 그러면 같은 이름의 딴 동네가 잡힌다.
+  // N0479
   const sido = findSido(words, regions);
   const hasSg = findSigungu(words, regions, sido);
   if (hasSg) {
@@ -8063,9 +6261,7 @@ function findAddressText(q, rows) {
   return clean;
 }
 
-/* 주소 → 좌표 → 그 필지. 서버(api/tile mode=geocode)가 브이월드 지오코더를
-   대신 부른다 (키가 페이지에 없다). 좌표가 오면 그 자리로 옮기고 지도를
-   누른 것과 같은 길(askParcel)로 필지 윤곽과 카드를 연다. */
+/* N0480 */
 async function findGoAddress(row, list) {
   const tab = document.querySelector('.tab[data-view="explore"]');
   if (tab && !tab.classList.contains('is-active')) tab.click();
@@ -8124,8 +6320,7 @@ async function findGoAddress(row, list) {
 
 function findGo(row, list) {
   if (row.k === 'addr') { findGoAddress(row, list); return; }
-  // 검색칸이 머리띠로 올라가면서(2026-09-09) 다른 탭에서도 보인다.
-  // 거기서 고르면 지도가 안 보이는 채로 움직인다 — 탭부터 옮긴다.
+  // N0481
   const tab = document.querySelector('.tab[data-view="explore"]');
   if (tab && !tab.classList.contains('is-active')) tab.click();
   if (!map) return;
@@ -8173,8 +6368,7 @@ function wireFind() {
     if (!q.trim()) { close(); return; }
     const rows = await findLoad();
     hits = findMatch(rows, q);
-    // 지번이 붙어 있으면 **필지로 가는 줄을 맨 위에** 둔다. 이름 후보는
-    // 그 아래 — '건업리 140-25' 를 쳤는데 건업리 중심으로 가면 틀린 답이다.
+    // N0482
     if (FIND_JIBUN_RE.test(q.trim())) {
       hits = [{ k: 'addr', n: q.trim(), p: findAddressText(q, rows),
                 parsed: findAddressParse(q, rows) }].concat(hits);
@@ -8222,19 +6416,14 @@ function wireFind() {
     zbox.addEventListener('change', () => toggleZoning(zbox.checked));
   }
 
-  // 지역 태그 (요구사항 2026-09-14). 기본 켬.
+  // N0483
   const pbox = document.getElementById('place-bg');
   if (pbox) {
     pbox.checked = state.placeTags;
     pbox.addEventListener('change', () => togglePlaceTags(pbox.checked));
   }
 
-  /* 개발 층 (요구사항 2026-09-14). 기본 꺼짐.
-   *
-   * 2026-09-15 지시: "개발을 클릭하면 좌측 패널에 (산업단지/사업지구/
-   * 도로/철도역/완공보기)를 표시해 주세요". 갈래 칸이 지도 위 도구막대에
-   * 줄줄이 붙어 있어 막대가 지도 폭을 넘었다. 이제 왼쪽 칸(실거래 표시·
-   * IC·지역별 가격과 같은 자리)에 펼친다. */
+  /* N0484 */
   const dbox = document.getElementById('develop-bg');
   const dparts = document.getElementById('dev-parts');
   if (dparts) {
@@ -8260,9 +6449,7 @@ function wireFind() {
       lab.appendChild(span);
       group.appendChild(lab);
 
-      /* 세부 갈래 — **바로 아래**에 (2026-09-16 지시). 용도지역 칸과 같은
-         모양이다: 체크상자가 아니라 눌림을 aria-pressed 로 알리는 칸이고,
-         색칩이 앞에 붙는다. 색만으로는 화면낭독기가 못 읽는다. */
+      /* N0485 */
       const subs = document.createElement('div');
       subs.className = 'dev-subs';
       subs.dataset.part = pt.key;
@@ -8276,10 +6463,7 @@ function wireFind() {
         btn.setAttribute('aria-pressed', String(devPicked(pt.key, k.id)));
         if (k.done) btn.title = '끝난 것 — 기본으로 감춥니다';
         const c = devPickColor(pt.key, k);
-        /* **칩이 지도의 마크를 닮아야 한다.** 철도역은 점이고 크기로도
-           갈리므로 칩도 동그라미로 그리고 큰 갈래는 칩도 크게 한다.
-           속 빈 갈래(정차횟수 모름)는 칩도 속을 비운다 — 예전에는 셋 다
-           꽉 찬 네모라, 지도에 없는 구분을 범례가 약속하고 있었다. */
+        /* N0486 */
         const shape = (k.r ? ' is-dot' : '') + (k.hollow ? ' is-hollow' : '')
           + (k.r >= 8 ? ' is-big' : '');
         btn.innerHTML = `<i class="dev-sw${c ? '' : ' is-none'}${shape}"`
@@ -8303,8 +6487,7 @@ function wireFind() {
     if (state.develop) openSheet('develop');
     dbox.addEventListener('change', () => {
       toggleDevelop(dbox.checked);
-      // 켜면 펼치고, 끄면 **개발 칸이 열려 있을 때만** 닫는다. 다른
-      // 갈래를 보고 있는데 개발을 끄자 그 칸이 같이 닫히면 놀란다.
+      // N0487
       if (dbox.checked) {
         if (openSheetCat() !== 'develop') openSheet('develop');
       } else if (openSheetCat() === 'develop') {
@@ -8313,21 +6496,20 @@ function wireFind() {
     });
   }
 
-  // 필지 경계선 (요구사항 2026-09-10). 기본 켬.
+  // N0488
   const cbox = document.getElementById('cadastral-bg');
   if (cbox) {
     cbox.checked = state.cadastral;
     cbox.addEventListener('change', () => toggleCadastral(cbox.checked));
   }
 
-  // IC·영업소도 끌 수 있다 (기본 꺼짐, 요구사항 2026-09-08).
+  // N0489
   const gbox = document.getElementById('gate-bg');
   if (gbox) {
     gbox.checked = state.showGates;
     gbox.addEventListener('change', () => {
       state.showGates = gbox.checked;
-      // 영업소를 끄면 선택도 풀어야 한다. 안 그러면 안 보이는 영업소의
-      // 반경만 지도에 남아 '이게 뭔가' 가 된다.
+      // N0490
       if (!state.showGates && state.selected) {
         state.selected = null;
         showDetail(false);
@@ -8341,57 +6523,16 @@ function wireFind() {
 
 wireFind();
 
-/* 머리띠의 Admin 링크 — 관리자에게만 보인다 (2026-09-12 지시).
-   관문(gate.js)이 window.ME 를 세운 뒤 이 파일이 실행되므로 여기서 안다.
-   링크를 보이는 것뿐이고, 자물쇠는 /admin 화면과 데이터베이스다. */
+/* N0491 */
 if (typeof window.tojiAdminNav === 'function') window.tojiAdminNav(myAccess().admin);
 
 boot();
 
-// 지도와 regions.json 이 다 준비된 뒤에 처음 한 번 붙는다. boot 안에서
-// 부르면 state.regions 가 아직 비어 있어 아무 지역도 못 고른다.
+// N0492
 setTimeout(viewersOnMove, 3000);
 
 
-/* ══════════════════════════════════════════════════════════════════
-   지역 태그 조회 배지 — 24시간 누적 'N명 조회 중', 그리고 화면 1등 별표
-
-   요구사항(2026-09-09, 2차 → 2026-09-11 개정):
-     "누적으로 조회하는 사람 수 실시간 추가 (XX명 조회 중) — 호갱노노처럼
-      태그 아래에 조금 겹쳐서 따로 표시"
-     "24시간 동안 보는 사람 누적 (1시간마다 옛 한 시간 누적을 삭제)"
-     "화면에 보이는 지역 태그에서 24시간 누적 제일 많은 곳 별표 (10명 미만 제외)"
-
-   그래서 **세는 단위가 태그 하나**다. 두계리와 두계리가 속한 계룡시는
-   서로 다른 열쇠를 갖는다.
-
-     u:41220:안중읍 청북리   읍·면·동 / 리
-     g:41220                 시·군·구
-     s:경기도                시·도
-
-   ── 두 숫자는 성격이 다르다 ──────────────────────────────────
-
-     지금 N   Realtime Presence. 창을 닫으면 곧 사라진다.
-     오늘 M   place_view 표에 쌓인 값. 한국 날짜로 자정에 0으로 돌아간다
-              (RPC 안에서 Asia/Seoul 로 끊는다).
-
-   ── 채널은 태그마다 파지 않는다 ──────────────────────────────
-
-   화면에 태그가 쉰 개인데 태그마다 채널을 열면 무료 요금제(동시접속
-   200 · 메시지 월 200만)를 하루에 태운다. 그래서 **시·군·구 하나당
-   채널 하나**를 열고, 거기에 '나는 지금 이 태그를 가운데 두고 있다' 는
-   열쇠 하나만 싣는다. 같은 시·군·구를 보는 사람끼리는 서로의 열쇠가
-   보이므로, 그것을 세면 태그별 '지금 N' 이 나온다.
-
-   그래서 '보고 있다' 의 뜻은 **화면 한가운데 두었다** 이다. 눈에
-   들어온 태그 전부가 아니다 — 그렇게 세면 한 사람이 한 번에 쉰 곳을
-   보고 있는 것이 된다.
-
-   ── 내보내는 것 ──────────────────────────────────────────────
-
-   신원은 안 보낸다. 로그인해도 이름·아이디를 싣지 않고, 새로고침하면
-   없어지는 임의의 글자를 열쇠로 쓴다. 지도 좌표도 안 보낸다 — 나가는
-   것은 태그 열쇠와 시·군·구 코드뿐이다.                              */
+/* N0493 */
 
 const VIEW_MIN_ZOOM = 9;      // 전국을 보고 있으면 '이 지역' 이랄 것이 없다
 const VIEW_DEBOUNCE = 1200;   // 지도를 끄는 동안 채널을 갈아치우지 않는다
@@ -8412,8 +6553,7 @@ const viewers = {
   me: Math.random().toString(36).slice(2, 10),
 };
 
-/* 지역 단계 태그의 조회수 열쇠. 이름만으로는 안 된다 — '고성군' 은
-   강원과 경남에 둘이고 '중구' 는 여섯이다. */
+/* N0494 */
 function placeKey(levelKey, member, name) {
   const cd = String((member || {}).sigungu_cd || '');
   if (levelKey === 'sido') return `s:${name}`;
@@ -8421,8 +6561,7 @@ function placeKey(levelKey, member, name) {
   return `g:${cd}`;
 }
 
-/* 화면 한가운데가 어느 태그인가. 지금 그려져 있는 것 중에서 고른다 —
-   태그가 없는 자리(바다·산)를 가운데 두면 아무 태그도 아니다. */
+/* N0495 */
 function viewerCenterTag(items) {
   if (!map || map.getZoom() < VIEW_MIN_ZOOM || !items.length) return null;
   const c = map.getCenter();
@@ -8439,39 +6578,26 @@ function viewerCenterTag(items) {
   return best;
 }
 
-/* 태그 셋째 줄. 아무 숫자도 없으면 **줄 자체를 안 만든다** — 새로
-   생긴 동네마다 '지금 0 / 오늘 0명' 이 붙으면 그것만 눈에 띈다. */
+/* N0496 */
 function viewerLine(pk) {
-  // 요구사항(2026-09-11): "누적으로 조회하는 사람 수 실시간 추가 (XX명
-  // 조회 중) — 호갱노노처럼 태그 아래에 조금 겹쳐서 따로 표시. 24시간
-  // 동안 본 사람 누적 (1시간마다 옛 한 시간을 뺀다)".
-  //
-  // 그래서 숫자는 **24시간 굴림 누적**이다 (place_view 시간 칸의 합).
-  // 사람 수에 가깝게 하려고 한 방문에서 태그 하나는 한 번만 센다
-  // (viewersBump 의 seen). '실시간' 은 Presence 가 맡는다 — 같은 시·군을
-  // 보는 누군가가 태그를 가운데 두면 sync 가 오고, 그때 통계를 다시
-  // 묻는다 (viewersChannel). 0 이면 배지 자체를 안 만든다.
+  // N0497
   const n = (viewers.stat.get(pk) || {}).n24 || 0;
   if (!n) return '';
   return `<s>${n}명 조회 중</s>`;
 }
 
-/* 별표 — **화면에 보이는 태그 중** 24시간 누적 1등, 단 10명 미만이면
-   없음 (요구사항 2026-09-11). 하나뿐이다. */
+/* N0498 */
 function viewerStar(it) {
   return viewers.star && viewers.star === it.pk ? '<mark>★</mark>' : '';
 }
 
-/* 지도가 멎으면 그때. 끄는 동안 채널을 갈아치우면 지나온 시군구마다
-   접속을 한 번씩 열게 된다. */
+/* N0499 */
 function viewersOnMove(items) {
   if (!window.SB) return;
   if (items) viewers.items = items;
   const list = viewers.items || [];
   const tag = viewerCenterTag(list);
-  // **같은 화면이면 다시 부르지 않는다.** 이 함수를 부르는 것이
-  // drawLandPrice 인데 viewersSync 가 끝나면 다시 drawLandPrice 를
-  // 부른다 — 지문으로 끊지 않으면 1.2초마다 영원히 돈다.
+  // N0500
   const sig = (tag ? tag.pk : '') + '\u0000'
     + list.map((x) => x.pk).filter(Boolean)
         .slice(0, VIEW_MAX_KEYS).sort().join('\n');
@@ -8487,8 +6613,7 @@ async function viewersSync() {
   const sg = tag ? String(tag.sg || '') : '';
   const pk = tag ? String(tag.pk || '') : '';
 
-  // 보이는 태그의 오늘·이번 주를 **한 번에** 묻는다. 태그마다 물으면
-  // 지도를 한 번 끌 때마다 쉰 번을 부른다.
+  // N0501
   const keys = items.map((x) => x.pk).filter(Boolean).slice(0, VIEW_MAX_KEYS);
   await viewersStats(keys);
 
@@ -8501,11 +6626,9 @@ async function viewersSync() {
   drawLandPrice();
 }
 
-/* 채널을 옮긴다. 전에 보던 곳에서 손을 떼지 않으면 그 지역의 '지금 N'
-   에 내가 계속 남아, 아무도 안 보는 곳이 붐비는 곳으로 보인다. */
+/* N0502 */
 async function viewersChannel(sg) {
-  // **먼저 자리를 차지하고 나서 기다린다.** 아래를 기다리는 동안 다시
-  // 불리면 같은 지역에 채널을 두 번 붙인다.
+  // N0503
   viewers.sg = sg;
   viewers.live = new Map();
   // 새 채널은 내가 어디 있는지 모른다. 태그가 그대로여도 다시 싣는다.
@@ -8528,32 +6651,20 @@ async function viewersChannel(sg) {
       if (m.p) live.set(m.p, (live.get(m.p) || 0) + 1);
     });
     viewers.live = live;
-    // 누군가 새로 왔다 — 24시간 누적이 바뀌었을 수 있다. 다시 묻는다
-    // ('실시간'). 같은 화면 지문은 viewersStats 가 걸러 주므로 asked 를 비운다.
+    // N0504
     viewers.asked = '';
     viewersStats((viewers.items || []).map((x) => x.pk).filter(Boolean).slice(0, VIEW_MAX_KEYS))
       .then(() => { if (viewers.ch === ch) drawLandPrice(); });
     drawLandPrice();
   });
-  // **subscribe 보다 먼저 세워 둔다.** 붙었다는 신호가 곧바로 오면
-  // (검사의 가짜 클라이언트가 그렇다) 아래 대입이 아직 안 돼 있어
-  // viewersTrack 이 조용히 아무것도 안 한다.
+  // N0505
   viewers.ch = ch;
   ch.subscribe((status) => {
     if (status === 'SUBSCRIBED' && viewers.ch === ch) viewersTrack();
   });
 }
 
-/* 내가 가운데 둔 태그 하나만 싣는다. 신원도 좌표도 안 보낸다.
-
-   **바뀌었을 때만 싣는다.** 무료 요금제의 급소는 월 200만 메시지가
-   아니라 **Presence 초당 20**이다(supabase.com/docs/guides/realtime/limits).
-   내가 한 번 실으면 그 시·군을 보는 **모든** 사람에게 갱신이 가므로,
-   같은 시·군에 네댓 명만 모여 함께 지도를 끌어도 초당 20에 닿는다.
-
-   그런데 지도를 조금만 끌어도 보이는 태그 목록이 바뀌어 이 함수가
-   불렸다 — 가운데 둔 태그는 그대로인데 같은 값을 다시 실었다. 그
-   메시지는 아무것도 안 바꾸면서 한도만 먹는다. */
+/* N0506 */
 function viewersTrack() {
   if (!viewers.ch || !viewers.pk) return;
   if (viewers.sent === viewers.pk) return;
@@ -8561,8 +6672,7 @@ function viewersTrack() {
   try { viewers.ch.track({ p: viewers.pk }); } catch { /* 아직 안 붙었다 */ }
 }
 
-/* 오늘 조회수를 올린다. 이번 방문에 처음 가운데 둔 태그만 — 지도를
-   앞뒤로 흔들 때마다 세면 혼자서 백 명이 된다. */
+/* N0507 */
 async function viewersBump(pk) {
   if (viewers.seen.has(pk)) return;
   viewers.seen.add(pk);
@@ -8588,8 +6698,7 @@ async function viewersStats(keys) {
     const { data, error } = await window.SB
       .rpc('place_view_stats', { keys });
     if (error) throw error;
-    // **화면에 있는 열쇠만 지우고 다시 채운다.** 통째로 비우면 방금
-    // 올린 내 숫자가 사라졌다 되살아나 깜빡인다.
+    // N0508
     (data || []).forEach((r) => viewers.stat.set(String(r.place_key),
       { n24: Number(r.n24) || 0 }));
     keys.forEach((k) => {
@@ -8602,9 +6711,7 @@ async function viewersStats(keys) {
   }
 }
 
-/* 화면에 보이는 태그 중 24시간 누적 1등에 별 하나. **10명 미만이면 별이
-   없다** (요구사항 2026-09-11) — 셋이 본 시골 면에 별이 붙으면 별의 뜻이
-   사라진다. */
+/* N0509 */
 const VIEW_STAR_MIN = 10;
 function viewersRankStars() {
   let best = null;

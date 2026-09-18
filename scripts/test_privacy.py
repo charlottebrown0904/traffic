@@ -118,6 +118,35 @@ check(not _found, f"사람을 가리키는 호칭이 없다 ({len(_found)}개 �
 for _f in _found[:15]:
     print(f"          {_f}")
 
+
+# ── 5. F12 로 우리 대화가 보이지 않는다 (2026-09-17 지시) ─────────────
+#
+# "서비스 페이지에서 F12 누르면 우리의 대화와 지시 판단들이 들어 있습니다 …
+#  바이럴 코딩한 노하우를 공개로 보여주기가 싫습니다."
+#
+# 내려가는 파일의 주석은 **누구나 본다.** 짧은 이름표는 그대로 두고, 글은
+# 번호로 바꿔 관리자 화면(0018 code_note)으로 옮겼다. 이 검사는 글이 다시
+# 기어들어오는 것을 막는다 — 한 번 지우는 것은 쉽고, 안 돌아오게 하는 것이
+# 어렵다. 판정 규칙은 scripts/strip_notes.py 한 곳에만 있다.
+print()
+print("5. 내려가는 파일에 서술형 주석이 없다 (F12 로 다 보인다)")
+sys.path.insert(0, str(ROOT / "scripts"))
+import strip_notes as _SN                                        # noqa: E402
+
+_prose = []
+for _f in _SN.files():
+    _src, _hits = _SN.scan_file(_f)
+    if _hits:
+        _prose.append((Path(_f).relative_to(ROOT).as_posix(), len(_hits)))
+check(not _prose, f"서술형 주석이 없다 ({len(_prose)}개 파일)")
+for _rel, _n in _prose[:15]:
+    print(f"          {_rel} ({_n}개) — python scripts/strip_notes.py --apply")
+
+# 번호는 남아 있어야 한다. 통째로 지우면 왜 그렇게 했는지 되찾을 길이 없다.
+_marked = sum(1 for _f in _SN.files()
+              if re.search(r"N\d{4}", Path(_f).read_text(encoding="utf-8")))
+check(_marked > 20, f"번호는 남아 있다 ({_marked}개 파일)")
+
 print()
 if fail:
     print(f"실패 {len(fail)}건")

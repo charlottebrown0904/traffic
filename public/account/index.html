@@ -13,27 +13,20 @@
 <script src="/lib/adminnav.js?v=20260912a"></script>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <title>로그인 · 토지랩</title>
-<!-- GA4 — **초기화는 반드시 여기, head 인라인.** gtag 를 나중에(defer 스크립트에서)
-     세우면, 페이지가 뜨자마자 쏘는 첫 이벤트가 gtag 없는 상태로 dataLayer 에
-     plain object 로 들어가 구글에 끝내 도착하지 않는다. 증상이 '아무것도 안 뜬다'
-     가 아니라 '초기 이벤트만 안 뜬다' 라 찾기 어렵다.
-     측정 ID 는 공개 값이다 — 브라우저가 그것으로 구글에 보내는 것이 본래 하는 일. -->
+<!-- N0018 -->
 <script>
 window.dataLayer = window.dataLayer || [];
 function gtag(){ dataLayer.push(arguments); }
 gtag('js', new Date());
-/* anonymize_ip — 구글이 IP 마지막 자리를 지우고 받는다. GA4 는 기본으로
-   그렇게 하지만 명시해 둔다. 나중에 이 줄이 지워지면 눈에 띈다. */
+/* N0019 */
 gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 </script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-RW6MCG84SF"></script>
 <meta name="robots" content="noindex">
 <link rel="stylesheet" href="/guide/style.css?v=20260912a">
-<link rel="stylesheet" href="/account/style.css?v=20260917g">
+<link rel="stylesheet" href="/account/style.css?v=20260918a">
 
-<!-- 여기서 나갈 곳을 주지 않는다. 가이드에서 /app 으로 온 사람은 관문에 막혀
-     이 화면으로 넘어온다. 상단에 메뉴가 있으면 가입은 안 하고 다시 돌아다니게
-     된다. 이 화면에서 할 일은 가입 하나다 — 그래서 다른 쪽과 달리 메뉴가 없다. -->
+<!-- N0020 -->
 <header class="sitebar">
   <div class="sitebar-inner">
     <a class="sitebar-brand" href="/"><img src="/icon.svg" alt="" width="22" height="22"><span>토지랩</span></a>
@@ -51,4 +44,4 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 <script src="/lib/track.js?v=20260916q"></script>
 <script src="/lib/supabase-init.js"></script>
 <script src="/lib/access.js?v=20260912d"></script>
-<script src="/account/account.js?v=20260917g"></script>
+<script src="/account/account.js?v=20260918a"></script>

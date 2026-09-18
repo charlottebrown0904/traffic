@@ -1,12 +1,4 @@
-/* 첫 화면의 로그인·가입 단추 (지시 2026-09-13, 슬라이드 2).
-
-   예전 길: '회원 가입하고 보기' → /account → 거기서 구글·카카오. 한 단계를
-   뺀다 — 첫 화면에 구글·카카오 단추가 바로 선다. 로그인이 끝나면 /account 로
-   돌아오고, 그 화면이 지도 보기·게시판·프로필 수정·로그아웃을 보여 준다.
-
-   이 파일이 없어도 첫 화면은 멀쩡하다. [data-auth] 안의 링크가 예전 길이고,
-   여기서는 그 링크를 단추로 바꿀 뿐이다. Supabase 설정이 없으면 손대지 않는다.
-   이미 로그인한 사람에게는 가입 단추 대신 '지도 보기' 를 보여 준다. */
+/* N0723 */
 (function () {
   var ICON = {
     google:
@@ -29,8 +21,7 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-p]"), function (btn) {
       btn.addEventListener("click", async function () {
         btn.disabled = true;
-        // 계단의 셋째 칸. **누른 순간**을 센다 — 구글로 넘어간 뒤에는
-        // 우리 쪽 코드가 안 돌아서 셀 기회가 없다.
+        // N0724
         if (window.TRACK) window.TRACK.event("login_start", { provider: btn.dataset.p, at: "landing" });
         try {
           // /account 로 돌아온다 — 그 화면이 지도·게시판·프로필·로그아웃을 보여 준다.
@@ -73,9 +64,7 @@
     });
   }
 
-  /* 계단의 둘째 칸 — '회원 가입하고 보기' 를 누른 순간.
-     스크립트가 단추로 바꾸기 전의 링크도, 바꾼 뒤의 단추도 같이 잡으려고
-     문서 하나에 위임해 건다. from 으로 머리 쪽인지 아래 쪽인지 가른다. */
+  /* N0725 */
   document.addEventListener("click", function (ev) {
     var a = ev.target && ev.target.closest && ev.target.closest(".hero-link, .tool-link");
     if (!a || !window.TRACK) return;

@@ -10,17 +10,12 @@
 <meta name="theme-color" content="#FAF7F3" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#12100D" media="(prefers-color-scheme: dark)">
 <title>토지랩 — IC 교통량과 토지 실거래가를 한 지도에서</title>
-<!-- GA4 — **초기화는 반드시 여기, head 인라인.** gtag 를 나중에(defer 스크립트에서)
-     세우면, 페이지가 뜨자마자 쏘는 첫 이벤트가 gtag 없는 상태로 dataLayer 에
-     plain object 로 들어가 구글에 끝내 도착하지 않는다. 증상이 '아무것도 안 뜬다'
-     가 아니라 '초기 이벤트만 안 뜬다' 라 찾기 어렵다.
-     측정 ID 는 공개 값이다 — 브라우저가 그것으로 구글에 보내는 것이 본래 하는 일. -->
+<!-- N0706 -->
 <script>
 window.dataLayer = window.dataLayer || [];
 function gtag(){ dataLayer.push(arguments); }
 gtag('js', new Date());
-/* anonymize_ip — 구글이 IP 마지막 자리를 지우고 받는다. GA4 는 기본으로
-   그렇게 하지만 명시해 둔다. 나중에 이 줄이 지워지면 눈에 띈다. */
+/* N0707 */
 gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 </script>
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-RW6MCG84SF"></script>
@@ -36,9 +31,7 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 <link rel="stylesheet" href="/lib/theme.css?v=20260912a">
 <script src="/lib/theme.js?v=20260912a"></script>
 <style>
-/* 색은 /lib/theme.css 한 곳에서 온다. 예전에는 이 쪽만 제 팔레트를
-   갖고 있어서 (흰 바탕 · 모래색 강조) 가이드·지도와 다른 제품처럼
-   보였고, **어두운 화면을 켠 사람에게도 흰 바탕 그대로** 나왔다. */
+/* N0708 */
 :root{
   --radius:14px;
   --max:600px;
@@ -80,8 +73,7 @@ h1{font-size:30px;font-weight:800;letter-spacing:-.02em;margin-bottom:10px}
   padding:15px 20px;border-radius:12px
 }
 .hero-hint{font-size:13px;color:#e6d5c4;margin:14px 0 0}
-/* 첫 화면의 로그인 단추 (2026-09-13). /account 의 .btn-oauth 와 같은 생김새 —
-   갈색 판 위라 흰 바탕을 그대로 쓴다. */
+/* N0709 */
 .auth-row{display:grid;gap:10px;max-width:340px;margin:0 auto}
 .btn-oauth{
   display:flex;align-items:center;justify-content:center;gap:10px;width:100%;
@@ -142,8 +134,7 @@ ol.can-list p{font-size:14.5px;color:var(--muted);margin-bottom:12px}
   .can-tag dt:first-child{margin-top:0}
 }
 
-/* 캡쳐. 화면 밖으로 나가지 않게 폭을 100% 로 두고, 세로로 긴 것(필지
-   카드·산출표)만 뚜껑을 씌워 본문 너비를 다 먹지 않게 한다. */
+/* N0710 */
 .can-shot{
   margin:0;border:1px solid var(--border);border-radius:var(--radius);
   overflow:hidden;background:var(--surface);
@@ -153,8 +144,7 @@ ol.can-list p{font-size:14.5px;color:var(--muted);margin-bottom:12px}
 .can-shot.is-tall{max-width:360px}
 /* 사람이 찍어 보낸 전국 지도는 517px 이다. 늘리면 흐려지므로 제 크기까지만. */
 .can-shot.is-mid{max-width:520px}
-/* 산출표는 뒤쪽을 안 싣는다 (회원 화면의 몫). 그림 자체를 고치는 대신
-   아래를 부드럽게 덮고 무엇이 더 있는지 적는다. */
+/* N0711 */
 .can-shot.is-peek{position:relative}
 .can-shot.is-peek img{mask-image:linear-gradient(180deg,#000 74%,transparent 100%);
   -webkit-mask-image:linear-gradient(180deg,#000 74%,transparent 100%)}
@@ -179,8 +169,7 @@ footer{
   line-height:1.7
 }
 footer a{color:var(--muted)}
-/* 칸 안의 링크. 이것이 없으면 브라우저 기본 파란색이 나와, 갈색 판에
-   혼자 파랗게 뜬다 ('가이드'·'지도' 링크가 그랬다). */
+/* N0712 */
 section a{color:var(--accent);text-underline-offset:2px}
 </style>
 </head>
@@ -192,11 +181,7 @@ section a{color:var(--accent);text-underline-offset:2px}
     <h1>토지랩</h1>
     <p class="sub">고속도로 IC 교통량과 그 주변 토지·공장 실거래가를<br>지도 한 장에서 봅니다</p>
 
-    <!-- 첫 화면에서 바로 로그인·가입 (지시 2026-09-13, 슬라이드 2). 한 단계를
-         뺐다 — 예전에는 '회원 가입하고 보기' 를 눌러 /account 로 간 뒤 거기서
-         구글·카카오를 골랐다. 이제 그 두 단추가 여기 선다. 아래 링크는 스크립트가
-         없을 때의 길이고, /lib/landing-auth.js 가 단추로 바꾼다. 이미 로그인한
-         사람에게는 '지도 보기' 가 뜬다. -->
+    <!-- N0713 -->
     <div class="hero-auth" data-auth>
       <a class="hero-link" href="/account?next=%2Fapp">
         회원 가입하고 보기 <span aria-hidden="true">→</span>
@@ -218,11 +203,7 @@ section a{color:var(--accent);text-underline-offset:2px}
      채우게 되므로 표시도 같이 걷었습니다. -->
 
 
-<!-- 할 수 있는 것 — 실제 화면 캡쳐 (지시 2026-09-12).
-     그림은 scripts/build_shots.js 가 찍고 scripts/pack_shots.py 가 다듬는다.
-     손으로 갈아 끼우지 말고 `node scripts/build_shots.js` 를 돌리면 된다.
-     예전에 있던 '무엇을 보여주나'·'자료' 두 칸을 이것이 대신한다 —
-     자료 출처는 바닥글로 내렸다 (공공데이터 출처표시). -->
+<!-- N0714 -->
 <section id="can">
   <div class="wrap">
     <div class="label">할 수 있는 것</div>
@@ -368,8 +349,7 @@ section a{color:var(--accent);text-underline-offset:2px}
   <div class="foot-theme" data-theme-switch></div>
 </footer>
 
-<!-- 로그인 단추용 (2026-09-13). 첫 화면은 이것 없이도 완성돼 있다 — 단추가
-     못 뜨면 위 링크가 그대로 /account 로 간다. -->
+<!-- N0715 -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js" defer></script>
 <script src="/app/supabase.js?v=20260916q" defer></script>
 <script src="/lib/track.js?v=20260916q" defer></script>

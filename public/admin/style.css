@@ -1,5 +1,4 @@
-/* Admin 전용 화면 — 제목 · 간략 내용 카드, 누르면 자세히 (2026-09-12 지시).
-   색·타이포는 /lib/theme.css 토큰과 /guide/style.css 를 그대로 쓴다. */
+/* N0058 */
 
 .wrap.wide { max-width: 70rem; }
 
@@ -9,9 +8,7 @@
 .adm-stamp { margin-top: .6rem; font-size: .8rem; color: var(--faint); }
 .adm-stamp b { font-weight: 600; color: var(--muted); }
 
-/* 탭 줄 (2026-09-16 지시: 항목마다 탭으로).
-   아홉 개라 폰에서는 한 줄에 안 들어간다 — 가로로 굴린다. 줄바꿈으로
-   두 줄을 만들면 머리띠가 화면의 3분의 1을 먹는다. */
+/* N0059 */
 .adm-tabs {
   display: flex; gap: .25rem; margin: 0 0 1.25rem;
   overflow-x: auto; scrollbar-width: thin;
@@ -29,8 +26,7 @@
 }
 .adm-tab:hover { background: var(--surface-2); color: var(--ink); }
 .adm-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-/* 고른 탭은 **색만으로 알리지 않는다** — 밑줄이 끊기고 바탕이 달라진다.
-   색만 쓰면 색약인 사람에게는 아홉 개가 한 줄로 보인다. */
+/* N0060 */
 .adm-tab[aria-selected="true"] {
   color: var(--accent); background: var(--surface);
   border-color: var(--border); border-bottom: 1px solid var(--surface);
@@ -108,7 +104,7 @@
   .adm-body { padding: .9rem .85rem 1.1rem; }
 }
 
-/* ── 링크 만들기 (2026-09-16) ─────────────────────────────── */
+/* N0061 */
 .lnk-form{display:grid;gap:10px;margin:8px 0 18px}
 @media (min-width:640px){ .lnk-form{grid-template-columns:1fr 1fr} }
 .lnk-form label{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:700;color:var(--muted)}
@@ -133,7 +129,7 @@
 .adm-kpi b{display:block;font-size:20px;font-weight:800;letter-spacing:-.02em}
 .adm-kpi span{display:block;font-size:11.5px;color:var(--muted);margin-top:2px}
 
-/* ── 성과 대시보드 (2026-09-16 2차) ──────────────────────── */
+/* N0062 */
 /* 기간 칩 */
 .pd-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:4px 0 14px}
 .pd{
@@ -163,9 +159,7 @@
 .adm-hint{font-size:12px;font-weight:400;color:var(--faint)}
 .adm-sub{font-style:normal;font-size:11.5px;color:var(--faint)}
 
-/* 막대그래프 — 한 계열, 브랜드 강조 하나.
-   SVG 를 가로로 늘여 쓰면 모서리가 타원이 되고 값 글자가 찌그러진다.
-   칸마다 div 를 두면 그 일이 없고 밑변이 바닥에 붙는다. */
+/* N0063 */
 .bc{margin:0 0 18px;border:1px solid var(--border);border-radius:var(--radius,12px);
     padding:12px 14px 8px;background:var(--surface)}
 .bc figcaption{font-size:13px;font-weight:700;margin-bottom:10px}
@@ -178,8 +172,7 @@
 /* 막대는 위만 둥글다 — 아래는 기준선에 붙는다 */
 .bc-col i{display:block;width:100%;position:relative;font-style:normal;background:var(--accent);border-radius:4px 4px 0 0}
 .bc-col:hover i{background:var(--brand-warm,var(--accent))}
-/* 값 이름표는 막대 위에 **떠 있다.** 흐름에 두면 이름표가 붙은 막대만
-   짧아져 같은 눈금이 아니게 된다 (그려 보고 나서 고쳤다). */
+/* N0064 */
 .bc-col i b{
   position:absolute;bottom:100%;left:50%;transform:translateX(-50%);
   font-size:11px;font-weight:700;color:var(--ink);line-height:1;
@@ -193,7 +186,7 @@
 
 .lnk-table{overflow-x:auto}
 
-/* ── 계단 (2026-09-16) ───────────────────────────────────── */
+/* N0065 */
 .fn{display:grid;gap:6px;margin:8px 0 6px}
 .fn-row{display:grid;grid-template-columns:minmax(0,1fr) 40% auto;gap:10px;align-items:center}
 @media (max-width:520px){ .fn-row{grid-template-columns:minmax(0,1fr) auto} .fn-bar{display:none} }
@@ -206,7 +199,7 @@
 .fn-n i{display:block;font-style:normal;font-size:11px;font-weight:400;color:var(--muted)}
 .fn-n i.up{color:var(--accent)}
 
-/* ── QR (2026-09-16) ─────────────────────────────────────── */
+/* N0066 */
 .lnk-qr{
   font:inherit;font-size:11px;padding:2px 7px;margin-left:4px;cursor:pointer;
   border-radius:6px;border:1px solid var(--border-strong);
@@ -230,3 +223,11 @@
 }
 .qr-url{margin:0 0 8px;font-size:12px;word-break:break-all;color:var(--muted)}
 .qr-hint{margin:0 0 14px;font-size:12px;color:var(--faint);line-height:1.6}
+
+/* N0747 */
+.notes-list{display:grid;gap:.6rem;max-height:60vh;overflow:auto}
+.note-row{border:1px solid var(--border);border-radius:8px;padding:.6rem .7rem;background:var(--surface)}
+.note-h{display:flex;gap:.6rem;align-items:baseline;font-size:.82rem;margin-bottom:.35rem}
+.note-h b{font-family:"IBM Plex Mono",monospace;color:var(--accent)}
+.note-h span{color:var(--muted);font-family:"IBM Plex Mono",monospace;word-break:break-all}
+.note-row pre{margin:0;white-space:pre-wrap;word-break:break-word;font:inherit;font-size:.88rem;line-height:1.65;color:var(--ink)}

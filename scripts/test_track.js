@@ -109,7 +109,12 @@ check('track.js 는 GA 스크립트를 붙이지 않는다', anyGa.head.length =
       `붙인 것 ${anyGa.head.length}개`);
 const src = fs.readFileSync(path.join(__dirname, '..', 'public/lib/track.js'), 'utf8');
 check('googletagmanager 를 여기서 부르지 않는다', !/googletagmanager/.test(src));
-check('왜 옮겼는지 파일에 적혀 있다', /head/.test(src) && /첫 이벤트/.test(src));
+/* 왜 옮겼는지는 이제 **비공개 주석**에 있다 (N0576). 2026-09-17 지시로
+   공개 화면의 서술형 주석을 번호로 바꿨기 때문에, 그 글을 찾는 검사는
+   더 이상 못 쓴다 — 글이 있는지가 아니라 **규칙이 지켜지는지**를 본다.
+   바로 위 두 줄이 그것이다: 여기서 GA 를 안 붙이고, 그 이름도 안 부른다. */
+check('그 자리에 설명 번호는 남아 있다', /N\d{4}/.test(src),
+      '주석 번호가 통째로 사라지면 왜 그런지 되찾을 길이 없다');
 check('꼬리표를 봤을 때 GA 에도 한 번 알린다 (두 쪽 보고가 같은 캠페인을 가리키게)',
       /utm_seen/.test(src));
 const noGa = run('https://toji.fyi/', '', { ga4: '' }, {});

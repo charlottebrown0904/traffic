@@ -1,5 +1,4 @@
-/* Supabase 클라이언트 한 곳에서 만든다.
-   페이지마다 따로 만들면 로그인 상태가 어긋나 한쪽에서만 로그인된 것처럼 보인다. */
+/* N0729 */
 (function () {
   var cfg = window.SUPABASE || {};
   if (!window.supabase || !cfg.url || !cfg.key) {
@@ -45,7 +44,7 @@ window.SBUtil = {
       : d.toLocaleDateString("ko-KR", { year: "2-digit", month: "2-digit", day: "2-digit" });
   },
 
-  /* 사용자가 쓴 글을 그대로 화면에 넣지 않는다 — 태그가 살아나면 스크립트가 실행된다. */
+  /* N0730 */
   esc(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];

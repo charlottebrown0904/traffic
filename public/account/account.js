@@ -1,6 +1,4 @@
-/* 로그인 화면.
-   비밀번호를 받지 않는다 — 구글·카카오가 본인 확인을 대신하고, 우리는
-   보관할 비밀번호가 없다. 유출될 것이 없는 쪽이 안전하다. */
+/* N0001 */
 (function () {
   var root = document.getElementById("root");
 
@@ -54,8 +52,7 @@
     approved: "이용 중",
     rejected: "거절",
   };
-  /* 등급 이름 (2026-09-12 지시): A→VIP · B→회원 · C→손님. 코드값은
-     데이터베이스(admin/A/B/C)와 같다 — 이름만 바꿨다. */
+  /* N0002 */
   var GRADE_OPTS = [["admin", "관리자"], ["A", "VIP"], ["B", "회원"], ["C", "손님"]];
   var GRADE_NAME = { admin: "관리자", A: "VIP", B: "회원", C: "손님" };
   var GRADE_ORDER = { admin: 0, A: 1, B: 2, C: 3 };
@@ -69,27 +66,12 @@
     return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
   }
 
-  /* 관리자 회원 목록 (2026-09-11 지시: "메일 취합 및 관리 편하게 — 리스트로,
-     가입날짜·신청일자·등급, 필터로 소팅·정렬").
-
-     승인 대기·등급 변경을 한 표에서 한다. **관리자에게만 보인다** — 화면은
-     acc.admin 일 때만 이 함수를 부르고, 자물쇠는 데이터베이스다: profile 의
-     읽기 정책이 '본인 행 또는 is_admin()' 이라 관리자가 아니면 남의 행이
-     아예 안 온다 (0005_advisors.sql). 등급 변경(set_grade)·상태 변경(profile_guard)
-     도 서버가 관리자인지 다시 본다.
-
-       신청일  profile.created_at (로그인으로 가입한 순간)
-       가입일  profile.approved_at (관리자가 승인한 순간 — 0006 트리거)        */
-  /* picked — 체크한 회원의 id (지시 2026-09-17: "체크 박스 추가 + 선택 후
-     메일보내기"). **표 밖에 둔다.** 표는 정렬·필터·저장 때마다 통째로 다시
-     그려지므로, 체크 상태를 DOM 에 두면 그때마다 사라진다. 필터를 바꿔 가며
-     몇 사람을 골라 담는 것이 이 기능의 쓰임새라 그 사라짐이 곧 못 쓰는
-     기능이 된다. */
+  /* N0003 */
+  /* N0004 */
   var members = { rows: [], status: "all", grade: "all", q: "", sort: "created_desc",
                   picked: Object.create(null) };
 
-  // 고른 사람 중 **지금 목록에 있는** 사람만. 회원이 지워지거나 필터가
-  // 바뀌어도 유령 주소로 메일을 보내지 않는다.
+  // N0005
   function pickedRows() {
     return members.rows.filter(function (u) { return members.picked[u.id]; });
   }
@@ -143,8 +125,7 @@
     var rows = memberFiltered();
     var E = window.SBUtil.esc;
     var nPick = pickedRows().length;
-    // 머리글 체크는 **보이는 것**에 대한 것이다. 안 보이는 사람까지 켜면
-    // 검색으로 좁혀 놓고 전체선택했다가 엉뚱한 사람에게 메일이 간다.
+    // N0006
     var allOn = rows.length > 0 && rows.every(function (u) { return members.picked[u.id]; });
     var cnt = function (s) { return members.rows.filter(function (u) { return (u.status || "pending") === s; }).length; };
     var chip = function (v, label) {
@@ -174,8 +155,7 @@
       '<button class="btn sm ghost" id="m-copy" title="보이는 회원의 메일을 쉼표로 이어 복사">메일 복사</button>' +
       '<button class="btn sm ghost" id="m-csv">CSV 내려받기</button>' +
       "</div>" +
-      // 고른 사람이 없으면 단추가 없는 것이 아니라 **꺼져 있다** — 무엇을
-      // 먼저 해야 하는지가 그 자리에서 보여야 한다.
+      // N0007
       '<div class="mtool-row"><button class="btn sm" id="m-mail"' +
       (nPick ? "" : " disabled") + '>선택한 ' + nPick + '명에게 메일</button>' +
       '<span class="note-in" id="m-pick-note">' +
@@ -213,9 +193,7 @@
       rerender();
       var q2 = box.querySelector("#m-q"); q2.focus(); try { q2.setSelectionRange(pos, pos); } catch (err) { /* */ }
     });
-    /* 체크 — 한 사람 · 보이는 사람 모두.
-       고치고 나서 표를 다시 그린다. 단추의 켜짐/꺼짐과 '몇 명' 이 같은
-       자리에서 따라 움직여야 무엇이 골라졌는지 눈으로 확인할 수 있다. */
+    /* N0008 */
     Array.prototype.forEach.call(box.querySelectorAll(".m-pick"), function (c) {
       c.addEventListener("change", function () {
         if (c.checked) members.picked[c.dataset.id] = true;
@@ -232,17 +210,7 @@
       rerender();
     });
 
-    /* 선택한 회원에게 메일 (지시 2026-09-17).
-
-       **받는 사람은 숨은참조(BCC)로 넣는다.** to 로 넣으면 받는 사람마다
-       다른 회원들의 메일 주소가 그대로 보인다 — 회원 명부를 회원들에게
-       뿌리는 셈이다.
-
-       보내는 것은 브라우저가 아니라 **그 컴퓨터의 메일 앱**이다(mailto).
-       우리 서버는 메일을 보내지 않으므로 발송 실패도, 스팸 신고도 우리
-       도메인이 지지 않는다. 대신 주소가 많으면 mailto 주소가 길어져
-       메일 앱이 잘라 먹는 일이 있다 — 2,000자를 넘으면 보내지 않고
-       주소를 복사하게 한다. 조용히 잘린 채 보내지는 것이 가장 나쁘다. */
+    /* N0009 */
     var mailBtn = box.querySelector("#m-mail");
     if (mailBtn) mailBtn.addEventListener("click", function () {
       var list = pickedRows().map(function (u) { return u.email; }).filter(Boolean);
@@ -264,9 +232,7 @@
         return;
       }
       if (note) note.textContent = list.length + "명 · 메일 앱을 엽니다.";
-      // 검사가 '어디로 보냈나' 를 볼 구멍. 진짜로 메일 앱을 열어 버리면
-      // 그 뒤를 볼 수 없어, 받는 사람이 to 인지 bcc 인지를 검사로 옮길
-      // 길이 없다 — 그 구분이 이 기능에서 가장 중요한 한 가지다.
+      // N0010
       window.__mailto = href;
       location.href = href;
     });
@@ -336,16 +302,7 @@
     memberTable(box);
   }
 
-  /* 유입 경로를 **한 번만** 붙인다 (2026-09-16 지시 "UTM, GA 준비").
-   *
-   * 소셜 로그인은 구글·카카오를 거쳐 돌아오므로, 가입하는 그 순간에
-   * 값을 실어 보낼 자리가 없다. 대신 돌아온 뒤 이 화면에서 채운다 —
-   * 프로필 행은 가입 트리거(0001)가 이미 만들어 두었다.
-   *
-   * **비어 있을 때만 쓴다.** 두 번째 방문에 덮어쓰면 첫 접점이 사라지고,
-   * 광고로 와서 나중에 검색으로 돌아온 사람이 전부 '자연 검색' 이 된다.
-   * 실패해도 조용히 넘어간다 — 유입 경로 때문에 계정 화면이 안 뜨면
-   * 그게 더 나쁘다. */
+  /* N0011 */
   async function stampUtm(me) {
     try {
       var p = me.profile || {};
@@ -357,12 +314,7 @@
     } catch (e) { /* 계정 화면을 막지 않는다 */ }
   }
 
-  /* 계단의 넷째 칸 — 가입이 실제로 끝난 순간.
-
-     구글·카카오에서 돌아오면 여기로 온다. 프로필은 가입할 때 트리거가
-     만들므로, **방금 만들어진 프로필**이면 이번에 가입한 것이다.
-     10분을 창으로 잡는다 — 소셜 로그인 왕복이 그보다 오래 걸리는 일은 없다.
-     TRACK.once 가 같은 탭에서 두 번 가는 것을 막는다. */
+  /* N0012 */
   function markSignup(me) {
     try {
       if (!window.TRACK) return;
@@ -381,11 +333,9 @@
     var name = p.nickname || u.email || "이용자";
     var role = { user: "일반 회원", broker: "중개사", admin: "관리자" }[p.role] || p.role;
     var acc = window.accessOf ? window.accessOf(p) : { label: p.grade || "C", premium: false };
-    // 머리띠의 Admin 링크 (2026-09-12). 관리자면 보이고, 아니면 지운다 —
-    // 관리자 계정에서 로그아웃한 브라우저에 메뉴가 남으면 안 된다.
+    // N0013
     if (typeof window.tojiAdminNav === "function") window.tojiAdminNav(!!acc.admin);
-    // profile 이 아직 없으면 승인 전으로 본다. 모르는 것을 통과로
-    // 처리하면 안 된다 — gate.js 와 같은 판단이다.
+    // N0014
     var status = p.status || "pending";
     var ok = status === "approved";
 
@@ -399,7 +349,7 @@
       " · 등급 <b>" + window.SBUtil.esc(acc.label) + "</b>" +
       (acc.until ? " (" + acc.until.toLocaleDateString("ko-KR") + "까지)" : "") +
       (acc.expired ? " · 기간 만료" : "") + "</div>" +
-      // 2026-09-12: 등급 장벽을 뺐다. 승인된 회원이면 전부 열린다.
+      // N0015
       (ok && !acc.premium
         ? '<div class="note block" style="margin-bottom:1rem">현재 가치·미래 가치가 지금 열려 있지 않습니다. ' +
           "관리자에게 문의해 주세요.</div>" : "") +
@@ -416,8 +366,7 @@
             '<a class="btn ghost" href="/board">게시판 가기</a>' : "") +
       '<button class="btn ghost" id="edit-profile" aria-expanded="false">프로필 수정</button>' +
       '<button class="btn ghost" id="out">로그아웃</button></p>' +
-      // 프로필 수정 (지시 2026-09-13, 슬라이드 2): 표시 이름만 받는다. 사진은 받지
-      // 않는다 — 저장 공간 한도가 걸리면 넣지 말라는 지시였고, 이름은 공간을 안 쓴다.
+      // N0016
       '<form id="profile-form" class="pform" hidden>' +
       '<div class="field"><label for="pf-name">표시 이름</label>' +
       '<input id="pf-name" type="text" maxlength="20" autocomplete="nickname" required value="' +
@@ -447,16 +396,7 @@
       var msg = document.getElementById("pf-msg");
       if (v.length < 2 || v.length > 20) { msg.textContent = "이름은 2~20자로 적어 주세요."; return; }
 
-      /* 이름이 겹치는지 먼저 묻는다 (지시 2026-09-17).
-
-         **묻는 것과 막는 것은 다르다.** 여기서 묻는 것은 사람이 저장을
-         누르기 전에 알 수 있게 하려는 것뿐이고, 진짜 자물쇠는 데이터베이스의
-         유일 색인(profile_nickname_uniq)이다. 물어본 뒤 저장하기까지의 틈에
-         다른 사람이 같은 이름을 넣을 수 있기 때문이다 — 그때는 아래에서
-         23505 를 잡아 같은 말을 한다.
-
-         대소문자·앞뒤 공백 규칙은 화면이 아니라 nickname_taken() 안에 있다.
-         두 곳에 적으면 언젠가 갈라진다. */
+      /* N0017 */
       msg.textContent = "이름을 확인하는 중…";
       var dup = await window.SB.rpc("nickname_taken", { p_nick: v });
       if (dup.error) { msg.textContent = "이름을 확인하지 못했습니다 — " + dup.error.message; return; }
