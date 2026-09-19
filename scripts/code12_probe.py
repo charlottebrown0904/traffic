@@ -169,6 +169,40 @@ def main() -> int:
         except Exception as exc:                             # noqa: BLE001
             print(f"    {tbl:<24}못 셌습니다 — {type(exc).__name__}")
 
+    # ── 6. 필지는 어느 코드로 저장돼 있나 ────────────────────────
+    head("6. 필지 표는 어느 코드를 쓰나 — 거래와 같은 체계인가")
+    print("""  앞 표에서 '12' 의 가진 필지가 0 이라고 적었습니다. 그런데
+  trade_parcel 에는 '12' 거래에 붙은 필지가 있습니다. 그러면 필지가
+  **다른 코드로 저장돼 있다**는 뜻입니다. 둘을 나란히 셉니다.""")
+    print(f"\n  {'앞 2자리':<10}{'parcel 행':>12}{'trade 행':>12}")
+    pa = dict(con.execute("""
+        SELECT substr(sigungu_cd, 1, 2), count(*) FROM src.parcel
+        WHERE sigungu_cd IS NOT NULL GROUP BY 1
+    """).fetchall())
+    tr = dict(con.execute("""
+        SELECT substr(sigungu_cd, 1, 2), count(*) FROM src.trade
+        WHERE sigungu_cd IS NOT NULL GROUP BY 1
+    """).fetchall())
+    for k in sorted(set(pa) | set(tr)):
+        nm = SIDO.get(k, "?")
+        print(f"  {k} {nm:<7}{pa.get(k, 0):>12,}{tr.get(k, 0):>12,}")
+
+    print("\n  '12' 거래에 붙은 필지의 PNU 앞 2자리")
+    for pre, n in con.execute("""
+            SELECT substr(tp.pnu, 1, 2), count(*)
+            FROM src.trade_parcel tp JOIN src.trade t USING (trade_id)
+            WHERE t.sigungu_cd LIKE '12%' AND tp.pnu IS NOT NULL
+            GROUP BY 1 ORDER BY 2 DESC LIMIT 6""").fetchall():
+        print(f"    {pre} {SIDO.get(pre, '?'):<7}{n:>10,}")
+
+    print("\n  거래 sigungu_cd 와 붙은 PNU 앞 5자리가 같은가")
+    same, diff = con.execute("""
+        SELECT count(*) FILTER (WHERE substr(tp.pnu, 1, 5) = t.sigungu_cd),
+               count(*) FILTER (WHERE substr(tp.pnu, 1, 5) <> t.sigungu_cd)
+        FROM src.trade_parcel tp JOIN src.trade t USING (trade_id)
+        WHERE tp.pnu IS NOT NULL""").fetchone()
+    print(f"    같음 {same:,} · 다름 {diff:,}")
+
     head("정리")
     print("""  1·2·3절이 같은 곳을 가리키면 답이 난 것입니다. 이름과 좌표는
   서로 다른 길로 들어온 값이라, 둘이 맞으면 우연이 아닙니다.
