@@ -242,6 +242,14 @@
       return res.data.text().then(JSON.parse);
     }).catch(function () { return null; });
   }
+  function getOps(name) {
+    var sb = window.SB;
+    if (!sb || !sb.storage) return Promise.resolve(null);
+    return sb.storage.from('ops').download(name).then(function (res) {
+      if (res.error || !res.data) return null;
+      return res.data.text().then(JSON.parse);
+    }).catch(function () { return null; });
+  }
   function getStats() {
     var sb = window.SB;
     if (!sb) return Promise.resolve({ error: '로그인 연결이 없습니다' });
@@ -831,6 +839,38 @@
           + '그래서 화면에 보이는 것은 표본이고, 통계는 전체로 냅니다.</div>';
       }],
 
+    ['trade', '실거래 지번 추정 — 연도별로 얼마나 믿을 만한가',
+      '국토부가 가린 지번을 면적으로 되찾습니다. 붙인 지번이 맞을 확률을 연도·산여부로 나눠 봅니다. 이 숫자는 이용자에게 보이지 않습니다.',
+      function (c) {
+        var j = c.jibun;
+        if (!j) {
+          return '<div class="adm-warn">운영자 버킷에서 <code>ops/jibun-confidence.json</code> 을 못 받았습니다. '
+            + '아직 안 올렸거나, <code>0019_ops_storage.sql</code> 이 적용되지 않았습니다.</div>'
+            + '<p>올리는 쪽은 러너입니다 — 지번 탐침 워크플로가 내보낸 파일을 '
+            + '<code>ops</code> 버킷에 넣습니다.</p>';
+        }
+        var P = function (v) { return v == null ? null : pct(Number(v), 1); };
+        var bands = j.bands || {};
+        var body = Object.keys(bands).map(function (name) {
+          var rows = (bands[name] || []).map(function (r) {
+            return [E(String(r.year)), N(r.n), P(r.unique), P(r.absent), P(r.precision)];
+          });
+          return '<h4>' + E(name) + '</h4>'
+            + table(['연도', '거래', '유일률', '정답없음', '추정 정확도'], rows,
+                    { num: [1, 2, 3, 4] });
+        }).join('');
+        return '<p class="adm-stamp">시군구 <b>' + E(j.sigungu || '—') + '</b>'
+          + ' · 면적 허용오차 <b>' + (j.tolerance == null ? '—' : P(j.tolerance)) + '</b>'
+          + ' · 거짓 양성률 <b>' + (j.false_positive_rate == null ? '—' : P(j.false_positive_rate)) + '</b></p>'
+          + '<div class="adm-note"><b>어떻게 잰 숫자인가.</b> 실제 자료에는 정답지가 없습니다. '
+          + '그래서 같은 규칙을 <b>일부러 틀린 법정동</b>에 걸어 우연히 맞는 몫을 재고, 그것을 빼서 추정합니다. '
+          + '<code>정확도 = (유일 − 없는비율 × 틀린동유일) / 유일</code>. 잰 값이 아니라 추정입니다.</div>'
+          + body
+          + '<div class="adm-warn"><b>이 표는 이용자에게 나가지 않습니다.</b> '
+          + '읽기 정책이 <code>is_admin()</code> 을 물으므로 화면에서 감추는 것이 아니라 실제로 막혀 있습니다. '
+          + '이용자에게는 지도와 <a href="/legal/notice">이용 고지</a>에서 “추정 위치”라고만 알립니다.</div>';
+      }],
+
     ['db', '개발 한도 — 법령 상한과 시·군 조례',
       '건폐율·용적률은 법이 상한을 정하고 조례가 그보다 낮게 정합니다. 경사도·표고·입목축적 기준은 조례에만 있습니다.',
       function (c) {
@@ -1398,6 +1438,7 @@
       getJSON('/app/data/verdicts.json'),
       getJSON('/app/data/zoning-limits.json'),
       getPremium('valuation.json'),
+      getOps('jibun-confidence.json'),
       getStats(),
       getCoverage(),
       getUtm(),
@@ -1405,8 +1446,8 @@
       getAudit(),
       getGa(),
     ]);
-    render({ meta: got[0], verdicts: got[1], zoning: got[2], val: got[3], stats: got[4],
-             cover: got[5], utm: got[6], links: got[7], audit: got[8], ga: got[9],
-             acc: acc });
+    render({ meta: got[0], verdicts: got[1], zoning: got[2], val: got[3], jibun: got[4],
+             stats: got[5], cover: got[6], utm: got[7], links: got[8], audit: got[9],
+             ga: got[10], acc: acc });
   })();
 })();

@@ -129,3 +129,10 @@ footer.page{
 }
 footer.page p{max-width:none}
 @media (prefers-reduced-motion:reduce){*{animation:none!important; transition:none!important}}
+
+
+/* 이용 고지 목록 — /legal/notice */
+.dc-item { margin: 1.4rem 0; padding-left: .9rem; border-left: 3px solid var(--line); }
+.dc-item h3 { margin: 0 0 .2rem; font-size: 1rem; }
+.dc-since { margin: 0 0 .4rem; font-size: .76rem; color: var(--muted); }
+.dc-item p:last-child { margin: 0; }

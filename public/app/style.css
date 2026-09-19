@@ -1346,7 +1346,27 @@ body.picking .leaflet-container{cursor:crosshair}
 }
 .map-note[hidden] { display: none; }
 .map-note-txt { margin: 0; font-size: .76rem; color: var(--muted); line-height: 1.5; }
+.map-note-txt + .map-note-txt { margin-top: .45rem; }
+.map-note-txt b { color: var(--ink); }
 .map-note .guide-link { margin-left: 0; font-size: .8rem; }
+
+/* 지도 오른쪽 아래에 늘 보이는 한 줄. 접어 두면 아무도 안 읽는다. */
+.map-legal {
+  position: absolute; z-index: 610;
+  right: .6rem; bottom: .6rem; margin: 0;
+  padding: .22rem .5rem; border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  border: 1px solid var(--line);
+  font-size: .68rem; line-height: 1.5; color: var(--muted);
+  max-width: calc(100% - 1.2rem);
+}
+.map-legal b { color: var(--ink); }
+.map-legal a { color: inherit; margin-left: .35rem; }
+body.is-mapmax .map-legal { bottom: 1.2rem; }
+@media (max-width: 720px) {
+  .map-legal { left: .5rem; right: auto; bottom: .5rem; font-size: .64rem; }
+  .lp-scale { bottom: 2.1rem; }
+}
 
 /* N0643 */
 body.is-mapmax .topbar,

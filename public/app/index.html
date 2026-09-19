@@ -265,11 +265,17 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
     </div>
 
     <div class="map-note" id="map-note" hidden>
-      <p class="map-note-txt" id="disclaimer"></p>
+      <div class="map-note-txt" id="disclaimer"></div>
       <a class="guide-link" href="/guide">토지·건축 가이드 →</a>
     </div>
 
     <div id="map"></div>
+
+    <!-- 지도 위에 늘 보이는 한 줄. 접어 두면 아무도 안 읽는다. -->
+    <p class="map-legal" id="map-legal">
+      지도의 실거래 위치는 <b>추정</b>입니다
+      <a href="/legal/notice">자세히</a>
+    </p>
 
     <!-- N0547 -->
     <div class="lp-scale" id="lp-scale" hidden aria-hidden="true"></div>
@@ -603,6 +609,7 @@ gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
 <script src="/app/supabase.js?v=20260918a"></script>
 <script src="/lib/track.js?v=20260918a"></script>
 <script src="/lib/supabase-init.js?v=20260905a"></script>
+<script src="/lib/disclaimer.js?v=20260919a"></script>
 <!-- N0555 -->
 <script src="/lib/access.js?v=20260912d"></script>
 <script src="/app/gate.js?v=20260918a"></script>

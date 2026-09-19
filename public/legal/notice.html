@@ -1,0 +1,60 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.ico" sizes="32x32">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<meta name="theme-color" content="#FAF7F3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12100D" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="/lib/theme.css?v=20260912a">
+<script src="/lib/theme.js?v=20260912a"></script>
+<script src="/lib/adminnav.js?v=20260912a"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<title>이용 고지 · 토지랩</title>
+<!-- N0716 -->
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){ dataLayer.push(arguments); }
+gtag('js', new Date());
+/* N0717 */
+gtag('config', 'G-RW6MCG84SF', { anonymize_ip: true });
+</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-RW6MCG84SF"></script>
+<link rel="stylesheet" href="/guide/style.css?v=20260912a">
+<link rel="stylesheet" href="/account/style.css?v=20260918a">
+
+<header class="sitebar">
+  <div class="sitebar-inner">
+    <a class="sitebar-brand" href="/"><img src="/icon.svg" alt="" width="22" height="22"><span>토지랩</span></a>
+    <nav class="sitebar-nav"><a href="/app">지도</a><a href="/admin" data-admin-link hidden>Admin</a><a href="/guide">가이드</a><a href="/board">게시판</a><a href="/account" id="nav-me">내 계정</a></nav>
+    <span data-theme-switch></span>
+  </div>
+</header>
+
+<main class="wrap guide-body">
+<h1 id="고지">이용 고지</h1>
+<p class="lead">토지랩이 보여 주는 숫자와 위치가 <b>무엇이고 무엇이 아닌지</b>
+한곳에 적습니다. 화면마다 짧게 나가는 문구의 원문이 여기 있습니다.
+<b>항목이 늘어나면 이 쪽에 먼저 적습니다.</b></p>
+
+<div id="dc-list"><p class="soft">불러오는 중…</p></div>
+
+<h2>요약</h2>
+<ul>
+<li>토지랩은 <b>감정평가·투자자문이 아닙니다.</b> 공개 자료로 만든 참고 지표입니다.</li>
+<li>실거래 위치는 <b>추정</b>입니다. 되찾지 못한 거래는 지도에 올리지 않습니다.</li>
+<li>계약·경계·권리 확인은 <b>등기부와 지적도</b>로 하십시오.</li>
+</ul>
+
+<p class="soft"><a href="/legal">개인정보 처리방침 →</a></p>
+</main>
+
+<script src="/lib/disclaimer.js?v=20260919a"></script>
+<script>
+(function () {
+  var box = document.getElementById('dc-list');
+  if (box && window.Disclaimer) box.innerHTML = window.Disclaimer.listHtml();
+}());
+</script>

@@ -151,7 +151,11 @@ async function boot() {
   state.tradesShown = state.trades;
 
   if (state.meta.is_synthetic) $('#demo-banner').hidden = false;
-  $('#disclaimer').textContent = state.meta.disclaimer;
+  // 고지 문구는 /lib/disclaimer.js 한 곳에서만 온다.
+  const dc = window.Disclaimer;
+  $('#disclaimer').innerHTML = dc
+    ? dc.html('map', 'map-note-txt')
+    : escapeHtml(state.meta.disclaimer || '');
 
   if (CONFIG.homeUrl) {
     const home = $('#home-link');
@@ -4895,12 +4899,10 @@ function premiumNotice(key, acc) {
 }
 
 /* N0424 */
-const FUTURE_DISCLAIMER =
-  '<p class="pcv-legal"><b>미래 가치는 예측이 아니라 참고 지표입니다.</b> '
-  + '과거 실거래·교통량·개발 사건 자료로 만든 통계이며, 앞으로의 가격을 '
-  + '약속하거나 보장하지 않습니다. 투자 판단과 그 결과는 이용자 본인의 '
-  + '것이고, 저희는 그 결과에 책임지지 않습니다. 감정평가·투자자문이 '
-  + '아닙니다.</p>';
+function disclaimerHtml(where, cls) {
+  const dc = window.Disclaimer;
+  return dc ? dc.html(where, cls) : '';
+}
 
 /* N0425 */
 const FUTURE_LAYERS = [
@@ -4922,7 +4924,7 @@ function valuePanel(key) {
       + '</dl>'
       + '<p class="pcv-desc">세 층이 서고 <b>뒤로 돌려 검산</b>까지 통과하면 그때 '
       + '숫자를 냅니다. 그 전에는 만들어 내지 않습니다.</p>'
-      + FUTURE_DISCLAIMER;
+      + disclaimerHtml('value.future', 'pcv-legal');
   }
   return `<h4>${s.label}</h4>`
     + '<p class="pcv-soon">곧 공개합니다.</p>';
@@ -5451,9 +5453,7 @@ function renderValuation(res) {
     + rows.map(([k, v]) => `<tr><th>${e(k)}</th><td>${v}</td></tr>`).join('')
     + '</tbody></table>' + bottom + warn
     /* N0451 */
-    + '<p class="pcv-note">공시지가기준법의 다섯 마디를 데이터베이스로 산출한 <strong>예상값</strong>입니다. '
-    + '감정평가가 아니며, 담보·소송·과세·보상 목적으로 쓸 수 없습니다. '
-    + '<a href="/guide/law">산출 방법</a></p>';
+    + disclaimerHtml('value.now', 'pcv-note');
 }
 
 /* N0452 */
