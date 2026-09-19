@@ -85,6 +85,7 @@ jobs:
           name: region-umd
           path: data/raw/region_umd.csv
           if-no-files-found: warn
+          retention-days: 7
 
       - name: 실행 요약
         if: always()

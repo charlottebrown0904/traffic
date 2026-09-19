@@ -89,3 +89,4 @@ jobs:
           name: sigungu-codes-${{ github.run_number }}
           path: config/sigungu_codes.yaml
           if-no-files-found: warn
+          retention-days: 7

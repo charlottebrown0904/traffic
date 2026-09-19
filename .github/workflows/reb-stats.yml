@@ -123,6 +123,7 @@ jobs:
           name: market-fit
           path: data/processed/market_fit.json
           if-no-files-found: warn
+          retention-days: 7
 
       - name: 수집분 보관
         if: always() && (inputs.mode == 'load' || inputs.mode == 'market')
@@ -140,3 +141,4 @@ jobs:
           name: reb-stats
           path: data/raw/reb/
           if-no-files-found: warn
+          retention-days: 7

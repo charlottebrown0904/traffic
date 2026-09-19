@@ -150,3 +150,4 @@ jobs:
             data/raw/region_population.csv
             data/raw/region_names.csv
           if-no-files-found: warn
+          retention-days: 7

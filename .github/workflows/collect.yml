@@ -662,6 +662,7 @@ jobs:
         with:
           name: web-data-${{ github.run_number }}
           path: public/app/data
+          retention-days: 3
 
       # 용량을 매 실행이 스스로 찍는다.
       #
@@ -726,6 +727,32 @@ jobs:
               for c in sorted(caches, key=lambda x: -x["size_in_bytes"])[:6]:
                   print(f"    {c['size_in_bytes']/GB:5.2f} GB  {c['key']}"
                         f"  (마지막 사용 {c['last_accessed_at'][:10]})")
+
+          # ── 아티팩트 ──
+          #
+          # **캐시와 다른 통이다.** 캐시 10GB 는 요금이 없지만 아티팩트는
+          # Free 플랜 무료분이 500MB 뿐이고, 넘기면 유료가 되어 결제가
+          # 안 서 있으면 **Actions 가 통째로 멈춘다.** 2026-09-19 에
+          # 그렇게 멈췄다 — web-data 90개가 594.7MB 였다.
+          #
+          # 그때 이 숫자는 어디에도 안 찍히고 있었다. 캐시만 보고 있었고,
+          # 캐시는 6.49GB 로 멀쩡했다. 안 보는 숫자는 안 보는 동안 자란다.
+          MB = 2 ** 20
+          arts, page = [], 1
+          while page <= 5:
+              rows = api(f"/actions/artifacts?per_page=100&page={page}"
+                         ).get("artifacts", [])
+              if not rows:
+                  break
+              arts += [a for a in rows if not a.get("expired")]
+              page += 1
+          used = sum(a["size_in_bytes"] for a in arts)
+          print()
+          print("=== Actions 아티팩트 ===")
+          print(f"  {used/MB:.1f} MB / 500 MB  ({used/(500*MB):.0%}) · {len(arts)}개")
+          if used > 500 * MB * 0.8:
+              print("  ⚠ 무료분의 80% 를 넘었습니다. 넘기면 실행이 멈춥니다.")
+              print("    → '아티팩트 정리' 워크플로를 돌리세요")
 
           # ── 이번 달 실행 시간 ──
           #

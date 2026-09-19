@@ -85,3 +85,4 @@ jobs:
           name: zones-housing-${{ github.run_number }}
           path: data/raw/zones_housing.csv
           if-no-files-found: warn
+          retention-days: 7

@@ -494,6 +494,7 @@ jobs:
           name: cross-factors
           path: data/processed/cross_factors.json
           if-no-files-found: warn
+          retention-days: 7
 
       - name: 세 땅 추이 첨부
         if: always() && inputs.mode == 'zone-trend'
@@ -502,6 +503,7 @@ jobs:
           name: zone-trend
           path: data/processed/zone_trend.json
           if-no-files-found: warn
+          retention-days: 7
 
       - name: 예측 백테스트 첨부
         if: always() && inputs.mode == 'forecast'
@@ -510,6 +512,7 @@ jobs:
           name: forecast
           path: data/processed/forecast.json
           if-no-files-found: warn
+          retention-days: 7
 
       - name: 도로 사다리 첨부
         if: always() && inputs.mode == 'road-step'
@@ -518,6 +521,7 @@ jobs:
           name: road-step
           path: data/processed/road_step.json
           if-no-files-found: warn
+          retention-days: 7
 
       - name: 인자 칸·계수 첨부
         if: always() && inputs.mode == 'factor-cells'
@@ -526,6 +530,7 @@ jobs:
           name: factor-cells
           path: data/processed/factor_cells.json
           if-no-files-found: warn
+          retention-days: 7
 
       - name: 검증 결과 첨부
         if: always() && inputs.mode == 'value-test'
@@ -534,6 +539,7 @@ jobs:
           name: value-test
           path: data/processed/value_test.json
           if-no-files-found: ignore
+          retention-days: 7
 
       - name: 조례 탐침 결과 첨부
         if: always() && inputs.mode == 'law-probe'
@@ -545,6 +551,7 @@ jobs:
             data/processed/ordinance/probe-*.json
             data/processed/ordinance/probe-web-*.html
           if-no-files-found: ignore
+          retention-days: 7
 
       - name: 시장 층 적합 결과 첨부
         if: always() && inputs.mode == 'market-fit'
@@ -552,6 +559,7 @@ jobs:
         with:
           name: market-fit
           path: data/processed/market_fit.json
+          retention-days: 7
 
       - name: 모멘텀 검증 결과 첨부
         if: always() && inputs.mode == 'momentum'
@@ -559,6 +567,7 @@ jobs:
         with:
           name: momentum-test
           path: data/processed/momentum_test.json
+          retention-days: 7
 
       - name: 지역 지표 탐침 결과 첨부
         if: always() && inputs.mode == 'indicators-probe'
@@ -566,6 +575,7 @@ jobs:
         with:
           name: indicators-probe
           path: data/processed/indicators_probe.json
+          retention-days: 7
 
       - name: 탐침 결과 첨부
         if: always() && inputs.mode == 'probe'
@@ -574,6 +584,7 @@ jobs:
           name: stdland-probe
           path: data/processed/stdland_probe.json
           if-no-files-found: ignore
+          retention-days: 7
 
       # 맨 마지막 단계여야 한다 — 뒤에 오는 단계의 환경변수 덤프가 요약을 밀어낸다.
       # 사람이 읽는 곳은 '실행 요약'(스텝 서머리)이고, 이것은 API 로 꺼내 읽기 위한 것이다.

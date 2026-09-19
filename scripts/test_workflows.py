@@ -596,6 +596,60 @@ if _mig.exists():
           "왜 붙이면 안 되는지도 적혀 있다")
 
 print()
+print("P. 아티팩트에 보관일수가 걸려 있다")
+# 2026-09-19 에 Actions 가 통째로 멈췄다. 분이 아니라 **저장**이었다.
+#
+#     The job was not started because recent account payments have
+#     failed or your spending limit needs to be increased.
+#
+# Free 플랜의 무료 Actions 저장은 500MB 인데 아티팩트가 599MB 였다.
+# 그 중 594.7MB 가 `web-data` 90개 — 같은 화면 JSON 의 사본이 90번
+# 쌓인 것이다. 왜 쌓였나: **22곳 중 1곳만 retention-days 가 있었고**
+# 나머지는 기본 90일이었다.
+#
+# 캐시(10GB)와 다른 통이라는 것이 이 사고의 핵심이다. 캐시는 매 실행이
+# 스스로 찍고 있었고 6.49GB 로 멀쩡했다. 아무도 안 보는 숫자가 따로
+# 자라고 있었다.
+#
+# 그래서 빠뜨림 자체를 검사로 막는다. 새 워크플로에 업로드를 하나
+# 넣으면서 보관일수를 잊는 것이, 바로 이 사고가 난 방식이다.
+_MAX_DAYS = 7
+_missing, _toolong, _n = [], [], 0
+for _f in sorted(WF.glob("*.yml")):
+    _doc = _yaml.safe_load(_f.read_text(encoding="utf-8")) or {}
+    for _job in (_doc.get("jobs") or {}).values():
+        for _step in (_job.get("steps") or []):
+            if not str(_step.get("uses", "")).startswith(
+                    "actions/upload-artifact"):
+                continue
+            _n += 1
+            _days = (_step.get("with") or {}).get("retention-days")
+            _where = f"{_f.name}: {_step.get('name') or _step['uses']}"
+            if _days is None:
+                _missing.append(_where)
+            elif int(_days) > _MAX_DAYS:
+                _toolong.append(f"{_where} ({_days}일)")
+check(_n > 0, f"아티팩트 업로드를 {_n}곳에서 찾았다")
+check(not _missing,
+      "모든 업로드에 retention-days 가 있다" +
+      ("" if not _missing else f" — 빠진 곳: {', '.join(_missing)}"))
+check(not _toolong,
+      f"보관일수가 모두 {_MAX_DAYS}일 이하다" +
+      ("" if not _toolong else f" — 넘는 곳: {', '.join(_toolong)}"))
+
+# 예방(보관일수)만으로는 이미 쌓인 것이 안 줄어든다. 청소하는 쪽도 있어야
+# 한다. 둘 중 하나만 있으면 다음에 또 같은 자리에서 멈춘다.
+check((WF / "artifact-prune.yml").exists(),
+      "주마다 걷어내는 '아티팩트 정리' 워크플로가 있다")
+check((ROOT / "scripts/prune_artifacts.py").exists(),
+      "그 로직이 scripts/prune_artifacts.py 한 곳에만 있다")
+
+# 캐시만 보다가 아티팩트를 놓쳤다. 매 실행이 둘 다 찍게 한다.
+_collect = (WF / "collect.yml").read_text(encoding="utf-8")
+check("Actions 아티팩트" in _collect and "/actions/artifacts?" in _collect,
+      "수집이 매 실행 아티팩트 사용량도 찍는다")
+
+print()
 if fail:
     print(f"실패 {len(fail)}건")
     sys.exit(1)

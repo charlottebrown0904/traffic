@@ -1,0 +1,60 @@
+# 아티팩트를 무료 저장 한도 아래로 유지한다. 주마다.
+#
+# 2026-09-19 에 Actions 가 통째로 멈췄다. 분이 아니라 **저장**이었다 —
+# `web-data` 90개가 594.7MB 를 차지해 Free 플랜 무료분 500MB 를 넘겼고,
+# 넘긴 순간부터 실행이 2초 만에 죽었다. 자세한 것은
+# scripts/prune_artifacts.py 의 머리말에 적어 뒀다.
+#
+# 막는 겹이 둘이다. 이것은 두 번째다.
+#
+#   1. 워크플로마다 retention-days  — 애초에 오래 안 남게 (예방)
+#   2. 이 워크플로가 주마다          — 그래도 새는 것을 걷어냄 (청소)
+#
+# 1번만으로 충분할 것 같지만, 새 워크플로를 짤 때 retention-days 를
+# 빠뜨리는 것이 바로 이 사고가 난 방식이다. scripts/test_workflows.py 가
+# 빠뜨림을 잡고, 이것이 이미 쌓인 것을 걷는다.
+name: 아티팩트 정리 (500MB 무료분)
+
+on:
+  schedule:
+    # 주에 한 번, 월요일 새벽. (UTC 18:40 일 = KST 03:40 월)
+    - cron: "40 18 * * 0"
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "며칠보다 오래된 것을 지울지"
+        default: "7"
+      dry_run:
+        description: "지우지 않고 무엇을 지울지만 본다"
+        type: boolean
+        default: false
+
+# 아티팩트를 지우려면 쓰기 권한이 필요하다. 그 하나뿐이다.
+permissions:
+  actions: write
+
+concurrency:
+  group: artifact-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python scripts/prune_artifacts.py \
+            --days "${{ inputs.days || 7 }}" \
+            ${{ inputs.dry_run && '--dry-run' || '' }} \
+            | tee /tmp/prune.log
+      - if: always()
+        run: |
+          { echo "## 아티팩트 정리"; echo; echo '```'
+            cat /tmp/prune.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"

@@ -263,3 +263,4 @@ jobs:
         with:
           name: web-data-${{ github.run_number }}
           path: public/app/data
+          retention-days: 3

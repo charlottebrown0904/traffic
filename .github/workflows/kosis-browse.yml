@@ -116,3 +116,4 @@ jobs:
             data/raw/region_population.csv
             data/raw/kosis_browse.txt
           if-no-files-found: warn
+          retention-days: 7
