@@ -10,7 +10,7 @@
 # 요구사항(2026-09-19): "2번은 정확도 목표를 80%로 합니다."
 #
 # 수집을 건드리지 않는다 — 캐시를 **읽기만** 하고 아무것도 커밋하지 않는다.
-name: 가려진 지번 되찾기 탐침
+name: 지번 탐침 (필지 좌표 믿음 · 가려진 지번 되찾기)
 
 on:
   workflow_dispatch:
@@ -21,6 +21,14 @@ on:
       umds:
         description: "시범에 쓸 법정동 수"
         default: "5"
+      what:
+        description: "무엇을 돌릴지"
+        type: choice
+        options: [both, trust, jibun]
+        default: both
+      trust_sigungu:
+        description: "믿음 검증을 한 시군구만 (비우면 전국)"
+        default: ""
 
 jobs:
   probe:
@@ -48,7 +56,17 @@ jobs:
           key: redt-data-${{ github.run_id }}
           restore-keys: redt-data-
 
-      - name: 탐침
+      # 두 탐침을 한 실행에 담는다. 둘 다 같은 캐시를 읽고, 캐시를 받는
+      # 데만 1분 가까이 걸린다 — 따로 돌리면 그 1분을 두 번 쓴다.
+      - name: 필지 좌표를 믿어도 되는가
+        if: inputs.what != 'jibun'
+        run: |
+          set -o pipefail
+          python scripts/parcel_trust_probe.py \
+            "${{ inputs.trust_sigungu }}" 2>&1 | tee /tmp/trust.log
+
+      - name: 가려진 지번 되찾기
+        if: inputs.what != 'trust'
         run: |
           set -o pipefail
           python scripts/jibun_match_probe.py \
@@ -58,6 +76,8 @@ jobs:
       - name: 실행 요약
         if: always()
         run: |
-          { echo "## 가려진 지번 되찾기 탐침"; echo; echo '```'
-            cat /tmp/jibun.log 2>/dev/null || echo "(로그 없음)"
-            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          for f in trust jibun; do
+            [ -f "/tmp/$f.log" ] || continue
+            { echo "## $f"; echo; echo '```'
+              cat "/tmp/$f.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
