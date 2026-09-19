@@ -140,34 +140,57 @@ def main() -> int:
             print("    ★ 이 원천이면 브이월드 없이 면적을 채울 수 있습니다.")
         print(f"    첫 행 {json.dumps(rows[0], ensure_ascii=False)[:300]}")
 
-    # ── 3. 파일이 있으면 앞부분만 ─────────────────────────────────
-    head("3. 파일 — 머리글과 크기")
-    for ds in ("15052266", "15004246"):
-        d = found.get(ds) or {}
-        links = d.get("downloads") or []
-        print(f"\n  [{ds}] 내려받기 링크 {len(links)}개 · 파일 "
-              f"{' · '.join((d.get('files') or [])[:3]) or '—'}")
-        for ln in links[:2]:
-            tail = ln.lstrip("/")
-            for base in ("https://www.data.go.kr/cmm/cmm/",
-                         "https://www.data.go.kr/"):
-                url = base + tail
-                print(f"    → {url[:150]}")
-                try:
-                    r = http.get_once(url, {}, timeout=90)
-                except Exception as exc:                     # noqa: BLE001
-                    print(f"      실패 — {type(exc).__name__}: {str(exc)[:140]}")
+    # ── 3. 파일 — 화면 원문에서 번호를 직접 긁는다 ────────────────
+    head("3. 파일 — 화면 원문에서 atchFileId 를 직접 긁는다")
+    print("""  앞 판은 '내려받기 링크 0개' 로 끝났습니다. 그런데 그것이 화면에
+  없는 것인지 정규식이 못 잡은 것인지 구별이 안 됐습니다. 이번에는
+  화면을 직접 받아 FILE_숫자 를 통째로 긁고, 나온 번호마다 주소를
+  만들어 두드립니다.
+
+  중계기는 텍스트 아닌 응답을 base64 로 감싸 보냅니다(x-relay-encoding).
+  indicators.fetch_head() 가 그것을 풀어 머리글까지 보여 줍니다.""")
+    DOWN = "https://www.data.go.kr/cmm/cmm/fileDownload.do"
+    for ds, kind, label in SETS:
+        print(f"\n  [{ds}] {label}")
+        url = f"https://www.data.go.kr/data/{ds}/{kind}.do"
+        try:
+            page = http.get_once(url, {}, timeout=60).text
+        except Exception as exc:                             # noqa: BLE001
+            print(f"    화면을 못 받았습니다 — {type(exc).__name__}")
+            continue
+        ids = sorted(set(re.findall(r"FILE_\d{10,}", page)))
+        sns = sorted(set(re.findall(r"fileDetailSn['\"=:\s]+(\d{1,3})", page)))
+        print(f"    FILE_ 번호 {len(ids)}개 {ids[:4]} · fileDetailSn 후보 {sns[:5]}")
+        if not ids:
+            # 없으면 왜 없는지 단서를 남긴다 — '신청' 이 걸려 있을 수 있다.
+            for word in ("활용신청", "신청하기", "로그인", "다운로드"):
+                n = page.count(word)
+                if n:
+                    print(f"      화면에 '{word}' {n}번")
+            continue
+        for fid in ids[:2]:
+            for sn in (sns[:3] or ["1"]):
+                u = f"{DOWN}?atchFileId={fid}&fileDetailSn={sn}&insertDataPrcus=N"
+                got = ind.fetch_head(u, timeout=90)
+                if got.get("error"):
+                    print(f"      sn={sn} 실패 — {got['error'][:90]}")
                     continue
-                ct = r.headers.get("content-type", "")
-                cl = r.headers.get("content-length", "?")
-                cd = r.headers.get("content-disposition", "")
-                print(f"      {r.status_code} · {ct[:50]} · {cl} bytes · {cd[:70]}")
-                blob = r.content[:400]
-                if r.status_code == 200 and "html" not in ct:
-                    print(f"      ★ 파일이 옵니다 — 머리 "
-                          f"{blob.decode('utf-8', 'replace')[:200]!r}")
+                print(f"      sn={sn} · {got.get('status')} · "
+                      f"{str(got.get('content_type'))[:40]} · "
+                      f"{got.get('bytes')} bytes · {got.get('looks_like')}")
+                hdr = got.get("header") or ""
+                if got.get("looks_like") == "table":
+                    cols = [c.strip().strip('"') for c in hdr.split(",")]
+                    area = [c for c in cols if any(a in c for a in AREA_KEYS)]
+                    pnu = [c for c in cols if any(a in c for a in PNU_KEYS)]
+                    print(f"        칸 {len(cols)}개 — {' · '.join(cols[:16])}")
+                    print(f"        면적 칸 {area or '없음'} · PNU 칸 {pnu or '없음'}")
+                    if area and pnu:
+                        print("        ★ 이 파일이면 브이월드 없이 면적을 채웁니다.")
+                    for ln in (got.get("rows") or [])[:2]:
+                        print(f"        예: {ln[:150]}")
                     break
-                print(f"      머리 {re_sp(blob.decode('utf-8', 'replace'))[:160]!r}")
+                print(f"        머리 {hdr[:120]}")
 
     # ── 4. 브이월드 한도 ──────────────────────────────────────────
     head("4. 브이월드 — 한도가 실제로 무엇이라고 답하나")
