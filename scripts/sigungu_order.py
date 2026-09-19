@@ -80,6 +80,12 @@ def main() -> int:
         WHERE sigungu IS NOT NULL AND sigungu <> '' GROUP BY 1
     """).fetchall())
 
+    # **이미 갖고 있는 것을 먼저 센다.** 다시 받을 이유가 없으면 안 받는다.
+    have = dict(con.execute("""
+        SELECT sigungu_cd, count(*) FROM src.parcel
+        WHERE sigungu_cd IS NOT NULL AND area_m2 > 0 GROUP BY 1
+    """).fetchall())
+
     out = []
     for sgg, n, la0, la1, lo0, lo1, n_xy in rows:
         if not n_xy or la0 is None:
@@ -94,6 +100,7 @@ def main() -> int:
             "sido": SIDO.get(sgg[:2], sgg[:2]),
             "name": name.get(sgg, ""),
             "trades": int(n),
+            "parcels_have": int(have.get(sgg, 0)),
             "tiles": tiles,
             "per_call": round(n / tiles, 2) if tiles else None,
         })
@@ -116,29 +123,51 @@ def main() -> int:
     for cap in (4000, 10000, 100000):
         print(f"    하루 {cap:,}건이면 {math.ceil(tot_c / cap):,}일")
 
+    tot_h = sum(r["parcels_have"] for r in out)
+    print(f"  **이미 받아 둔 필지 {tot_h:,}개** — 이것부터 쓰고 모자란 것만 받습니다")
+
     print(f"\n  {'#':>4} {'코드':<7}{'시도':<5}{'시군구':<12}{'통거래':>9}"
-          f"{'칸':>8}{'건/호출':>9}  누적일(4천)")
+          f"{'가진 필지':>10}{'필지/거래':>10}{'칸':>8}  누적일(4천)")
     run = 0
     for r in out[:60]:
         run += r["tiles"] or 0
+        ratio = r["parcels_have"] / r["trades"] if r["trades"] else 0
         print(f"  {r['order']:>4} {r['sigungu_cd']:<7}{r['sido']:<5}"
               f"{(r['name'] or '')[:11]:<12}{r['trades']:>9,}"
-              f"{(r['tiles'] or 0):>8,}{(r['per_call'] or 0):>9.1f}"
-              f"{math.ceil(run / 4000):>10,}")
+              f"{r['parcels_have']:>10,}{ratio:>10.1f}"
+              f"{(r['tiles'] or 0):>8,}{math.ceil(run / 4000):>10,}")
     if len(out) > 60:
         print(f"  … 외 {len(out) - 60}곳")
 
     print("\n  시도별 묶음")
-    print(f"    {'시도':<6}{'시군구':>7}{'통거래':>11}{'칸':>10}{'일(4천)':>10}")
+    print(f"    {'시도':<6}{'시군구':>7}{'통거래':>11}{'가진 필지':>12}"
+          f"{'칸':>10}{'일(4천)':>10}")
     agg = {}
     for r in out:
-        a = agg.setdefault(r["sido"], [0, 0, 0])
+        a = agg.setdefault(r["sido"], [0, 0, 0, 0])
         a[0] += 1
         a[1] += r["trades"]
         a[2] += r["tiles"] or 0
+        a[3] += r["parcels_have"]
     for sd in sorted(agg, key=lambda s: -agg[s][1]):
-        c, t, k = agg[sd]
-        print(f"    {sd:<6}{c:>7,}{t:>11,}{k:>10,}{math.ceil(k / 4000):>10,}")
+        c, t, k, h = agg[sd]
+        print(f"    {sd:<6}{c:>7,}{t:>11,}{h:>12,}{k:>10,}"
+              f"{math.ceil(k / 4000):>10,}")
+
+    # 가진 것이 얼마나 되나 — 필지 표가 왜 성긴지까지 같이 본다.
+    print("""
+  가진 필지가 왜 적은가
+    landchar 의 tiles_for() 는 **거래 좌표가 있는 칸만** 만듭니다.
+    그런데 그 거래 좌표는 가려진 지번을 지오코딩한 것이라, 한 법정동의
+    거래 수백 건이 서로 다른 점 아홉 개로 뭉쳐 있었습니다. 그래서 그
+    아홉 점 둘레만 받았습니다 — 빠진 곳이 고르게 빠진 것이 아닙니다.""")
+    print(f"    {'시군구':<12}{'통거래':>9}{'가진 필지':>11}{'필지/거래':>10}")
+    worst = sorted([r for r in out if r["trades"] >= 500],
+                   key=lambda r: r["parcels_have"] / max(r["trades"], 1))[:12]
+    for r in worst:
+        print(f"    {(r['name'] or r['sigungu_cd'])[:11]:<12}{r['trades']:>9,}"
+              f"{r['parcels_have']:>11,}"
+              f"{r['parcels_have'] / max(r['trades'], 1):>10.1f}")
 
     dst = arg("--out")
     if dst:
