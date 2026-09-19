@@ -24,11 +24,15 @@ on:
       what:
         description: "무엇을 돌릴지"
         type: choice
-        options: [both, trust, blast, jibun]
+        options: [both, trust, blast, jibun, infer]
         default: both
       trust_sigungu:
         description: "믿음 검증을 한 시군구만 (비우면 전국)"
         default: ""
+      fetch:
+        description: "추론 전에 필지를 WFS 로 먼저 채울지"
+        type: boolean
+        default: false
 
 jobs:
   probe:
@@ -79,10 +83,32 @@ jobs:
             "${{ inputs.sigungu || '41550' }}" \
             "${{ inputs.umds || '5' }}" 2>&1 | tee /tmp/jibun.log
 
+      # 추론 엔진. `fetch` 를 켜면 토지특성 WFS(dt_d194)를 시군구 상자만큼
+      # 훑어 필지를 채운 뒤 맞춘다 — 표의 구멍이 '유일' 을 거짓으로 만든다.
+      - name: 가려진 지번 추론 (안성시 견본)
+        if: inputs.what == 'infer'
+        env:
+          VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
+        run: |
+          set -o pipefail
+          python scripts/jibun_infer.py \
+            "${{ inputs.sigungu || '41550' }}" \
+            ${{ inputs.fetch && '--fetch' || '' }} \
+            --out /tmp/jibun_found.csv 2>&1 | tee /tmp/infer.log
+
+      - name: 붙인 지번 내려받기
+        if: inputs.what == 'infer'
+        uses: actions/upload-artifact@v4
+        with:
+          name: jibun-found
+          path: /tmp/jibun_found.csv
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: 실행 요약
         if: always()
         run: |
-          for f in trust blast jibun; do
+          for f in trust blast jibun infer; do
             [ -f "/tmp/$f.log" ] || continue
             { echo "## $f"; echo; echo '```'
               cat "/tmp/$f.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
