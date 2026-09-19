@@ -1,0 +1,63 @@
+# 가려진 지번을 면적으로 되찾을 수 있는가 — 탐침.
+#
+# 국토부 실거래가 API 가 본번 뒷자리를 가려서 준다 (계륵리 1**, 사곡동 산7*).
+# 전국 1,179만 건 중 정규식이 통과하는 것 0.1% 뿐이라 PNU 를 못 만든다.
+#
+# 가려진 것은 본번 뒷자리뿐이고 **면적은 소수점까지 정확하다.** 같은 리(里)
+# 안에서 면적이 일치하는 필지는 드물다. 연속지적도를 법정동 단위로 받아
+# 면적으로 맞춰 보면 몇 %가 유일하게 특정되는지 나온다.
+#
+# 요구사항(2026-09-19): "2번은 정확도 목표를 80%로 합니다."
+#
+# 수집을 건드리지 않는다 — 캐시를 **읽기만** 하고 아무것도 커밋하지 않는다.
+name: 가려진 지번 되찾기 탐침
+
+on:
+  workflow_dispatch:
+    inputs:
+      sigungu:
+        description: "시군구 코드 (기본 41550 안성시)"
+        default: "41550"
+      umds:
+        description: "시범에 쓸 법정동 수"
+        default: "5"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: src
+      REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
+      REDT_RELAY_TOKEN: ${{ secrets.REDT_RELAY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+
+      # 수집분을 꺼내 읽기만 한다. 저장하지 않으므로 캐시가 늘지 않는다.
+      - name: 이전 수집분 복원
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/processed
+            data/interim
+          key: redt-data-${{ github.run_id }}
+          restore-keys: redt-data-
+
+      - name: 탐침
+        run: |
+          set -o pipefail
+          python scripts/jibun_match_probe.py \
+            "${{ inputs.sigungu || '41550' }}" \
+            "${{ inputs.umds || '5' }}" 2>&1 | tee /tmp/jibun.log
+
+      - name: 실행 요약
+        if: always()
+        run: |
+          { echo "## 가려진 지번 되찾기 탐침"; echo; echo '```'
+            cat /tmp/jibun.log 2>/dev/null || echo "(로그 없음)"
+            echo '```'; } >> "$GITHUB_STEP_SUMMARY"
