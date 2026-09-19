@@ -576,6 +576,53 @@ def main() -> int:
         nm = "산 지번" if mt == "2" else "일반 지번"
         print(f"    {nm:<10}후보0 {z_n:>8,} · 합으로 되찾음 {uniq:>7,} "
               f"({uniq / max(z_n, 1):.1%})")
+
+    # 본번 합 규칙도 **새 규칙**이다. 쓰기 전에 거짓 양성률을 잰다 —
+    # 틀린 법정동에 같은 규칙을 걸어서 몇 %가 '유일' 로 나오는지.
+    fs = con.execute(f"""
+        WITH h AS (
+          SELECT t.trade_id, count(*) AS n_hit
+          FROM t3 t JOIN fk f USING (trade_id)
+          JOIN bong g
+            ON g.bjd10 = t.bjd10 AND g.mount = t.mount
+           AND g.bon BETWEEN t.bon_lo AND t.bon_hi
+           AND abs(g.sum_area - t.area_m2)
+               <= greatest(t.area_m2 * {best_tol}, 0.05)
+          WHERE f.n = 0
+          GROUP BY 1)
+        SELECT count(*) FILTER (WHERE n_hit = 1) FROM h""").fetchone()[0]
+    fz0 = con.execute("SELECT count(*) FROM fk WHERE n = 0").fetchone()[0]
+    print(f"\n  검산 — 틀린 법정동에 같은 합 규칙을 걸면 "
+          f"{fs:,}/{fz0:,} ({fs / max(fz0, 1):.2%})")
+    print(f"  맞는 법정동 {su / max(sz, 1):.1%} vs 틀린 법정동 "
+          f"{fs / max(fz0, 1):.2%}")
+
+    # ── 9. 산은 왜 못 찾나 — 지분 거래인가 ────────────────────────
+    head("9. 산은 왜 못 찾나 — 지분 거래를 의심한다")
+    print("""  7절이 뜻밖의 것을 말했습니다. 산 지번은 **정확도가 오히려 높고**
+  (찾으면 맞는다) 재현율만 낮습니다. 8절은 그 이유가 쪼개기가
+  아니라고 말합니다 — 산의 본번 합 회수는 바닥값에 가깝습니다.
+
+  남는 설명은 **지분 거래**입니다. 산은 상속·증여로 지분이 잘게
+  나뉘고, 그때 신고되는 면적은 필지 전체가 아니라 **판 지분의
+  면적**입니다. 그러면 필지 면적과 안 맞는 것이 당연합니다.
+
+  거래 표의 is_share_deal 칸으로 직접 봅니다.""")
+    print(f"\n    {'구분':<20}{'거래':>9}{'후보0':>9}{'정답없음':>10}")
+    for mt, sh, n, z_n in con.execute("""
+            SELECT t.mount, coalesce(t.is_share_deal, FALSE),
+                   count(*), count(*) FILTER (WHERE r.n = 0)
+            FROM t2 t JOIN rk r USING (trade_id)
+            GROUP BY 1, 2 ORDER BY 1, 2""").fetchall():
+        nm = ("산" if mt == "2" else "일반") + (" · 지분거래" if sh else " · 통거래")
+        print(f"    {nm:<20}{n:>9,}{z_n:>9,}{z_n / max(n, 1):>9.1%}")
+    print("\n  연도별 지분거래 비중 (산)")
+    print(f"    {'연도':<8}{'산 거래':>9}{'지분거래':>10}{'비중':>9}")
+    for y, n, sh in con.execute("""
+            SELECT deal_year, count(*),
+                   count(*) FILTER (WHERE coalesce(is_share_deal, FALSE))
+            FROM t2 WHERE mount = '2' GROUP BY 1 ORDER BY 1""").fetchall():
+        print(f"    {y:<8}{n:>9,}{sh:>10,}{sh / max(n, 1):>8.1%}")
     con.close()
     return 0
 
