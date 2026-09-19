@@ -235,8 +235,13 @@ def main() -> int:
 
     # ── 1. 필지 커버리지 ───────────────────────────────────────────
     head("1. 필지를 얼마나 들고 있나")
+    # **시군구 코드로 고르지 않는다.** 거래 코드와 필지 코드가 다른 체계일
+    # 수 있다 — 전남·광주가 그렇다(거래 12xxx · 필지 46xxx/29xxx). 코드로
+    # 고르면 그 지역은 필지가 0개로 나와 통째로 못 돈다. 법정동(PNU 앞
+    # 10자리)으로 고르면 두 체계가 섞여 있어도 맞는다.
     have = con.execute(
-        f"SELECT count(*) FROM src.parcel WHERE sigungu_cd = '{sgg}'"
+        "SELECT count(*) FROM src.parcel"
+        " WHERE substr(pnu, 1, 10) IN (SELECT bjd10 FROM bjd)"
     ).fetchone()[0]
     print(f"  parcel 표의 이 시군구 필지 {have:,}개")
     cache = INTERIM / f"landchar_{sgg}.parquet"
@@ -258,18 +263,21 @@ def main() -> int:
         con.execute("CREATE TABLE par AS "
                     "SELECT pnu, jimok, land_use, area_m2, official_price "
                     "FROM _ex WHERE pnu IS NOT NULL AND area_m2 > 0")
-        con.execute(f"""
+        con.execute("""
             INSERT INTO par
             SELECT p.pnu, p.jimok, p.land_use, p.area_m2, p.official_price
             FROM src.parcel p
-            WHERE p.sigungu_cd = '{sgg}' AND p.area_m2 > 0
+            WHERE substr(p.pnu, 1, 10) IN (SELECT bjd10 FROM bjd)
+              AND p.area_m2 > 0
               AND p.pnu NOT IN (SELECT pnu FROM par)
         """)
     else:
-        con.execute(f"""
+        con.execute("""
             CREATE TABLE par AS
             SELECT pnu, jimok, land_use, area_m2, official_price
-            FROM src.parcel WHERE sigungu_cd = '{sgg}' AND area_m2 > 0
+            FROM src.parcel
+            WHERE substr(pnu, 1, 10) IN (SELECT bjd10 FROM bjd)
+              AND area_m2 > 0
         """)
     n_par = con.execute("SELECT count(*) FROM par").fetchone()[0]
     print(f"  맞출 때 쓸 필지 {n_par:,}개")

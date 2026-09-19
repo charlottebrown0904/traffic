@@ -81,9 +81,18 @@ def main() -> int:
     """).fetchall())
 
     # **이미 갖고 있는 것을 먼저 센다.** 다시 받을 이유가 없으면 안 받는다.
+    #
+    # 필지의 sigungu_cd 로 세면 안 된다. 거래 코드(국토부)와 필지 코드
+    # (브이월드)가 다른 체계일 수 있다 — 전남·광주가 그렇다(거래 12xxx ·
+    # 필지 46xxx/29xxx). 코드로 세면 전남 필지 275,356개가 0개로 보인다.
+    # trade_parcel 이 이어 둔 PNU 로 거슬러 세면 체계가 달라도 맞는다.
     have = dict(con.execute("""
-        SELECT sigungu_cd, count(*) FROM src.parcel
-        WHERE sigungu_cd IS NOT NULL AND area_m2 > 0 GROUP BY 1
+        SELECT t.sigungu_cd, count(DISTINCT p.pnu)
+        FROM src.parcel p
+        JOIN src.trade_parcel tp ON substr(tp.pnu, 1, 10) = substr(p.pnu, 1, 10)
+        JOIN src.trade t USING (trade_id)
+        WHERE p.area_m2 > 0 AND t.sigungu_cd IS NOT NULL
+        GROUP BY 1
     """).fetchall())
 
     out = []
