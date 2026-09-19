@@ -24,7 +24,7 @@ on:
       what:
         description: "무엇을 돌릴지"
         type: choice
-        options: [both, trust, blast, jibun, infer, area, order]
+        options: [both, trust, blast, jibun, infer, area, order, price, code12]
         default: both
       trust_sigungu:
         description: "믿음 검증을 한 시군구만 (비우면 전국)"
@@ -136,10 +136,25 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      # 개별공시지가 두 API — 면적을 주는가, 법정동으로 묶어 주는가.
+      - name: 개별공시지가 API 확인
+        if: inputs.what == 'price'
+        env:
+          VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
+        run: |
+          set -o pipefail
+          python scripts/vworld_landprice_probe.py 2>&1 | tee /tmp/price.log
+
+      - name: 시도코드 '12' 정체 규명
+        if: inputs.what == 'code12'
+        run: |
+          set -o pipefail
+          python scripts/code12_probe.py 2>&1 | tee /tmp/code12.log
+
       - name: 실행 요약
         if: always()
         run: |
-          for f in trust blast jibun infer area order; do
+          for f in trust blast jibun infer area order price code12; do
             [ -f "/tmp/$f.log" ] || continue
             { echo "## $f"; echo; echo '```'
               cat "/tmp/$f.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
