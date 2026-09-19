@@ -24,7 +24,7 @@ on:
       what:
         description: "무엇을 돌릴지"
         type: choice
-        options: [both, trust, blast, jibun, infer]
+        options: [both, trust, blast, jibun, infer, area, order]
         default: both
       trust_sigungu:
         description: "믿음 검증을 한 시군구만 (비우면 전국)"
@@ -113,10 +113,33 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
 
+      # 면적을 브이월드 말고 어디서 받을 수 있나. 호출 몇 번이면 끝난다.
+      - name: 면적 원천 탐침
+        if: inputs.what == 'area'
+        run: |
+          set -o pipefail
+          python scripts/area_source_probe.py 2>&1 | tee /tmp/area.log
+
+      - name: 돌 순서 — 서울·경기부터
+        if: inputs.what == 'order'
+        run: |
+          set -o pipefail
+          python scripts/sigungu_order.py \
+            --out /tmp/sigungu_order.json 2>&1 | tee /tmp/order.log
+
+      - name: 순서 파일 내려받기
+        if: inputs.what == 'order'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sigungu-order
+          path: /tmp/sigungu_order.json
+          retention-days: 7
+          if-no-files-found: warn
+
       - name: 실행 요약
         if: always()
         run: |
-          for f in trust blast jibun infer; do
+          for f in trust blast jibun infer area order; do
             [ -f "/tmp/$f.log" ] || continue
             { echo "## $f"; echo; echo '```'
               cat "/tmp/$f.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
