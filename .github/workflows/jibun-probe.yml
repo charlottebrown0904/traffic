@@ -37,7 +37,7 @@ on:
 jobs:
   probe:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     env:
       PYTHONPATH: src
       REDT_RELAY_URL: ${{ secrets.REDT_RELAY_URL }}
@@ -96,12 +96,18 @@ jobs:
             ${{ inputs.fetch && '--fetch' || '' }} \
             --out /tmp/jibun_found.csv 2>&1 | tee /tmp/infer.log
 
-      - name: 붙인 지번 내려받기
+      # 받아 온 필지도 같이 남긴다. 이 워크플로는 캐시를 **읽기만** 하므로
+      # 저장하지 않으면 1,400칸을 다음 실행에서 또 두드린다. 수집용 캐시
+      # 접두(redt-data-)에 끼워 넣으면 collect 의 복원이 반쪽짜리를 집을
+      # 수 있어, 아티팩트로만 남긴다.
+      - name: 붙인 지번·받아 온 필지 내려받기
         if: inputs.what == 'infer'
         uses: actions/upload-artifact@v4
         with:
           name: jibun-found
-          path: /tmp/jibun_found.csv
+          path: |
+            /tmp/jibun_found.csv
+            data/interim/landchar_*.parquet
           retention-days: 7
           if-no-files-found: warn
 

@@ -64,6 +64,7 @@ import pathlib
 import sys
 import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -116,23 +117,30 @@ def fetch_parcels(box, out_path):
     nx = max(1, int(math.ceil((e - w) / TILE_DEG)))
     ny = max(1, int(math.ceil((n - s) / TILE_DEG)))
     print(f"  네모 {w:.3f},{s:.3f} ~ {e:.3f},{n:.3f} · 칸 {nx}×{ny}={nx * ny:,}개")
+    boxes = [(w + i * TILE_DEG, s + j * TILE_DEG,
+              w + (i + 1) * TILE_DEG, s + (j + 1) * TILE_DEG)
+             for i in range(nx) for j in range(ny)]
+
+    def one(bx):
+        try:
+            feats, _ = lc.fetch_tile(bx, pace)
+        except Exception as exc:                            # noqa: BLE001
+            print(f"    칸 실패 {lc.tile_key(bx)} — {type(exc).__name__}")
+            return []
+        return [lc._row((f or {}).get("properties") or {}) for f in feats]
+
+    # 한 칸씩 줄 서서 받으면 1,400칸에 30분이 넘는다 — 러너가 먼저 죽는다.
+    # 워커를 여럿 쓰되 **속도는 Pace 가 합쳐서 잡는다**(초당 N건). 브이월드
+    # 한도를 넘기지 않으면서 벽시계만 줄이는 길이다.
     rows, t0, done = [], time.monotonic(), 0
-    for i in range(nx):
-        for j in range(ny):
-            bx = (w + i * TILE_DEG, s + j * TILE_DEG,
-                  w + (i + 1) * TILE_DEG, s + (j + 1) * TILE_DEG)
-            try:
-                feats, _ = lc.fetch_tile(bx, pace)
-            except Exception as exc:                        # noqa: BLE001
-                print(f"    칸 실패 {lc.tile_key(bx)} — {type(exc).__name__}")
-                feats = []
-            for f in feats:
-                rows.append(lc._row((f or {}).get("properties") or {}))
+    with ThreadPoolExecutor(max_workers=cfg["workers"]) as ex:
+        for got in ex.map(one, boxes):
+            rows += got
             done += 1
             if done % 100 == 0:
                 el = time.monotonic() - t0
-                print(f"    {done:,}/{nx * ny:,}칸 · 필지 {len(rows):,}개 "
-                      f"· {el / 60:.1f}분")
+                print(f"    {done:,}/{len(boxes):,}칸 · 필지 {len(rows):,}개 "
+                      f"· {el / 60:.1f}분", flush=True)
     df = pd.DataFrame(rows).drop_duplicates("pnu")
     df.to_parquet(out_path)
     print(f"  받은 필지 {len(df):,}개 → {out_path}")
@@ -351,14 +359,28 @@ def main() -> int:
     for tid, g in group.items():
         by_group[g].append(tid)
 
-    fixed, rounds = {}, 0
+    fixed, clash, rounds = {}, set(), 0
     while True:
         rounds += 1
         changed = False
         for g, tids in by_group.items():
             solo = [t for t in tids if t not in fixed and len(cands[t]) == 1]
+            # 같은 달·같은 법정동에서 **같은 필지**를 유일 후보로 가진
+            # 거래가 둘 이상이면 모순이다. 둘 중 하나는 반드시 틀렸는데
+            # 어느 쪽인지 알 길이 없으므로 **둘 다 버린다.** 먼저 본 것을
+            # 확정하면 순서가 답을 정하게 되고, 그것은 추측이 아니라
+            # 우연이다.
+            claim = defaultdict(list)
             for t in solo:
-                p = next(iter(cands[t]))
+                claim[next(iter(cands[t]))].append(t)
+            for p, ts in claim.items():
+                if len(ts) > 1:
+                    for t in ts:
+                        cands[t].clear()
+                        clash.add(t)
+                    changed = True
+                    continue
+                t = ts[0]
                 fixed[t] = p
                 for o in tids:
                     if o != t and p in cands[o]:
@@ -366,11 +388,11 @@ def main() -> int:
                         changed = True
         if not changed or rounds > 40:
             break
-    gained = sum(1 for t in fixed if t not in ())
     still_multi = sum(1 for t in cands if t not in fixed and len(cands[t]) > 1)
     empt = sum(1 for t in cands if t not in fixed and not cands[t])
     print(f"\n  전파 {rounds}바퀴 · 확정 {len(fixed):,}건")
     print(f"  아직 여럿 {still_multi:,}건 · 후보가 비어 버린 것 {empt:,}건")
+    print(f"  같은 달에 같은 필지를 가리켜 **둘 다 버린 것** {len(clash):,}건")
 
     # ── 5. 결과 ────────────────────────────────────────────────────
     head("5. 결과")

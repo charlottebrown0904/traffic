@@ -16,6 +16,7 @@
     산 지번                  12%
     분할 필지                25%    한 본번 아래 부번 2~4개
     일부 거래                15%    면적이 필지와 다르다 — **정답이 없다**
+    충돌 짝                   4%    같은 달·같은 면적 — 어느 쪽인지 알 수 없다
 
 마지막 것이 특히 중요하다. 필지 일부만 거래되면 면적이 안 맞아 못 찾는
 것이 **정상**이다. 그것까지 찾았다고 하면 그게 거짓이다.
@@ -93,16 +94,30 @@ def build(db_path: str, seed: int = 23):
             mask = ("산" if mount == "2" else "") + s[0] + "*" * (len(s) - 1)
             part = random.random() < 0.15        # 필지 일부만 거래 — 정답 없음
             ta = round(a * random.uniform(0.2, 0.8), 1) if part else a
+            yy, mm = random.randint(2006, 2026), random.randint(1, 12)
             k += 1
             tid = f"t{k}"
-            tr.append((tid, "land", "41550", nm, mask,
-                       random.randint(2006, 2026), random.randint(1, 12), ta,
+            tr.append((tid, "land", "41550", nm, mask, yy, mm, ta,
                        300000.0, 9e7, jm, lu.replace("지역", ""), part, False,
                        37.0 + k * 1e-5, 127.2, "parcel"))
             # 지금 저장소에 들어 있는 것과 같은 모양의 **틀린** 링크.
             # 대조표(umd → 법정동코드)는 이것으로 만들어지므로 있어야 한다.
             tp.append((tid, f"{b}1{1:04d}0000"))
             truth[tid] = None if part else pnu
+
+            # **충돌을 일부러 만든다.** 같은 달·같은 법정동에 면적·마스크가
+            # 똑같은 거래를 하나 더 둔다. 그 거래의 진짜 필지는 표에 없다.
+            # 엔진이 순서대로 확정하면 먼저 본 쪽에 지번을 붙여 버리는데,
+            # 그것은 맞힌 것이 아니라 줄을 먼저 선 것이다 — **둘 다 버려야**
+            # 한다. 실제 안성시 자료에서 이 자리가 터졌다(StopIteration).
+            if not part and random.random() < 0.04:
+                k += 1
+                tid2 = f"t{k}"
+                tr.append((tid2, "land", "41550", nm, mask, yy, mm, ta,
+                           300000.0, 9e7, jm, lu.replace("지역", ""), False,
+                           False, 37.0 + k * 1e-5, 127.2, "parcel"))
+                tp.append((tid2, f"{b}1{1:04d}0000"))
+                truth[tid2] = None
 
     con.executemany("INSERT INTO trade VALUES (" + ",".join(["?"] * 17) + ")", tr)
     con.executemany("INSERT INTO trade_parcel VALUES (?,?)", tp)
@@ -123,7 +138,7 @@ def main() -> int:
     print("모형")
     print(f"  필지 전체 {n_par:,}개 중 표에 든 것 {n_keep:,}개 "
           f"({n_keep / n_par:.0%})")
-    print(f"  거래 {n_tr:,}건 · 그중 일부거래(정답 없음) "
+    print(f"  거래 {n_tr:,}건 · 그중 정답이 없는 것(일부거래·충돌 짝) "
           f"{sum(1 for v in truth.values() if v is None):,}건")
 
     env = dict(os.environ, PYTHONPATH="src")
@@ -157,9 +172,9 @@ def main() -> int:
         fail.append(f"정확도 {prec:.1%} < {TARGET_PRECISION:.0%}")
     if rec < MIN_RECALL:
         fail.append(f"재현율 {rec:.1%} < {MIN_RECALL:.0%}")
-    # 일부거래에 지번을 붙이면 그것은 **없는 사실을 만든 것**이다.
+    # 정답이 없는 거래에 지번을 붙이면 그것은 **없는 사실을 만든 것**이다.
     if ghost > len(rows) * 0.02:
-        fail.append(f"일부거래에 붙인 것 {ghost:,}건이 너무 많다")
+        fail.append(f"정답 없는 거래에 붙인 것 {ghost:,}건이 너무 많다")
     print()
     if fail:
         print("실패: " + " · ".join(fail))
