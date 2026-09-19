@@ -441,18 +441,29 @@ def main() -> int:
                coalesce(s.other, (SELECT min(bjd10) FROM b)) AS bjd10
         FROM t2 t JOIN shuf s ON s.bjd10 = t.bjd10
     """)
-    fz, fu, fm = con.execute(f"""
+    # 거짓 후보 수를 **거래마다** 남긴다. 연도·산여부로 쪼개 재려면
+    # 전체 한 숫자로는 안 된다.
+    con.execute(f"""
+        CREATE TABLE fk AS
         WITH c AS (
           SELECT t.trade_id, p.pnu
           FROM t3 t JOIN par p
             ON substr(p.pnu, 1, 10) = t.bjd10
            AND substr(p.pnu, 11, 1) = t.mount
            AND CAST(substr(p.pnu, 12, 4) AS INT) BETWEEN t.bon_lo AND t.bon_hi
-           AND abs(p.area_m2 - t.area_m2) <= greatest(t.area_m2 * {best_tol}, 0.05)),
-        k AS (SELECT t.trade_id, count(c.pnu) AS n
-              FROM t3 t LEFT JOIN c USING (trade_id) GROUP BY 1)
-        SELECT count(*) FILTER (WHERE n = 0), count(*) FILTER (WHERE n = 1),
-               count(*) FILTER (WHERE n > 1) FROM k""").fetchone()
+           AND abs(p.area_m2 - t.area_m2) <= greatest(t.area_m2 * {best_tol}, 0.05))
+        SELECT t.trade_id, t.deal_year, t.mount, count(c.pnu) AS n
+        FROM t3 t LEFT JOIN c USING (trade_id) GROUP BY 1, 2, 3
+    """)
+    # 맞는 법정동 쪽도 같은 규칙(좁히기·전파 이전)으로 세어 나란히 놓는다.
+    con.execute("""
+        CREATE TABLE rk AS
+        SELECT t.trade_id, t.deal_year, t.mount, count(c.pnu) AS n
+        FROM t2 t LEFT JOIN cand c USING (trade_id) GROUP BY 1, 2, 3
+    """)
+    fz, fu, fm = con.execute(
+        "SELECT count(*) FILTER (WHERE n = 0), count(*) FILTER (WHERE n = 1), "
+        "count(*) FILTER (WHERE n > 1) FROM fk").fetchone()
     ftot = fz + fu + fm
     print(f"\n  틀린 법정동 — 없음 {fz:,} · 유일 {fu:,} · 여럿 {fm:,}")
     print(f"  거짓 양성률 {fu / max(ftot, 1):.2%}")
@@ -460,6 +471,111 @@ def main() -> int:
     print(f"\n  맞는 법정동 유일률 {real:.1%}  vs  틀린 법정동 {fu / max(ftot, 1):.2%}")
     if fu / max(ftot, 1) > 0:
         print(f"  → 신호 대 잡음 약 {real / (fu / max(ftot, 1)):.0f}배")
+
+    # ── 7. 연도별 정확도 추정 ──────────────────────────────────────
+    head("7. 연도별 정확도 — 옛 거래일수록 면적이 어긋나는가")
+    print("""  지시(2026-09-19): "임야의 현재 면적과 예전 거래된 면적이 달라서
+  일 수도 있습니다. 거래 후 개발 및 증여에 따른 지분 쪼개기 등이
+  이루어진다." — 그렇다면 **옛 거래일수록** 정답이 표에 없고, 그러면
+  남는 '유일' 중 우연의 몫이 커져 정확도가 떨어져야 합니다.
+
+  연도마다 맞는 법정동과 틀린 법정동을 나란히 세워 이렇게 풉니다.
+
+    없는비율 = 후보0(맞는) / 후보0(틀린)      정답이 아예 없는 몫
+    거짓유일 = 없는비율 × 유일(틀린)          우연히 하나만 걸린 몫
+    정확도   = (유일 − 거짓유일) / 유일
+
+  잰 값이 아니라 **추정**입니다. 실자료에는 정답지가 없습니다.""")
+
+    def band(sql_extra=""):
+        rows = con.execute(f"""
+            SELECT r.deal_year,
+                   count(*) AS n,
+                   count(*) FILTER (WHERE r.n = 0) AS rz,
+                   count(*) FILTER (WHERE r.n = 1) AS ru,
+                   count(*) FILTER (WHERE f.n = 0) AS fz,
+                   count(*) FILTER (WHERE f.n = 1) AS fu
+            FROM rk r JOIN fk f USING (trade_id)
+            WHERE 1 = 1 {sql_extra}
+            GROUP BY 1 ORDER BY 1
+        """).fetchall()
+        out = []
+        for y, n, rz, ru, fz_, fu_ in rows:
+            if not n or not ru:
+                continue
+            p0 = fz_ / n                      # 틀린 동에서 후보가 0일 확률
+            absent = min((rz / n) / p0, 1.0) if p0 > 0 else 1.0
+            false_u = absent * (fu_ / n)
+            prec = max(0.0, (ru / n - false_u)) / (ru / n)
+            out.append((y, n, ru / n, absent, prec))
+        return out
+
+    for title, extra in (("전체", ""), ("산 지번", " AND r.mount = '2'"),
+                         ("일반 지번", " AND r.mount = '1'")):
+        rows = band(extra)
+        if not rows:
+            continue
+        print(f"\n  [{title}]")
+        print(f"    {'연도':<7}{'거래':>8}{'유일률':>9}{'정답없음':>10}"
+              f"{'추정 정확도':>13}")
+        for y, n, u_r, absent, prec in rows:
+            mark = "  ←" if prec < 0.80 else ""
+            print(f"    {y:<7}{n:>8,}{u_r:>8.1%}{absent:>10.1%}"
+                  f"{prec:>12.1%}{mark}")
+
+    # ── 8. 쪼개기 가설을 직접 검정한다 ─────────────────────────────
+    head("8. 쪼개기 가설 — 한 필지가 여럿으로 갈라졌는가")
+    print("""  거래 뒤에 필지가 갈라졌다면, 그때 판 한 덩어리는 지금 **여러
+  필지의 합**으로 남아 있어야 합니다. 그래서 후보가 하나도 없는
+  거래를 놓고, 같은 본번 아래 부번들의 **면적 합**이 거래면적과
+  맞는지 봅니다. 맞는다면 가설이 사실이고, 옛 거래일수록 더 많이
+  맞아야 합니다.""")
+    con.execute(f"""
+        CREATE TABLE bong AS
+        SELECT substr(pnu, 1, 10) AS bjd10, substr(pnu, 11, 1) AS mount,
+               CAST(substr(pnu, 12, 4) AS INT) AS bon,
+               sum(area_m2) AS sum_area, count(*) AS n_bu
+        FROM par GROUP BY 1, 2, 3 HAVING count(*) > 1
+    """)
+    con.execute(f"""
+        CREATE TABLE sumhit AS
+        SELECT t.trade_id, t.deal_year, t.mount, count(*) AS n_hit,
+               max(g.n_bu) AS n_bu
+        FROM t2 t
+        JOIN rk r USING (trade_id)
+        JOIN bong g
+          ON g.bjd10 = t.bjd10 AND g.mount = t.mount
+         AND g.bon BETWEEN t.bon_lo AND t.bon_hi
+         AND abs(g.sum_area - t.area_m2)
+             <= greatest(t.area_m2 * {best_tol}, 0.05)
+        WHERE r.n = 0
+        GROUP BY 1, 2, 3
+    """)
+    print(f"\n    {'연도':<7}{'후보0':>9}{'합이 맞음':>11}{'그중 유일':>11}"
+          f"{'되찾는 몫':>11}")
+    for y, z_n, hit, uniq in con.execute("""
+            SELECT r.deal_year, count(*) AS z_n,
+                   count(s.trade_id) AS hit,
+                   count(*) FILTER (WHERE s.n_hit = 1) AS uniq
+            FROM rk r LEFT JOIN sumhit s USING (trade_id)
+            WHERE r.n = 0 GROUP BY 1 ORDER BY 1""").fetchall():
+        print(f"    {y:<7}{z_n:>9,}{hit:>11,}{uniq:>11,}"
+              f"{uniq / max(z_n, 1):>10.1%}")
+    sz, sh, su = con.execute("""
+        SELECT count(*), count(s.trade_id),
+               count(*) FILTER (WHERE s.n_hit = 1)
+        FROM rk r LEFT JOIN sumhit s USING (trade_id) WHERE r.n = 0""").fetchone()
+    print(f"\n  후보 0개 {sz:,}건 중 본번 합이 맞는 것 {sh:,}건 "
+          f"· 그중 유일한 본번 {su:,}건 ({su / max(sz, 1):.1%})")
+    print("\n  산/일반으로 나누면")
+    for mt, z_n, uniq in con.execute("""
+            SELECT r.mount, count(*),
+                   count(*) FILTER (WHERE s.n_hit = 1)
+            FROM rk r LEFT JOIN sumhit s USING (trade_id)
+            WHERE r.n = 0 GROUP BY 1 ORDER BY 1""").fetchall():
+        nm = "산 지번" if mt == "2" else "일반 지번"
+        print(f"    {nm:<10}후보0 {z_n:>8,} · 합으로 되찾음 {uniq:>7,} "
+              f"({uniq / max(z_n, 1):.1%})")
     con.close()
     return 0
 
