@@ -94,7 +94,8 @@ jobs:
           python scripts/jibun_infer.py \
             "${{ inputs.sigungu || '41550' }}" \
             ${{ inputs.fetch && '--fetch' || '' }} \
-            --out /tmp/jibun_found.csv 2>&1 | tee /tmp/infer.log
+            --out /tmp/jibun_found.csv \
+            --conf /tmp/jibun_conf.json 2>&1 | tee /tmp/infer.log
 
       # 받아 온 필지도 같이 남긴다. 이 워크플로는 캐시를 **읽기만** 하므로
       # 저장하지 않으면 1,400칸을 다음 실행에서 또 두드린다. 수집용 캐시
@@ -107,6 +108,7 @@ jobs:
           name: jibun-found
           path: |
             /tmp/jibun_found.csv
+            /tmp/jibun_conf.json
             data/interim/landchar_*.parquet
           retention-days: 7
           if-no-files-found: warn

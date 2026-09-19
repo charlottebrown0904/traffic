@@ -84,7 +84,13 @@ def build(db_path: str, seed: int = 23):
     par = [(p, "41550", jm, lu, None, a, "소로한면", None, None, 120000.0, 2025)
            for p, (a, jm, lu) in allp.items()]
 
-    tr, tp, truth, k = [], [], {}, 0
+    # 한 본번 아래 부번이 여럿인 것 — '팔고 나서 갈라진' 거래를 만들 재료.
+    bons = {}
+    for pnu, (a, _jm, _lu) in allp.items():
+        bons.setdefault(pnu[:15], []).append((pnu, a))
+    multi = {k2: v for k2, v in bons.items() if len(v) > 1}
+
+    tr, tp, truth, shares, k = [], [], {}, set(), 0
     for nm, b in umds:
         mine = [x for x in allp if x.startswith(b)]
         for pnu in random.sample(mine, 700):
@@ -94,23 +100,30 @@ def build(db_path: str, seed: int = 23):
             mask = ("산" if mount == "2" else "") + s[0] + "*" * (len(s) - 1)
             part = random.random() < 0.15        # 필지 일부만 거래 — 정답 없음
             ta = round(a * random.uniform(0.2, 0.8), 1) if part else a
+            # **지분 거래**(2026-09-19 지시로 엔진이 아예 제외한다). 면적은
+            # 필지와 똑같이 둔다 — 제외가 실제로 되는지 보려면 '맞출 수 있는데
+            # 일부러 안 맞히는' 상태여야 한다. 하나라도 나오면 시험이 깨진다.
+            share = (not part) and random.random() < 0.20
             yy, mm = random.randint(2006, 2026), random.randint(1, 12)
             k += 1
             tid = f"t{k}"
             tr.append((tid, "land", "41550", nm, mask, yy, mm, ta,
-                       300000.0, 9e7, jm, lu.replace("지역", ""), part, False,
+                       300000.0, 9e7, jm, lu.replace("지역", ""),
+                       part or share, False,
                        37.0 + k * 1e-5, 127.2, "parcel"))
             # 지금 저장소에 들어 있는 것과 같은 모양의 **틀린** 링크.
             # 대조표(umd → 법정동코드)는 이것으로 만들어지므로 있어야 한다.
             tp.append((tid, f"{b}1{1:04d}0000"))
-            truth[tid] = None if part else pnu
+            truth[tid] = None if (part or share) else pnu
+            if share:
+                shares.add(tid)
 
             # **충돌을 일부러 만든다.** 같은 달·같은 법정동에 면적·마스크가
             # 똑같은 거래를 하나 더 둔다. 그 거래의 진짜 필지는 표에 없다.
             # 엔진이 순서대로 확정하면 먼저 본 쪽에 지번을 붙여 버리는데,
             # 그것은 맞힌 것이 아니라 줄을 먼저 선 것이다 — **둘 다 버려야**
             # 한다. 실제 안성시 자료에서 이 자리가 터졌다(StopIteration).
-            if not part and random.random() < 0.04:
+            if not part and not share and random.random() < 0.04:
                 k += 1
                 tid2 = f"t{k}"
                 tr.append((tid2, "land", "41550", nm, mask, yy, mm, ta,
@@ -119,21 +132,50 @@ def build(db_path: str, seed: int = 23):
                 tp.append((tid2, f"{b}1{1:04d}0000"))
                 truth[tid2] = None
 
+    # **팔고 나서 갈라진 거래.** 그때 한 덩어리로 판 것이 지금은 부번
+    # 여럿으로 남아 있다. 낱개 면적으로는 어디에도 안 맞고, 부번들의 **합**
+    # 으로만 맞는다. 정답은 그 본번의 첫 부번(head_pnu)으로 둔다.
+    for key in random.sample(sorted(multi), min(250, len(multi))):
+        parts = multi[key]
+        tot = round(sum(a for _p, a in parts), 1)
+        b, bon = key[:10], int(key[11:15])
+        s2 = str(bon)
+        mask = ("산" if key[10] == "2" else "") + s2[0] + "*" * (len(s2) - 1)
+        nm = f"리{int(b[8:10]) - 30}"
+        k += 1
+        tid = f"t{k}"
+        tr.append((tid, "land", "41550", nm, mask,
+                   random.randint(2006, 2026), random.randint(1, 12), tot,
+                   300000.0, 9e7, JIMOK[bon % 5], LAND_USE[bon % 4], False,
+                   False, 37.0 + k * 1e-5, 127.2, "parcel"))
+        tp.append((tid, f"{b}1{1:04d}0000"))
+        truth[tid] = min(p for p, _a in parts)
+
     con.executemany("INSERT INTO trade VALUES (" + ",".join(["?"] * 17) + ")", tr)
     con.executemany("INSERT INTO trade_parcel VALUES (?,?)", tp)
     # **필지 표에 구멍을 낸다.** 실제 parcel 표는 전국을 다 훑지 않았다.
     keep = random.sample(par, int(len(par) * 0.65))
+    have = {row[0] for row in keep}
+    byp = {r[0]: r for r in par}
+    # 갈라진 본번은 통째로 남긴다 — 한 조각이라도 빠지면 합이 안 맞아,
+    # 4.5절이 못 찾는 것이 **규칙 탓인지 표의 구멍 탓인지** 구별되지 않는다.
+    for key in multi:
+        if any(p in have for p, _a in multi[key]):
+            for p, _a in multi[key]:
+                if p not in have:
+                    keep.append(byp[p])
+                    have.add(p)
     con.executemany("INSERT INTO parcel VALUES (" + ",".join(["?"] * 11) + ")",
                     keep)
     con.close()
-    return truth, len(par), len(keep), len(tr)
+    return truth, shares, len(par), len(keep), len(tr)
 
 
 def main() -> int:
     tmp = tempfile.mkdtemp()
     db = os.path.join(tmp, "fixture.duckdb")
     found_csv = os.path.join(tmp, "found.csv")
-    truth, n_par, n_keep, n_tr = build(db)
+    truth, shares, n_par, n_keep, n_tr = build(db)
 
     print("모형")
     print(f"  필지 전체 {n_par:,}개 중 표에 든 것 {n_keep:,}개 "
@@ -158,6 +200,10 @@ def main() -> int:
     wrong = sum(1 for x in rows
                 if truth.get(x["trade_id"]) not in (None, x["pnu"]))
     ghost = sum(1 for x in rows if truth.get(x["trade_id"]) is None)
+    leak = sum(1 for x in rows if x["trade_id"] in shares)
+    bysum = sum(1 for x in rows if x.get("method") == "bon_sum")
+    sum_ok = sum(1 for x in rows if x.get("method") == "bon_sum"
+                 and truth.get(x["trade_id"]) == x["pnu"])
     prec = ok / max(len(rows), 1)
     rec = ok / max(len(solvable), 1)
 
@@ -166,6 +212,8 @@ def main() -> int:
           f"· 일부거래에 붙임 {ghost:,}")
     print(f"  정확도 {prec:.1%}  (목표 {TARGET_PRECISION:.0%})")
     print(f"  재현율 {rec:.1%}  (최소 {MIN_RECALL:.0%})")
+    print(f"  합 규칙으로 되찾은 것 {bysum:,}건 · 그중 맞음 {sum_ok:,}")
+    print(f"  지분거래에 붙은 것 {leak:,}건 (0이어야 합니다)")
 
     fail = []
     if prec < TARGET_PRECISION:
@@ -175,6 +223,15 @@ def main() -> int:
     # 정답이 없는 거래에 지번을 붙이면 그것은 **없는 사실을 만든 것**이다.
     if ghost > len(rows) * 0.02:
         fail.append(f"정답 없는 거래에 붙인 것 {ghost:,}건이 너무 많다")
+    # 지분 거래는 **한 건도** 나오면 안 된다. 면적이 맞아떨어지게 심어 두었
+    # 으므로, 제외가 빠지면 반드시 새어 나온다.
+    if leak:
+        fail.append(f"지분거래에 지번이 붙었다 {leak:,}건")
+    # 합 규칙이 켜져 있는지도 본다. 0이면 규칙이 죽은 것이다.
+    if bysum == 0:
+        fail.append("합 규칙이 한 건도 못 찾았다 (4.5절이 죽었나)")
+    elif sum_ok < bysum * 0.8:
+        fail.append(f"합 규칙이 붙인 {bysum:,}건 중 맞은 것이 {sum_ok:,}건뿐")
     print()
     if fail:
         print("실패: " + " · ".join(fail))

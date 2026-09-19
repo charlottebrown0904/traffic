@@ -58,6 +58,7 @@ A→P1 이 확정되는 순간 B→P2 다. **개별로는 '여럿' 인 것이 �
 """
 from __future__ import annotations
 
+import json
 import math
 import os
 import pathlib
@@ -188,13 +189,34 @@ def main() -> int:
         WHERE t.sigungu_cd = '{sgg}'
           AND NOT coalesce(t.is_cancelled, FALSE)
           AND t.area_m2 > 0 AND t.jibun IS NOT NULL
+          AND NOT coalesce(t.is_share_deal, FALSE)
     """)
+    # **지분 거래는 아예 안 다룬다** (2026-09-19 지시: "지분 거래는 등록하지
+    # 않습니다. 거래에 노이즈 역할만 합니다").
+    #
+    # 왜 못 다루는지가 중요하다. 지분 거래의 신고 면적은 필지 전체가 아니라
+    # **판 지분의 면적**이다. 이 엔진은 면적이 맞는 필지를 찾는 것이므로
+    # 원리적으로 못 맞힌다. 안성시에서 잰 값이 그대로 말해 준다.
+    #
+    #                  후보0     추정 정확도
+    #   통거래          25~42%    93~99%
+    #   지분거래        79~95%    15~65%
+    #
+    # 섞어 두면 두 숫자가 다 거짓말을 한다 — 재현율은 못 찾을 것을 분모에
+    # 넣어 낮아 보이고, 정확도는 지분거래에 붙은 우연을 끌어들여 낮아진다.
+    n_share = con.execute(f"""
+        SELECT count(*) FROM src.trade
+        WHERE sigungu_cd = '{sgg}' AND coalesce(is_share_deal, FALSE)
+          AND NOT coalesce(is_cancelled, FALSE)
+    """).fetchone()[0]
     n_umd, n_tr, n_all = con.execute(f"""
         SELECT (SELECT count(*) FROM bjd), (SELECT count(*) FROM tr),
                (SELECT count(*) FROM src.trade WHERE sigungu_cd = '{sgg}')
     """).fetchone()
     print(f"  거래 {n_all:,}건 중 다룰 수 있는 것 {n_tr:,}건 "
           f"(법정동 코드가 있고 면적·지번이 있는 것)")
+    print(f"  지분 거래 {n_share:,}건은 **아예 제외**합니다 — 신고 면적이 "
+          f"필지 전체가 아니라 판 지분의 면적이라 면적으로 못 맞힙니다")
     print(f"  대조표 법정동 {n_umd:,}개")
     yr = con.execute("SELECT min(deal_year), max(deal_year) FROM tr").fetchone()
     print(f"  기간 {yr[0]}~{yr[1]}")
@@ -251,6 +273,16 @@ def main() -> int:
         """)
     n_par = con.execute("SELECT count(*) FROM par").fetchone()[0]
     print(f"  맞출 때 쓸 필지 {n_par:,}개")
+    # 한 본번 아래 부번들을 묶어 **합 면적**을 미리 만들어 둔다. 거래 뒤에
+    # 갈라진 필지를 되찾는 데 쓰고(4.5절), 가설 검정에도 같은 표를 쓴다(8절).
+    con.execute("""
+        CREATE TABLE bong AS
+        SELECT substr(pnu, 1, 10) AS bjd10, substr(pnu, 11, 1) AS mount,
+               CAST(substr(pnu, 12, 4) AS INT) AS bon,
+               sum(area_m2) AS sum_area, count(*) AS n_bu,
+               min(pnu) AS head_pnu
+        FROM par GROUP BY 1, 2, 3 HAVING count(*) > 1
+    """)
 
     print("\n  법정동별 — 필지가 얼마나 있나 (거래가 많은 곳부터)")
     print(f"    {'법정동':<14}{'거래':>8}{'필지':>9}")
@@ -394,9 +426,74 @@ def main() -> int:
     print(f"  아직 여럿 {still_multi:,}건 · 후보가 비어 버린 것 {empt:,}건")
     print(f"  같은 달에 같은 필지를 가리켜 **둘 다 버린 것** {len(clash):,}건")
 
+    # ── 4.5 갈라진 필지를 합으로 되찾는다 ──────────────────────────
+    head("4.5 쪼개진 필지 — 부번들의 면적 합으로 되찾기")
+    print("""  지시(2026-09-19): "(나) 규칙은 넣습니다."
+
+  거래 뒤에 필지가 갈라지면 그때 판 한 덩어리는 지금 **여러 필지의
+  합**으로 남는다. 그래서 낱개로는 못 찾는다. 같은 본번 아래 부번들의
+  면적 합이 거래면적과 맞는 본번을 찾는다.
+
+  **유일한 본번일 때만** 붙인다. 그리고 같은 달·같은 법정동에서 같은
+  본번을 가리킨 거래가 둘이면 둘 다 버린다 — 4절과 같은 규칙이다.""")
+    pend = [t for t in group if t not in fixed and t not in clash]
+    con.execute("CREATE TABLE pend AS SELECT * FROM t2 WHERE FALSE")
+    if pend:
+        pd_pend = pd.DataFrame({"trade_id": pend})
+        con.register("_pd", pd_pend)
+        con.execute("DROP TABLE pend")
+        con.execute("CREATE TABLE pend AS "
+                    "SELECT t.* FROM t2 t JOIN _pd USING (trade_id)")
+    # 아직 못 붙인 거래 + 애초에 후보가 0개였던 거래를 함께 본다.
+    con.execute("""
+        CREATE TABLE left_over AS
+        SELECT t.* FROM t2 t
+        WHERE t.trade_id NOT IN (SELECT trade_id FROM pend)
+          AND t.trade_id NOT IN (SELECT trade_id FROM cand2)
+        UNION ALL SELECT * FROM pend
+    """)
+    con.execute(f"""
+        CREATE TABLE sumc AS
+        SELECT t.trade_id, t.bjd10, t.deal_year, t.deal_month,
+               g.head_pnu AS pnu, g.n_bu
+        FROM left_over t JOIN bong g
+          ON g.bjd10 = t.bjd10 AND g.mount = t.mount
+         AND g.bon BETWEEN t.bon_lo AND t.bon_hi
+         AND abs(g.sum_area - t.area_m2)
+             <= greatest(t.area_m2 * {best_tol}, 0.05)
+    """)
+    n_left = con.execute("SELECT count(*) FROM left_over").fetchone()[0]
+    add = con.execute("""
+        WITH k AS (SELECT trade_id, count(*) AS n FROM sumc GROUP BY 1),
+        solo AS (SELECT s.* FROM sumc s JOIN k USING (trade_id) WHERE k.n = 1),
+        -- 같은 달·같은 법정동에 같은 본번을 가리킨 것이 둘이면 둘 다 버린다
+        g AS (SELECT pnu, bjd10, deal_year, deal_month, count(*) AS n
+              FROM solo GROUP BY 1, 2, 3, 4)
+        SELECT s.trade_id, s.pnu, s.n_bu
+        FROM solo s JOIN g
+          ON g.pnu = s.pnu AND g.bjd10 = s.bjd10
+         AND g.deal_year = s.deal_year AND g.deal_month = s.deal_month
+        WHERE g.n = 1
+    """).fetchall()
+    used = set(fixed.values())
+    gained = [(t, p, n) for t, p, n in add if p not in used]
+    print(f"\n  아직 못 붙인 거래 {n_left:,}건 · 합이 유일하게 맞는 것 "
+          f"{len(add):,}건 · 새로 붙인 것 {len(gained):,}건")
+    for t, p, _n in gained:
+        fixed[t] = p
+    method = {t: "bon_sum" for t, _p, _n in gained}
+    nbu = {t: n for t, _p, n in gained}
+
     # ── 5. 결과 ────────────────────────────────────────────────────
     head("5. 결과")
-    out = pd.DataFrame({"trade_id": list(fixed), "pnu": list(fixed.values())})
+    out = pd.DataFrame({
+        "trade_id": list(fixed),
+        "pnu": list(fixed.values()),
+        # 어떻게 붙였는지를 같이 남긴다. 화면에서 '추정' 을 어느 정도로
+        # 말할지, 나중에 걸러 쓸지가 이 칸에 달려 있다.
+        "method": [method.get(t, "area") for t in fixed],
+        "n_parcel": [nbu.get(t, 1) for t in fixed],
+    })
     # 찾은 것을 파일로 남긴다. 다음 단계(적재·검산)가 이것을 읽고,
     # 모형 시험은 정답과 견준다.
     for i, a in enumerate(sys.argv):
@@ -515,15 +612,15 @@ def main() -> int:
     # 면적으로는 원리적으로 못 맞히므로, 섞어 두면 재현율은 낮아 보이고
     # 정확도는 부풀 수 있다(지분거래에 붙은 것은 거의 다 우연이다).
     # 갈라서 따로 잰다 — 이 표가 '지분거래를 버릴까' 를 결정한다.
+    conf = {}
     for title, extra in (("전체", ""), ("산 지번", " AND r.mount = '2'"),
-                         ("일반 지번", " AND r.mount = '1'"),
-                         ("통거래만", " AND NOT r.share"),
-                         ("지분거래만", " AND r.share"),
-                         ("산 · 통거래", " AND r.mount = '2' AND NOT r.share"),
-                         ("산 · 지분거래", " AND r.mount = '2' AND r.share")):
+                         ("일반 지번", " AND r.mount = '1'")):
         rows = band(extra)
         if not rows:
             continue
+        conf[title] = [{"year": y, "n": n, "unique": round(u_r, 4),
+                        "absent": round(absent, 4), "precision": round(prec, 4)}
+                       for y, n, u_r, absent, prec in rows]
         print(f"\n  [{title}]")
         print(f"    {'연도':<7}{'거래':>8}{'유일률':>9}{'정답없음':>10}"
               f"{'추정 정확도':>13}")
@@ -532,6 +629,19 @@ def main() -> int:
             print(f"    {y:<7}{n:>8,}{u_r:>8.1%}{absent:>10.1%}"
                   f"{prec:>12.1%}{mark}")
 
+    # **이 표는 운영자만 봅니다** (2026-09-19 지시: "연도에 대한 신뢰도는
+    # 저희만 조회합니다 … 실거래 지번에 대한 정확도는 절대 유저에게 보여
+    # 주지 않습니다"). 그래서 공개 폴더가 아니라 따로 파일로 내보내고,
+    # 비공개 버킷에 올립니다. 화면 코드에는 숫자를 적지 않습니다.
+    cpath = arg("--conf")
+    if cpath:
+        payload = {"sigungu": sgg, "tolerance": best_tol,
+                   "false_positive_rate": round(fu / max(ftot, 1), 4),
+                   "bands": conf}
+        pathlib.Path(cpath).write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"\n  연도별 신뢰도 → {cpath} (Admin 전용)")
+
     # ── 8. 쪼개기 가설을 직접 검정한다 ─────────────────────────────
     head("8. 쪼개기 가설 — 한 필지가 여럿으로 갈라졌는가")
     print("""  거래 뒤에 필지가 갈라졌다면, 그때 판 한 덩어리는 지금 **여러
@@ -539,13 +649,6 @@ def main() -> int:
   거래를 놓고, 같은 본번 아래 부번들의 **면적 합**이 거래면적과
   맞는지 봅니다. 맞는다면 가설이 사실이고, 옛 거래일수록 더 많이
   맞아야 합니다.""")
-    con.execute(f"""
-        CREATE TABLE bong AS
-        SELECT substr(pnu, 1, 10) AS bjd10, substr(pnu, 11, 1) AS mount,
-               CAST(substr(pnu, 12, 4) AS INT) AS bon,
-               sum(area_m2) AS sum_area, count(*) AS n_bu
-        FROM par GROUP BY 1, 2, 3 HAVING count(*) > 1
-    """)
     con.execute(f"""
         CREATE TABLE sumhit AS
         SELECT t.trade_id, t.deal_year, t.mount, count(*) AS n_hit,
