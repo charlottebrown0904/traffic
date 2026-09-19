@@ -458,8 +458,9 @@ def main() -> int:
     # 맞는 법정동 쪽도 같은 규칙(좁히기·전파 이전)으로 세어 나란히 놓는다.
     con.execute("""
         CREATE TABLE rk AS
-        SELECT t.trade_id, t.deal_year, t.mount, count(c.pnu) AS n
-        FROM t2 t LEFT JOIN cand c USING (trade_id) GROUP BY 1, 2, 3
+        SELECT t.trade_id, t.deal_year, t.mount,
+               coalesce(t.is_share_deal, FALSE) AS share, count(c.pnu) AS n
+        FROM t2 t LEFT JOIN cand c USING (trade_id) GROUP BY 1, 2, 3, 4
     """)
     fz, fu, fm = con.execute(
         "SELECT count(*) FILTER (WHERE n = 0), count(*) FILTER (WHERE n = 1), "
@@ -510,8 +511,16 @@ def main() -> int:
             out.append((y, n, ru / n, absent, prec))
         return out
 
+    # 지분 거래는 **신고 면적이 필지 전체가 아니라 판 지분의 면적**이다.
+    # 면적으로는 원리적으로 못 맞히므로, 섞어 두면 재현율은 낮아 보이고
+    # 정확도는 부풀 수 있다(지분거래에 붙은 것은 거의 다 우연이다).
+    # 갈라서 따로 잰다 — 이 표가 '지분거래를 버릴까' 를 결정한다.
     for title, extra in (("전체", ""), ("산 지번", " AND r.mount = '2'"),
-                         ("일반 지번", " AND r.mount = '1'")):
+                         ("일반 지번", " AND r.mount = '1'"),
+                         ("통거래만", " AND NOT r.share"),
+                         ("지분거래만", " AND r.share"),
+                         ("산 · 통거래", " AND r.mount = '2' AND NOT r.share"),
+                         ("산 · 지분거래", " AND r.mount = '2' AND r.share")):
         rows = band(extra)
         if not rows:
             continue
