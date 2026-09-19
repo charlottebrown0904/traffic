@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -57,6 +58,10 @@ SETS = [
 # 면적으로 볼 만한 칸 이름. 자료마다 다르게 적는다.
 AREA_KEYS = ("면적", "lndpclAr", "lndpcl_ar", "ar", "area", "lndAr", "ldAr")
 PNU_KEYS = ("고유번호", "pnu", "PNU", "ldCode", "lndpclPnu")
+
+
+def re_sp(t):
+    return re.sub(r"\s+", " ", t)
 
 
 def head(t):
@@ -85,8 +90,11 @@ def main() -> int:
         print(f"    제목 {d.get('title', '')[:70]}")
         for k in ("endpoints", "uddis", "downloads", "files", "sizes"):
             v = d.get(k) or []
-            if v:
-                print(f"    {k:<10} {' · '.join(str(x)[:90] for x in v[:4])}")
+            print(f"    {k:<10} {' · '.join(str(x)[:90] for x in v[:4]) or '—'}")
+        # **발췌를 찍는다.** 못 찾았을 때 '없다' 와 '내가 못 봤다' 는 다르다.
+        for k in ("excerpts", "excerpts_raw", "_raw_head"):
+            for x in (d.get(k) or [])[:3]:
+                print(f"      … {re_sp(str(x))[:260]}")
 
     # ── 2. 표준데이터를 실제로 불러 본다 ──────────────────────────
     head("2. 표준데이터를 불러 칸 이름을 본다 — 면적이 있나")
@@ -110,10 +118,12 @@ def main() -> int:
     for url in tried:
         print(f"\n  → {url}")
         try:
-            body = http.get_json(url, {"serviceKey": VIA_RELAY,
-                                       "page": 1, "perPage": 3}, timeout=60)
+            r = http.get_once(url, {"serviceKey": VIA_RELAY, "returnType": "JSON",
+                                    "page": 1, "perPage": 3}, timeout=60)
+            print(f"    {r.status_code} · {re_sp(r.text)[:240]}")
+            body = json.loads(r.text) if r.status_code == 200 else {}
         except Exception as exc:                             # noqa: BLE001
-            print(f"    실패 — {type(exc).__name__}: {str(exc)[:160]}")
+            print(f"    실패 — {type(exc).__name__}: {str(exc)[:200]}")
             continue
         rows = (body or {}).get("data") or []
         if not rows:
@@ -138,21 +148,26 @@ def main() -> int:
         print(f"\n  [{ds}] 내려받기 링크 {len(links)}개 · 파일 "
               f"{' · '.join((d.get('files') or [])[:3]) or '—'}")
         for ln in links[:2]:
-            url = "https://www.data.go.kr/" + ln.lstrip("/")
-            print(f"    → {url[:140]}")
-            try:
-                r = http.get_once(url, {}, timeout=60)
-            except Exception as exc:                         # noqa: BLE001
-                print(f"      실패 — {type(exc).__name__}: {str(exc)[:140]}")
-                continue
-            ct = r.headers.get("content-type", "")
-            cl = r.headers.get("content-length", "?")
-            print(f"      {r.status_code} · {ct[:60]} · {cl} bytes")
-            blob = r.content[:400]
-            try:
-                print(f"      머리 {blob.decode('utf-8', 'replace')[:220]!r}")
-            except Exception:                                # noqa: BLE001
-                print(f"      머리(바이트) {blob[:60]!r}")
+            tail = ln.lstrip("/")
+            for base in ("https://www.data.go.kr/cmm/cmm/",
+                         "https://www.data.go.kr/"):
+                url = base + tail
+                print(f"    → {url[:150]}")
+                try:
+                    r = http.get_once(url, {}, timeout=90)
+                except Exception as exc:                     # noqa: BLE001
+                    print(f"      실패 — {type(exc).__name__}: {str(exc)[:140]}")
+                    continue
+                ct = r.headers.get("content-type", "")
+                cl = r.headers.get("content-length", "?")
+                cd = r.headers.get("content-disposition", "")
+                print(f"      {r.status_code} · {ct[:50]} · {cl} bytes · {cd[:70]}")
+                blob = r.content[:400]
+                if r.status_code == 200 and "html" not in ct:
+                    print(f"      ★ 파일이 옵니다 — 머리 "
+                          f"{blob.decode('utf-8', 'replace')[:200]!r}")
+                    break
+                print(f"      머리 {re_sp(blob.decode('utf-8', 'replace'))[:160]!r}")
 
     # ── 4. 브이월드 한도 ──────────────────────────────────────────
     head("4. 브이월드 — 한도가 실제로 무엇이라고 답하나")
